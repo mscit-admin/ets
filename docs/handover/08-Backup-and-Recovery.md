@@ -42,11 +42,10 @@ Then check: sign in, open the dashboard, look at *Logs → System* (`restore` ev
 1. Install Ubuntu Server and copy the repository.
 2. **Before** running the installer, restore the configuration:
    `sudo mkdir -p /etc/ets && sudo cp ets.env.backup /etc/ets/ets.env && sudo chmod 640 /etc/ets/ets.env`
-3. Create the database role with the **same password** as in `ets.env`:
-   `sudo -u postgres psql -v ets_password="'<PGPASSWORD from ets.env>'" -f deploy/db/create-database.sql`
-4. Run `sudo bash deploy/install.sh`. It keeps the existing role and `ets.env`. When it asks for an
-   administrator, give any name; the restore replaces it.
-5. `sudo ets-restore <latest dump>`
+3. Run `sudo bash deploy/install.sh`. Answer with the same database name and user as before, and press
+   Enter at the database password question to keep the one in `ets.env`. The existing `APP_SECRET` is
+   kept automatically. For the administrator, give any password; the restore replaces the users.
+4. `sudo ets-restore <latest dump>`
 
 Users keep their passwords and 2FA, because `APP_SECRET` is the same.
 

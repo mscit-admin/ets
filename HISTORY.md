@@ -12,6 +12,43 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.2.0] — 2026-10-12 — Installation wizard
+
+### Added
+- ops(deploy): `deploy/install.sh` rewritten as an interactive wizard. It asks for the domain or IP address
+  (auto-detected), the certificate type (self-signed / Let's Encrypt / own files / plain HTTP), the HTTPS port,
+  the HTTP redirect port, the internal application port, the database location (local or remote) with host,
+  port, name, user and password (or a generated one), the administrator username, name, e-mail and password,
+  the 2FA policy, the system names, the time zone, the backup retention, an optional data import and the
+  firewall. Every answer is validated; passwords are typed twice and never echoed. A summary must be
+  confirmed before anything changes.
+- ops(deploy): `--dry-run` (writes the would-be config files to `./ets-dry-run/` with secrets masked),
+  `--answers FILE` and `--yes` for unattended installs; template `deploy/answers.example`.
+- ops(deploy): re-running the wizard keeps the data and `APP_SECRET`, offers the previous answers
+  (`/etc/ets/install.conf`) as defaults, backs up `ets.env`, and resets the admin password.
+- ops(deploy): nginx split into templates (`deploy/nginx/*.tpl`) for any HTTPS/HTTP/internal port; HTTP
+  redirect server with a Let's Encrypt webroot for automatic renewal; plain-HTTP mode.
+- ops(deploy): local PostgreSQL on a custom port (cluster port changed with `pg_conftool`); remote
+  PostgreSQL with connection and `citext` checks.
+- ops(deploy): firewall opens the real SSH port (read from `sshd -T`) plus only the chosen web ports; time zone
+  and NTP set; first backup taken; health checks of the service and the web server.
+- feat(backend): `scripts/set-setting.js` to change a validated setting from the command line;
+  `create-admin.js --email`, password from `ETS_ADMIN_PASSWORD` (never on the command line).
+- docs: Installation Guide rewritten for the wizard (all questions, what to prepare, remote DB, re-running,
+  troubleshooting).
+
+### Changed
+- ops(db): `deploy/db/create-database.sql` takes the database name, user and password as variables
+  (`-v db_name= -v db_user= -v db_password=`).
+- ops(deploy): `ets-backup` / `ets-restore` read the DB connection from `/etc/ets/ets.env`, so they work with
+  any DB name, user, port or remote server.
+
+### Fixed
+- fix(deploy): nginx refused `http2 on;` on Ubuntu's nginx 1.18/1.24 — now `listen … ssl http2`.
+- fix(deploy): nginx failed to start on servers with IPv6 disabled — `[::]` listeners are dropped there.
+- fix(backend): in plain-HTTP mode the API's security headers asked browsers to upgrade to HTTPS
+  (`upgrade-insecure-requests`) — now only sent with HTTPS; HSTS is sent once, by nginx.
+
 ## [0.1.0] — 2026-10-12 — First version (backend + frontend + PostgreSQL)
 
 ### Added

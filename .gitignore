@@ -6,3 +6,4 @@ dist/
 backups/
 .DS_Store
 logs-test/
+ets-dry-run/

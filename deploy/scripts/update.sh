@@ -7,7 +7,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP=/opt/ets
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
 /usr/local/bin/ets-backup
-rsync -a --delete --exclude node_modules --exclude .git --exclude 'backend/.env' --exclude 'backend/logs*' --exclude 'frontend/dist' "$SRC/" "$APP/"
+rsync -a --delete --exclude node_modules --exclude .git --exclude 'backend/.env' --exclude 'backend/logs*' --exclude 'frontend/dist' --exclude 'ets-dry-run' "$SRC/" "$APP/"
 cd "$APP/backend" && npm ci --omit=dev --no-audit --no-fund
 cd "$APP/frontend" && npm ci --no-audit --no-fund && npm run build && rm -rf node_modules
 chown -R root:root "$APP"; chmod -R a+rX "$APP"

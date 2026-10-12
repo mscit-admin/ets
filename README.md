@@ -18,7 +18,7 @@ multi-user system with a database, a login screen and full logging.
 
 ```bash
 # 1. PostgreSQL database (once)
-sudo -u postgres psql -v ets_password="'devpass'" -f deploy/db/create-database.sql
+sudo -u postgres psql -v db_name=ets -v db_user=ets -v db_password=devpass -f deploy/db/create-database.sql
 
 # 2. Backend
 cd backend
@@ -41,11 +41,15 @@ Tests: `cd backend && TEST_DATABASE_URL=postgres://ets:devpass@127.0.0.1/ets_tes
 ## Production install (Ubuntu Server)
 
 ```bash
-sudo bash deploy/install.sh
+git clone https://github.com/mscit-admin/ets.git && cd ets
+sudo bash deploy/install.sh            # add --dry-run to rehearse without changing anything
 ```
 
-The installer sets up Node.js, PostgreSQL, the database, nginx with HTTPS, the systemd service, log
-rotation, daily backups and the firewall, then asks for the first administrator. See
+The installer is a wizard. It asks for the domain or IP address, the certificate type, the HTTPS/HTTP and
+internal ports, the database (local or remote: host, port, name, user, password), the administrator account,
+the 2FA policy, the time zone and the backup retention. It shows a summary to confirm, then installs and
+configures everything: Node.js, PostgreSQL, nginx, the service, log rotation, backups and the firewall.
+Unattended mode: `--answers deploy/answers.example --yes`. See
 [docs/handover/02-Installation-Guide.md](docs/handover/02-Installation-Guide.md).
 
 ## Documents

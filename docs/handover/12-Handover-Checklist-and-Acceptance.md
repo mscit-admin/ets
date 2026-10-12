@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 1 | Source code repository (backend, frontend, deploy, tools, reference) | ☐ | |
 | 2 | Database creation script and migrations | ☐ | `deploy/db/`, `backend/src/db/migrations/` |
-| 3 | Installer and operations scripts | ☐ | `deploy/install.sh`, `ets-backup`, `ets-restore`, `update.sh` |
+| 3 | Installer wizard and operations scripts | ☐ | `deploy/install.sh`, `answers.example`, `ets-backup`, `ets-restore`, `update.sh` |
 | 4 | System installed on the customer server | ☐ | |
 | 5 | HTTPS certificate configured | ☐ | type: self-signed / CA / Let's Encrypt |
 | 6 | Original tracker data imported | ☐ | |

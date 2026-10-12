@@ -18,9 +18,12 @@ export function createApp() {
   app.disable('x-powered-by');
   app.set('trust proxy', config.security.trustProxy);
   app.use(helmet({
+    strictTransportSecurity: false,   // HSTS is sent by nginx
     contentSecurityPolicy: {
       directives: { defaultSrc: ["'self'"], imgSrc: ["'self'", 'data:'], styleSrc: ["'self'", "'unsafe-inline'"],
-        fontSrc: ["'self'", 'data:'], scriptSrc: ["'self'"], connectSrc: ["'self'"], frameAncestors: ["'none'"] },
+        fontSrc: ["'self'", 'data:'], scriptSrc: ["'self'"], connectSrc: ["'self'"], frameAncestors: ["'none'"],
+        // only ask browsers to upgrade to HTTPS when the site is actually served over HTTPS
+        upgradeInsecureRequests: config.session.secure ? [] : null },
     },
   }));
   app.get('/api/health', health);
