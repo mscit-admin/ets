@@ -1,11 +1,21 @@
 // Central configuration — read once from the environment (.env in development,
 // /etc/ets/ets.env on the Ubuntu server via systemd EnvironmentFile).
 import dotenv from 'dotenv';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: process.env.ETS_ENV_FILE || path.resolve(here, '../.env'), quiet: true });
+// ETS_ENV_FILE=none skips the file (tests); an explicitly named file that cannot be read is a hard error,
+// otherwise the app would start with an empty DB password and fail with an obscure PostgreSQL message.
+const envFile = process.env.ETS_ENV_FILE || path.resolve(here, '../.env');
+if (process.env.ETS_ENV_FILE && process.env.ETS_ENV_FILE !== 'none') {
+  try { fs.accessSync(envFile, fs.constants.R_OK); } catch (e) {
+    throw new Error(`Cannot read the configuration file ${envFile} (${e.code}). ` +
+      `Check that it exists and that this user can read it and enter its folder.`);
+  }
+}
+if (process.env.ETS_ENV_FILE !== 'none') dotenv.config({ path: envFile, quiet: true });
 
 const env = (k, d) => (process.env[k] === undefined || process.env[k] === '' ? d : process.env[k]);
 const int = (k, d) => parseInt(env(k, d), 10);

@@ -44,6 +44,10 @@ and must be mentioned here with the migration name.
   any DB name, user, port or remote server.
 
 ### Fixed
+- fix(deploy): installation stopped at step 8 with `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a
+  string` — `/etc/ets` was `root:root 750`, so the `ets` user could not read `ets.env` and connected with an empty
+  password. The folder is now `root:ets 750`, and the installer checks the file is readable. The app now stops
+  with a clear message when its configuration file cannot be read (`ETS_ENV_FILE=none` skips it in tests).
 - fix(deploy): nginx refused `http2 on;` on Ubuntu's nginx 1.18/1.24 — now `listen … ssl http2`.
 - fix(deploy): nginx failed to start on servers with IPv6 disabled — `[::]` listeners are dropped there.
 - fix(backend): in plain-HTTP mode the API's security headers asked browsers to upgrade to HTTPS

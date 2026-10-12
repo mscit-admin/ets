@@ -403,7 +403,8 @@ timedatectl set-ntp true 2>/dev/null || warn "could not enable NTP — make sure
 step "System user and directories"
 id -u ets >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin ets
 mkdir -p "$APP" "$CONF" "$LOGDIR" "$BACKUPS"
-chown ets:ets "$LOGDIR"; chown root:root "$BACKUPS"
+# the ets service user must be able to enter /etc/ets to read ets.env (the file itself stays 640 root:ets)
+chown root:ets "$CONF"; chown ets:ets "$LOGDIR"; chown root:root "$BACKUPS"
 chmod 750 "$CONF" "$LOGDIR" "$BACKUPS"
 
 step "Copying the application to $APP"
@@ -444,6 +445,7 @@ fi
 step "Configuration ($ENVF)"
 [[ -f "$ENVF" ]] && cp -p "$ENVF" "$ENVF.bak-$(date +%Y%m%d%H%M%S)"
 render_env "$ENVF"; chown root:ets "$ENVF"; chmod 640 "$ENVF"
+sudo -u ets test -r "$ENVF" || die "the 'ets' user cannot read $ENVF — check the permissions of $CONF"
 render_answers "$ANSF"; chmod 644 "$ANSF"
 [[ -n "$OLD_APP_SECRET" ]] && echo "Kept the existing APP_SECRET" || echo "Generated a new APP_SECRET"
 
