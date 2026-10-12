@@ -1,0 +1,56 @@
+// Central configuration — read once from the environment (.env in development,
+// /etc/ets/ets.env on the Ubuntu server via systemd EnvironmentFile).
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: process.env.ETS_ENV_FILE || path.resolve(here, '../.env'), quiet: true });
+
+const env = (k, d) => (process.env[k] === undefined || process.env[k] === '' ? d : process.env[k]);
+const int = (k, d) => parseInt(env(k, d), 10);
+
+export const config = {
+  env: env('NODE_ENV', 'development'),
+  isProd: env('NODE_ENV', 'development') === 'production',
+  port: int('PORT', 3000),
+  host: env('HOST', '127.0.0.1'),
+  // Long random string; used to encrypt 2FA secrets. Never change it after go-live
+  // (existing 2FA enrolments would become unreadable).
+  appSecret: env('APP_SECRET', ''),
+  appName: env('APP_NAME', 'ETS'),
+  db: {
+    connectionString: env('DATABASE_URL', ''),
+    host: env('PGHOST', '127.0.0.1'),
+    port: int('PGPORT', 5432),
+    database: env('PGDATABASE', 'ets'),
+    user: env('PGUSER', 'ets'),
+    password: env('PGPASSWORD', ''),
+    max: int('PGPOOL_MAX', 10),
+  },
+  session: {
+    cookieName: env('SESSION_COOKIE', 'ets_sid'),
+    ttlHours: int('SESSION_TTL_HOURS', 12),
+    idleMinutes: int('SESSION_IDLE_MINUTES', 60),
+    // Set COOKIE_SECURE=false only when the site is served over plain HTTP.
+    secure: env('COOKIE_SECURE', env('NODE_ENV', '') === 'production' ? 'true' : 'false') === 'true',
+  },
+  security: {
+    maxFailedLogins: int('MAX_FAILED_LOGINS', 5),
+    lockMinutes: int('LOCK_MINUTES', 15),
+    bcryptRounds: int('BCRYPT_ROUNDS', 12),
+    trustProxy: env('TRUST_PROXY', 'loopback'),
+  },
+  logs: {
+    dir: env('LOG_DIR', path.resolve(here, '../logs')),
+    level: env('LOG_LEVEL', 'info'),
+    accessToDb: env('ACCESS_LOG_DB', 'true') === 'true',
+  },
+  staticDir: env('STATIC_DIR', ''), // serve the built frontend from here (optional; nginx usually does it)
+};
+
+export function assertConfig() {
+  if (!config.appSecret || config.appSecret.length < 32) {
+    throw new Error('APP_SECRET must be set to a random string of at least 32 characters');
+  }
+}

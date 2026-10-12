@@ -1,0 +1,132 @@
+# 09 — Test Plan & User Acceptance Testing (UAT)
+
+## 1. Scope and approach
+
+| Level | Who | How | Status at handover |
+|---|---|---|---|
+| Unit tests | Developer | `backend/test/totp.test.js`, `calc.test.js` | 9 tests, all pass |
+| API integration tests | Developer | `backend/test/api.test.js` against a disposable PostgreSQL DB | 14 tests, all pass |
+| UAT | Customer | The test cases below, run in the browser on the installed server | To be run by the customer |
+
+How to run the automated tests:
+
+```bash
+sudo -u postgres createdb -O ets ets_test
+cd backend && TEST_DATABASE_URL=postgres://ets:<pw>@127.0.0.1/ets_test npm test
+# expected: "# tests 23  # pass 23  # fail 0"
+```
+
+> `ets_test` is wiped by the tests. **Never** point `TEST_DATABASE_URL` at the production database.
+
+### Test environment for UAT
+- Server installed per [02-Installation-Guide.md](02-Installation-Guide.md); browsers Chrome/Edge/Firefox
+  (latest) and a phone browser.
+- Test accounts created by the administrator: `uat.admin` (System Administrator), `uat.hr` (Department
+  Manager, scope HR), `uat.editor` (Application Editor, scope Payroll), `uat.qa` (Tester), `uat.view`
+  (Observer).
+- A phone with Google Authenticator or Microsoft Authenticator.
+
+### Recording results
+For each case write **P** (pass) or **F** (fail), the date and initials. For a failure, add the observed
+result and a screenshot to the defect list (§4).
+
+## 2. Test cases
+
+### A. Login & passwords
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| A-01 | Open the site over `http://` | Redirected to `https://` | |
+| A-02 | Sign in with a correct username and password (2FA policy *Optional*, user not enrolled) | Dashboard opens; *Logs → Login & security* shows `login` success | |
+| A-03 | Sign in with a wrong password | "Incorrect username or password"; log shows `login_bad_password` | |
+| A-04 | Sign in with a non-existent username | Same message as A-03 (does not reveal that the user does not exist); log `login_unknown_user` | |
+| A-05 | Enter a wrong password 5 times, then the correct one | Account locked message; log `account_locked`; the admin sees the user as *Locked* | |
+| A-06 | Admin → user → **Unlock**; user signs in | Login works; log `account_unlocked_by_admin` | |
+| A-07 | Admin creates a user with "must change password"; user signs in | The *Change password* screen appears; no other screen is reachable until it is changed | |
+| A-08 | Try a new password `abc` | Refused with the policy message | |
+| A-09 | Change the password correctly | Dashboard opens; log `password_changed` | |
+| A-10 | Stay idle for 60 minutes, then click anything | Returned to the login screen | |
+| A-11 | Click the avatar → **Log out** | Login screen; log `logout` | |
+| A-12 | Switch language on the login screen | All texts switch Arabic ↔ English and the direction changes RTL ↔ LTR | |
+
+### B. Two-factor authentication
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| B-01 | *My account* → **Enable two-step verification**, scan the QR, enter the code | 10 recovery codes shown; status *Enabled* | |
+| B-02 | Log out and in again | After the password a 6-digit code is requested; a correct code opens the dashboard | |
+| B-03 | Enter a wrong code | "Invalid code"; log `mfa_bad_code` | |
+| B-04 | Use the same correct code for a second login within 30 s | Refused (`mfa_code_replay`) | |
+| B-05 | Sign in using a recovery code | Accepted once; using the same code again is refused | |
+| B-06 | Admin: Settings → policy **Required**; a user without 2FA signs in | The enrolment screen (QR) appears and must be completed | |
+| B-07 | Admin: exempt that user (user form → *Exempt from two-step verification*) | The user signs in without a code; log `mfa_exempted_by_admin` | |
+| B-08 | Admin: Users → tick 2 users → **Exempt selected** | Both show *Exempt* | |
+| B-09 | Admin: **Exempt everyone from 2FA**, then **Remove exemption for everyone** | All exempt, then none exempt | |
+| B-10 | Admin: policy **Disabled for all users** | Enrolled users sign in without a code | |
+| B-11 | Admin: user → **Unlink authenticator** | That user's 2FA is removed; under *Required* they enrol again | |
+| B-12 | *My account* → **Generate new recovery codes** (password required) | New codes shown; old codes no longer work | |
+
+### C. Tracking
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| C-01 | Open the dashboard | Total %, counters, 4 department cards, lowest 5 applications, test distribution | |
+| C-02 | Compare the totals with the original tracker file after import (Settings → Data → Import) | Same department percentages (e.g. Infrastructure 52.8 %) | |
+| C-03 | Open a department, then an application | Breadcrumb shows the path; functions listed with code, source, reference, vendor status | |
+| C-04 | Change a function's progress from 0 to 60 and press Enter | Saved; the application % updates; *Last change* shows your name | |
+| C-05 | Set test status to *Failed* and write a note | Saved; the note icon is highlighted | |
+| C-06 | Tick a disabled "from experience" item | It counts in the calculation; the application % changes | |
+| C-07 | **Bulk set** progress = 100 | All enabled functions become 100 % | |
+| C-08 | **Add requirement** | New row with code `C0`, source *Added*; it can be deleted | |
+| C-09 | Filter by source / test status / text | The list narrows correctly | |
+| C-10 | Weights: change an application weight and save | Department shares change; audit shows old → new weight | |
+| C-11 | Weights: switch to *Automatic* | Weights follow the sum of the function weights | |
+| C-12 | Reports: edit an application's reports % and status | Saved; the application % changes by the reports share | |
+| C-13 | Schedule: set the start date and 11 monthly periods, enter actual values, save | Curve shows planned vs actual; SPI and deviation are computed | |
+| C-14 | Search for an Arabic word from a function name | Matching functions are listed with links | |
+
+### D. Roles, permissions and scope
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| D-01 | Sign in as `uat.qa` and open an application | Only test status, review and note are editable; progress and weight are disabled | |
+| D-02 | Sign in as `uat.hr` | Only the HR department is visible; opening `/app/acc` shows "outside your scope" | |
+| D-03 | Sign in as `uat.editor` | Only the Payroll application is visible and editable | |
+| D-04 | Sign in as `uat.view` | Everything is read-only; no Administration menu | |
+| D-05 | Admin: grant `uat.qa` the extra permission *Edit progress* | `uat.qa` can now edit progress | |
+| D-06 | Admin: try to change their own role, or disable themselves | Refused | |
+| D-07 | Admin: try to demote the only administrator | Refused ("at least one active administrator") | |
+
+### E. Logs & audit
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| E-01 | Logs → *Audit trail* after C-04 | A row `update function` with old `{progress:0}` and new `{progress:60}` | |
+| E-02 | Logs → *Login & security*, filter Result = Failure | Only failed events | |
+| E-03 | Logs → *Request log* | API requests with status and duration | |
+| E-04 | Logs → *System* | `startup`, `migration`, `seed` events present | |
+| E-05 | **Export CSV** and open it in Excel | Arabic text readable; columns as on screen | |
+| E-06 | Sign in as `uat.hr` → Logs | Only the *Audit trail* tab, limited to HR | |
+| E-07 | On the server: `ls /var/log/ets` | `app.log`, `error.log`, `access.log` exist and are growing | |
+
+### F. Administration & operations
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| F-01 | Settings: change the system name (AR/EN) | The login screen and navbar show the new name | |
+| F-02 | Settings → Data → **Export data** | A JSON file downloads | |
+| F-03 | Server: `sudo ets-backup` | A new `.dump` in `/var/backups/ets` | |
+| F-04 | Server: restore the dump on a test DB (doc 08 §6) | The function count matches | |
+| F-05 | Server: `sudo systemctl restart ets-backend` | The site is back within seconds; log `startup` | |
+| F-06 | Server: reboot | ETS starts automatically | |
+
+### G. Usability
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| G-01 | Use the system on a phone | The menu opens from the ☰ button; pages fit the screen without horizontal scrolling | |
+| G-02 | Check the font | Cairo is used in Arabic and English (also without internet) | |
+| G-03 | Arabic screens | Right-to-left layout; numbers and percentages display correctly (e.g. `49.2%`) | |
+
+## 3. Exit criteria
+- All cases in A, B, D and E pass.
+- No open defect of severity *Critical* or *High*.
+- Other failures have an agreed fix date.
+
+## 4. Defect list
+| # | Case ID | Description | Severity (Critical/High/Medium/Low) | Reported by / date | Status |
+|---|---|---|---|---|---|
+| | | | | | |

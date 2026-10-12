@@ -1,0 +1,61 @@
+# HISTORY — سجل التغييرات والإصلاحات
+
+All changes and fixes to ETS are recorded here, newest first.
+Every change to the code must add a line under the current version (or start a new version).
+
+Format: `type(area): description` where **type** is one of
+`feat` (new feature) · `fix` (bug fix) · `sec` (security) · `perf` · `docs` · `ops` (deployment/infra) · `refactor` · `test`
+and **area** is one of `backend`, `frontend`, `db`, `deploy`, `docs`, `tests`.
+
+Database changes always come with a new numbered migration file in `backend/src/db/migrations/`
+and must be mentioned here with the migration name.
+
+---
+
+## [0.1.0] — 2026-10-12 — First version (backend + frontend + PostgreSQL)
+
+### Added
+- feat(db): migration `001_init.sql` — users, roles, per-user permission overrides and scopes, sessions,
+  2FA recovery codes, settings, departments, applications, functions, reports track, schedule, and five log
+  tables (`auth_log`, `audit_log`, `access_log`, `error_log`, `system_log`).
+- feat(db): catalog extracted from `reference/erp-tracker-original.html` by `tools/extract-catalog.js`:
+  4 departments, 30 applications, 513 functions (232 design, 125 vendor-list, 156 experience). Function codes
+  (`D0…`, `X0…`) are identical to the original page so its saved data imports without remapping.
+- feat(backend): Express 5 REST API — auth, tracker (summary, departments, applications, functions, bulk edit,
+  custom requirements, weights, reports, schedule, search, export/import), users, settings, logs, system info.
+- feat(backend): progress calculation ported from the original page (notification blending, reports share,
+  fixed/auto weights, department and project roll-up), with unit tests.
+- feat(backend): import of the original page's data (standalone HTML with `window.__SAVED`, or its JSON
+  export) from the UI (Settings → Data) or CLI (`npm run import-legacy`); export in the same format.
+- sec(backend): login with username/password (bcrypt), account lockout after N failures, generic error
+  messages, equal timing for unknown users, rate limiting on login and 2FA.
+- sec(backend): two-factor authentication (TOTP, RFC 6238), compatible with Google/Microsoft Authenticator;
+  QR enrolment; 10 one-time recovery codes; replay protection; secrets encrypted with AES-256-GCM.
+- sec(backend): 2FA policy `off` / `optional` / `required`; per-user exemption; bulk exempt / un-exempt
+  (all users or selected); admin reset of a user's authenticator.
+- sec(backend): server-side sessions in PostgreSQL (httpOnly, SameSite=strict cookie, absolute and idle
+  timeout, revocation), CSRF header check, helmet security headers and CSP, forced password change.
+- feat(backend): five roles (admin, department manager, application editor, tester, observer), 11 permission
+  keys, per-user grant/revoke overrides, department/application data scope; last-admin protection.
+- feat(backend): logging of every event to the database and to JSON-lines files (`app.log`, `error.log`,
+  `access.log`); log viewer API with filters, paging and CSV export; daily retention purge.
+- feat(frontend): React UI in the ERPNext visual style — top navbar with search, workspace sidebar, number
+  cards, indicator pills, list views and forms; Arabic (RTL) and English (LTR) with per-user language;
+  Cairo font bundled locally; responsive down to phone width.
+- feat(frontend): screens — login, 2FA verify (code or recovery code), 2FA enrolment, forced password change,
+  dashboard, department, application (inline editing of progress, weight, test/notification/review status,
+  notes, enable/disable, bulk set, add requirement), weights, reports, S-curve & schedule, search, users &
+  permissions, logs, settings, my account.
+- ops(deploy): `deploy/install.sh` for Ubuntu 22.04/24.04 (Node 22, PostgreSQL, nginx + HTTPS
+  self-signed/certbot/existing, systemd hardened unit, logrotate, daily `pg_dump` backups, ufw),
+  `ets-backup`, `ets-restore`, `update.sh`, `create-database.sql`, `schema-reference.sql`.
+- docs: README, STRUCTURE, HISTORY and the customer handover pack in `docs/handover/`.
+- test(tests): 23 automated tests — TOTP against RFC 6238/4226 vectors, calculation rules, and API
+  integration tests (login, lockout, CSRF, 2FA modes, permissions, scope, audit, users, settings, import, logs).
+
+### Fixed (during development, before release)
+- fix(backend): file logger crashed on early process exit (`sonic boom is not ready`) — file log streams are
+  now synchronous.
+- fix(frontend): percentages showed as `%49.2` inside Arabic text — numbers are now bidi-isolated (LTR).
+- fix(frontend): application function table overflowed horizontally at 1360 px — status selects narrowed.
+- fix(backend): users list returned role ids only — now includes role names in both languages.

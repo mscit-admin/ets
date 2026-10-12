@@ -1,0 +1,257 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useI18n } from '../i18n/index.jsx';
+import { api } from '../lib/api.js';
+import { pc, VENDOR_COLORS } from '../lib/format.js';
+import { Icon } from '../components/Icon.jsx';
+import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
+
+// Unicode isolate so "85%" keeps its order inside Arabic sentences
+const iso = s => '\u2066' + s + '\u2069';
+
+const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
+
+// Number input that only commits on blur / Enter (one request per edit, not per keystroke).
+function NumCell({ value, min, max, step = 1, disabled, onCommit, label }) {
+  const [v, setV] = useState(String(value));
+  useEffect(() => { setV(String(value)); }, [value]);
+  const commit = () => {
+    const n = Math.min(max, Math.max(min, parseFloat(v)));
+    if (!Number.isFinite(n)) { setV(String(value)); return; }
+    if (n !== +value) onCommit(n); else setV(String(value));
+  };
+  return (
+    <input className="input input-sm num-input" type="number" min={min} max={max} step={step} value={v} disabled={disabled}
+      aria-label={label} onChange={e => setV(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+  );
+}
+
+function StatusSelect({ value, prefix, disabled, onChange, label }) {
+  const { t } = useI18n();
+  return (
+    <select className={'input input-sm select-status s' + value} value={value} disabled={disabled} aria-label={label}
+      onChange={e => onChange(parseInt(e.target.value, 10))}>
+      {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t(prefix + i)}</option>)}
+    </select>
+  );
+}
+
+export default function Application() {
+  const { id } = useParams();
+  const { t, nm, errText, fmtDate } = useI18n();
+  const { data, error, loading, reload } = useLoad(() => api.get('/tracker/applications/' + id), [id]);
+  const [fns, setFns] = useState([]);
+  const [filter, setFilter] = useState({ q: '', source: '', test: '', showOff: false });
+  const [noteFor, setNoteFor] = useState(null);
+  const [bulk, setBulk] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => { if (data) setFns(data.functions); }, [data]);
+
+  const shown = useMemo(() => fns.filter(f =>
+    (filter.showOff || f.enabled || f.source !== 'experience') &&
+    (!filter.source || f.source === filter.source) &&
+    (filter.test === '' || f.test_status === +filter.test) &&
+    (!filter.q || (f.name_ar + ' ' + (f.reference || '') + ' ' + f.note).toLowerCase().includes(filter.q.toLowerCase()))
+  ), [fns, filter]);
+
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorBox error={error} />;
+  const { application: a, department: d, report, can, settings } = data;
+  const calc = a.calc;
+  const totalW = calc.fnWeight || 0;
+
+  const patch = async (f, body) => {
+    setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body } : x)));
+    try {
+      await api.patch('/tracker/functions/' + f.id, body);
+      reload();
+    } catch (e) {
+      toast(errText(e), 'red');
+      setFns(list => list.map(x => (x.id === f.id ? f : x)));
+    }
+  };
+
+  const del = async f => {
+    if (!window.confirm(t('are_you_sure'))) return;
+    try { await api.del('/tracker/functions/' + f.id); reload(); } catch (e) { toast(errText(e), 'red'); }
+  };
+
+  const hasReports = !d.is_base;
+  return (
+    <div>
+      <div className="breadcrumb">
+        <Link to="/">{t('nav_home')}</Link><Icon name="chevron" size={12} className="flip" />
+        <Link to={'/department/' + d.id}>{nm(d, 'short')}</Link><Icon name="chevron" size={12} className="flip" />
+        <span>{nm(a)}</span>
+      </div>
+      <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
+        {(can.pct || can.tst) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
+        {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_requirement')}</button>}
+      </PageHeader>
+
+      <div className="app-head card">
+        <div className="ah-main">
+          <div className="ah-pct"><Pct value={calc.pct} /></div>
+          <ProgressBar value={calc.pct} />
+          {hasReports && settings.reports_share > 0 && (
+            <div className="muted small mt-s">{t('app_pct_note', { fw: iso(Math.round((1 - settings.reports_share) * 100) + '%'), rw: iso(Math.round(settings.reports_share * 100) + '%') })}</div>
+          )}
+        </div>
+        <div className="ah-stats">
+          <div><span>{t('fn_progress')}</span><b><Pct value={calc.fnPct} /></b></div>
+          {hasReports && <div><span>{t('report_progress')}</span><b><Pct value={report?.progress || 0} /></b></div>}
+          <div><span>{t('weight')}</span><b className="num">{pc(calc.weight)}</b></div>
+          <div><span>{t('functions')}</span><b className="num">{calc.count}</b></div>
+          <div><span>{t('ts_2')}</span><b className="num green-text">{calc.tests[2]}</b></div>
+          <div><span>{t('ts_3')}</span><b className="num red-text">{calc.tests[3]}</b></div>
+        </div>
+      </div>
+
+      {(a.note_ar || a.addendum || a.scope_cut || a.extra_module) && (
+        <Alert kind={a.scope_cut ? 'orange' : 'blue'}>
+          <div className="row-tags mb-s">
+            {a.addendum && <Indicator color="blue">{t('addendum')} {a.addendum}</Indicator>}
+            {a.scope_cut && <Indicator color="orange">{t('scope_cut')}</Indicator>}
+            {a.extra_module && <Indicator color="purple">{t('extra_module')}</Indicator>}
+          </div>
+          {a.note_ar && <div lang="ar" dir="rtl">{a.note_ar}</div>}
+        </Alert>
+      )}
+
+      <Card>
+        <div className="filter-bar">
+          <input className="input input-sm" placeholder={t('filter') + '…'} value={filter.q} onChange={e => setFilter({ ...filter, q: e.target.value })} />
+          <select className="input input-sm" value={filter.source} onChange={e => setFilter({ ...filter, source: e.target.value })} aria-label={t('source')}>
+            <option value="">{t('source')}: {t('all')}</option>
+            {['design', 'vendor_list', 'experience', 'custom'].map(s => <option key={s} value={s}>{t('src_' + s)}</option>)}
+          </select>
+          <select className="input input-sm" value={filter.test} onChange={e => setFilter({ ...filter, test: e.target.value })} aria-label={t('test_status')}>
+            <option value="">{t('test_status')}: {t('all')}</option>
+            {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
+          </select>
+          <label className="check"><input type="checkbox" checked={filter.showOff} onChange={e => setFilter({ ...filter, showOff: e.target.checked })} /> {t('show_disabled')}</label>
+          <span className="muted small push">{shown.length} / {fns.length}</span>
+        </div>
+
+        <div className="table-wrap">
+          <table className="table fn-table">
+            <thead>
+              <tr>
+                <th className="w-check" title={t('enabled')}>✓</th>
+                <th>{t('functions')}</th>
+                <th className="num-col">{t('weight')}</th>
+                <th className="num-col">{t('progress')} %</th>
+                <th>{t('test_status')}</th>
+                <th>{t('notif_status')}</th>
+                <th>{t('review_status')}</th>
+                <th className="w-check">{t('note')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(f => (
+                <tr key={f.id} className={f.enabled ? '' : 'row-off'}>
+                  <td className="w-check">
+                    <input type="checkbox" checked={f.enabled} disabled={!can.tog} aria-label={t('enabled')}
+                      onChange={e => patch(f, { enabled: e.target.checked })} />
+                  </td>
+                  <td className="fn-name">
+                    <div lang="ar" dir="rtl">{f.name_ar}</div>
+                    <div className="fn-meta">
+                      <span className="code">{f.code}</span>
+                      <Indicator color={SRC_COLOR[f.source]}>{t('src_' + f.source)}</Indicator>
+                      {f.vendor_status > 0 && <Indicator color={VENDOR_COLORS[f.vendor_status]} title={t('vendor_status')}>{t('vs_' + f.vendor_status)}</Indicator>}
+                      {f.reference && <span className="muted" lang="ar">{f.reference}</span>}
+                      {f.enabled && totalW > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / totalW) * 100)}%</span></span>}
+                      {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
+                      {f.source === 'custom' && can.tog && <button className="btn-link small red-text" onClick={() => del(f)}>{t('delete')}</button>}
+                    </div>
+                  </td>
+                  <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
+                  <td className="num-col">
+                    <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })} />
+                    <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
+                  </td>
+                  <td><StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => patch(f, { test_status: v })} /></td>
+                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => patch(f, { notif_status: v })} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => patch(f, { review_status: v })} /></td>
+                  <td className="w-check">
+                    <button className={'btn-icon' + (f.note ? ' has-note' : '')} onClick={() => setNoteFor(f)} title={f.note || t('edit_note')} aria-label={t('edit_note')}>
+                      <Icon name="note" size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {noteFor && <NoteModal f={noteFor} canEdit={can.tst} onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor, { note }); setNoteFor(null); }} />}
+      {bulk && <BulkModal app={a} can={can} onClose={() => setBulk(false)} onDone={() => { setBulk(false); reload(); }} />}
+      {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
+    </div>
+  );
+}
+
+function NoteModal({ f, canEdit, onClose, onSave }) {
+  const { t } = useI18n();
+  const [v, setV] = useState(f.note || '');
+  return (
+    <Modal title={t('edit_note')} onClose={onClose}
+      footer={canEdit && <>
+        <button className="btn btn-default" onClick={() => onSave('')}>{t('clear')}</button>
+        <button className="btn btn-primary" onClick={() => onSave(v)}>{t('save')}</button>
+      </>}>
+      <p className="muted small" lang="ar" dir="rtl">{f.name_ar}</p>
+      <textarea className="input" rows={6} maxLength={2000} value={v} readOnly={!canEdit} onChange={e => setV(e.target.value)} />
+    </Modal>
+  );
+}
+
+function BulkModal({ app, can, onClose, onDone }) {
+  const { t, errText } = useI18n();
+  const [field, setField] = useState(can.pct ? 'progress' : 'test_status');
+  const [value, setValue] = useState(field === 'progress' ? 100 : 2);
+  const [err, setErr] = useState(null);
+  const run = async () => {
+    try {
+      const r = await api.post(`/tracker/applications/${app.id}/bulk`, { field, value: +value });
+      toast(t('done_n', { n: r.updated })); onDone();
+    } catch (e) { setErr(e); }
+  };
+  return (
+    <Modal title={t('bulk_set')} onClose={onClose}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button><button className="btn btn-primary" onClick={run}>{t('apply')}</button></>}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <Field label={t('bulk_set')}>
+        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); }}>
+          {can.pct && <option value="progress">{t('bulk_progress')}</option>}
+          {can.tst && <option value="test_status">{t('bulk_test')}</option>}
+        </select>
+      </Field>
+      {field === 'progress'
+        ? <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>
+        : <Field label={t('test_status')}><select className="input" value={value} onChange={e => setValue(e.target.value)}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+    </Modal>
+  );
+}
+
+function AddModal({ app, onClose, onDone }) {
+  const { t, errText } = useI18n();
+  const [f, setF] = useState({ name_ar: '', reference: '' });
+  const [err, setErr] = useState(null);
+  const run = async () => {
+    try { await api.post(`/tracker/applications/${app.id}/functions`, f); onDone(); } catch (e) { setErr(e); }
+  };
+  return (
+    <Modal title={t('add_requirement')} onClose={onClose}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button><button className="btn btn-primary" onClick={run} disabled={!f.name_ar.trim()}>{t('add')}</button></>}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <Field label={t('requirement_name')}><textarea className="input" rows={3} value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} /></Field>
+      <Field label={t('requirement_reason')}><input className="input" value={f.reference} onChange={e => setF({ ...f, reference: e.target.value })} /></Field>
+    </Modal>
+  );
+}
+
