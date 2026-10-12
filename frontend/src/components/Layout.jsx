@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
+import ErrorBoundary from './ErrorBoundary.jsx';
 import { useLoad } from './ui.jsx';
 
 function Navbar({ onMenu }) {
@@ -153,7 +154,7 @@ export default function Layout() {
       <Navbar onMenu={() => setOpen(o => !o)} />
       <div className="app-body">
         <Sidebar open={open} onClose={() => setOpen(false)} />
-        <main className="main"><Outlet /></main>
+        <main className="main"><ErrorBoundary><Outlet /></ErrorBoundary></main>
       </div>
     </div>
   );

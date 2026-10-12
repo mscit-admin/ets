@@ -307,6 +307,8 @@ export const messages = {
     err_invalid_value: 'قيمة غير صالحة',
     err_password_change_required: 'يجب تغيير كلمة المرور أولاً',
     err_generic: 'تعذّر تنفيذ الطلب ({code})',
+    ui_error_title: 'حدث خطأ أثناء عرض هذه الصفحة. البيانات محفوظة؛ أعد تحميل الصفحة أو عُد إلى الرئيسية.',
+    ui_error_reload: 'إعادة تحميل الصفحة',
   },
   en: {
     app_name: 'ETS',
@@ -600,5 +602,7 @@ export const messages = {
     err_invalid_value: 'Invalid value',
     err_password_change_required: 'You must change your password first',
     err_generic: 'Request failed ({code})',
+    ui_error_title: 'Something went wrong while showing this page. Your data is saved; reload the page or go back to the dashboard.',
+    ui_error_reload: 'Reload page',
   },
 };

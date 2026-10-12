@@ -79,8 +79,14 @@ export function UserList() {
   );
 }
 
+// Keyed by id so that going from /users/new to /users/6 after saving starts with fresh state
+// (otherwise the empty "new user" data is briefly treated as an existing user and the page crashes).
 export function UserForm() {
   const { id } = useParams();
+  return <UserFormInner key={id} id={id} />;
+}
+
+function UserFormInner({ id }) {
   const isNew = id === 'new';
   const { t, nm, errText, fmtDate } = useI18n();
   const { user: me } = useAuth();

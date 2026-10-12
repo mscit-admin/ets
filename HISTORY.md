@@ -12,6 +12,19 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.2.2] — 2026-10-13 — Fix blank page after creating a user
+
+### Fixed
+- fix(frontend): after saving a new user the page `/users/<id>` went blank (`Cannot read properties of null
+  (reading 'full_name')`): the form briefly treated the empty "new user" data as the saved user. The form is
+  now re-created for each user id. The user was always saved correctly; only the screen failed.
+
+### Added
+- feat(frontend): error boundary — if a screen fails to render, a message with "reload" and "dashboard"
+  buttons is shown instead of a blank page; it clears when you navigate elsewhere.
+
+---
+
 ## [0.2.1] — 2026-10-13 — Reports in the department menus
 
 ### Changed
