@@ -12,6 +12,19 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.2.1] — 2026-10-13 — Reports in the department menus
+
+### Changed
+- feat(frontend): sidebar — «التقارير» moved from «المتابعة» to the top of «الإدارات». Each department now has an
+  expandable sub-list whose first item is that department's reports, followed by its applications. The
+  department of the current page opens automatically.
+- feat(frontend): new page `/reports/:dept` showing one department's reports, with a breadcrumb to the department.
+
+### Fixed
+- fix(frontend): "%15" shown instead of "15%" in the reports share card in Arabic.
+
+---
+
 ## [0.2.0] — 2026-10-12 — Installation wizard
 
 ### Added

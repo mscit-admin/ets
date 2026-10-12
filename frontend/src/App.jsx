@@ -39,6 +39,7 @@ export default function App() {
             <Route path="app/:id" element={<Application />} />
             <Route path="weights" element={<Weights />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="reports/:dept" element={<Reports />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="search" element={<Search />} />
             <Route path="users" element={<Guard perm="usr"><UserList /></Guard>} />

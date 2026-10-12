@@ -76,6 +76,23 @@ function Sidebar({ open, onClose }) {
       <Icon name={icon} size={16} /><span>{label}</span>
     </NavLink>
   );
+  // Department sub-lists: the department of the current page opens automatically; others on click.
+  const [expanded, setExpanded] = useState(new Set());
+  const currentDept = (() => {
+    const m = loc.pathname.match(/^\/(department|reports)\/([^/]+)/);
+    if (m) return m[2];
+    const a = loc.pathname.match(/^\/app\/([^/]+)/);
+    return a ? data?.applications?.find(x => x.id === a[1])?.department_id : null;
+  })();
+  useEffect(() => {
+    if (currentDept) setExpanded(s => (s.has(currentDept) ? s : new Set([...s, currentDept])));
+  }, [currentDept]);
+  const toggle = id => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const sub = (to, icon, label, emphasis) => (
+    <NavLink key={to} to={to} className={({ isActive }) => 'side-link side-sublink' + (emphasis ? ' strong' : '') + (isActive ? ' active' : '')}>
+      <Icon name={icon} size={14} /><span>{label}</span>
+    </NavLink>
+  );
   const admin = can('usr') || can('log') || can('cfg');
   return (
     <>
@@ -85,17 +102,33 @@ function Sidebar({ open, onClose }) {
           <div className="side-label">{t('nav_tracker')}</div>
           {link('/', 'home', t('nav_home'), true)}
           {link('/weights', 'scale', t('nav_weights'))}
-          {link('/reports', 'report', t('nav_reports'))}
           {link('/schedule', 'curve', t('nav_schedule'))}
         </div>
         <div className="side-section">
           <div className="side-label">{t('departments')}</div>
-          {(data?.departments || []).map(d => (
-            <NavLink key={d.id} to={'/department/' + d.id} className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
-              <Icon name={d.emblem} size={16} /><span>{nm(d, 'short')}</span>
-              <span className="side-dot" style={{ background: d.color }} />
-            </NavLink>
-          ))}
+          {link('/reports', 'report', t('nav_reports'), true)}
+          {(data?.departments || []).map(d => {
+            const isOpen = expanded.has(d.id);
+            const apps = (data.applications || []).filter(a => a.department_id === d.id);
+            return (
+              <div key={d.id} className="side-group">
+                <div className="side-row">
+                  <NavLink to={'/department/' + d.id} className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+                    <Icon name={d.emblem} size={16} /><span>{nm(d, 'short')}</span>
+                    <span className="side-dot" style={{ background: d.color }} />
+                  </NavLink>
+                  <button className={'side-toggle' + (isOpen ? ' open' : '')} onClick={() => toggle(d.id)}
+                    aria-expanded={isOpen} aria-label={nm(d, 'short')}><Icon name="chevron" size={13} className="flip" /></button>
+                </div>
+                {isOpen && (
+                  <div className="side-sub">
+                    {!d.is_base && sub('/reports/' + d.id, 'report', t('nav_reports'), true)}
+                    {apps.map(a => sub('/app/' + a.id, a.icon, nm(a)))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         {admin && (
           <div className="side-section">

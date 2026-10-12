@@ -184,6 +184,15 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .side-link span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .side-overlay { display: none; }
+.side-row { display: flex; align-items: center; gap: 2px; }
+.side-row .side-link { flex: 1; min-width: 0; }
+.side-toggle { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--gray-500); cursor: pointer; flex: none; }
+.side-toggle:hover { background: var(--gray-200); color: var(--text); }
+.side-toggle .icon { transition: transform .15s; }
+.side-toggle.open .icon { transform: rotate(90deg); }
+.side-sub { margin: 2px 0 6px; padding-inline-start: 18px; border-inline-start: 1px solid var(--border-strong); margin-inline-start: 18px; }
+.side-sublink { padding: 4px 8px; font-size: 12.5px; gap: 8px; color: var(--gray-700); }
+.side-sublink.strong { font-weight: 700; color: var(--text); }
 .main { flex: 1; min-width: 0; padding: 18px 26px 60px; max-width: 1320px; }
 .only-mobile { display: none; }
 

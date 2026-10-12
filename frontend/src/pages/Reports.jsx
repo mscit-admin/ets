@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { REPORT_COLORS } from '../lib/format.js';
@@ -8,11 +8,15 @@ import { Card, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, Pct,
 
 export default function Reports() {
   const { t, nm, errText } = useI18n();
+  const { dept } = useParams();
   const { data, error, loading, reload } = useLoad(() => api.get('/tracker/reports'), []);
   const [edit, setEdit] = useState(null);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
-  const { departments, applications, can, settings } = data;
+  const { can, settings } = data;
+  // /reports/:dept shows one department's reports (opened from that department's sub-list in the sidebar)
+  const departments = dept ? data.departments.filter(d => d.id === dept) : data.departments;
+  const applications = dept ? data.applications.filter(a => a.department_id === dept) : data.applications;
 
   let sw = 0, sp = 0;
   applications.forEach(a => { sw += a.weight; sp += a.weight * (a.report?.progress || 0); });
@@ -26,9 +30,13 @@ export default function Reports() {
 
   return (
     <div>
-      <PageHeader title={t('reports_title')} sub={t('reports_sub')} icon="report" />
+      {dept && departments[0] && (
+        <div className="breadcrumb"><Link to={'/department/' + dept}>{nm(departments[0], 'short')}</Link><Icon name="chevron" size={12} className="flip" /><span>{t('reports_title')}</span></div>
+      )}
+      <PageHeader title={dept && departments[0] ? `${t('reports_title')} — ${nm(departments[0], 'short')}` : t('reports_title')}
+        sub={t('reports_sub')} icon="report" />
       <div className="grid-cards">
-        <NumberCard label={t('report_progress')} value={<Pct value={sw ? sp / sw : 0} />} sub={`${t('reports_share')}: ${Math.round(settings.reports_share * 100)}%`} />
+        <NumberCard label={t('report_progress')} value={<Pct value={sw ? sp / sw : 0} />} sub={<>{t('reports_share')}: <span className="num">{Math.round(settings.reports_share * 100)}%</span></>} />
         {[1, 2, 3].map(i => <NumberCard key={i} label={t('rs_' + i)} value={counts[i]} color={REPORT_COLORS[i]} />)}
       </div>
       {departments.map(d => (
