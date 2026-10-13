@@ -309,6 +309,11 @@ export const messages = {
     err_generic: 'تعذّر تنفيذ الطلب ({code})',
     ui_error_title: 'حدث خطأ أثناء عرض هذه الصفحة. البيانات محفوظة؛ أعد تحميل الصفحة أو عُد إلى الرئيسية.',
     ui_error_reload: 'إعادة تحميل الصفحة',
+    note_required_title: 'الملاحظة إلزامية',
+    note_required_msg: 'اخترت حالة «مع ملاحظات»، فيلزم كتابة الملاحظة قبل الحفظ:',
+    note_required_placeholder: 'اكتب الملاحظة هنا…',
+    note_required_hint: 'هذا البند عليه حالة «مع ملاحظات» ولا توجد ملاحظة — اكتبها',
+    err_note_required: 'حالة «مع ملاحظات» تتطلب كتابة ملاحظة. في التعيين الجماعي: توجد بنود بلا ملاحظة، فاكتب ملاحظاتها أولاً',
   },
   en: {
     app_name: 'ETS',
@@ -604,5 +609,10 @@ export const messages = {
     err_generic: 'Request failed ({code})',
     ui_error_title: 'Something went wrong while showing this page. Your data is saved; reload the page or go back to the dashboard.',
     ui_error_reload: 'Reload page',
+    note_required_title: 'Note required',
+    note_required_msg: 'You chose a "with notes" status, so a note must be written before saving:',
+    note_required_placeholder: 'Write the note here…',
+    note_required_hint: 'This item has a "with notes" status but no note — please write it',
+    err_note_required: 'A "with notes" status requires a note. For bulk set: some items have no note yet — write them first',
   },
 };

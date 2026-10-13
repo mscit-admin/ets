@@ -102,19 +102,31 @@ const FIELD_OK = {
   note: v => typeof v === 'string' && v.length <= 2000, name_en: v => typeof v === 'string' && v.length <= 500,
 };
 
+// Statuses that mean "… with notes": choosing one makes the note mandatory.
+export const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
+export const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+
 r.patch('/functions/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
+  const body = req.body || {};
+  // A user allowed to set a "with notes" status may write the note that goes with it in the same request.
+  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
   const changes = {};
-  for (const [k, v] of Object.entries(req.body || {})) {
+  for (const [k, v] of Object.entries(body)) {
     if (!(k in FIELD_PERM)) throw bad('unknown_field', { field: k });
-    if (!hasPerm(req.user, FIELD_PERM[k])) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[k], field: k });
+    const allowed = hasPerm(req.user, FIELD_PERM[k]) || (k === 'note' && settingNotedStatus);
+    if (!allowed) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[k], field: k });
     if (!FIELD_OK[k](v)) throw bad('invalid_value', { field: k });
     if (cur[k] !== v) changes[k] = v;
   }
   if (!Object.keys(changes).length) return res.json({ function: cur });
+  const after = { ...cur, ...changes };
+  if (needsNote(after) && !String(after.note || '').trim()) {
+    throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
+  }
   const keys = Object.keys(changes);
   const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
   const updated = await tx(async c => {
@@ -135,6 +147,10 @@ r.post('/applications/:id/bulk', async (req, res) => {
   if (!['progress', 'test_status'].includes(field)) throw bad('unknown_field');
   if (!hasPerm(req.user, FIELD_PERM[field])) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[field] });
   if (!FIELD_OK[field](value)) throw bad('invalid_value');
+  if (field === 'test_status' && value === NOTE_REQUIRED.test_status) {
+    const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
+    if (missing) throw bad('note_required', { fields: ['test_status'], missing });
+  }
   const n = await tx(async c => {
     const q = await c.query(`UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`,
       [a.id, value, req.user.id]);

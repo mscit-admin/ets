@@ -79,7 +79,7 @@ export function Modal({ title, onClose, children, footer, wide }) {
   useEffect(() => {
     const k = e => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', k);
-    ref.current?.querySelector('input,textarea,select,button')?.focus();
+    (ref.current?.querySelector('.modal-body textarea, .modal-body input, .modal-body select') || ref.current?.querySelector('button'))?.focus();
     return () => document.removeEventListener('keydown', k);
   }, [onClose]);
   return (

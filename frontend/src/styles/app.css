@@ -78,6 +78,8 @@ h1, h2, h3 { margin: 0; font-weight: 700; }
 }
 .btn-icon:hover { background: var(--gray-100); color: var(--text); }
 .btn-icon.has-note { color: var(--orange-text); background: var(--orange-bg); }
+.btn-icon.note-missing { color: var(--red-text); background: var(--red-bg); box-shadow: 0 0 0 1px var(--red-text) inset; }
+.input-required { border-color: var(--red-text) !important; }
 
 /* ---------- form controls ---------- */
 .input {

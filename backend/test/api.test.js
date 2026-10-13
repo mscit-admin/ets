@@ -15,7 +15,7 @@ before(async () => {
   Object.assign(process.env, {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR: new URL('../logs-test', import.meta.url).pathname, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
-    MAX_FAILED_LOGINS: '3', ETS_ENV_FILE: 'none',
+    MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '1000', ETS_ENV_FILE: 'none',
   });
   ({ pool } = await import('../src/db/pool.js'));
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
@@ -152,6 +152,22 @@ test('permissions: tester may set test status but not progress', { skip }, async
   const audit = (await pool.query(`SELECT * FROM audit_log WHERE entity='function' AND entity_id=$1`, [String(f.id)])).rows;
   assert.equal(audit.length, 1);
   assert.deepEqual(audit[0].new_value, { test_status: 2, note: 'checked' });
+});
+
+test('a "with notes" status requires a note', { skip }, async () => {
+  const c = client(); await c.login('root');
+  const f = (await pool.query(`SELECT id FROM functions WHERE app_id='att' AND code='D0'`)).rows[0];
+  const p = body => c.patch('/tracker/functions/' + f.id, body);
+  for (const body of [{ test_status: 1 }, { notif_status: 2 }, { review_status: 3 }, { test_status: 1, note: '   ' }]) {
+    const r = await p(body);
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.equal(r.data.error, 'note_required');
+  }
+  assert.equal((await p({ test_status: 1, note: 'login screen slow' })).status, 200);
+  assert.equal((await p({ notif_status: 2 })).status, 200);               // note already present
+  assert.equal((await p({ note: '' })).data.error, 'note_required');      // cannot clear it while needed
+  assert.equal((await p({ test_status: 2, notif_status: 0, note: '' })).status, 200);
+  assert.equal((await c.post('/tracker/applications/att/bulk', { field: 'test_status', value: 1 })).data.error, 'note_required');
 });
 
 test('scope: HR editor cannot see or edit finance', { skip }, async () => {

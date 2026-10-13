@@ -9,6 +9,10 @@ import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, Pc
 // Unicode isolate so "85%" keeps its order inside Arabic sentences
 const iso = s => '\u2066' + s + '\u2069';
 
+// "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
+const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
+const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
 
 // Number input that only commits on blur / Enter (one request per edit, not per keystroke).
@@ -71,6 +75,14 @@ export default function Application() {
       toast(errText(e), 'red');
       setFns(list => list.map(x => (x.id === f.id ? f : x)));
     }
+  };
+
+  // A "with notes" status on an item without a note opens the note window first;
+  // status and note are then saved together (cancel = no change).
+  const setStatus = (f, field, v) => {
+    const after = { ...f, [field]: v };
+    if (needsNote(after) && !(f.note || '').trim()) setNoteFor({ f, pending: { [field]: v } });
+    else patch(f, { [field]: v });
   };
 
   const del = async f => {
@@ -173,11 +185,12 @@ export default function Application() {
                     <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })} />
                     <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
                   </td>
-                  <td><StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => patch(f, { test_status: v })} /></td>
-                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => patch(f, { notif_status: v })} /></td>
-                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => patch(f, { review_status: v })} /></td>
+                  <td><StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} /></td>
+                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
                   <td className="w-check">
-                    <button className={'btn-icon' + (f.note ? ' has-note' : '')} onClick={() => setNoteFor(f)} title={f.note || t('edit_note')} aria-label={t('edit_note')}>
+                    <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNoteFor({ f })}
+                      title={f.note || (needsNote(f) ? t('note_required_hint') : t('edit_note'))} aria-label={t('edit_note')}>
                       <Icon name="note" size={16} />
                     </button>
                   </td>
@@ -188,24 +201,34 @@ export default function Application() {
         </div>
       </Card>
 
-      {noteFor && <NoteModal f={noteFor} canEdit={can.tst} onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor, { note }); setNoteFor(null); }} />}
+      {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={can.tst || !!noteFor.pending}
+        onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor.f, { ...(noteFor.pending || {}), note }); setNoteFor(null); }} />}
       {bulk && <BulkModal app={a} can={can} onClose={() => setBulk(false)} onDone={() => { setBulk(false); reload(); }} />}
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
     </div>
   );
 }
 
-function NoteModal({ f, canEdit, onClose, onSave }) {
+function NoteModal({ f, pending, canEdit, onClose, onSave }) {
   const { t } = useI18n();
   const [v, setV] = useState(f.note || '');
+  const after = { ...f, ...(pending || {}) };
+  const required = needsNote(after);
+  const empty = !v.trim();
+  // which "with notes" status(es) make the note mandatory, e.g. "حالة الاختبار: نجح مع ملاحظة"
+  const reasons = Object.entries(NOTE_REQUIRED).filter(([k, val]) => after[k] === val)
+    .map(([k, val]) => `${t({ test_status: 'test_status', notif_status: 'notif_status', review_status: 'review_status' }[k])}: ${t({ test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' }[k] + val)}`);
   return (
-    <Modal title={t('edit_note')} onClose={onClose}
+    <Modal title={required ? t('note_required_title') : t('edit_note')} onClose={onClose}
       footer={canEdit && <>
-        <button className="btn btn-default" onClick={() => onSave('')}>{t('clear')}</button>
-        <button className="btn btn-primary" onClick={() => onSave(v)}>{t('save')}</button>
+        {!pending && <button className="btn btn-default" disabled={required} title={required ? t('note_required_hint') : ''} onClick={() => onSave('')}>{t('clear')}</button>}
+        {pending && <button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>}
+        <button className="btn btn-primary" disabled={required && empty} onClick={() => onSave(v)}>{t('save')}</button>
       </>}>
       <p className="muted small" lang="ar" dir="rtl">{f.name_ar}</p>
-      <textarea className="input" rows={6} maxLength={2000} value={v} readOnly={!canEdit} onChange={e => setV(e.target.value)} />
+      {required && <Alert kind="orange">{t('note_required_msg')} <b>{reasons.join(' · ')}</b></Alert>}
+      <textarea className={'input' + (required && empty ? ' input-required' : '')} rows={6} maxLength={2000} value={v} readOnly={!canEdit}
+        autoFocus onChange={e => setV(e.target.value)} placeholder={required ? t('note_required_placeholder') : ''} />
     </Modal>
   );
 }

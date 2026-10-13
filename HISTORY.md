@@ -12,6 +12,25 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.3.0] — 2026-10-13 — Mandatory note for "with notes" statuses
+
+### Added
+- feat(backend): choosing a "with notes" status — test status *Passed with note* (1), notifications *Working with
+  notes* (2), review *Present with notes* (3) — requires a non-empty note. The API refuses with `note_required`
+  when the status would be saved without a note, when the note is cleared while such a status is set, and for
+  a bulk *Passed with note* while some enabled items have no note. A user allowed to set such a status may
+  write its note in the same request.
+- feat(frontend): selecting one of these statuses on an item without a note opens the note window first
+  ("Note required", with the reason); Save stays disabled until a note is typed; Cancel keeps the previous
+  status; "Clear" is disabled while the note is required; items with such a status but no note (older data)
+  show a red note icon.
+- test: API test for the rule (24 tests).
+
+### Changed
+- ops(backend): login/2FA rate limit is configurable (`LOGIN_RATE_LIMIT`, default 30 per 15 min per IP).
+
+---
+
 ## [0.2.2] — 2026-10-13 — Fix blank page after creating a user
 
 ### Fixed

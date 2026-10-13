@@ -47,6 +47,7 @@ export const config = {
   },
   security: {
     maxFailedLogins: int('MAX_FAILED_LOGINS', 5),
+    loginRateLimit: int('LOGIN_RATE_LIMIT', 30),   // login/2FA requests per IP per 15 minutes
     lockMinutes: int('LOCK_MINUTES', 15),
     bcryptRounds: int('BCRYPT_ROUNDS', 12),
     trustProxy: env('TRUST_PROXY', 'loopback'),

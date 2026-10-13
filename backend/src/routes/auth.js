@@ -14,7 +14,7 @@ import { HttpError, bad, str } from '../utils/http.js';
 const r = Router();
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, limit: config.security.loginRateLimit, standardHeaders: 'draft-7', legacyHeaders: false,
   handler: (req, res) => {
     logAuth(req, { username: str(req.body?.username, 100) || null, event: 'rate_limited', success: false });
     res.status(429).json({ error: 'too_many_attempts' });
