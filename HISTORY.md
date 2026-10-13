@@ -12,6 +12,30 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.6.1] — 2026-10-13 — S-curve verified, redesigned and added to the dashboard
+
+### Fixed
+- fix(frontend): the curve did not start at the origin (0 % at the start date); it now does for both planned and
+  actual.
+- fix(frontend): the current computed progress was not plotted; it now appears as the «اليوم / Today» point at
+  the exact position of today's date between periods.
+- fix(frontend): deviation and SPI compared the plan with the last manually recorded actual value (and showed «—»
+  when none was recorded). They now compare the current computed progress with the plan interpolated at today's
+  date: deviation = actual − planned (percentage points), SPI = actual ÷ planned.
+- fix(frontend): month periods overflowed on short months (31 Jan + 1 month gave 3 Mar); the day is now clamped
+  to the month's length.
+- fix(frontend): on phones the top bar (large logo + search) was wider than the screen and the page could be
+  shifted sideways; the logo and search now shrink and horizontal overflow is hidden.
+
+### Changed
+- feat(frontend): new shared component `components/SCurve.jsx` (model + chart + KPI cards) used by the schedule
+  page and the dashboard. Redesign: planned = dashed orange line, actual = solid blue line with a light area,
+  period markers, a «today» line with planned-now and actual-now points and the current value labelled, legend
+  above the chart, date labels on the time axis, crosshair + tooltip on hover (planned, actual, deviation per
+  period), solid hairline gridlines, drawn at the container's real width so text stays readable on phones.
+  Colour pair (#2a78d6 / #eb6834) validated for colour-blind separation and contrast.
+- feat(frontend): dashboard shows a «منحنى الإنجاز التراكمي» card (4 KPIs + chart) with a link to the curve page.
+
 ## [0.6.0] — 2026-10-13 — Data-entry edits approved by the department team lead
 
 ### Added

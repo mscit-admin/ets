@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { pc, TEST_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
+import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, Ring, useLoad } from '../components/ui.jsx';
 
 export default function Dashboard() {
@@ -10,6 +11,7 @@ export default function Dashboard() {
   const { data, error, loading } = useLoad(() => api.get('/tracker/summary'), []);
   const pending = useLoad(() => api.get('/imports/pending-count'), []).data;
   const edits = useLoad(() => api.get('/approvals/pending-count'), []).data;
+  const sched = useLoad(() => api.get('/tracker/schedule'), []).data;
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { total, departments, applications, counts, settings } = data;
@@ -43,6 +45,17 @@ export default function Dashboard() {
         <NumberCard label={t('tested_ok')} value={tests[2]} sub={`${tests[1]} ${t('ts_1')} · ${tests[3]} ${t('ts_3')}`} color="blue" />
         <NumberCard label={t('with_notes')} value={counts.notes} color="orange" />
       </div>
+
+      {sched && (() => {
+        const m = scheduleModel(sched);
+        return (
+          <Card className="curve-card" title={t('schedule_title')}
+            actions={<Link to="/schedule" className="btn btn-default btn-xs">{t('details')}</Link>}>
+            <CurveKpis m={m} />
+            <SCurveChart m={m} s={sched} compact />
+          </Card>
+        );
+      })()}
 
       <h2 className="section-title">{t('departments')}</h2>
       <div className="grid-depts">

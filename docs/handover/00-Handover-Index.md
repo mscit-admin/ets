@@ -1,8 +1,8 @@
 # ETS — Handover Pack · حزمة التسليم
 
 **System:** ETS — ERP Tracking System (مركز متابعة إنجاز ERP)
-**Version:** 0.6.0 (see [HISTORY.md](../../HISTORY.md))
-**Date:** 2026-10-12
+**Version:** 0.6.1 (see [HISTORY.md](../../HISTORY.md))
+**Date:** 2026-10-13
 
 This folder contains every document delivered to the customer with the system. Documents marked
 **(AR)** are in Arabic for end users; technical documents are in English.

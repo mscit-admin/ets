@@ -29,6 +29,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html { overflow-x: hidden; } /* the off-canvas mobile sidebar must not widen the page */
 body {
   font-family: var(--font); font-size: 14px; line-height: 1.55; color: var(--text); background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -375,7 +376,10 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 @media (max-width: 820px) {
   .only-mobile { display: inline-grid; }
   .hide-mobile { display: none; }
-  .nav-search { margin-inline-start: 0; }
+  .nav-search { margin-inline-start: 0; min-width: 0; }
+  .navbar-inner { gap: 8px; padding: 0 10px; }
+  .brand { min-width: 0; flex: 0 1 auto; }
+  .brand-logo { max-width: 34vw; max-height: 40px; }
   .brand-name { display: none; }
   .sidebar { position: fixed; top: var(--navbar-h); inset-inline-start: 0; z-index: 50; background: #fff; transform: translateX(-105%); transition: transform .2s; box-shadow: var(--shadow); }
   [dir=rtl] .sidebar { transform: translateX(105%); }
@@ -392,3 +396,31 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   .main { padding: 0; max-width: none; }
   body { background: #fff; }
 }
+
+/* ---------- S-curve (validated pair: actual #2a78d6, planned #eb6834) ---------- */
+.scurve { --sc-act: #2a78d6; --sc-plan: #eb6834; }
+.scurve-legend { list-style: none; display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 6px; padding: 0; font-size: 12px; color: var(--gray-700); }
+.scurve-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.scurve-plot { position: relative; touch-action: pan-y; }
+.curve .axis.strong { fill: var(--gray-800); font-weight: 600; }
+.curve .sc-grid { stroke: var(--gray-200); stroke-width: 1; }
+.curve .sc-base { stroke: var(--gray-400); stroke-width: 1; }
+.curve .sc-today { stroke: var(--gray-500); stroke-width: 1; }
+.curve .sc-cross { stroke: var(--gray-400); stroke-width: 1; }
+.scurve .sc-plan { fill: none; stroke: var(--sc-plan); stroke-width: 2; stroke-dasharray: 7 5; stroke-linecap: round; stroke-linejoin: round; }
+.scurve .sc-act { fill: none; stroke: var(--sc-act); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.scurve .sc-link { stroke-dasharray: 2 4; }
+.curve .sc-area { fill: var(--sc-act); opacity: .1; }
+.curve .sc-dot { fill: var(--sc-act); stroke: #fff; stroke-width: 2; }
+.curve .sc-dot-plan { fill: var(--sc-plan); stroke: #fff; stroke-width: 2; }
+.scurve .sc-now { fill: var(--sc-act); stroke: #fff; stroke-width: 2.5; }
+.curve .sc-val { font-size: 13px; font-weight: 700; fill: var(--gray-900); font-family: var(--font); }
+.sc-tip { position: absolute; top: 8px; pointer-events: none; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.08);
+  padding: 8px 10px; font-size: 12px; line-height: 1.7; min-width: 140px; color: var(--gray-800); white-space: nowrap; }
+.sc-tip .key { display: inline-block; width: 14px; height: 0; border-top: 2px solid; flex: none; }
+.sc-tip .key.plan { border-color: #eb6834; border-top-style: dashed; }
+.sc-tip .key.act { border-color: #2a78d6; }
+.sc-tip > div { display: flex; align-items: center; gap: 6px; }
+.sc-tip .num { margin-inline-start: auto; padding-inline-start: 14px; font-weight: 600; }
+.curve-card .grid-cards { margin-bottom: 12px; }
+.scurve .curve .axis { font-size: 12px; }

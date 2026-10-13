@@ -89,10 +89,11 @@ ets/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
 │       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
 │       │   ├── Icon.jsx           SVG icon set
+│       │   ├── SCurve.jsx         S-curve model, chart and KPI cards (dashboard + curve page)
 │       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/
 │       │   ├── Login.jsx          Login, 2FA verify/enrol, recovery codes, password forms
-│       │   ├── Dashboard.jsx      Workspace: totals, departments, lowest apps, test distribution
+│       │   ├── Dashboard.jsx      Workspace: totals, S-curve card, departments, lowest apps, test distribution
 │       │   ├── Department.jsx     Applications of one department
 │       │   ├── Application.jsx    Functions list with inline editing, bulk set, add requirement
 │       │   ├── Weights.jsx        Application weights and calculation parameters
