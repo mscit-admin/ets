@@ -17,11 +17,12 @@ function AuthCard({ title, sub, children }) {
         </button>
       </div>
       <div className="auth-wrap">
-        <div className="auth-brand">
-          <img src={logo} alt="" className="auth-logo" style={{ height: loginLogoHeight }} />
-          <div className="auth-org">{info ? nm({ name_ar: info.org_name_ar, name_en: info.org_name_en }) : t('app_title')}</div>
-        </div>
         <div className="auth-card">
+          {/* logo and system name at the top of the sign-in box */}
+          <div className="auth-brand">
+            <img src={logo} alt="" className="auth-logo" style={{ height: loginLogoHeight }} />
+            <div className="auth-org">{info ? nm({ name_ar: info.org_name_ar, name_en: info.org_name_en }) : t('app_title')}</div>
+          </div>
           <h2>{title}</h2>
           {sub && <p className="auth-sub">{sub}</p>}
           {children}

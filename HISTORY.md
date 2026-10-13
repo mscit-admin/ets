@@ -12,6 +12,15 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.5.2] — 2026-10-13 — Logo inside the login box
+
+### Changed
+- feat(frontend): the logo and system name now sit at the top of the sign-in box, above «تسجيل الدخول» and the
+  username/password fields, separated by a thin line (also on the 2FA and password-change screens). The logo
+  size slider for the login screen still applies.
+
+---
+
 ## [0.5.1] — 2026-10-13 — Adjustable logo size
 
 ### Added
