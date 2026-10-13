@@ -46,13 +46,18 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | `applications` | 30 applications | `id` (per, pay, acc…), `department_id`, names, `default_weight`, `weight`, `note_ar`, `addendum`, `scope_cut`, `extra_module` |
 | `functions` | 513+ functions | `app_id`, `code` (unique per app), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at` |
 | `app_reports` | Reports track per application | `progress`, `status`, `note` |
-| `schedule` | Project schedule (one row, `id = 1`) | `start_date`, `periods`, `unit` (month/fortnight), `plan numeric[]`, `actual numeric[]` |
+| `schedule` | Project schedule (one row, `id = 1`) | `start_date`, `end_date` (planned close, migration 005; when set, `periods` is derived from start → close), `periods`, `unit` (month/fortnight), `plan numeric[]`, `actual numeric[]` |
 
 ### Imports & approvals (migration 002)
 | Table | Purpose | Key columns |
 |---|---|---|
 | `import_batches` | One uploaded file for one choice | `target` (`department` / `reports`), `department_id`, `departments text[]`, `status` (`pending`, `applied`, `rejected`, `superseded`, `no_changes`), `summary` (counts and % before/after), `uploaded_by/at`, `lead_by/at/note`, `final_by/at/note`, `rejected_by/at`, `reject_reason`, `apply_result` |
 | `import_changes` | One changed value | `kind` (`function`, `report`, `weight`), `app_id`, `function_id`, `code`, `field`, `old_value`, `new_value` (jsonb), `applied` |
+
+### Progress snapshots (migration 005)
+| Table | Purpose | Key columns |
+|---|---|---|
+| `progress_snapshots` | Whole-project progress, one row per day (refreshed hourly by the API; latest value of the day wins) | `day` (PK), `total_pct`, `fn_pct`, `functions`, `done`, `tested_ok`, `notes`, `departments jsonb` (`{dept id: pct}`), `taken_at` |
 
 ### Edit requests (migration 004)
 | Table | Purpose | Key columns |

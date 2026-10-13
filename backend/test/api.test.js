@@ -359,3 +359,35 @@ test('logs API: filters and CSV export', { skip }, async () => {
   const t = client(); await t.login('tester');
   assert.equal((await t.get('/logs/auth')).status, 403);
 });
+
+test('project timeline: settings dates drive the periods; project status and snapshots', { skip }, async () => {
+  const c = client(); await c.login('root');
+  assert.equal((await c.put('/tracker/timeline', { start_date: '2026-03-01', end_date: '2026-02-01' })).data.error, 'end_before_start');
+  assert.equal((await c.put('/tracker/timeline', { start_date: '2026-02-30', end_date: null })).status, 400);
+  assert.equal((await c.put('/tracker/timeline', { start_date: null, end_date: '2027-01-01' })).data.error, 'start_required');
+  const r = await c.put('/tracker/timeline', { start_date: '2026-01-31', end_date: '2027-01-31' });
+  assert.equal(r.status, 200); assert.equal(r.data.periods, 12);
+  const s = (await c.get('/tracker/schedule')).data;
+  assert.equal(s.start_date, '2026-01-31'); assert.equal(s.end_date, '2027-01-31'); assert.equal(s.periods, 12);
+  // the schedule screen cannot move the dates or the period count once a close date is set
+  await c.put('/tracker/schedule', { start_date: '2025-01-01', periods: 5, unit: 'month', plan: null, actual: [5, 10] });
+  const s2 = (await c.get('/tracker/schedule')).data;
+  assert.equal(s2.start_date, '2026-01-31'); assert.equal(s2.periods, 12); assert.deepEqual(s2.actual.slice(0, 3), [5, 10, null]);
+  // fortnights: 52 weeks → 26 periods; too long a project is refused
+  await pool.query(`UPDATE schedule SET unit='fortnight'`);
+  assert.equal((await c.put('/tracker/timeline', { start_date: '2026-01-01', end_date: '2026-12-31' })).data.periods, 26);
+  assert.equal((await c.put('/tracker/timeline', { start_date: '2026-01-01', end_date: '2029-01-01' })).data.error, 'timeline_too_long');
+  await pool.query(`UPDATE schedule SET unit='month'`);
+  // a non-admin cannot change the timeline
+  const t = client(); await t.login('tester');
+  assert.equal((await t.put('/tracker/timeline', { start_date: '2026-01-01', end_date: '2026-06-01' })).status, 403);
+  // snapshots + status payload
+  await (await import('../src/services/snapshots.js')).takeSnapshot();
+  const st = (await c.get('/tracker/project-status')).data;
+  assert.equal(st.trend.length, 1);
+  assert.ok(st.counts.functions > 0 && st.counts.done + st.counts.in_progress + st.counts.not_started === st.counts.functions);
+  assert.equal(st.schedule.end_date, '2026-12-31');
+  const h = client(); await h.login('hred');           // scoped user: own department only
+  const sh = (await h.get('/tracker/project-status')).data;
+  assert.deepEqual(sh.departments.map(d => d.id), ['hr']);
+});

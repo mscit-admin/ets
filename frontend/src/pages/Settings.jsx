@@ -5,12 +5,17 @@ import { api, downloadText } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { useBranding } from '../lib/branding.jsx';
+import { addPeriods } from '../components/SCurve.jsx';
 
 export default function Settings() {
   const { t, errText, fmtDate } = useI18n();
   const { can, refresh } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api.get('/settings'), []);
   const info = useLoad(() => api.get('/system/info'), []);
+  const sched = useLoad(() => api.get('/tracker/schedule'), []);
+  const [tl, setTl] = useState(null);
+  useEffect(() => { if (sched.data) setTl({ start_date: sched.data.start_date || '', end_date: sched.data.end_date || '' }); }, [sched.data]);
+  useEffect(() => { if (tl && window.location.hash === '#timeline') document.getElementById('timeline')?.scrollIntoView(); }, [!!tl]); // eslint-disable-line react-hooks/exhaustive-deps
   const [s, setS] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -26,7 +31,14 @@ export default function Settings() {
     setBusy(true); setErr(null);
     // logo sizes are saved by their own sliders (Branding card), not by this button
     const { 'app.logo_height': _lh, 'app.login_logo_height': _llh, ...rest } = s;
-    try { await api.put('/settings', rest); toast(t('saved')); reload(); refresh(); } catch (e) { setErr(e); }
+    try {
+      await api.put('/settings', rest);
+      if (tl && sched.data?.can.timeline && (tl.start_date !== (sched.data.start_date || '') || tl.end_date !== (sched.data.end_date || ''))) {
+        await api.put('/tracker/timeline', { start_date: tl.start_date || null, end_date: tl.end_date || null });
+        sched.reload();
+      }
+      toast(t('saved')); reload(); refresh();
+    } catch (e) { setErr(e); }
     setBusy(false);
   };
   const exportData = async () => {
@@ -51,6 +63,8 @@ export default function Settings() {
         <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
+
+      {tl && sched.data?.can.timeline && <TimelineCard tl={tl} setTl={setTl} unit={sched.data.unit} />}
 
       <Card title={t('sec_2fa')}>
         <div className="radio-list">
@@ -192,5 +206,29 @@ function BrandingCard() {
         </Field>
       </div>
     </Card>
+  );
+}
+
+// Settings → project timeline: start and planned close date (saved with the page's Save button).
+function TimelineCard({ tl, setTl, unit }) {
+  const { t, fmtDay } = useI18n();
+  const ok = tl.start_date && tl.end_date && tl.end_date > tl.start_date;
+  const days = ok ? Math.round((new Date(tl.end_date) - new Date(tl.start_date)) / 864e5) : null;
+  let periods = null;
+  if (ok) { periods = 1; while (addPeriods(tl.start_date, unit, periods) < new Date(tl.end_date + 'T00:00:00') && periods <= 61) periods++; }
+  return (
+    <section id="timeline">
+      <Card title={t('sec_timeline')}>
+        <div className="form-grid">
+          <Field label={t('project_start')}><input className="input" type="date" value={tl.start_date} onChange={e => setTl({ ...tl, start_date: e.target.value })} /></Field>
+          <Field label={t('project_end')}><input className="input" type="date" min={tl.start_date || undefined} value={tl.end_date} onChange={e => setTl({ ...tl, end_date: e.target.value })} /></Field>
+          <div className="field"><span className="field-label">{t('project_duration')}</span>
+            <div className="field-static">{ok ? <>{t('n_days', { n: days })} · {t('n_periods', { n: periods })} ({t('unit_' + unit)}) · {fmtDay(tl.start_date)} – {fmtDay(tl.end_date)}</>
+              : tl.start_date && tl.end_date ? <span className="text-red">{t('err_end_before_start')}</span> : '—'}</div>
+          </div>
+        </div>
+        <div className="field-hint mt-s">{t('timeline_hint')}</div>
+      </Card>
+    </section>
   );
 }

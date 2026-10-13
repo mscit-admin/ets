@@ -5,6 +5,7 @@ import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { logger, logSystem } from './services/logs.js';
 import { purgeLogs } from './services/retention.js';
+import { takeSnapshot } from './services/snapshots.js';
 
 assertConfig();
 
@@ -23,6 +24,10 @@ const day = 24 * 3600 * 1000;
 const purge = () => purgeLogs().catch(e => logger.error({ err: e.message }, 'log purge failed'));
 setTimeout(purge, 60_000).unref();
 setInterval(purge, day).unref();
+// Daily progress snapshot (hourly refresh of today's row).
+const snap = () => takeSnapshot().catch(e => logger.error({ err: e.message }, 'progress snapshot failed'));
+setTimeout(snap, 15_000).unref();
+setInterval(snap, 3600_000).unref();
 // Remove expired sessions hourly.
 setInterval(() => pool.query(`DELETE FROM sessions WHERE expires_at < now() - interval '30 days'`).catch(() => {}), 3600_000).unref();
 

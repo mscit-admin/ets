@@ -45,8 +45,10 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | POST | `/weights/reset` | wgt + full scope | Restore default weights |
 | GET | `/reports` | — | Reports track |
 | PATCH | `/reports/:appId` | rep | `{progress?, status?, note?}` |
-| GET | `/schedule` | — | Schedule + current computed % |
-| PUT | `/schedule` | sch | `{start_date, periods, unit, plan \| null, actual[]}` |
+| GET | `/schedule` | — | Schedule (`start_date`, `end_date`, periods, plan, actual) + current computed % |
+| PUT | `/schedule` | sch | `{start_date, periods, unit, plan \| null, actual[]}` — when a close date is set, the dates and the number of periods are kept from Settings |
+| PUT | `/timeline` | cfg (full scope) | `{start_date, end_date}` — project start and planned close; errors `end_before_start`, `start_required`, `timeline_too_long` |
+| GET | `/project-status` | — | Schedule, total and department progress, function/test/quality counts, pending approvals and daily progress trend, for the user's scope |
 | GET | `/search?q=` | — | Up to 200 functions within scope |
 | GET | `/export` | exp | Data in the original tracker's JSON format (v3) |
 | POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}` |

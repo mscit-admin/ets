@@ -107,6 +107,7 @@ function Sidebar({ open, onClose }) {
         <div className="side-section">
           <div className="side-label">{t('nav_tracker')}</div>
           {link('/', 'home', t('nav_home'), true)}
+          {link('/status', 'pulse', t('nav_status'))}
           {link('/weights', 'scale', t('nav_weights'))}
           {link('/schedule', 'curve', t('nav_schedule'))}
           <NavLink to="/imports" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>

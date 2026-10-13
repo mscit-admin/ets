@@ -31,7 +31,8 @@ ets/
 │   │   │   │   ├── 001_init.sql   Complete initial schema (identity, tracker, logs)
 │   │   │   │   ├── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
 │   │   │   │   ├── 003_branding.sql  Uploaded logo, favicon and login background
-│   │   │   │   └── 004_edit_requests.sql  Data-entry edits waiting for the team lead
+│   │   │   │   ├── 004_edit_requests.sql  Data-entry edits waiting for the team lead
+│   │   │   │   └── 005_project_timeline.sql  Project close date, daily progress snapshots
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -57,6 +58,7 @@ ets/
 │   │   │   ├── retention.js       Log retention purge
 │   │   │   ├── legacy.js          Import/export in the original page's format
 │   │   │   ├── edits.js           Who needs approval, create / apply edit requests
+│   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/http.js          HttpError and input validation helpers
 │   ├── scripts/
@@ -84,6 +86,7 @@ ets/
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
+│       │   ├── health.js          Project health indicators and recommendations (status page)
 │       │   └── format.js          Number and colour helpers
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
@@ -93,6 +96,7 @@ ets/
 │       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/
 │       │   ├── Login.jsx          Login, 2FA verify/enrol, recovery codes, password forms
+│       │   ├── ProjectStatus.jsx  Project health: schedule variance, delay, pace, forecast, departments, recommendations
 │       │   ├── Dashboard.jsx      Workspace: totals, S-curve card, departments, lowest apps, test distribution
 │       │   ├── Department.jsx     Applications of one department
 │       │   ├── Application.jsx    Functions list with inline editing, bulk set, add requirement

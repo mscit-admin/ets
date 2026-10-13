@@ -4,14 +4,17 @@ import { api } from '../lib/api.js';
 import { pc, TEST_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx';
+import { projectHealth } from '../lib/health.js';
+import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, Ring, useLoad } from '../components/ui.jsx';
 
 export default function Dashboard() {
-  const { t, nm } = useI18n();
+  const { t, nm, fmtDay } = useI18n();
   const { data, error, loading } = useLoad(() => api.get('/tracker/summary'), []);
   const pending = useLoad(() => api.get('/imports/pending-count'), []).data;
   const edits = useLoad(() => api.get('/approvals/pending-count'), []).data;
-  const sched = useLoad(() => api.get('/tracker/schedule'), []).data;
+  const ps = useLoad(() => api.get('/tracker/project-status'), []).data;
+  const insightText = useInsightText();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { total, departments, applications, counts, settings } = data;
@@ -46,13 +49,24 @@ export default function Dashboard() {
         <NumberCard label={t('with_notes')} value={counts.notes} color="orange" />
       </div>
 
-      {sched && (() => {
-        const m = scheduleModel(sched);
+      {ps && (() => {
+        const m = scheduleModel({ ...ps.schedule, current_pct: ps.total.pct });
+        const h = projectHealth(m, ps);
         return (
           <Card className="curve-card" title={t('schedule_title')}
-            actions={<Link to="/schedule" className="btn btn-default btn-xs">{t('details')}</Link>}>
+            actions={<Link to="/status" className="btn btn-default btn-xs">{t('view_status')}</Link>}>
+            <Link to="/status" className="health-strip mb">
+              <StatusBadge status={h.status} big />
+              <span className="hs-text">{insightText(h.insights[0])}</span>
+              {h.ready && (
+                <span className="hs-facts">
+                  <span>{t('forecast_end')}: <b>{h.forecast ? fmtDay(h.forecast) : '—'}</b></span>
+                  <span>{t('project_end')}: <b>{fmtDay(h.end)}</b></span>
+                </span>
+              )}
+            </Link>
             <CurveKpis m={m} />
-            <SCurveChart m={m} s={sched} compact />
+            <SCurveChart m={m} s={ps.schedule} trend={ps.trend} compact />
           </Card>
         );
       })()}

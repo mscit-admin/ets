@@ -28,13 +28,20 @@ export function scheduleModel(s, now = new Date()) {
   const actual = Array.from({ length: n }, (_, i) => num(s.actual?.[i]));
   const P = [0, ...plan];                                    // P[k] = planned at the end of period k
   const bounds = s.start_date ? Array.from({ length: n + 1 }, (_, k) => addPeriods(s.start_date, s.unit, k)) : null;
-  let xNow = null;
-  if (bounds) {
-    const tt = now.getTime();
-    if (tt <= bounds[0].getTime()) xNow = 0;
-    else if (tt >= bounds[n].getTime()) xNow = n;
-    else { let k = 0; while (tt >= bounds[k + 1].getTime()) k++; xNow = k + (tt - bounds[k]) / (bounds[k + 1] - bounds[k]); }
-  }
+  if (bounds && s.end_date) bounds[n] = new Date(s.end_date + 'T00:00:00');   // the last period ends on the close date
+  // date ↔ x (periods from the start, fractional between period ends)
+  const xOf = date => {
+    const tt = date.getTime();
+    if (tt <= bounds[0].getTime()) return 0;
+    if (tt >= bounds[n].getTime()) return n;
+    let k = 0; while (tt >= bounds[k + 1].getTime()) k++;
+    return k + (tt - bounds[k]) / (bounds[k + 1] - bounds[k]);
+  };
+  const dateOf = x => {
+    const k = Math.min(n - 1, Math.max(0, Math.floor(x)));
+    return new Date(bounds[k].getTime() + (bounds[k + 1] - bounds[k]) * (x - k));
+  };
+  const xNow = bounds ? xOf(now) : null;
   const plannedAt = x => { const k = Math.floor(x); return k >= n ? P[n] : P[k] + (P[k + 1] - P[k]) * (x - k); };
   let lastActual = -1;
   actual.forEach((v, i) => { if (v !== null) lastActual = i; });
@@ -44,7 +51,14 @@ export function scheduleModel(s, now = new Date()) {
   const spi = plannedNow ? current / plannedNow : null;
   // Row of the period in progress (schedule table highlight).
   const curIdx = xNow === null ? Math.max(0, lastActual) : Math.min(n - 1, Math.max(0, Math.ceil(xNow) - 1));
-  return { n, plan, actual, P, bounds, xNow, plannedNow, current, deviation, spi, curIdx, lastActual };
+  // x at which the plan reached a given %: the inverse of the planned curve (earned schedule)
+  const xAtPlanned = v => {
+    if (v <= 0) return 0;
+    for (let k = 0; k < n; k++) if (P[k + 1] >= v) return P[k + 1] === P[k] ? k + 1 : k + (v - P[k]) / (P[k + 1] - P[k]);
+    return n;
+  };
+  return { n, plan, actual, P, bounds, xNow, plannedNow, current, deviation, spi, curIdx, lastActual,
+    xOf: bounds ? xOf : null, dateOf: bounds ? dateOf : null, xAtPlanned, plannedAt };
 }
 
 function useShortDate() {
@@ -70,7 +84,7 @@ export function CurveKpis({ m }) {
   );
 }
 
-export function SCurveChart({ m, s, compact = false }) {
+export function SCurveChart({ m, s, compact = false, trend = null }) {
   const { t, dir } = useI18n();
   const shortDate = useShortDate();
   const wrap = useRef(null);
@@ -91,8 +105,10 @@ export function SCurveChart({ m, s, compact = false }) {
   const pt = (x, v) => `${X(x).toFixed(1)},${Y(v).toFixed(1)}`;
   const label = k => (bounds ? shortDate(bounds[k], s.unit) : k === 0 ? t('start') : String(k));
 
-  // Actual: origin, then every recorded period end.
-  const act = [[0, 0], ...m.actual.map((v, i) => (v === null ? null : [i + 1, v])).filter(Boolean)];
+  // Actual: origin, then every recorded period end, plus the daily snapshots when given.
+  const rec = m.actual.map((v, i) => (v === null ? null : [i + 1, v])).filter(Boolean);
+  const daily = trend && m.xOf ? trend.map(d => [m.xOf(new Date(d.day + 'T00:00:00')), d.pct]).filter(([x]) => xNow === null || x < xNow - 1e-6) : [];
+  const act = [[0, 0], ...[...rec, ...daily].sort((a, b) => a[0] - b[0])];
   const lastPt = act.filter(([x]) => xNow === null || x <= xNow + 1e-9).pop();
   const nowPt = xNow === null ? null : [xNow, m.current];
   const areaPts = [...act.filter(([x]) => xNow === null || x <= xNow), ...(nowPt && lastPt && lastPt[0] < xNow ? [nowPt] : [])];
@@ -135,7 +151,7 @@ export function SCurveChart({ m, s, compact = false }) {
           <polyline points={P.map((v, k) => pt(k, v)).join(' ')} className="sc-plan" />
           <polyline points={act.map(([x, v]) => pt(x, v)).join(' ')} className="sc-act" />
           {nowPt && lastPt && lastPt[0] < xNow && <line x1={X(lastPt[0])} y1={Y(lastPt[1])} x2={X(xNow)} y2={Y(m.current)} className="sc-act sc-link" />}
-          {act.slice(1).map(([x, v]) => <circle key={x} cx={X(x)} cy={Y(v)} r="4" className="sc-dot" />)}
+          {rec.map(([x, v]) => <circle key={x} cx={X(x)} cy={Y(v)} r="4" className="sc-dot" />)}
           {nowPt && m.plannedNow !== null && <circle cx={X(xNow)} cy={Y(m.plannedNow)} r="4.5" className="sc-dot-plan" />}
           {nowPt && <>
             <circle cx={X(xNow)} cy={Y(m.current)} r="6.5" className="sc-now" />

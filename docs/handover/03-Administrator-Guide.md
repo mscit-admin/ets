@@ -109,6 +109,15 @@ works once. If they have no codes left, an administrator uses **Unlink authentic
 The calculation parameters (weighting mode, notifications share, reports share) are on the **Weights**
 screen.
 
+### Project timeline (Settings → «الجدول الزمني للمشروع»)
+- **Project start** and **project close date**. Saved with the page's Save button.
+- When both are set, the number of curve periods is derived automatically (the last period ends on the close
+  date) and the dates can no longer be changed from the curve page. At most 60 periods.
+- They drive the **Project status** page: planned-to-date, deviation, schedule delay in days, SPI / SPI(t),
+  current and required pace, forecast close date, lagging departments and recommendations.
+- The API stores a progress snapshot every hour (one row per day, table `progress_snapshots`); after 7 days
+  the pace and forecast use the last 30 days of real progress instead of the average since the start.
+
 ### Branding (Settings → «الهوية البصرية»)
 | Image | Where it appears | Format / limit |
 |---|---|---|

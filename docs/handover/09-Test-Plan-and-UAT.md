@@ -83,6 +83,9 @@ result and a screenshot to the defect list (§4).
 | C-13 | Schedule: set the start date and 11 monthly periods, enter actual values, save | Curve starts at 0 % on the start date and shows planned vs actual; a «Today» point shows the current computed progress | |
 | C-13a | Check the curve KPIs against the table | Planned as of today is interpolated between the two periods around today; deviation = actual now − planned now; SPI = actual now ÷ planned now | |
 | C-13b | Open the dashboard; hover over the curve; click «Details» | Dashboard shows the curve card with the same 4 KPIs; tooltip shows planned/actual/deviation per period; link opens the curve page | |
+| C-13d | Settings → project timeline: set start and close dates, save | Curve periods follow the dates; the curve page shows the dates read-only; close before start is refused | |
+| C-13e | Open «Project status» | Status badge, time vs work bars, delay in days, SPI / SPI(t), pace, forecast close date, departments vs plan and recommendations are shown | |
+| C-13f | Log in as a department user and open «Project status» | Only that department's figures are shown | |
 | C-13c | Start date 31 Jan with monthly periods | Period 1 ends on 28/29 Feb (not 3 Mar) | |
 | C-14 | Search for an Arabic word from a function name | Matching functions are listed with links | |
 

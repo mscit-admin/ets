@@ -9,6 +9,7 @@ import Application from './pages/Application.jsx';
 import Weights from './pages/Weights.jsx';
 import Reports from './pages/Reports.jsx';
 import Schedule from './pages/Schedule.jsx';
+import ProjectStatus from './pages/ProjectStatus.jsx';
 import Search from './pages/Search.jsx';
 import { UserForm, UserList } from './pages/Users.jsx';
 import Logs from './pages/Logs.jsx';
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="reports/:dept" element={<Reports />} />
             <Route path="schedule" element={<Schedule />} />
+            <Route path="status" element={<ProjectStatus />} />
             <Route path="search" element={<Search />} />
             <Route path="imports" element={<ImportList />} />
             <Route path="approvals" element={<Approvals />} />

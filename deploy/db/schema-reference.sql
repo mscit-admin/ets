@@ -1,7 +1,10 @@
--- ETS schema reference (generated with pg_dump --schema-only from migration 001_init.sql).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–005).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure.
 -- PostgreSQL database dump
+\restrict Z4U7DEVsjUR8DUG529nY87rDU3duxFbjRS9h1umTHihxH4dKmgP3ZOQOxiMZqlA
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Name: public; Type: SCHEMA; Schema: -; Owner: -
 -- *not* creating schema, since initdb creates it
 -- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
@@ -104,6 +107,15 @@ CREATE SEQUENCE public.auth_log_id_seq
     CACHE 1;
 -- Name: auth_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.auth_log_id_seq OWNED BY public.auth_log.id;
+-- Name: branding_assets; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.branding_assets (
+    key text NOT NULL,
+    mime text NOT NULL,
+    data bytea NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by integer,
+    CONSTRAINT branding_assets_key_check CHECK ((key = ANY (ARRAY['logo'::text, 'favicon'::text, 'login_bg'::text])))
+);
 -- Name: departments; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.departments (
     id text NOT NULL,
@@ -116,6 +128,56 @@ CREATE TABLE public.departments (
     is_base boolean DEFAULT false NOT NULL,
     sort integer DEFAULT 0 NOT NULL
 );
+-- Name: edit_request_items; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.edit_request_items (
+    id bigint NOT NULL,
+    request_id integer NOT NULL,
+    kind text NOT NULL,
+    app_id text NOT NULL,
+    function_id integer,
+    field text NOT NULL,
+    old_value jsonb,
+    new_value jsonb,
+    applied boolean,
+    note text,
+    CONSTRAINT edit_request_items_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'report'::text])))
+);
+-- Name: edit_request_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.edit_request_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: edit_request_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.edit_request_items_id_seq OWNED BY public.edit_request_items.id;
+-- Name: edit_requests; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.edit_requests (
+    id integer NOT NULL,
+    department_id text NOT NULL,
+    app_id text NOT NULL,
+    kind text NOT NULL,
+    summary text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    requested_by integer,
+    requested_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_by integer,
+    decided_at timestamp with time zone,
+    reason text,
+    apply_result jsonb,
+    CONSTRAINT edit_requests_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'bulk'::text, 'report'::text]))),
+    CONSTRAINT edit_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'rejected'::text, 'superseded'::text, 'withdrawn'::text])))
+);
+-- Name: edit_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.edit_requests_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: edit_requests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.edit_requests_id_seq OWNED BY public.edit_requests.id;
 -- Name: error_log; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.error_log (
     id bigint NOT NULL,
@@ -175,6 +237,79 @@ CREATE SEQUENCE public.functions_id_seq
     CACHE 1;
 -- Name: functions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.functions_id_seq OWNED BY public.functions.id;
+-- Name: import_batches; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.import_batches (
+    id integer NOT NULL,
+    target text DEFAULT 'department'::text NOT NULL,
+    department_id text,
+    departments text[] DEFAULT '{}'::text[] NOT NULL,
+    filename text,
+    file_ts timestamp with time zone,
+    status text DEFAULT 'pending'::text NOT NULL,
+    change_count integer DEFAULT 0 NOT NULL,
+    summary jsonb,
+    uploaded_by integer,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    lead_by integer,
+    lead_at timestamp with time zone,
+    lead_note text,
+    final_by integer,
+    final_at timestamp with time zone,
+    final_note text,
+    rejected_by integer,
+    rejected_at timestamp with time zone,
+    reject_reason text,
+    applied_at timestamp with time zone,
+    apply_result jsonb,
+    CONSTRAINT import_batches_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'rejected'::text, 'superseded'::text, 'no_changes'::text]))),
+    CONSTRAINT import_batches_target_check CHECK ((target = ANY (ARRAY['department'::text, 'reports'::text])))
+);
+-- Name: import_batches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.import_batches_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: import_batches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.import_batches_id_seq OWNED BY public.import_batches.id;
+-- Name: import_changes; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.import_changes (
+    id bigint NOT NULL,
+    batch_id integer NOT NULL,
+    kind text NOT NULL,
+    app_id text NOT NULL,
+    function_id integer,
+    code text,
+    field text NOT NULL,
+    old_value jsonb,
+    new_value jsonb,
+    applied boolean,
+    note text,
+    CONSTRAINT import_changes_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'report'::text, 'weight'::text])))
+);
+-- Name: import_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.import_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: import_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.import_changes_id_seq OWNED BY public.import_changes.id;
+-- Name: progress_snapshots; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.progress_snapshots (
+    day date NOT NULL,
+    total_pct numeric(6,2) NOT NULL,
+    fn_pct numeric(6,2) NOT NULL,
+    functions integer NOT NULL,
+    done integer NOT NULL,
+    tested_ok integer NOT NULL,
+    notes integer NOT NULL,
+    departments jsonb DEFAULT '{}'::jsonb NOT NULL,
+    taken_at timestamp with time zone DEFAULT now() NOT NULL
+);
 -- Name: roles; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.roles (
     id text NOT NULL,
@@ -195,6 +330,7 @@ CREATE TABLE public.schedule (
     actual numeric(5,2)[],
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by integer,
+    end_date date,
     CONSTRAINT schedule_id_check CHECK ((id = 1)),
     CONSTRAINT schedule_periods_check CHECK (((periods >= 1) AND (periods <= 60))),
     CONSTRAINT schedule_unit_check CHECK ((unit = ANY (ARRAY['month'::text, 'fortnight'::text])))
@@ -316,10 +452,18 @@ ALTER TABLE ONLY public.access_log ALTER COLUMN id SET DEFAULT nextval('public.a
 ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
 -- Name: auth_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.auth_log ALTER COLUMN id SET DEFAULT nextval('public.auth_log_id_seq'::regclass);
+-- Name: edit_request_items id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_request_items ALTER COLUMN id SET DEFAULT nextval('public.edit_request_items_id_seq'::regclass);
+-- Name: edit_requests id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests ALTER COLUMN id SET DEFAULT nextval('public.edit_requests_id_seq'::regclass);
 -- Name: error_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log ALTER COLUMN id SET DEFAULT nextval('public.error_log_id_seq'::regclass);
 -- Name: functions id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions ALTER COLUMN id SET DEFAULT nextval('public.functions_id_seq'::regclass);
+-- Name: import_batches id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches ALTER COLUMN id SET DEFAULT nextval('public.import_batches_id_seq'::regclass);
+-- Name: import_changes id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_changes ALTER COLUMN id SET DEFAULT nextval('public.import_changes_id_seq'::regclass);
 -- Name: system_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.system_log ALTER COLUMN id SET DEFAULT nextval('public.system_log_id_seq'::regclass);
 -- Name: user_recovery_codes id; Type: DEFAULT; Schema: public; Owner: -
@@ -341,9 +485,18 @@ ALTER TABLE ONLY public.audit_log
 -- Name: auth_log auth_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.auth_log
     ADD CONSTRAINT auth_log_pkey PRIMARY KEY (id);
+-- Name: branding_assets branding_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.branding_assets
+    ADD CONSTRAINT branding_assets_pkey PRIMARY KEY (key);
 -- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.departments
     ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
+-- Name: edit_request_items edit_request_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_request_items
+    ADD CONSTRAINT edit_request_items_pkey PRIMARY KEY (id);
+-- Name: edit_requests edit_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_pkey PRIMARY KEY (id);
 -- Name: error_log error_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_pkey PRIMARY KEY (id);
@@ -353,6 +506,15 @@ ALTER TABLE ONLY public.functions
 -- Name: functions functions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_pkey PRIMARY KEY (id);
+-- Name: import_batches import_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_pkey PRIMARY KEY (id);
+-- Name: import_changes import_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_changes
+    ADD CONSTRAINT import_changes_pkey PRIMARY KEY (id);
+-- Name: progress_snapshots progress_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.progress_snapshots
+    ADD CONSTRAINT progress_snapshots_pkey PRIMARY KEY (day);
 -- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
@@ -406,10 +568,24 @@ CREATE INDEX auth_log_event_idx ON public.auth_log USING btree (event);
 CREATE INDEX auth_log_ts_idx ON public.auth_log USING btree (ts DESC);
 -- Name: auth_log_user_id_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX auth_log_user_id_ts_idx ON public.auth_log USING btree (user_id, ts DESC);
+-- Name: edit_request_items_function_id_field_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX edit_request_items_function_id_field_idx ON public.edit_request_items USING btree (function_id, field);
+-- Name: edit_request_items_request_id_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX edit_request_items_request_id_idx ON public.edit_request_items USING btree (request_id);
+-- Name: edit_requests_requested_by_status_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX edit_requests_requested_by_status_idx ON public.edit_requests USING btree (requested_by, status);
+-- Name: edit_requests_status_department_id_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX edit_requests_status_department_id_idx ON public.edit_requests USING btree (status, department_id);
 -- Name: error_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX error_log_ts_idx ON public.error_log USING btree (ts DESC);
 -- Name: functions_app_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX functions_app_id_idx ON public.functions USING btree (app_id);
+-- Name: import_batches_status_target_department_id_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX import_batches_status_target_department_id_idx ON public.import_batches USING btree (status, target, department_id);
+-- Name: import_batches_uploaded_at_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX import_batches_uploaded_at_idx ON public.import_batches USING btree (uploaded_at DESC);
+-- Name: import_changes_batch_id_idx; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX import_changes_batch_id_idx ON public.import_changes USING btree (batch_id);
 -- Name: sessions_expires_at_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX sessions_expires_at_idx ON public.sessions USING btree (expires_at);
 -- Name: sessions_user_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -439,6 +615,30 @@ ALTER TABLE ONLY public.audit_log
 -- Name: auth_log auth_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.auth_log
     ADD CONSTRAINT auth_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: branding_assets branding_assets_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.branding_assets
+    ADD CONSTRAINT branding_assets_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: edit_request_items edit_request_items_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_request_items
+    ADD CONSTRAINT edit_request_items_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id);
+-- Name: edit_request_items edit_request_items_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_request_items
+    ADD CONSTRAINT edit_request_items_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: edit_request_items edit_request_items_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_request_items
+    ADD CONSTRAINT edit_request_items_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.edit_requests(id) ON DELETE CASCADE;
+-- Name: edit_requests edit_requests_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id);
+-- Name: edit_requests edit_requests_decided_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: edit_requests edit_requests_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id);
+-- Name: edit_requests edit_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: error_log error_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
@@ -448,6 +648,30 @@ ALTER TABLE ONLY public.functions
 -- Name: functions functions_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: import_batches import_batches_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id);
+-- Name: import_batches import_batches_final_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_final_by_fkey FOREIGN KEY (final_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: import_batches import_batches_lead_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_lead_by_fkey FOREIGN KEY (lead_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: import_batches import_batches_rejected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_rejected_by_fkey FOREIGN KEY (rejected_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: import_batches import_batches_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_batches
+    ADD CONSTRAINT import_batches_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: import_changes import_changes_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_changes
+    ADD CONSTRAINT import_changes_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id);
+-- Name: import_changes import_changes_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_changes
+    ADD CONSTRAINT import_changes_batch_id_fkey FOREIGN KEY (batch_id) REFERENCES public.import_batches(id) ON DELETE CASCADE;
+-- Name: import_changes import_changes_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.import_changes
+    ADD CONSTRAINT import_changes_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
 -- Name: schedule schedule_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.schedule
     ADD CONSTRAINT schedule_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
@@ -473,3 +697,4 @@ ALTER TABLE ONLY public.users
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
 -- PostgreSQL database dump complete
+\unrestrict Z4U7DEVsjUR8DUG529nY87rDU3duxFbjRS9h1umTHihxH4dKmgP3ZOQOxiMZqlA

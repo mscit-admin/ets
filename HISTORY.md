@@ -12,6 +12,42 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.7.0] — 2026-10-13 — Project timeline and project status page
+
+### Added
+- feat(db): migration `005_project_timeline.sql` — `schedule.end_date` (planned close date) and table
+  `progress_snapshots` (one row per day: project %, functions, completed, tested, notes, % per department).
+- feat(backend): `PUT /api/tracker/timeline` (permission `cfg`, full scope) — project start and close date.
+  With a close date the number of curve periods is derived from start → close (the last period ends on the close
+  date); close before start, a missing start or more than 60 periods are refused. The curve page keeps the
+  dates and period count from Settings.
+- feat(backend): hourly progress snapshot (`services/snapshots.js`), latest value of the day kept.
+- feat(backend): `GET /api/tracker/project-status` — schedule, total and department progress, function states,
+  test / notification / review / reports counts, pending approvals and the daily trend, for the user's scope
+  (a scoped user's trend is the weighted average of their departments).
+- feat(frontend): Settings → «الجدول الزمني للمشروع» card (start, close date, duration and derived periods).
+- feat(frontend): new page «حالة المشروع» (sidebar → Tracking): status badge (on track / at risk / delayed /
+  past close date / completed), time elapsed vs work done, planned-to-date, deviation, **schedule delay in
+  days** (earned schedule), SPI and SPI(t), current and required pace per month, **forecast close date** and its
+  variance, forecast by SPI(t), days remaining, S-curve with the daily trend, departments vs plan (gap and
+  30-day change), quality & readiness, and automatic recommendations (delay, forecast, required pace, stalled
+  progress, lagging departments, functions not started, failed / untested functions, notifications, reviews,
+  open notes, pending approvals). Calculations in `lib/health.js`.
+- feat(frontend): dashboard curve card shows the project status and its headline, forecast and close date.
+
+### Fixed
+- fix(backend): PostgreSQL `date` values are now returned as stored (`YYYY-MM-DD`); before, on a server east
+  of UTC the schedule start date could come back one day earlier.
+- fix(frontend): two-column and card grids no longer overflow on phones.
+
+### Docs
+- docs(db): `deploy/db/schema-reference.sql` regenerated with all migrations (001–005); handover docs updated
+  (administrator guide, user guide, database design, API reference, test plan C-13d…f).
+
+### Tests
+- test(tests): timeline validation, derived periods (months and fortnights), schedule screen cannot move the
+  dates, permissions, snapshot and project-status payload, scoped user.
+
 ## [0.6.1] — 2026-10-13 — S-curve verified, redesigned and added to the dashboard
 
 ### Fixed

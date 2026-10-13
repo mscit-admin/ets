@@ -5,6 +5,9 @@ import { config } from '../config.js';
 pg.types.setTypeParser(1700, v => (v === null ? null : parseFloat(v)));
 pg.types.setTypeParser(1231, v => (v === null ? null : pg.types.arrayParser.create(v, parseFloat).parse()));
 
+// date → 'YYYY-MM-DD' as stored (a JS Date would shift by the server's time-zone offset)
+pg.types.setTypeParser(1082, v => v);
+
 const c = config.db;
 export const pool = new pg.Pool(c.connectionString
   ? { connectionString: c.connectionString, max: c.max }

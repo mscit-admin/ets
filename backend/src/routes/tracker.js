@@ -6,6 +6,7 @@ import { allSettings, invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
+import { recentSnapshots } from '../services/snapshots.js';
 import { HttpError, bad, notFound, str, intIn, numIn } from '../utils/http.js';
 
 const r = Router();
@@ -322,37 +323,143 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   res.json({ report: row });
 });
 
-// ---- schedule (S-curve) ----
-r.get('/schedule', async (req, res) => {
-  const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  const v = await loadVisible(req.user);
+// ---- schedule (S-curve) and project timeline ----
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const validDate = v => ISO.test(v) && !Number.isNaN(new Date(v + 'T00:00:00Z').getTime()) && new Date(v + 'T00:00:00Z').toISOString().startsWith(v);
+
+// Start + k periods (months keep the day of month, clamped to the month's length), as 'YYYY-MM-DD'.
+export function addPeriods(start, unit, k) {
+  const d = new Date(start + 'T00:00:00Z');
+  if (unit === 'month') {
+    const day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + k);
+    d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
+  } else d.setUTCDate(d.getUTCDate() + 14 * k);
+  return d.toISOString().slice(0, 10);
+}
+// Number of periods from start to close: the smallest k whose period end reaches the close date.
+export function periodsBetween(start, end, unit) {
+  let k = 1;
+  while (addPeriods(start, unit, k) < end && k <= 61) k++;
+  return k;
+}
+
+function scheduleJson(s) {
   const n = s.periods;
-  res.json({
-    start_date: DATE(s.start_date), periods: n, unit: s.unit,
+  return {
+    start_date: DATE(s.start_date), end_date: DATE(s.end_date), periods: n, unit: s.unit,
     plan: Array.isArray(s.plan) && s.plan.length === n ? s.plan : sCurve(n),
     plan_is_default: !(Array.isArray(s.plan) && s.plan.length === n),
     actual: Array.from({ length: n }, (_, i) => (s.actual && s.actual[i] != null ? s.actual[i] : null)),
-    current_pct: v.calc.total.pct,
-    can: { sch: hasPerm(req.user, 'sch') },
-  });
+  };
+}
+
+r.get('/schedule', async (req, res) => {
+  const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
+  const v = await loadVisible(req.user);
+  res.json({ ...scheduleJson(s), current_pct: v.calc.total.pct,
+    can: { sch: hasPerm(req.user, 'sch'), timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
 });
 
+// Periods follow the close date when one is set; arrays are cut to fit, the plan returns to the S-curve
+// when the number of periods changes.
+function fitTimeline({ start_date, end_date, unit, periods, plan, actual }) {
+  if (start_date && end_date) {
+    if (end_date <= start_date) throw bad('end_before_start');
+    periods = periodsBetween(start_date, end_date, unit);
+    if (periods > 60) throw bad('timeline_too_long', { max: 60 });
+  }
+  if (!(Array.isArray(plan) && plan.length === periods)) plan = null;
+  actual = Array.isArray(actual) ? actual.slice(0, periods) : [];
+  return { start_date: start_date || null, end_date: (start_date && end_date) || null, unit, periods, plan, actual };
+}
+
+async function saveSchedule(req, next) {
+  const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
+  await tx(async c => {
+    await c.query(`UPDATE schedule SET start_date=$1, end_date=$2, periods=$3, unit=$4, plan=$5, actual=$6, updated_at=now(), updated_by=$7 WHERE id=1`,
+      [next.start_date, next.end_date, next.periods, next.unit, next.plan, next.actual, req.user.id]);
+    await logAudit(req, { db: c, action: 'update', entity: 'schedule', entityId: 1,
+      oldValue: { start_date: DATE(old.start_date), end_date: DATE(old.end_date), periods: old.periods, unit: old.unit, plan: old.plan, actual: old.actual },
+      newValue: next });
+  });
+}
+
 r.put('/schedule', requirePerm('sch'), async (req, res) => {
-  const { start_date, periods, unit, plan, actual } = req.body || {};
-  if (start_date !== null && start_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) throw bad('invalid_value', { field: 'start_date' });
+  const { periods, unit, plan, actual } = req.body || {};
+  const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
+  // The start and close dates belong to Settings; the schedule screen only keeps the start date when no close date is set.
+  let start_date = DATE(old.start_date);
+  if (!old.end_date && 'start_date' in (req.body || {})) {
+    start_date = req.body.start_date;
+    if (start_date !== null && !validDate(start_date)) throw bad('invalid_value', { field: 'start_date' });
+  }
   if (!intIn(periods, 1, 60)) throw bad('invalid_value', { field: 'periods' });
   if (!['month', 'fortnight'].includes(unit)) throw bad('invalid_value', { field: 'unit' });
   if (plan !== null && !(Array.isArray(plan) && plan.length === periods && plan.every(x => numIn(x, 0, 100)))) throw bad('invalid_value', { field: 'plan' });
   if (!(Array.isArray(actual) && actual.length <= periods && actual.every(x => x === null || numIn(x, 0, 100)))) throw bad('invalid_value', { field: 'actual' });
+  const next = fitTimeline({ start_date, end_date: DATE(old.end_date), unit, periods, plan, actual });
+  await saveSchedule(req, next);
+  res.json({ ok: true, periods: next.periods });
+});
+
+// Settings → project timeline: start and planned close date.
+r.put('/timeline', requirePerm('cfg'), async (req, res) => {
+  if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
+  const { start_date = null, end_date = null } = req.body || {};
+  for (const [k, v] of Object.entries({ start_date, end_date })) if (v !== null && !validDate(v)) throw bad('invalid_value', { field: k });
+  if (end_date && !start_date) throw bad('start_required');
   const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  await tx(async c => {
-    await c.query('UPDATE schedule SET start_date=$1, periods=$2, unit=$3, plan=$4, actual=$5, updated_at=now(), updated_by=$6 WHERE id=1',
-      [start_date || null, periods, unit, plan, actual, req.user.id]);
-    await logAudit(req, { db: c, action: 'update', entity: 'schedule', entityId: 1,
-      oldValue: { start_date: DATE(old.start_date), periods: old.periods, unit: old.unit, plan: old.plan, actual: old.actual },
-      newValue: { start_date: start_date || null, periods, unit, plan, actual } });
+  const next = fitTimeline({ start_date, end_date, unit: old.unit, periods: old.periods, plan: old.plan, actual: old.actual || [] });
+  await saveSchedule(req, next);
+  res.json({ ok: true, ...next });
+});
+
+// Everything the project status page needs, for the user's scope.
+r.get('/project-status', async (req, res) => {
+  const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
+  const v = await loadVisible(req.user);
+  const on = v.functions.filter(f => f.enabled);
+  const deptIds = new Set(v.departments.map(d => d.id));
+  const [snaps, edits, imports] = await Promise.all([
+    recentSnapshots(),
+    query(`SELECT department_id, count(*)::int AS n FROM edit_requests WHERE status='pending' GROUP BY 1`),
+    query(`SELECT department_id, count(*)::int AS n FROM import_batches WHERE status='pending' GROUP BY 1`),
+  ]);
+  // Scoped users: the project line of a snapshot is the weighted average of the departments they can see.
+  const depts = v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) }));
+  const tw = depts.reduce((a, d) => a + d.weight, 0);
+  const trend = snaps.map(x => {
+    if (req.user.fullScope) return { day: x.day, pct: x.pct };
+    const p = tw ? depts.reduce((a, d) => a + d.weight * (+x.departments?.[d.id] || 0), 0) / tw : 0;
+    return { day: x.day, pct: Math.round(p * 100) / 100 };
   });
-  res.json({ ok: true });
+  const deptTrend = Object.fromEntries(depts.map(d => [d.id, snaps.map(x => ({ day: x.day, pct: +x.departments?.[d.id] || 0 }))]));
+  const pend = rows => rows.filter(x => deptIds.has(x.department_id) || (x.department_id === null && req.user.fullScope)).reduce((a, x) => a + x.n, 0);
+  const reps = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
+  res.json({
+    schedule: scheduleJson(s),
+    today: new Date().toISOString().slice(0, 10),
+    total: v.calc.total,
+    departments: depts.map(d => ({ id: d.id, name_ar: d.name_ar, name_en: d.name_en, color: d.color, emblem: d.emblem,
+      pct: d.pct, weight: d.weight, apps: d.apps })),
+    counts: {
+      functions: on.length,
+      done: on.filter(f => +f.progress >= 100).length,
+      in_progress: on.filter(f => +f.progress > 0 && +f.progress < 100).length,
+      not_started: on.filter(f => !(+f.progress > 0)).length,
+      notes: on.filter(f => f.has_note).length,
+      tests: v.calc.total.tests,
+      notif_bad: on.filter(f => (f.notif_status | 0) === 3).length,
+      review_missing: on.filter(f => (f.review_status | 0) === 2).length,
+      reports: reps.length,
+      reports_done: reps.filter(x => +x.progress >= 100).length,
+      reports_pct: reps.length ? reps.reduce((a, x) => a + +x.progress, 0) / reps.length : null,
+    },
+    pending: { edits: pend(edits.rows), imports: pend(imports.rows) },
+    trend, dept_trend: deptTrend,
+    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') },
+  });
 });
 
 // ---- search ----

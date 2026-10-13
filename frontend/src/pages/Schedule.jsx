@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { pc } from '../lib/format.js';
@@ -52,8 +53,14 @@ export default function Schedule() {
       <Card className="curve-card"><SCurveChart m={m} s={s} /></Card>
       <Card title={t('details')}>
         <div className="form-grid">
-          <Field label={t('start_date')}><input className="input" type="date" value={s.start_date || ''} disabled={!can} onChange={e => setS({ ...s, start_date: e.target.value })} /></Field>
-          <Field label={t('periods')}><input className="input" type="number" min={1} max={60} value={s.periods} disabled={!can} onChange={e => setPeriods(+e.target.value)} /></Field>
+          {s.end_date ? <>
+            <Field label={t('project_start')}><div className="field-static">{fmtDay(s.start_date)}</div></Field>
+            <Field label={t('project_end')}><div className="field-static">{fmtDay(s.end_date)}</div></Field>
+            <Field label={t('periods')}><div className="field-static">{s.periods}</div></Field>
+          </> : <>
+            <Field label={t('start_date')}><input className="input" type="date" value={s.start_date || ''} disabled={!can} onChange={e => setS({ ...s, start_date: e.target.value })} /></Field>
+            <Field label={t('periods')}><input className="input" type="number" min={1} max={60} value={s.periods} disabled={!can} onChange={e => setPeriods(+e.target.value)} /></Field>
+          </>}
           <Field label={t('unit')}>
             <select className="input" value={s.unit} disabled={!can} onChange={e => setS({ ...s, unit: e.target.value })}>
               <option value="month">{t('unit_month')}</option><option value="fortnight">{t('unit_fortnight')}</option>
@@ -61,6 +68,7 @@ export default function Schedule() {
           </Field>
           {can && <div className="field"><span className="field-label">&nbsp;</span><button className="btn btn-default" onClick={() => setS({ ...s, plan: null })}>{t('reset_curve')}</button></div>}
         </div>
+        <div className="field-hint mb">{t('timeline_from_settings')}{data.can.timeline && <> · <Link to="/settings#timeline">{t('project_timeline')}</Link></>}</div>
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>{t('period')}</th><th className="num-col">{t('planned')} %</th><th className="num-col">{t('actual')} %</th><th className="num-col">{t('deviation')}</th>{can && <th />}</tr></thead>
