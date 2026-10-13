@@ -14,6 +14,7 @@ import { UserForm, UserList } from './pages/Users.jsx';
 import Logs from './pages/Logs.jsx';
 import Settings from './pages/Settings.jsx';
 import Profile from './pages/Profile.jsx';
+import { ImportDetail, ImportList } from './pages/Imports.jsx';
 
 function Guard({ perm, children }) {
   const { can } = useAuth();
@@ -42,6 +43,8 @@ export default function App() {
             <Route path="reports/:dept" element={<Reports />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="search" element={<Search />} />
+            <Route path="imports" element={<ImportList />} />
+            <Route path="imports/:id" element={<ImportDetail />} />
             <Route path="users" element={<Guard perm="usr"><UserList /></Guard>} />
             <Route path="users/:id" element={<Guard perm="usr"><UserForm /></Guard>} />
             <Route path="logs" element={<Guard perm="log"><Logs /></Guard>} />

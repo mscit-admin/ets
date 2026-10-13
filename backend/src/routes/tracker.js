@@ -338,7 +338,9 @@ r.get('/export', requirePerm('exp'), async (req, res) => {
   res.json(payload);
 });
 
-r.post('/import', requirePerm('imp'), async (req, res) => {
+// Full import of everything (all departments, settings, schedule) WITHOUT approval: initial migration only,
+// so it needs 'cfg' as well. Team results go through /api/imports (per department, approved).
+r.post('/import', requirePerm('imp'), requirePerm('cfg'), async (req, res) => {
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   let payload;
   try { payload = typeof req.body?.content === 'string' ? parseLegacy(req.body.content) : req.body?.payload; }

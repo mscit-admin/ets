@@ -70,6 +70,8 @@ function Sidebar({ open, onClose }) {
   const { can, user } = useAuth();
   const { data } = useLoad(() => api.get('/tracker/summary'), []);
   const loc = useLocation();
+  // batches waiting for this user's signature; refreshed on every page change
+  const { data: pending } = useLoad(() => api.get('/imports/pending-count'), [loc.pathname]);
   useEffect(() => { onClose(); }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const link = (to, icon, label, end) => (
@@ -104,6 +106,10 @@ function Sidebar({ open, onClose }) {
           {link('/', 'home', t('nav_home'), true)}
           {link('/weights', 'scale', t('nav_weights'))}
           {link('/schedule', 'curve', t('nav_schedule'))}
+          <NavLink to="/imports" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+            <Icon name="upload" size={16} /><span>{t('nav_imports')}</span>
+            {pending?.awaiting_me > 0 && <span className="side-badge" title={t('awaiting_you', { n: pending.awaiting_me })}>{pending.awaiting_me}</span>}
+          </NavLink>
         </div>
         <div className="side-section">
           <div className="side-label">{t('departments')}</div>

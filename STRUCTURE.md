@@ -28,7 +28,8 @@ ets/
 │   │   │   ├── migrate.js         Applies migrations/*.sql in order (tracked in schema_migrations)
 │   │   │   ├── seed.js            Roles, default settings, catalog, report rows, schedule row (idempotent)
 │   │   │   ├── migrations/
-│   │   │   │   └── 001_init.sql   Complete initial schema (identity, tracker, logs)
+│   │   │   │   ├── 001_init.sql   Complete initial schema (identity, tracker, logs)
+│   │   │   │   └── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -40,6 +41,7 @@ ets/
 │   │   │   ├── users.js           /api/users — list, create, edit, scopes, overrides, reset password/2FA, unlock, sessions, bulk 2FA
 │   │   │   ├── settings.js        /api/settings — read/update system settings (2FA policy, calculation, retention…)
 │   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export
+│   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
 │   │   │   ├── calc.js            Progress calculation (function → application → department → project), S-curve
@@ -49,7 +51,8 @@ ets/
 │   │   │   ├── logs.js            Writes every log type to the DB and to files (pino)
 │   │   │   ├── settings.js        Cached settings + validation rules
 │   │   │   ├── retention.js       Log retention purge
-│   │   │   └── legacy.js          Import/export in the original page's format
+│   │   │   ├── legacy.js          Import/export in the original page's format
+│   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/http.js          HttpError and input validation helpers
 │   ├── scripts/
 │   │   ├── create-admin.js        Create / reset an administrator from the command line
@@ -78,6 +81,7 @@ ets/
 │       │   └── format.js          Number and colour helpers
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
+│       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
 │       │   ├── Icon.jsx           SVG icon set
 │       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/
@@ -92,7 +96,8 @@ ets/
 │       │   ├── Users.jsx          Users list, bulk 2FA, user form (role, permissions, scope, actions)
 │       │   ├── Logs.jsx           Log viewer with tabs, filters, detail, CSV
 │       │   ├── Settings.jsx       2FA policy, general, security, retention, import/export, system info
-│       │   └── Profile.jsx        My account: language, 2FA, password
+│       │   ├── Profile.jsx        My account: language, 2FA, password
+│       │   └── Imports.jsx        Imports & approvals: list, import window, batch page with signatures
 │       └── styles/app.css         ERPNext-style design system (RTL/LTR aware)
 │
 ├── deploy/                        Ubuntu Server deployment

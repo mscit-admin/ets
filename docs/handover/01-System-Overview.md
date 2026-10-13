@@ -89,6 +89,16 @@ Users with a limited scope see totals calculated over their own scope only.
 | Application Editor (`ed`) | Progress, testing, reports within assigned applications |
 | Tester (`qa`) | Test status and notes only |
 | Observer (`obs`) | Read only |
+| Project Manager (`pm`) / Technical Project Manager (`tm`) | All departments: progress, weights, testing, items, schedule, reports, export, import, logs, **final approval** of team results |
+| Department Team Lead (`lead`) | Own department: progress, testing, items, reports, export, import, logs, **first approval** of the team's results |
+| Team Member (`member`) | Own department: progress, testing, reports, and uploading result files for approval |
 
 Permission keys: `pct` progress · `wgt` weights · `tst` test status/notes · `tog` enable/add items ·
-`sch` schedule · `rep` reports · `exp` export · `imp` import · `usr` users · `log` logs · `cfg` settings.
+`sch` schedule · `rep` reports · `exp` export · `imp` import · `usr` users · `log` logs · `cfg` settings ·
+`apv_dept` team-lead approval · `apv_final` project/technical-manager approval.
+
+### Team result files and approvals
+Teams that still work in the original HTML page send their exported JSON. In *Imports & approvals* the uploader
+chooses **one department** or **Reports**; only that part of the file is compared with the approved data. The
+differences wait as a *batch* and change nothing until both the department team lead and the project (or
+technical) manager approve it; then they are applied together. Either can reject it with a reason.

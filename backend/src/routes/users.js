@@ -9,7 +9,7 @@ import { HttpError, bad, notFound, str } from '../utils/http.js';
 const r = Router();
 r.use(requireAuth, requirePerm('usr'));
 
-export const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg'];
+export const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
 
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,
   u.totp_enabled, u.totp_exempt, u.totp_enabled_at, u.failed_attempts, u.locked_until, u.last_login_at,
@@ -19,7 +19,7 @@ const publicUser = u => u; // the column list above never includes secrets
 
 r.get('/meta', async (req, res) => {
   const [roles, depts, apps] = await Promise.all([
-    query('SELECT * FROM roles ORDER BY CASE id WHEN \'admin\' THEN 0 WHEN \'mgr\' THEN 1 WHEN \'ed\' THEN 2 WHEN \'qa\' THEN 3 ELSE 4 END'),
+    query(`SELECT * FROM roles ORDER BY array_position(ARRAY['admin','pm','tm','lead','member','mgr','ed','qa','obs'], id)`),
     query('SELECT id, name_ar, name_en, short_ar, short_en FROM departments ORDER BY sort'),
     query('SELECT id, department_id, name_ar, name_en FROM applications ORDER BY sort'),
   ]);

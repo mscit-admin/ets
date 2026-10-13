@@ -8,6 +8,7 @@ import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, Progre
 export default function Dashboard() {
   const { t, nm } = useI18n();
   const { data, error, loading } = useLoad(() => api.get('/tracker/summary'), []);
+  const pending = useLoad(() => api.get('/imports/pending-count'), []).data;
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { total, departments, applications, counts, settings } = data;
@@ -19,6 +20,12 @@ export default function Dashboard() {
     <div>
       <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home" />
 
+      {pending?.pending > 0 && (
+        <Link to="/imports?status=pending" className="alert orange block-link">
+          <b>{t('pending_notice', { n: pending.pending })}</b>
+          {pending.awaiting_me > 0 && <> · {t('awaiting_you', { n: pending.awaiting_me })}</>}
+        </Link>
+      )}
       <div className="grid-cards">
         <div className="number-card hero">
           <Ring value={total.pct} size={104} />

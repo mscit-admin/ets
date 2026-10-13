@@ -12,6 +12,32 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.4.0] — 2026-10-13 — Team result files: per-department import with two approvals; project roles
+
+### Added
+- feat(db): migration `002_import_approvals.sql` — tables `import_batches` and `import_changes`; roles
+  `pm` (مدير المشروع), `tm` (المدير الفني للمشروع), `lead` (رئيس فريق إدارة), `member` (عضو فريق);
+  permissions `apv_dept` (team lead approval) and `apv_final` (project / technical manager approval).
+- feat(backend): `/api/imports` — a team's JSON (or HTML) file from the original tracker is read and the
+  uploader **must choose** what to import: one department (its functions and application weights) or
+  **التقارير** (the reports of the departments in the uploader's scope). Everything else in the file is ignored.
+  The differences with the approved data are stored as a pending batch with their effect on the department and
+  project percentages; nothing changes in the approved results until the batch is approved by the department
+  team lead **and** the project or technical manager — two different people, any order. Then the changes are
+  applied in one transaction (a value changed meanwhile is skipped and reported). Either approver can reject
+  with a reason. A newer file for the same choice replaces the batch still waiting. Every step is audited.
+- feat(frontend): «الاستيراد والاعتماد» page (list, import window with mandatory department/reports choice
+  showing the number of changes and the effect of each option, batch page with before/after values per
+  function, impact, signatures, approve/reject); red badge in the sidebar with batches awaiting the user's
+  signature; notice on the dashboard while batches are pending.
+- test: API test of the full cycle (25 tests).
+
+### Changed
+- feat(backend): the full import without approval (Settings → Data) now also requires the `cfg` permission and
+  is labelled "initial migration only".
+
+---
+
 ## [0.3.0] — 2026-10-13 — Mandatory note for "with notes" statuses
 
 ### Added

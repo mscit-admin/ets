@@ -91,7 +91,7 @@ export default function Settings() {
           {can('exp') && <button className="btn btn-default btn-sm" onClick={exportData}><Icon name="download" size={14} /> {t('export_data')}</button>}
           {can('imp') && (
             <label className="btn btn-default btn-sm">
-              <Icon name="upload" size={14} /> {t('import_data')}
+              <Icon name="upload" size={14} /> {t('import_data_full')}
               <input ref={fileRef} type="file" accept=".html,.htm,.json" hidden onChange={e => importFile(e.target.files[0])} />
             </label>
           )}

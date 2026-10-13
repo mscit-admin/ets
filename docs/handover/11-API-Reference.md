@@ -51,6 +51,17 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | GET | `/export` | exp | Data in the original tracker's JSON format (v3) |
 | POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}` |
 
+## Imports & approvals — `/imports` (signed in)
+| Method | Path | Permission | Description |
+|---|---|---|---|
+| POST | `/preview` | imp | `{content}` → `{file_ts, options:[{target, department_id, changes, summary}]}` (options within scope) |
+| POST | `/` | imp | `{content, filename, target: 'department' \| 'reports', department_id}` → pending batch |
+| GET | `/?status=` | — | Batches within scope, with `can` flags |
+| GET | `/pending-count` | — | `{awaiting_me, pending}` |
+| GET | `/:id` | scope | Batch, changes (before/after), signatures |
+| POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; both signed → applied → `{applied, applied_changes, skipped_changes}` |
+| POST | `/:id/reject` | apv_dept / apv_final | `{reason}` |
+
 ## Users — `/users` (permission `usr`)
 | Method | Path | Description |
 |---|---|---|

@@ -227,6 +227,66 @@ test('legacy import from the original tracker file', { skip }, async () => {
   assert.equal(Math.round(inf.pct * 100) / 100, 52.78);
 });
 
+test('imports: per-department / reports options, two approvals, apply', { skip }, async () => {
+  await setMfa('off'); await waitSettingsCache();
+  const { hashPassword } = await import('../src/services/passwords.js');
+  const h = await hashPassword('Passw0rd-123');
+  const mk = async (u, role, dept) => {
+    const id = (await pool.query(`INSERT INTO users(username,full_name,password_hash,role_id) VALUES ($1,$2,$3,$4) RETURNING id`, [u, u, h, role])).rows[0].id;
+    if (dept) await pool.query(`INSERT INTO user_scopes(user_id,kind,ref_id) VALUES ($1,'department',$2)`, [id, dept]);
+  };
+  await mk('pm1', 'pm'); await mk('tm1', 'tm'); await mk('comlead', 'lead', 'com'); await mk('hrlead', 'lead', 'hr'); await mk('commember', 'member', 'com');
+  const as = async u => { const c = client(); await c.login(u); return c; };
+  const root = await as('root');
+  const file = (await root.get('/tracker/export')).data;               // a file shaped like the teams' exports
+  const fn = async (app, code) => (await pool.query('SELECT * FROM functions WHERE app_id=$1 AND code=$2', [app, code])).rows[0];
+  const salBefore = await fn('sal', 'D0'), perBefore = await fn('per', 'D1');
+  file.f.sal.D0.p = 50; file.f.sal.D0.t = 2;                            // commercial change
+  file.f.per.D1.p = 90;                                                 // HR change in the same file → must be ignored
+  file.rep.sal = { p: 40, rs: 1, nt: '' };                              // commercial reports
+  file.rep.per = { p: 70, rs: 1, nt: '' };                              // HR reports → outside the member's scope
+  const content = JSON.stringify(file);
+
+  const member = await as('commember');
+  const pv = (await member.post('/imports/preview', { content })).data;
+  assert.deepEqual(pv.options.map(o => o.target + ':' + (o.department_id || '')), ['department:com', 'reports:']);
+  assert.equal(pv.options[0].changes, 2);
+  assert.equal(pv.options[1].changes, 2);                               // sal progress + status, per ignored
+  assert.equal((await member.post('/imports', { content, target: 'department' })).data.error, 'department_required');
+  assert.equal((await member.post('/imports', { content, target: 'department', department_id: 'hr' })).status, 403);
+
+  const b1 = (await member.post('/imports', { content, target: 'department', department_id: 'com', filename: 'com.json' })).data.batch;
+  assert.equal(b1.status, 'pending');
+  assert.equal(+(await fn('sal', 'D0')).progress, +salBefore.progress); // nothing applied yet
+  const b2 = (await member.post('/imports', { content, target: 'department', department_id: 'com' })).data.batch;
+  assert.equal((await root.get('/imports/' + b1.id)).data.batch.status, 'superseded');
+
+  assert.equal((await member.post(`/imports/${b2.id}/approve`, { stage: 'lead' })).status, 403);
+  assert.equal((await (await as('hrlead')).post(`/imports/${b2.id}/approve`, { stage: 'lead' })).status, 403);
+  const lead = await as('comlead');
+  assert.equal((await lead.post(`/imports/${b2.id}/approve`, { stage: 'lead', note: 'checked' })).data.applied, false);
+  assert.equal((await lead.post(`/imports/${b2.id}/approve`, { stage: 'final' })).status, 403);
+  assert.equal((await (await as('pm1')).get('/imports/pending-count')).data.awaiting_me, 1);
+  const fin = (await (await as('pm1')).post(`/imports/${b2.id}/approve`, { stage: 'final' })).data;
+  assert.equal(fin.applied, true);
+  assert.equal(fin.applied_changes, 2);
+  assert.equal(fin.skipped_changes, 0);
+  assert.equal(+(await fn('sal', 'D0')).progress, 50);
+  assert.equal((await fn('sal', 'D0')).test_status, 2);
+  assert.equal(+(await fn('per', 'D1')).progress, +perBefore.progress); // HR untouched
+
+  // reports option: only the member's departments; rejected → nothing changes
+  const b3 = (await member.post('/imports', { content, target: 'reports' })).data.batch;
+  assert.deepEqual(b3.departments, ['com']);
+  const d3 = (await member.get('/imports/' + b3.id)).data;
+  assert.ok(d3.changes.every(ch => ch.kind === 'report' && ch.app_id === 'sal'));
+  assert.equal((await (await as('tm1')).post(`/imports/${b3.id}/reject`, { reason: '' })).data.error, 'reason_required');
+  assert.equal((await (await as('tm1')).post(`/imports/${b3.id}/reject`, { reason: 'numbers not agreed' })).status, 200);
+  assert.equal(+(await pool.query(`SELECT progress FROM app_reports WHERE app_id='sal'`)).rows[0].progress, 0);
+  const audit = (await pool.query(`SELECT action FROM audit_log WHERE entity='import_batch' ORDER BY id`)).rows.map(x => x.action);
+  for (const a of ['import_submit', 'import_approve_lead', 'import_approve_final', 'import_apply', 'import_reject']) assert.ok(audit.includes(a), a);
+});
+
 test('logs API: filters and CSV export', { skip }, async () => {
   const c = client(); await c.login('root');
   const r = await c.get('/logs/auth?success=false&limit=5');

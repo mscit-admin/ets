@@ -186,6 +186,19 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .side-link span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .side-overlay { display: none; }
+.side-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #e24c4c; color: #fff; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; flex: none; }
+.block-link { display: block; }
+.block-link:hover { color: inherit; filter: brightness(.98); }
+.option-list { display: grid; gap: 6px; }
+.option-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); cursor: pointer; }
+.option-row.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.option-row.reports { border-style: dashed; }
+.option-main { flex: 1; display: grid; }
+.option-side { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.signs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sign { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 4px; justify-items: start; }
+.sign.done { border-color: #b6e3c6; background: #f6fcf8; }
+.sign-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 .side-row { display: flex; align-items: center; gap: 2px; }
 .side-row .side-link { flex: 1; min-width: 0; }
 .side-toggle { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--gray-500); cursor: pointer; flex: none; }

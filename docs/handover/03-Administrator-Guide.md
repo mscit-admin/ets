@@ -37,6 +37,27 @@ Safety rules enforced by the server:
 - At least one active System Administrator must always exist.
 - You cannot change your own role or disable yourself.
 
+## 1b. Team result files and the approval cycle
+
+Roles for this cycle: **Project Manager** / **Technical Project Manager** (full scope, final approval),
+**Department Team Lead** (scope = the department, first approval), **Team Member** (scope = the department,
+uploads files). Give leads and members their department in *Scope*.
+
+1. *Imports & approvals* → **Import results file** → choose the JSON (or HTML) the team sent.
+2. **Choose what to import** (mandatory): a department, or **التقارير**. Each option shows how many values
+   differ and the effect on the department's percentage. Only the chosen part is imported.
+3. **Submit for approval** → a pending batch. Approved results do not change yet; a notice appears on the
+   dashboard and a red badge in the sidebar for the people who must sign.
+4. The **team lead** of that department approves (or rejects with a reason).
+5. The **project manager or technical manager** approves (or rejects). It must be a different person.
+6. After both approvals the changes are applied at once and the batch shows "Approved and applied". If a value
+   was changed in ETS after the upload, that one value is skipped and marked ✗.
+
+A new file for the same department replaces a batch still waiting ("Replaced by a newer file").
+The *Audit trail* records every step (`import_submit`, `import_approve_lead`, `import_approve_final`,
+`import_apply`, `import_reject`). *Settings → Data → Full import without approval* is only for the first
+migration (it loads everything at once and needs the settings permission).
+
 ## 2. Two-factor authentication (2FA)
 
 ETS uses time-based one-time codes (TOTP). These work with Google Authenticator, Microsoft Authenticator,

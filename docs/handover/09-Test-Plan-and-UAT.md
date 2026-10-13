@@ -105,6 +105,21 @@ result and a screenshot to the defect list (§4).
 | E-06 | Sign in as `uat.hr` → Logs | Only the *Audit trail* tab, limited to HR | |
 | E-07 | On the server: `ls /var/log/ets` | `app.log`, `error.log`, `access.log` exist and are growing | |
 
+### H. Team result files and approvals
+Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial), `uat.commember` (Team Member, scope Commercial).
+
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| H-01 | As `uat.commember`: Imports & approvals → Import results file → choose the commercial team's JSON | The options list only Commercial and "Reports" (scope), each with its number of changes and effect | |
+| H-02 | Try to submit without choosing an option | Submit stays disabled / "Choose a department or reports" | |
+| H-03 | Choose Commercial → Submit for approval | Batch "Awaiting approval"; the Commercial percentages on the dashboard do **not** change yet; values of other departments in the file are not listed | |
+| H-04 | As `uat.comlead`: dashboard and sidebar | Notice "batch awaiting approval" and a red badge "1"; the batch shows before/after per value | |
+| H-05 | `uat.comlead` approves | Lead approval signed; results still unchanged | |
+| H-06 | As `uat.pm`: approve | Status "Approved and applied"; Commercial percentages now show the new values; audit trail has `import_apply` | |
+| H-07 | Repeat H-01/H-03 with option **Reports**; `uat.pm` rejects with a reason | Status "Rejected" with the reason; reports unchanged | |
+| H-08 | Upload two files for the same department before approval | The first batch becomes "Replaced by a newer file" | |
+| H-09 | The same person tries to sign both approvals (user with both permissions) | Second signature refused | |
+
 ### F. Administration & operations
 | ID | Steps | Expected result | Result |
 |---|---|---|---|
