@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api, downloadText } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { useBranding } from '../lib/branding.jsx';
 
 export default function Settings() {
   const { t, errText, fmtDate } = useI18n();
@@ -63,6 +64,8 @@ export default function Settings() {
         </div>
       </Card>
 
+      <BrandingCard />
+
       <Card title={t('sec_general')}>
         <div className="form-grid">
           <Field label={t('org_name_ar')}><input className="input" value={s['app.org_name_ar']} onChange={e => set('app.org_name_ar', e.target.value)} /></Field>
@@ -109,5 +112,47 @@ export default function Settings() {
         </Card>
       )}
     </div>
+  );
+}
+
+// Settings → Branding: logo (navbar + login), favicon (browser tab), login background.
+function BrandingCard() {
+  const { t, errText } = useI18n();
+  const b = useBranding();
+  const slots = [
+    { key: 'logo', label: t('brand_logo'), hint: t('brand_logo_hint'), preview: b.custom.logo ? b.logo : '/favicon.svg', cls: 'pv-logo' },
+    { key: 'favicon', label: t('brand_favicon'), hint: t('brand_favicon_hint'), preview: b.custom.favicon ? `/api/branding/favicon?v=${b.versions.favicon}` : null, cls: 'pv-fav' },
+    { key: 'login_bg', label: t('brand_login_bg'), hint: t('brand_login_bg_hint'), preview: b.loginBg, cls: 'pv-bg' },
+  ];
+  const upload = async (key, file) => {
+    if (!file) return;
+    const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+    try { await api.put('/branding/' + key, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+  };
+  const reset = async key => {
+    if (!window.confirm(t('are_you_sure'))) return;
+    try { await api.del('/branding/' + key); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+  };
+  return (
+    <Card title={t('sec_branding')}>
+      <div className="brand-grid">
+        {slots.map(s => (
+          <div key={s.key} className="brand-slot">
+            <div className="field-label">{s.label}</div>
+            <div className={'brand-preview ' + s.cls}>
+              {s.preview ? <img src={s.preview} alt="" /> : <span className="muted small">{t('brand_default')}</span>}
+            </div>
+            <div className="field-hint">{s.hint}</div>
+            <div className="row gap wrap">
+              <label className="btn btn-default btn-sm">
+                <Icon name="upload" size={14} /> {t('brand_upload')}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/x-icon,.ico" hidden onChange={e => { upload(s.key, e.target.files[0]); e.target.value = ''; }} />
+              </label>
+              {b.custom[s.key] && <button className="btn btn-default btn-sm" onClick={() => reset(s.key)}>{t('brand_reset')}</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

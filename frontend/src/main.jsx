@@ -7,14 +7,17 @@ import '@fontsource/cairo/700.css';
 import './styles/app.css';
 import { I18nProvider } from './i18n/index.jsx';
 import { AuthProvider } from './lib/auth.jsx';
+import { BrandingProvider } from './lib/branding.jsx';
 import App from './App.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <I18nProvider>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <BrandingProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrandingProvider>
     </I18nProvider>
   </StrictMode>,
 );

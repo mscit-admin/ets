@@ -12,6 +12,25 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.5.0] — 2026-10-13 — Branding: system logo, favicon, login background
+
+### Added
+- feat(db): migration `003_branding.sql` — table `branding_assets` (images stored in the database, so they are
+  included in backups and survive updates).
+- feat(backend): `/api/branding/:key` (`logo`, `favicon`, `login_bg`) — public GET with caching; upload (PUT,
+  data URL) and reset (DELETE) need the `cfg` permission. Only PNG, JPEG, WebP and ICO are accepted, recognised
+  by their content; SVG is refused (it can carry scripts). Limits: logo 1 MB, favicon 512 KB, background 3 MB.
+  Uploads and resets are audited. `public-info` and `me` return the branding versions.
+- feat(frontend): Settings → «الهوية البصرية» with preview, upload and "restore default" for each image. The
+  logo replaces the icon in the top bar and on the login screen; the favicon (or the logo if no favicon) is the
+  browser tab icon; the login screen shows the background picture with a dark overlay so the form stays readable.
+- test: branding API test (26 tests).
+
+### Fixed
+- fix(frontend): error messages with values (e.g. maximum size) now show the value.
+
+---
+
 ## [0.4.0] — 2026-10-13 — Team result files: per-department import with two approvals; project roles
 
 ### Added

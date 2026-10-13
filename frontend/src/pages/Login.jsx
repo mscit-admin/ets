@@ -4,13 +4,13 @@ import { useAuth } from '../lib/auth.jsx';
 import { api, downloadText } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert } from '../components/ui.jsx';
+import { useBranding } from '../lib/branding.jsx';
 
 function AuthCard({ title, sub, children }) {
   const { t, lang, setLang, nm } = useI18n();
-  const [info, setInfo] = useState(null);
-  useEffect(() => { api.get('/auth/public-info').then(setInfo).catch(() => {}); }, []);
+  const { info, logo, loginBg } = useBranding();
   return (
-    <div className="auth-page">
+    <div className={'auth-page' + (loginBg ? ' with-bg' : '')} style={loginBg ? { backgroundImage: `url("${loginBg}")` } : undefined}>
       <div className="auth-top">
         <button className="btn btn-sm btn-ghost" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>
           <Icon name="globe" size={15} /> {t('lang_switch')}
@@ -18,7 +18,7 @@ function AuthCard({ title, sub, children }) {
       </div>
       <div className="auth-wrap">
         <div className="auth-brand">
-          <img src="/favicon.svg" alt="" width="44" height="44" />
+          <img src={logo} alt="" className="auth-logo" />
           <div className="auth-org">{info ? nm({ name_ar: info.org_name_ar, name_en: info.org_name_en }) : t('app_title')}</div>
         </div>
         <div className="auth-card">

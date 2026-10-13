@@ -62,6 +62,13 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; both signed → applied → `{applied, applied_changes, skipped_changes}` |
 | POST | `/:id/reject` | apv_dept / apv_final | `{reason}` |
 
+## Branding — `/branding`
+| Method | Path | Permission | Description |
+|---|---|---|---|
+| GET | `/:key` | public | `logo`, `favicon` or `login_bg` image (404 = default) |
+| PUT | `/:key` | cfg | `{data: "data:image/png;base64,…"}` — PNG/JPEG/WebP/ICO only |
+| DELETE | `/:key` | cfg | Back to default |
+
 ## Users — `/users` (permission `usr`)
 | Method | Path | Description |
 |---|---|---|

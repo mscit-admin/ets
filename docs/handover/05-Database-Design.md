@@ -54,6 +54,11 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | `import_batches` | One uploaded file for one choice | `target` (`department` / `reports`), `department_id`, `departments text[]`, `status` (`pending`, `applied`, `rejected`, `superseded`, `no_changes`), `summary` (counts and % before/after), `uploaded_by/at`, `lead_by/at/note`, `final_by/at/note`, `rejected_by/at`, `reject_reason`, `apply_result` |
 | `import_changes` | One changed value | `kind` (`function`, `report`, `weight`), `app_id`, `function_id`, `code`, `field`, `old_value`, `new_value` (jsonb), `applied` |
 
+### Branding (migration 003)
+| Table | Purpose | Key columns |
+|---|---|---|
+| `branding_assets` | Uploaded images | `key` (`logo`, `favicon`, `login_bg`), `mime`, `data bytea`, `updated_at`, `updated_by` |
+
 ### Logs (details in [07-Logging-and-Audit.md](07-Logging-and-Audit.md))
 `auth_log`, `audit_log`, `access_log`, `error_log`, `system_log`. All have `ts timestamptz` indexed
 descending.

@@ -10,6 +10,7 @@ import { generateSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import { getSetting, allSettings } from '../services/settings.js';
 import { logAuth, logAudit } from '../services/logs.js';
 import { HttpError, bad, str } from '../utils/http.js';
+import { brandingVersions } from './branding.js';
 
 const r = Router();
 
@@ -24,7 +25,8 @@ const limiter = rateLimit({
 // What the login screen needs before anyone is signed in.
 r.get('/public-info', async (req, res) => {
   const s = await allSettings();
-  res.json({ org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], default_language: s['app.default_language'] });
+  res.json({ org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], default_language: s['app.default_language'],
+    branding: await brandingVersions() });
 });
 
 // Decides whether this user must pass 2FA, enrol, or neither.
@@ -192,6 +194,7 @@ r.get('/me', async (req, res) => {
     user: { ...req.user, recovery_codes_left: remaining },
     mfa_mode: s['mfa.mode'],
     org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'],
+    branding: await brandingVersions(),
   });
 });
 

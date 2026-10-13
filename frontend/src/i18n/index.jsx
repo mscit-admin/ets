@@ -28,7 +28,7 @@ export function I18nProvider({ children }) {
     const nm = (o, field = 'name') => (o ? o[`${field}_${lang}`] || o[`${field}_ar`] || '' : '');
     const errText = e => {
       const code = e?.code || 'generic';
-      return dict['err_' + code] ? t('err_' + code) : t('err_generic', { code });
+      return dict['err_' + code] ? t('err_' + code, e?.data && typeof e.data === 'object' ? e.data : undefined) : t('err_generic', { code });
     };
     const fmtDate = d => (d ? new Date(d).toLocaleString(lang === 'ar' ? 'ar-LY-u-nu-latn' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
     const fmtDay = d => (d ? new Date(d).toLocaleDateString(lang === 'ar' ? 'ar-LY-u-nu-latn' : 'en-GB', { dateStyle: 'medium' }) : '—');

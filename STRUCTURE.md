@@ -29,7 +29,8 @@ ets/
 │   │   │   ├── seed.js            Roles, default settings, catalog, report rows, schedule row (idempotent)
 │   │   │   ├── migrations/
 │   │   │   │   ├── 001_init.sql   Complete initial schema (identity, tracker, logs)
-│   │   │   │   └── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
+│   │   │   │   ├── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
+│   │   │   │   └── 003_branding.sql  Uploaded logo, favicon and login background
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -42,6 +43,7 @@ ets/
 │   │   │   ├── settings.js        /api/settings — read/update system settings (2FA policy, calculation, retention…)
 │   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export
 │   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
+│   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
 │   │   │   ├── calc.js            Progress calculation (function → application → department → project), S-curve
@@ -78,6 +80,7 @@ ets/
 │       ├── lib/
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
+│       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   └── format.js          Number and colour helpers
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar

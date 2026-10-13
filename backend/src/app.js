@@ -12,6 +12,7 @@ import userRoutes from './routes/users.js';
 import settingsRoutes from './routes/settings.js';
 import logRoutes from './routes/logs.js';
 import importRoutes from './routes/imports.js';
+import brandingRoutes from './routes/branding.js';
 import systemRoutes, { health } from './routes/system.js';
 
 export function createApp() {
@@ -42,6 +43,7 @@ export function createApp() {
   api.use('/settings', settingsRoutes);
   api.use('/logs', logRoutes);
   api.use('/imports', importRoutes);
+  api.use('/branding', brandingRoutes);
   api.use('/system', systemRoutes);
   api.use(notFoundHandler);
   app.use('/api', api);

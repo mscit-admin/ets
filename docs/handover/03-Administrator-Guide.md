@@ -97,6 +97,16 @@ works once. If they have no codes left, an administrator uses **Unlink authentic
 The calculation parameters (weighting mode, notifications share, reports share) are on the **Weights**
 screen.
 
+### Branding (Settings → «الهوية البصرية»)
+| Image | Where it appears | Format / limit |
+|---|---|---|
+| System logo | Top bar and login screen | Square PNG/WebP, transparent background, ≤ 1 MB |
+| Favicon | Browser tab | Square PNG or ICO, 64×64 or larger, ≤ 512 KB (if empty, the logo is used) |
+| Login background | Behind the login form (darkened slightly) | Landscape JPEG/WebP, e.g. 1920×1080, ≤ 3 MB |
+
+**Upload image** replaces it immediately for everyone; **Restore default** returns to the built-in icon / plain
+background. Images are stored in the database and included in backups. SVG files are not accepted.
+
 ## 4. Logs (Administration → Logs) — permission `log`
 
 Tabs: **Login & security**, **Audit trail**, **Request log**, **Errors**, **System**.

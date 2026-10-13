@@ -5,11 +5,13 @@ import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
+import { useBranding } from '../lib/branding.jsx';
 import { useLoad } from './ui.jsx';
 
 function Navbar({ onMenu }) {
   const { t, lang, setLang, nm } = useI18n();
   const { user, me, logout } = useAuth();
+  const { logo } = useBranding();
   const nav = useNavigate();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -33,7 +35,7 @@ function Navbar({ onMenu }) {
       <div className="navbar-inner">
         <button className="btn-icon only-mobile" onClick={onMenu} aria-label="menu"><Icon name="menu" size={18} /></button>
         <NavLink to="/" className="brand">
-          <img src="/favicon.svg" alt="" width="26" height="26" />
+          <img src={logo} alt="" className="brand-logo" />
           <span className="brand-name">{nm({ name_ar: me?.org_name_ar, name_en: me?.org_name_en }) || t('app_title')}</span>
         </NavLink>
         <form className="nav-search" onSubmit={e => { e.preventDefault(); if (q.trim().length >= 2) nav('/search?q=' + encodeURIComponent(q.trim())); }}>

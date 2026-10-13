@@ -57,7 +57,7 @@ function client() {
   };
   return {
     get: p => call('GET', p), post: (p, b = {}, h) => call('POST', p, b, h), put: (p, b) => call('PUT', p, b),
-    patch: (p, b) => call('PATCH', p, b),
+    patch: (p, b) => call('PATCH', p, b), del: p => call('DELETE', p),
     login: (u, pw = 'Passw0rd-123') => call('POST', '/auth/login', { username: u, password: pw }),
   };
 }
@@ -285,6 +285,23 @@ test('imports: per-department / reports options, two approvals, apply', { skip }
   assert.equal(+(await pool.query(`SELECT progress FROM app_reports WHERE app_id='sal'`)).rows[0].progress, 0);
   const audit = (await pool.query(`SELECT action FROM audit_log WHERE entity='import_batch' ORDER BY id`)).rows.map(x => x.action);
   for (const a of ['import_submit', 'import_approve_lead', 'import_approve_final', 'import_apply', 'import_reject']) assert.ok(audit.includes(a), a);
+});
+
+test('branding: upload, serve, reject non-images, reset', { skip }, async () => {
+  const root = client(); await root.login('root');
+  const png = 'data:image/png;base64,' + Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64').toString('base64');
+  assert.equal((await fetch(base + '/branding/logo')).status, 404);                         // default until uploaded
+  assert.equal((await root.put('/branding/logo', { data: png })).status, 200);
+  const r = await fetch(base + '/branding/logo');
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('content-type'), 'image/png');
+  assert.ok((await client().get('/auth/public-info')).data.branding.logo > 0);
+  const svg = 'data:image/png;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64');
+  assert.equal((await root.put('/branding/login_bg', { data: svg })).data.error, 'invalid_image');  // SVG refused even if labelled png
+  const t = client(); await t.login('tester');
+  assert.equal((await t.put('/branding/logo', { data: png })).status, 403);
+  assert.equal((await root.del('/branding/logo')).status, 200);
+  assert.equal((await fetch(base + '/branding/logo')).status, 404);
 });
 
 test('logs API: filters and CSV export', { skip }, async () => {
