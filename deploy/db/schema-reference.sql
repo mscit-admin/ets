@@ -2,7 +2,6 @@
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure.
 -- PostgreSQL database dump
-\restrict Z4U7DEVsjUR8DUG529nY87rDU3duxFbjRS9h1umTHihxH4dKmgP3ZOQOxiMZqlA
 -- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Name: public; Type: SCHEMA; Schema: -; Owner: -
@@ -697,4 +696,3 @@ ALTER TABLE ONLY public.users
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
 -- PostgreSQL database dump complete
-\unrestrict Z4U7DEVsjUR8DUG529nY87rDU3duxFbjRS9h1umTHihxH4dKmgP3ZOQOxiMZqlA
