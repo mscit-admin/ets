@@ -30,7 +30,8 @@ ets/
 │   │   │   ├── migrations/
 │   │   │   │   ├── 001_init.sql   Complete initial schema (identity, tracker, logs)
 │   │   │   │   ├── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
-│   │   │   │   └── 003_branding.sql  Uploaded logo, favicon and login background
+│   │   │   │   ├── 003_branding.sql  Uploaded logo, favicon and login background
+│   │   │   │   └── 004_edit_requests.sql  Data-entry edits waiting for the team lead
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -43,6 +44,7 @@ ets/
 │   │   │   ├── settings.js        /api/settings — read/update system settings (2FA policy, calculation, retention…)
 │   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export
 │   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
+│   │   │   ├── approvals.js       /api/approvals — data-entry edit requests: list, approve, reject, withdraw
 │   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
@@ -54,6 +56,7 @@ ets/
 │   │   │   ├── settings.js        Cached settings + validation rules
 │   │   │   ├── retention.js       Log retention purge
 │   │   │   ├── legacy.js          Import/export in the original page's format
+│   │   │   ├── edits.js           Who needs approval, create / apply edit requests
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/http.js          HttpError and input validation helpers
 │   ├── scripts/
@@ -100,6 +103,7 @@ ets/
 │       │   ├── Logs.jsx           Log viewer with tabs, filters, detail, CSV
 │       │   ├── Settings.jsx       2FA policy, general, security, retention, import/export, system info
 │       │   ├── Profile.jsx        My account: language, 2FA, password
+│       │   ├── Approvals.jsx      Edit approvals: requests with before/after, approve / reject / withdraw
 │       │   └── Imports.jsx        Imports & approvals: list, import window, batch page with signatures
 │       └── styles/app.css         ERPNext-style design system (RTL/LTR aware)
 │

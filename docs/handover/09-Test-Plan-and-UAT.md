@@ -120,6 +120,18 @@ Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial
 | H-08 | Upload two files for the same department before approval | The first batch becomes "Replaced by a newer file" | |
 | H-09 | The same person tries to sign both approvals (user with both permissions) | Second signature refused | |
 
+### I. Data-entry edits approved by the team lead
+| ID | Steps | Expected result | Result |
+|---|---|---|---|
+| I-01 | As `uat.commember`: change a Commercial function's progress | Message "sent for approval"; the approved value stays; a yellow "awaiting approval" chip shows the new value | |
+| I-02 | As `uat.comlead`: dashboard / sidebar | Notice "edits awaiting your approval" and a red badge on «اعتماد التعديلات» | |
+| I-03 | `uat.comlead` approves | The value changes; the function shows the member as last editor; no PM approval needed | |
+| I-04 | Member edits again; lead rejects with a reason | Value unchanged; the member sees "rejected" and the reason under "My requests" | |
+| I-05 | Member edits a report and runs a bulk set | Both appear as requests; "Approve all shown" applies them | |
+| I-06 | As `uat.comlead` and `uat.pm`: edit a value | Applied immediately (no request) | |
+| I-07 | Another department's lead opens the request | Cannot approve it | |
+| I-08 | Settings → Approvals: switch off; member edits | Applied immediately | |
+
 ### F. Administration & operations
 | ID | Steps | Expected result | Result |
 |---|---|---|---|

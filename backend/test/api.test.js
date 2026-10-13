@@ -148,10 +148,11 @@ test('permissions: tester may set test status but not progress', { skip }, async
   const f = (await pool.query(`SELECT id FROM functions WHERE app_id='per' AND code='D0'`)).rows[0];
   assert.equal((await c.patch('/tracker/functions/' + f.id, { progress: 50 })).status, 403);
   const ok = await c.patch('/tracker/functions/' + f.id, { test_status: 2, note: 'checked' });
-  assert.equal(ok.status, 200);
-  const audit = (await pool.query(`SELECT * FROM audit_log WHERE entity='function' AND entity_id=$1`, [String(f.id)])).rows;
-  assert.equal(audit.length, 1);
-  assert.deepEqual(audit[0].new_value, { test_status: 2, note: 'checked' });
+  assert.equal(ok.status, 202);                                   // data-entry edit → waits for the team lead
+  assert.equal(ok.data.pending, true);
+  const items = (await pool.query(`SELECT field, new_value FROM edit_request_items WHERE function_id=$1 ORDER BY field`, [f.id])).rows;
+  assert.deepEqual(items.map(i => [i.field, i.new_value]), [['note', 'checked'], ['test_status', 2]]);
+  assert.equal((await pool.query('SELECT test_status FROM functions WHERE id=$1', [f.id])).rows[0].test_status, 0);
 });
 
 test('a "with notes" status requires a note', { skip }, async () => {
@@ -178,7 +179,7 @@ test('scope: HR editor cannot see or edit finance', { skip }, async () => {
   const fin = (await pool.query(`SELECT id FROM functions WHERE app_id='acc' LIMIT 1`)).rows[0];
   assert.equal((await c.patch('/tracker/functions/' + fin.id, { progress: 10 })).status, 403);
   const hr = (await pool.query(`SELECT id FROM functions WHERE app_id='pay' AND enabled LIMIT 1`)).rows[0];
-  assert.equal((await c.patch('/tracker/functions/' + hr.id, { progress: 60 })).status, 200);
+  assert.equal((await c.patch('/tracker/functions/' + hr.id, { progress: 60 })).status, 202);
   const denied = (await pool.query(`SELECT count(*)::int n FROM auth_log WHERE username='hred' AND event='access_denied'`)).rows[0].n;
   assert.ok(denied >= 2);
 });
@@ -302,6 +303,50 @@ test('branding: upload, serve, reject non-images, reset', { skip }, async () => 
   assert.equal((await t.put('/branding/logo', { data: png })).status, 403);
   assert.equal((await root.del('/branding/logo')).status, 200);
   assert.equal((await fetch(base + '/branding/logo')).status, 404);
+});
+
+test('direct edits by data-entry users wait for the department team lead only', { skip }, async () => {
+  const as = async u => { const c = client(); await c.login(u); return c; };
+  const member = await as('commember'), lead = await as('comlead'), pm = await as('pm1'), hrlead = await as('hrlead');
+  const fn = async code => (await pool.query(`SELECT * FROM functions WHERE app_id='sal' AND code=$1`, [code])).rows[0];
+  const f = await fn('D3');
+  // member edit → pending, value unchanged, lead sees it
+  const r1 = await member.patch('/tracker/functions/' + f.id, { progress: 30 });
+  assert.equal(r1.status, 202);
+  assert.equal(+(await fn('D3')).progress, +f.progress);
+  // editing the same value again replaces the earlier pending value
+  const r2 = await member.patch('/tracker/functions/' + f.id, { progress: 40 });
+  assert.equal((await pool.query('SELECT status FROM edit_requests WHERE id=$1', [r1.data.request_id])).rows[0].status, 'superseded');
+  assert.equal((await lead.get('/approvals/pending-count')).data.awaiting_me, 1);
+  assert.equal((await pm.get('/approvals/pending-count')).data.awaiting_me, 0);     // PM / TM not needed
+  assert.equal((await hrlead.post(`/approvals/${r2.data.request_id}/approve`)).status, 403);  // other department's lead
+  assert.equal((await member.post(`/approvals/${r2.data.request_id}/approve`)).status, 403);  // not own request
+  const ap = (await lead.post(`/approvals/${r2.data.request_id}/approve`)).data;
+  assert.equal(ap.applied_changes, 1);
+  assert.equal(+(await fn('D3')).progress, 40);
+  // the application page shows pending values
+  const r3 = await member.patch('/tracker/functions/' + f.id, { progress: 55 });
+  const page = (await member.get('/tracker/applications/sal')).data;
+  assert.ok(page.needs_approval);
+  assert.ok(page.pending.some(p => p.function_id === f.id && p.field === 'progress' && p.new_value === 55));
+  assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: '' })).data.error, 'reason_required');
+  assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: 'not tested yet' })).status, 200);
+  assert.equal(+(await fn('D3')).progress, 40);
+  // reports and bulk by the member are pending too
+  assert.equal((await member.patch('/tracker/reports/sal', { progress: 25 })).status, 202);
+  const bulk = await member.post('/tracker/applications/sal/bulk', { field: 'progress', value: 100 });
+  assert.equal(bulk.status, 202);
+  assert.ok(bulk.data.requested > 1);
+  const all = (await lead.post('/approvals/approve-all', {})).data;
+  assert.equal(all.requests, 2);
+  assert.equal(+(await pool.query(`SELECT progress FROM app_reports WHERE app_id='sal'`)).rows[0].progress, 25);
+  // team lead and project manager edits apply directly
+  assert.equal((await lead.patch('/tracker/functions/' + f.id, { progress: 60 })).status, 200);
+  assert.equal((await pm.patch('/tracker/functions/' + f.id, { progress: 65 })).status, 200);
+  // the rule can be switched off
+  await pool.query(`UPDATE settings SET value='false' WHERE key='approval.edits_need_lead'`); await waitSettingsCache();
+  assert.equal((await member.patch('/tracker/functions/' + f.id, { progress: 70 })).status, 200);
+  await pool.query(`UPDATE settings SET value='true' WHERE key='approval.edits_need_lead'`); await waitSettingsCache();
 });
 
 test('logs API: filters and CSV export', { skip }, async () => {

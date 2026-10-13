@@ -54,6 +54,12 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | `import_batches` | One uploaded file for one choice | `target` (`department` / `reports`), `department_id`, `departments text[]`, `status` (`pending`, `applied`, `rejected`, `superseded`, `no_changes`), `summary` (counts and % before/after), `uploaded_by/at`, `lead_by/at/note`, `final_by/at/note`, `rejected_by/at`, `reject_reason`, `apply_result` |
 | `import_changes` | One changed value | `kind` (`function`, `report`, `weight`), `app_id`, `function_id`, `code`, `field`, `old_value`, `new_value` (jsonb), `applied` |
 
+### Edit requests (migration 004)
+| Table | Purpose | Key columns |
+|---|---|---|
+| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result` |
+| `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied` |
+
 ### Branding (migration 003)
 | Table | Purpose | Key columns |
 |---|---|---|

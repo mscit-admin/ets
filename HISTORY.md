@@ -12,6 +12,29 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.6.0] — 2026-10-13 — Data-entry edits approved by the department team lead
+
+### Added
+- feat(db): migration `004_edit_requests.sql` — tables `edit_requests`, `edit_request_items`; setting
+  `approval.edits_need_lead` (default on).
+- feat(backend): when a user who is not an approver of the department (team member, editor, tester…) changes a
+  function, runs a bulk set or edits a report, the change is stored as an edit request (HTTP 202 `pending`) and
+  the approved value stays unchanged. Only a team lead of that department (`apv_dept`, scope covering it) can
+  approve or reject — the project / technical manager is not required at this stage. Team leads, project /
+  technical managers and system administrators apply their own edits directly. Editing the same value again
+  replaces the earlier pending value. On approval the change is applied with the requester as author; a value
+  changed meanwhile by someone else is skipped. Every step is audited (`edit_request`, `edit_approve`,
+  `edit_reject`, `edit_withdraw`).
+- feat(backend): `/api/approvals` — list (approvers: their departments; everyone: own requests), pending count,
+  approve, reject (reason required), withdraw (requester), approve all.
+- feat(frontend): «اعتماد التعديلات» page with before/after values per request, approve / reject / withdraw /
+  approve all; red badge in the sidebar and a dashboard notice for the team lead; on the application and
+  reports pages a «بانتظار الاعتماد» chip shows the proposed value and a notice tells data-entry users their
+  edits go for approval; Settings → «الاعتمادات» switch to turn the rule on/off.
+- test: API test of the whole cycle (27 tests).
+
+---
+
 ## [0.5.2] — 2026-10-13 — Logo inside the login box
 
 ### Changed

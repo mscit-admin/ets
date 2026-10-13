@@ -62,6 +62,18 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; both signed → applied → `{applied, applied_changes, skipped_changes}` |
 | POST | `/:id/reject` | apv_dept / apv_final | `{reason}` |
 
+## Edit approvals — `/approvals` (signed in)
+Function, bulk and report edits by data-entry users answer **202** `{pending: true, request_id}` instead of applying.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/?status=&mine=1` | Requests visible to the user, with items (before/after) and `can` flags |
+| GET | `/pending-count` | `{awaiting_me, mine}` |
+| POST | `/:id/approve` | Department team lead only → applied `{applied_changes, skipped_changes}` |
+| POST | `/:id/reject` | `{reason}` (required) |
+| POST | `/:id/withdraw` | Requester only |
+| POST | `/approve-all` | All pending requests the user can approve (or `{ids:[…]}`) |
+
 ## Branding — `/branding`
 | Method | Path | Permission | Description |
 |---|---|---|---|

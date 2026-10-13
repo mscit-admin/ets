@@ -58,6 +58,7 @@ export const DEFAULT_SETTINGS = {
   'app.org_name_ar': 'مركز متابعة إنجاز ERP',
   'app.org_name_en': 'ERP Implementation Tracking Center',
   'app.default_language': 'ar',
+  'approval.edits_need_lead': true,    // data-entry edits wait for the department team lead
   'app.logo_height': 28,               // logo height in the top bar (px)
   'app.login_logo_height': 64,         // logo height on the login screen (px)
 };

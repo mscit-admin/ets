@@ -9,6 +9,7 @@ export default function Dashboard() {
   const { t, nm } = useI18n();
   const { data, error, loading } = useLoad(() => api.get('/tracker/summary'), []);
   const pending = useLoad(() => api.get('/imports/pending-count'), []).data;
+  const edits = useLoad(() => api.get('/approvals/pending-count'), []).data;
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { total, departments, applications, counts, settings } = data;
@@ -25,6 +26,9 @@ export default function Dashboard() {
           <b>{t('pending_notice', { n: pending.pending })}</b>
           {pending.awaiting_me > 0 && <> · {t('awaiting_you', { n: pending.awaiting_me })}</>}
         </Link>
+      )}
+      {edits?.awaiting_me > 0 && (
+        <Link to="/approvals" className="alert orange block-link"><b>{t('edits_awaiting_you', { n: edits.awaiting_me })}</b></Link>
       )}
       <div className="grid-cards">
         <div className="number-card hero">

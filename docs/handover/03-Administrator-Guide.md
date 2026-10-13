@@ -58,6 +58,18 @@ The *Audit trail* records every step (`import_submit`, `import_approve_lead`, `i
 `import_apply`, `import_reject`). *Settings → Data → Full import without approval* is only for the first
 migration (it loads everything at once and needs the settings permission).
 
+## 1c. Approval of data-entry edits (team lead only)
+
+When a **team member** (or any user who is not an approver of the department) edits a function, runs a bulk
+set or edits a report, the change is **not applied**: it becomes an *edit request*. The approved value stays on
+screen with a «بانتظار الاعتماد» chip showing the proposed value. The **team lead of that department** sees a red
+badge on «اعتماد التعديلات» and a notice on the dashboard, and approves or rejects (with a reason) each request,
+or uses *Approve all shown*. The project / technical manager is **not** needed for these edits.
+
+Applied directly (no request): team leads in their department, project manager, technical manager, system
+administrators. The rule can be switched off in *Settings → Approvals*. A department without a team lead cannot
+approve its members' edits — give someone the Team Lead role with that department in scope.
+
 ## 2. Two-factor authentication (2FA)
 
 ETS uses time-based one-time codes (TOTP). These work with Google Authenticator, Microsoft Authenticator,

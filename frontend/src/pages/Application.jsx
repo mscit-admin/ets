@@ -13,6 +13,9 @@ const iso = s => '\u2066' + s + '\u2069';
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
+const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
+  notif_status: 'notif_status', review_status: 'review_status', note: 'note' };
+
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
 
 // Number input that only commits on blur / Enter (one request per edit, not per keystroke).
@@ -63,18 +66,31 @@ export default function Application() {
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { application: a, department: d, report, can, settings } = data;
+  // values waiting for the team lead, per function: { [function_id]: [{field, new_value, requested_by_name}] }
+  const pendingByFn = {};
+  for (const p of data.pending || []) if (p.function_id) (pendingByFn[p.function_id] ||= []).push(p);
   const calc = a.calc;
   const totalW = calc.fnWeight || 0;
 
   const patch = async (f, body) => {
     setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body } : x)));
     try {
-      await api.patch('/tracker/functions/' + f.id, body);
+      const r = await api.patch('/tracker/functions/' + f.id, body);
+      if (r?.pending) toast(t('sent_for_approval'), 'blue');
       reload();
     } catch (e) {
       toast(errText(e), 'red');
       setFns(list => list.map(x => (x.id === f.id ? f : x)));
     }
+  };
+
+  const fmtPending = (field, v) => {
+    const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
+    if (P[field]) return t(P[field] + v);
+    if (field === 'progress') return '\u2066' + pc(v) + '%\u2069';   // keep "80.0%" in Arabic text
+    if (field === 'enabled') return v ? '✓' : '✗';
+    if (field === 'note') return '✎';
+    return String(v);
   };
 
   // A "with notes" status on an item without a note opens the note window first;
@@ -98,6 +114,7 @@ export default function Application() {
         <Link to={'/department/' + d.id}>{nm(d, 'short')}</Link><Icon name="chevron" size={12} className="flip" />
         <span>{nm(a)}</span>
       </div>
+      {data.needs_approval && <Alert kind="blue">{t('edits_need_lead_notice')}</Alert>}
       <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
         {(can.pct || can.tst) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_requirement')}</button>}
@@ -177,6 +194,11 @@ export default function Application() {
                       {f.reference && <span className="muted" lang="ar">{f.reference}</span>}
                       {f.enabled && totalW > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / totalW) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
+                      {pendingByFn[f.id] && (
+                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value)} — ${p.requested_by_name}`).join('\n')}>
+                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value)}`).join(' · ')}
+                        </Link>
+                      )}
                       {f.source === 'custom' && can.tog && <button className="btn-link small red-text" onClick={() => del(f)}>{t('delete')}</button>}
                     </div>
                   </td>
@@ -241,7 +263,7 @@ function BulkModal({ app, can, onClose, onDone }) {
   const run = async () => {
     try {
       const r = await api.post(`/tracker/applications/${app.id}/bulk`, { field, value: +value });
-      toast(t('done_n', { n: r.updated })); onDone();
+      toast(r.pending ? t('sent_for_approval') : t('done_n', { n: r.updated }), r.pending ? 'blue' : 'green'); onDone();
     } catch (e) { setErr(e); }
   };
   return (

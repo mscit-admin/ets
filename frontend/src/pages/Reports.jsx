@@ -24,7 +24,10 @@ export default function Reports() {
   applications.forEach(a => { counts[a.report?.status || 0]++; });
 
   const save = async (a, body) => {
-    try { await api.patch('/tracker/reports/' + a.id, body); toast(t('saved')); setEdit(null); reload(); }
+    try {
+      const r = await api.patch('/tracker/reports/' + a.id, body);
+      toast(r?.pending ? t('sent_for_approval') : t('saved'), r?.pending ? 'blue' : 'green'); setEdit(null); reload();
+    }
     catch (e) { toast(errText(e), 'red'); }
   };
 
@@ -49,7 +52,8 @@ export default function Reports() {
                 return (
                   <tr key={a.id}>
                     <td><Link to={'/app/' + a.id} className="link-row"><Icon name={a.icon} size={15} /> {nm(a)}</Link></td>
-                    <td><Indicator color={REPORT_COLORS[r.status]}>{t('rs_' + r.status)}</Indicator></td>
+                    <td><Indicator color={REPORT_COLORS[r.status]}>{t('rs_' + r.status)}</Indicator>
+                      {a.pending?.length > 0 && <Link to="/approvals" className="pending-chip" title={a.pending.map(p => p.requested_by_name).join(', ')}>⏳ {t('awaiting_approval')}</Link>}</td>
                     <td><ProgressBar value={r.progress} /></td>
                     <td className="num-col"><Pct value={r.progress} /></td>
                     <td className="muted small ellipsis" title={r.note}>{r.note}</td>

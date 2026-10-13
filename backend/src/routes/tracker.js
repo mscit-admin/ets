@@ -5,6 +5,7 @@ import { summarize, sCurve } from '../services/calc.js';
 import { allSettings, invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
+import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { HttpError, bad, notFound, str, intIn, numIn } from '../utils/http.js';
 
 const r = Router();
@@ -36,6 +37,16 @@ async function getApp(user, id) {
   if (!a) throw notFound();
   if (!canSeeApp(user, a)) throw new HttpError(403, 'out_of_scope', { application: id });
   return a;
+}
+
+const allApps = async () => (await query('SELECT id, department_id FROM applications')).rows;
+
+// Pending (not yet approved) edits of an application, for the "awaiting approval" badges.
+async function pendingFor(appId) {
+  return (await query(`SELECT i.kind, i.function_id, i.field, i.new_value, r.id AS request_id, r.requested_at,
+      u.full_name AS requested_by_name
+    FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
+    WHERE r.status='pending' AND i.app_id=$1 ORDER BY r.requested_at`, [appId])).rows;
 }
 
 const calcSettings = s => ({ weight_mode: s['calc.weight_mode'], notif_share: s['calc.notif_share'], reports_share: s['calc.reports_share'] });
@@ -86,6 +97,8 @@ r.get('/applications/:id', async (req, res) => {
     department: dept.rows[0],
     functions: fns.rows,
     report: rep.rows[0] || null,
+    pending: await pendingFor(a.id),
+    needs_approval: await needsLeadApproval(u, a.department_id, await allApps()),
     settings: calcSettings(v.settings),
     can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), rep: hasPerm(u, 'rep') },
   });
@@ -128,6 +141,13 @@ r.patch('/functions/:id', async (req, res) => {
     throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
   }
   const keys = Object.keys(changes);
+  const app = (await query('SELECT department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
+  if (await needsLeadApproval(req.user, app.department_id, await allApps())) {
+    const rq = await tx(c => createRequest(c, req, { deptId: app.department_id, appId: cur.app_id, kind: 'function',
+      summary: `${cur.code} ${cur.name_ar.slice(0, 80)}`,
+      items: keys.map(k => ({ kind: 'function', app_id: cur.app_id, function_id: id, field: k, old_value: cur[k], new_value: changes[k] })) }));
+    return res.status(202).json({ pending: true, request_id: rq.id, function: cur });
+  }
   const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
   const updated = await tx(async c => {
     const u = (await c.query(`UPDATE functions SET ${sets}, updated_at=now(), updated_by=$${keys.length + 2} WHERE id=$1 RETURNING *`,
@@ -150,6 +170,15 @@ r.post('/applications/:id/bulk', async (req, res) => {
   if (field === 'test_status' && value === NOTE_REQUIRED.test_status) {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
+  }
+  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+    const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
+      .filter(x => Number(x.v) !== Number(value));
+    if (!rows.length) return res.json({ updated: 0 });
+    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
+      summary: `${field} = ${value} (${rows.length})`,
+      items: rows.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field, old_value: x.v, new_value: value })) }));
+    return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: rows.length });
   }
   const n = await tx(async c => {
     const q = await c.query(`UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`,
@@ -251,11 +280,15 @@ r.get('/reports', async (req, res) => {
   const reports = await query(`SELECT r.*, u.full_name AS updated_by_name FROM app_reports r LEFT JOIN users u ON u.id=r.updated_by`);
   const byApp = new Map(reports.rows.map(x => [x.app_id, x]));
   const base = new Set(v.departments.filter(d => d.is_base).map(d => d.id));
+  const pend = (await query(`SELECT i.app_id, i.field, i.new_value, u.full_name AS requested_by_name
+    FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
+    WHERE r.status='pending' AND i.kind='report'`)).rows;
   res.json({
     departments: v.departments.filter(d => !d.is_base),
     applications: v.apps.filter(a => !base.has(a.department_id)).map(a => ({
       id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en, icon: a.icon,
-      weight: v.calc.applications.find(x => x.id === a.id).weight, report: byApp.get(a.id) || null })),
+      weight: v.calc.applications.find(x => x.id === a.id).weight, report: byApp.get(a.id) || null,
+      pending: pend.filter(p => p.app_id === a.id) })),
     settings: calcSettings(v.settings),
     can: { rep: hasPerm(req.user, 'rep') },
   });
@@ -274,6 +307,11 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   }
   const keys = Object.keys(changes);
   if (!keys.length) return res.json({ report: cur });
+  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'report', summary: keys.join(', '),
+      items: keys.map(k => ({ kind: 'report', app_id: a.id, field: k, old_value: cur[k], new_value: changes[k] })) }));
+    return res.status(202).json({ pending: true, request_id: rq.id, report: cur });
+  }
   const row = await tx(async c => {
     const u = (await c.query(`UPDATE app_reports SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')}, updated_at=now(),
       updated_by=$${keys.length + 2} WHERE app_id=$1 RETURNING *`, [a.id, ...keys.map(k => changes[k]), req.user.id])).rows[0];

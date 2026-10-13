@@ -66,6 +66,12 @@ export default function Settings() {
         </div>
       </Card>
 
+      <Card title={t('sec_approvals')}>
+        <label className="check"><input type="checkbox" checked={!!s['approval.edits_need_lead']}
+          onChange={e => set('approval.edits_need_lead', e.target.checked)} /> {t('edits_need_lead')}</label>
+        <div className="field-hint mt-s">{t('edits_need_lead_hint')}</div>
+      </Card>
+
       <BrandingCard />
 
       <Card title={t('sec_general')}>

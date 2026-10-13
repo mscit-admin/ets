@@ -1,7 +1,7 @@
 # ETS — Handover Pack · حزمة التسليم
 
 **System:** ETS — ERP Tracking System (مركز متابعة إنجاز ERP)
-**Version:** 0.5.2 (see [HISTORY.md](../../HISTORY.md))
+**Version:** 0.6.0 (see [HISTORY.md](../../HISTORY.md))
 **Date:** 2026-10-12
 
 This folder contains every document delivered to the customer with the system. Documents marked
