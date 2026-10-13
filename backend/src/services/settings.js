@@ -32,4 +32,6 @@ export const SETTING_RULES = {
   'app.org_name_ar': v => typeof v === 'string' && v.length <= 120,
   'app.org_name_en': v => typeof v === 'string' && v.length <= 120,
   'app.default_language': v => ['ar', 'en'].includes(v),
+  'app.logo_height': v => Number.isInteger(v) && v >= 20 && v <= 80,
+  'app.login_logo_height': v => Number.isInteger(v) && v >= 40 && v <= 200,
 };

@@ -14,9 +14,16 @@ export function BrandingProvider({ children }) {
     const v = info?.branding || {};
     const url = k => (v[k] ? `/api/branding/${k}?v=${v[k]}` : null);
     const logo = url('logo') || DEFAULT_ICON;
-    return { info, reload, versions: v, logo, favicon: url('favicon') || url('logo') || DEFAULT_ICON, loginBg: url('login_bg'),
+    return { info, reload, versions: v, logo,
+      logoHeight: info?.logo_height || 28, loginLogoHeight: info?.login_logo_height || 64, favicon: url('favicon') || url('logo') || DEFAULT_ICON, loginBg: url('login_bg'),
       custom: { logo: !!v.logo, favicon: !!v.favicon, login_bg: !!v.login_bg } };
   }, [info, reload]);
+
+  // top bar height follows the logo size (CSS variable used by the navbar and sidebar)
+  useEffect(() => {
+    document.documentElement.style.setProperty('--logo-h', value.logoHeight + 'px');
+    document.documentElement.style.setProperty('--navbar-h', Math.max(52, value.logoHeight + 20) + 'px');
+  }, [value.logoHeight]);
 
   // browser tab icon
   useEffect(() => {

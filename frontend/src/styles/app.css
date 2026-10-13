@@ -337,8 +337,9 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .auth-page.with-bg .auth-org, .auth-page.with-bg .auth-foot { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
 .auth-page.with-bg .auth-top .btn-ghost { background: rgba(255, 255, 255, .85); }
 .auth-page.with-bg .auth-card { box-shadow: 0 12px 40px rgba(0, 0, 0, .3); background: rgba(255, 255, 255, .96); }
-.auth-logo { width: 64px; height: 64px; object-fit: contain; }
-.brand-logo { width: 28px; height: 28px; object-fit: contain; }
+.auth-logo { height: 64px; width: auto; max-width: min(420px, 90vw); object-fit: contain; }
+.brand-logo { height: var(--logo-h, 28px); width: auto; max-width: 280px; object-fit: contain; }
+.size-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
 .brand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
 .brand-slot { display: grid; gap: 8px; align-content: start; }
 .brand-preview { height: 120px; border: 1px dashed var(--border-strong); border-radius: var(--radius); display: grid; place-items: center; background: var(--gray-50); overflow: hidden; }

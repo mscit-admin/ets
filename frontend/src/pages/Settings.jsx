@@ -24,7 +24,9 @@ export default function Settings() {
   const set = (k, v) => setS({ ...s, [k]: v });
   const save = async () => {
     setBusy(true); setErr(null);
-    try { await api.put('/settings', s); toast(t('saved')); reload(); refresh(); } catch (e) { setErr(e); }
+    // logo sizes are saved by their own sliders (Branding card), not by this button
+    const { 'app.logo_height': _lh, 'app.login_logo_height': _llh, ...rest } = s;
+    try { await api.put('/settings', rest); toast(t('saved')); reload(); refresh(); } catch (e) { setErr(e); }
     setBusy(false);
   };
   const exportData = async () => {
@@ -129,6 +131,16 @@ function BrandingCard() {
     const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
     try { await api.put('/branding/' + key, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
+  // logo size: applied live while dragging, saved when released
+  const [h, setH] = useState(null);
+  const cur = { logo: h?.logo ?? b.logoHeight, login: h?.login ?? b.loginLogoHeight };
+  const preview = v => {
+    document.documentElement.style.setProperty('--logo-h', v + 'px');
+    document.documentElement.style.setProperty('--navbar-h', Math.max(52, v + 20) + 'px');
+  };
+  const saveSize = async (key, v) => {
+    try { await api.put('/settings', { [key]: v }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+  };
   const reset = async key => {
     if (!window.confirm(t('are_you_sure'))) return;
     try { await api.del('/branding/' + key); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
@@ -152,6 +164,26 @@ function BrandingCard() {
             </div>
           </div>
         ))}
+      </div>
+      <div className="form-grid mt">
+        <Field label={`${t('brand_logo_size')} — ${cur.logo}px`}>
+          <div className="size-row">
+            <input type="range" min={20} max={80} step={2} value={cur.logo}
+              onChange={e => { const v = +e.target.value; setH({ ...h, logo: v }); preview(v); }}
+              onMouseUp={e => saveSize('app.logo_height', +e.target.value)} onTouchEnd={e => saveSize('app.logo_height', +e.target.value)}
+              onKeyUp={e => saveSize('app.logo_height', +e.target.value)} />
+            <img src={b.logo} alt="" style={{ height: cur.logo, width: 'auto', maxWidth: 200 }} />
+          </div>
+        </Field>
+        <Field label={`${t('brand_login_logo_size')} — ${cur.login}px`}>
+          <div className="size-row">
+            <input type="range" min={40} max={200} step={4} value={cur.login}
+              onChange={e => setH({ ...h, login: +e.target.value })}
+              onMouseUp={e => saveSize('app.login_logo_height', +e.target.value)} onTouchEnd={e => saveSize('app.login_logo_height', +e.target.value)}
+              onKeyUp={e => saveSize('app.login_logo_height', +e.target.value)} />
+            <img src={b.logo} alt="" style={{ height: Math.min(cur.login, 120), width: 'auto', maxWidth: 240 }} />
+          </div>
+        </Field>
       </div>
     </Card>
   );

@@ -58,6 +58,8 @@ export const DEFAULT_SETTINGS = {
   'app.org_name_ar': 'مركز متابعة إنجاز ERP',
   'app.org_name_en': 'ERP Implementation Tracking Center',
   'app.default_language': 'ar',
+  'app.logo_height': 28,               // logo height in the top bar (px)
+  'app.login_logo_height': 64,         // logo height on the login screen (px)
 };
 
 export async function seed({ log = console.log } = {}) {

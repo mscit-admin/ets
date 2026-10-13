@@ -8,7 +8,7 @@ import { useBranding } from '../lib/branding.jsx';
 
 function AuthCard({ title, sub, children }) {
   const { t, lang, setLang, nm } = useI18n();
-  const { info, logo, loginBg } = useBranding();
+  const { info, logo, loginBg, loginLogoHeight } = useBranding();
   return (
     <div className={'auth-page' + (loginBg ? ' with-bg' : '')} style={loginBg ? { backgroundImage: `url("${loginBg}")` } : undefined}>
       <div className="auth-top">
@@ -18,7 +18,7 @@ function AuthCard({ title, sub, children }) {
       </div>
       <div className="auth-wrap">
         <div className="auth-brand">
-          <img src={logo} alt="" className="auth-logo" />
+          <img src={logo} alt="" className="auth-logo" style={{ height: loginLogoHeight }} />
           <div className="auth-org">{info ? nm({ name_ar: info.org_name_ar, name_en: info.org_name_en }) : t('app_title')}</div>
         </div>
         <div className="auth-card">

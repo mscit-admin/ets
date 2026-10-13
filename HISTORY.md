@@ -12,6 +12,20 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.5.1] — 2026-10-13 — Adjustable logo size
+
+### Added
+- feat(frontend/backend): Settings → «الهوية البصرية» — two sliders: logo height in the top bar (20–80 px,
+  default 28) and on the login screen (40–200 px, default 64). The change is shown live while dragging and saved
+  when released (settings `app.logo_height`, `app.login_logo_height`). The top bar grows with the logo.
+
+### Fixed
+- fix(frontend): the logo was forced into a square, so wide logos looked tiny — it now keeps its proportions
+  (height set, width automatic).
+- fix(frontend): the main Save button of the Settings page no longer overwrites the logo sizes set by the sliders.
+
+---
+
 ## [0.5.0] — 2026-10-13 — Branding: system logo, favicon, login background
 
 ### Added

@@ -104,6 +104,9 @@ screen.
 | Favicon | Browser tab | Square PNG or ICO, 64×64 or larger, ≤ 512 KB (if empty, the logo is used) |
 | Login background | Behind the login form (darkened slightly) | Landscape JPEG/WebP, e.g. 1920×1080, ≤ 3 MB |
 
+Below the images, two sliders set the **logo size** in the top bar (20–80 px) and on the login screen (40–200 px);
+the size changes live and is saved when you release the slider. Wide logos keep their proportions.
+
 **Upload image** replaces it immediately for everyone; **Restore default** returns to the built-in icon / plain
 background. Images are stored in the database and included in backups. SVG files are not accepted.
 
