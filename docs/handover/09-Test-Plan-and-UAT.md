@@ -75,7 +75,13 @@ result and a screenshot to the defect list (§4).
 | C-05b | Choose *Passed with note* (or notifications *Working with notes*, or review *Present with notes*) on an item without a note | The note window opens; **Save** is disabled until a note is typed; **Cancel** keeps the old status; after saving, status and note are both stored. The note cannot be cleared while such a status is set | |
 | C-06 | Tick a disabled "from experience" item | It counts in the calculation; the application % changes | |
 | C-07 | **Bulk set** progress = 100 | All enabled functions become 100 % | |
-| C-08 | **Add requirement** | New row with code `C0`, source *Added*; it can be deleted | |
+| C-08 | **Add function** with weight 1, progress 100, included | The impact table shows application / department / project before → after; after confirming the row appears with a new `C…` code and the percentages match the preview | |
+| C-08a | Add a function with «include» unticked | Row added, percentages unchanged | |
+| C-08b | **Remove** a scope function (e.g. `D1`) | Reason is mandatory; impact shown; the row disappears and the percentages change; «Show removed» lists it with who / when / why | |
+| C-08c | **Restore** the removed function | It returns included; percentages back as before | |
+| C-08d | Tick / untick ✓ on a function | Confirmation window with the impact; Cancel changes nothing | |
+| C-08e | As a team member, add and remove a function | «Sent for approval»; nothing changes until the team lead approves on «Edit approvals» | |
+| C-08f | Export JSON after removing a function, then import that file | The removed function is not in the file and stays removed | |
 | C-09 | Filter by source / test status / text | The list narrows correctly | |
 | C-10 | Weights: change an application weight and save | Department shares change; audit shows old → new weight | |
 | C-11 | Weights: switch to *Automatic* | Weights follow the sum of the function weights | |

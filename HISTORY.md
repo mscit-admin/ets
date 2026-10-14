@@ -12,6 +12,38 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.8.0] — 2026-10-14 — Add, remove and restore functions in any application
+
+### Added
+- feat(db): migration `006_function_lifecycle.sql` — `functions.removed_at / removed_by / removed_reason /
+  created_at / created_by`; edit request kinds `add_function`, `remove_function`, `restore_function`.
+- feat(backend): `POST /api/tracker/applications/:id/functions` (name AR/EN, reference, weight, progress,
+  included or not), `POST /api/tracker/functions/:id/remove` (reason required, any source incl. scope functions),
+  `POST /api/tracker/functions/:id/restore`, and `POST /api/tracker/applications/:id/impact` (application,
+  department and project % before → after for a proposed addition / removal / include / exclude).
+- feat(backend): additions, removals and restores by data-entry users wait for the department team lead
+  (same rule as their other edits); approval creates / removes / restores with the requester as author.
+- feat(frontend): «إضافة وظيفة» dialog with live impact; «إزالة» on every function with reason and impact;
+  include / exclude (✓) now asks for confirmation with the impact; «عرض المُزالة» lists removed functions with who /
+  when / why and «استعادة»; pending additions / removals shown on the application; approvals page shows them.
+
+### Changed
+- feat(backend): team members get permission `tog` (include / exclude, add, remove) — all of it through the team
+  lead's approval.
+- refactor(backend): removal is now a soft removal for every function (the old hard delete of added
+  requirements is replaced). Removed functions are excluded from calculations, summaries, project status,
+  snapshots, search, the JSON export, full imports and team result files.
+
+### Fixed
+- fix(backend): a new added function could get the code of an earlier one after a deletion (codes were
+  `C` + count → unique-key error); codes are now `C` + (highest + 1) and never reused.
+- fix(backend): adding / deleting requirements bypassed the team lead's approval for data-entry users.
+
+### Tests
+- test(tests): add (included / excluded), impact preview, member request → lead approval, remove a scope function
+  (reason, exclusion from counts, PATCH refused, seed / export / import do not bring it back), restore,
+  code numbering, scope.
+
 ## [0.7.0] — 2026-10-13 — Project timeline and project status page
 
 ### Added

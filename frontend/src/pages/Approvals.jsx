@@ -8,12 +8,15 @@ import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHea
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_en: 'name' };
+  notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_en: 'name',
+  create: 'fn_add', removed: 'fn_remove' };
 
 function useFmt() {
   const { t } = useI18n();
   return (kind, field, v) => {
     if (v === null || v === undefined || v === '') return '—';
+    if (field === 'create') return `${v.name_ar} · ${t('weight')} \u2066${v.weight}\u2069 · \u2066${pc(v.progress)}%\u2069 · ${v.enabled ? t('include_in_calc') : t('exclude_hint')}`;
+    if (field === 'removed') return v.removed ? `${t('fn_state_removed')}${v.reason ? ' — ' + v.reason : ''}` : t('fn_state_present');
     const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
     if (P[field]) return t(P[field] + v);
     if (kind === 'report' && field === 'status') return t('rs_' + v);
@@ -64,7 +67,8 @@ export default function Approvals() {
       {!data.requests.length ? <Card><Empty>{t('no_requests')}</Empty></Card> : data.requests.map(rq => (
         <Card key={rq.id} className="req-card"
           title={<span className="link-row"><Icon name={rq.icon} size={15} /> <Link to={'/app/' + rq.app_id}>{nm(rq, 'app_name')}</Link>
-            <span className="muted small">· {nm(rq, 'dept_name')}</span></span>}
+            <span className="muted small">· {nm(rq, 'dept_name')}</span>
+            {rq.kind.endsWith('_function') && <Indicator color={rq.kind === 'remove_function' ? 'red' : 'blue'}>{t('rq_kind_' + rq.kind)}</Indicator>}</span>}
           actions={<>
             <span className="muted small">{rq.requested_by_name} · {fmtDate(rq.requested_at)}</span>
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
@@ -80,7 +84,8 @@ export default function Approvals() {
               <tbody>
                 {rq.items.map(i => (
                   <tr key={i.id}>
-                    <td>{i.kind === 'report' ? t('kind_report') : <><span className="code">{i.code}</span> <span lang="ar" dir="rtl">{i.fn_name_ar}</span></>}</td>
+                    <td>{i.kind === 'report' ? t('kind_report') : i.field === 'create' ? <b>＋ {t('add_function')}</b>
+                      : <><span className="code">{i.code}</span> <span lang="ar" dir="rtl">{i.fn_name_ar}</span></>}</td>
                     <td className="nowrap">{t(FIELD_LABEL[i.field] || i.field)}</td>
                     <td className="muted">{fmt(i.kind, i.field, i.old_value)}</td>
                     <td><b>{fmt(i.kind, i.field, i.new_value)}</b>{i.applied === false && <> <Indicator color="red" title={i.note}>✗</Indicator></>}</td>

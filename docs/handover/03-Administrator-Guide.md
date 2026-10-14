@@ -70,6 +70,13 @@ Applied directly (no request): team leads in their department, project manager, 
 administrators. The rule can be switched off in *Settings → Approvals*. A department without a team lead cannot
 approve its members' edits — give someone the Team Lead role with that department in scope.
 
+## 1d. Adding and removing functions
+- Permission `tog` (include / exclude) also allows adding, removing and restoring functions in the user's scope.
+  Team members now have it; their additions, removals and restores wait for the department team lead.
+- Removal is a soft removal with a mandatory reason: the row is kept (`removed_at`), counts in no calculation and
+  never comes back through the catalog seed, a JSON import or a team file. Restore re-includes it.
+- Every addition, removal, restore and include/exclude is in the audit log (`create`, `remove`, `restore`, `update`).
+
 ## 2. Two-factor authentication (2FA)
 
 ETS uses time-based one-time codes (TOTP). These work with Google Authenticator, Microsoft Authenticator,

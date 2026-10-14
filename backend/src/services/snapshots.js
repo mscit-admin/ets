@@ -9,7 +9,7 @@ export async function takeSnapshot() {
     query('SELECT * FROM departments ORDER BY sort'),
     query('SELECT * FROM applications ORDER BY sort'),
     query(`SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status,
-             (note <> '') AS has_note FROM functions`),
+             (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`),
     query('SELECT * FROM app_reports'),
     allSettings(),
   ]);

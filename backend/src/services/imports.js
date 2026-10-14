@@ -41,7 +41,7 @@ export async function diffDepartment(c, payload, deptId, { functions = true, rep
   for (const a of apps) {
     const fileFns = functions ? payload.f?.[a.id] : null;
     if (fileFns && typeof fileFns === 'object') {
-      const rows = (await c.query('SELECT * FROM functions WHERE app_id=$1', [a.id])).rows;
+      const rows = (await c.query('SELECT * FROM functions WHERE app_id=$1 AND removed_at IS NULL', [a.id])).rows;   // removed items cannot come back through a file
       const byCode = new Map(rows.map(r => [r.code, r]));
       for (const [code, v] of Object.entries(fileFns)) {
         const cur = byCode.get(code);
@@ -77,7 +77,7 @@ async function loadAll(c) {
   const [d, a, f, r] = await Promise.all([
     c.query('SELECT * FROM departments ORDER BY sort'),
     c.query('SELECT * FROM applications ORDER BY sort'),
-    c.query('SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status FROM functions'),
+    c.query('SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status FROM functions WHERE removed_at IS NULL'),
     c.query('SELECT * FROM app_reports'),
   ]);
   return { departments: d.rows, applications: a.rows, functions: f.rows, reports: r.rows };
@@ -130,7 +130,7 @@ export async function applyBatch(c, batchId, userId) {
   for (const ch of changes) {
     if (!ALLOWED_FIELDS.has(ch.field)) continue;      // never interpolate an unexpected column name
     let cur;
-    if (ch.kind === 'function') cur = (await c.query(`SELECT ${ch.field} AS v FROM functions WHERE id=$1 FOR UPDATE`, [ch.function_id])).rows[0];
+    if (ch.kind === 'function') cur = (await c.query(`SELECT ${ch.field} AS v FROM functions WHERE id=$1 AND removed_at IS NULL FOR UPDATE`, [ch.function_id])).rows[0];
     else if (ch.kind === 'report') cur = (await c.query(`SELECT ${ch.field} AS v FROM app_reports WHERE app_id=$1 FOR UPDATE`, [ch.app_id])).rows[0];
     else cur = (await c.query('SELECT weight AS v FROM applications WHERE id=$1 FOR UPDATE', [ch.app_id])).rows[0];
     const ok = cur && same(cur.v, ch.old_value);

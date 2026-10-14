@@ -391,3 +391,61 @@ test('project timeline: settings dates drive the periods; project status and sna
   const sh = (await h.get('/tracker/project-status')).data;
   assert.deepEqual(sh.departments.map(d => d.id), ['hr']);
 });
+
+test('functions: add, remove (any source) and restore, with impact, approval and exclusion everywhere', { skip }, async () => {
+  const as = async u => { const c = client(); await c.login(u); return c; };
+  const member = await as('commember'), lead = await as('comlead'), root = await as('root'), hred = await as('hred');
+  const appPct = async c => (await c.get('/tracker/applications/sal')).data.application.calc;
+  // impact preview of an addition
+  const imp = await lead.post('/tracker/applications/sal/impact', { add: { weight: 2, progress: 100, enabled: true } });
+  assert.equal(imp.status, 200);
+  assert.ok(imp.data.app.after > imp.data.app.before && imp.data.count.after === imp.data.count.before + 1);
+  // validation
+  assert.equal((await lead.post('/tracker/applications/sal/functions', { name_ar: '  ' })).data.error, 'name_required');
+  // team lead adds directly; codes are never reused
+  const before = await appPct(lead);
+  const a1 = await lead.post('/tracker/applications/sal/functions', { name_ar: 'وظيفة جديدة', weight: 2, progress: 100 });
+  assert.equal(a1.status, 201); assert.match(a1.data.function.code, /^C\d+$/);
+  assert.ok((await appPct(lead)).pct > before.pct);
+  // excluded on creation → no effect on the percentages
+  const a2 = await lead.post('/tracker/applications/sal/functions', { name_ar: 'غير محسوبة', enabled: false, progress: 100 });
+  assert.equal(a2.data.function.enabled, false);
+  // a team member's addition waits for the team lead
+  const m1 = await member.post('/tracker/applications/sal/functions', { name_ar: 'مقترح عضو', reference: 'سبب' });
+  assert.equal(m1.status, 202);
+  assert.equal((await pool.query(`SELECT count(*)::int AS n FROM functions WHERE name_ar='مقترح عضو'`)).rows[0].n, 0);
+  assert.equal((await lead.post(`/approvals/${m1.data.request_id}/approve`)).data.applied_changes, 1);
+  const created = (await pool.query(`SELECT * FROM functions WHERE name_ar='مقترح عضو'`)).rows[0];
+  assert.ok(created && created.source === 'custom');
+  // remove a scope (catalog) function: reason required, then out of every calculation and list
+  const d = (await pool.query(`SELECT * FROM functions WHERE app_id='sal' AND source<>'custom' AND enabled ORDER BY id LIMIT 1`)).rows[0];
+  assert.equal((await lead.post(`/tracker/functions/${d.id}/remove`, {})).data.error, 'reason_required');
+  const cnt = (await appPct(lead)).count;
+  const rm = await lead.post(`/tracker/functions/${d.id}/remove`, { reason: 'خارج النطاق' });
+  assert.equal(rm.status, 200); assert.ok(rm.data.impact.count.after === rm.data.impact.count.before - 1);
+  assert.equal((await appPct(lead)).count, cnt - 1);
+  assert.equal((await lead.patch('/tracker/functions/' + d.id, { enabled: true })).data.error, 'function_removed');
+  assert.equal((await lead.post(`/tracker/functions/${d.id}/remove`, { reason: 'x' })).data.error, 'function_removed');
+  const fnRow = (await lead.get('/tracker/applications/sal')).data.functions.find(f => f.id === d.id);
+  assert.ok(fnRow.removed_at && fnRow.removed_reason === 'خارج النطاق' && fnRow.enabled === false);
+  // the catalog seed and a full legacy import do not bring it back
+  await (await import('../src/db/seed.js')).seed({ log: () => {} });
+  const exp = (await root.get('/tracker/export')).data;
+  assert.equal(exp.f.sal[d.code], undefined);
+  exp.f.sal[d.code] = { w: 1, p: 50, on: 1 };
+  await root.post('/tracker/import', { payload: exp });
+  assert.ok((await pool.query('SELECT removed_at FROM functions WHERE id=$1', [d.id])).rows[0].removed_at);
+  // a member's restore waits; the lead approves it
+  const m2 = await member.post(`/tracker/functions/${d.id}/restore`);
+  assert.equal(m2.status, 202);
+  await lead.post(`/approvals/${m2.data.request_id}/approve`);
+  const back = (await pool.query('SELECT * FROM functions WHERE id=$1', [d.id])).rows[0];
+  assert.equal(back.removed_at, null); assert.equal(back.enabled, true);
+  // a member's removal of a custom function → approve → removed; new codes keep counting up
+  const m3 = await member.post(`/tracker/functions/${created.id}/remove`, { reason: 'مكرر' });
+  await lead.post(`/approvals/${m3.data.request_id}/approve`);
+  const a3 = await lead.post('/tracker/applications/sal/functions', { name_ar: 'أخرى' });
+  assert.ok(+a3.data.function.code.slice(1) > +created.code.slice(1));
+  // scope: another department's application is refused
+  assert.equal((await hred.post('/tracker/applications/sal/functions', { name_ar: 'x' })).status, 403);
+});

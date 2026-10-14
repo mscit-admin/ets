@@ -38,8 +38,10 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | GET | `/applications/:id` | scope | Application, functions, report, `can` flags |
 | PATCH | `/functions/:id` | per field | `progress` (pct), `notif_status` (pct), `weight` (wgt), `enabled` (tog), `test_status`/`review_status`/`note` (tst), `name_en` (tog) |
 | POST | `/applications/:id/bulk` | pct / tst | `{field: "progress" \| "test_status", value}` |
-| POST | `/applications/:id/functions` | tog | `{name_ar, reference}`: add a custom requirement |
-| DELETE | `/functions/:id` | tog | Custom requirements only |
+| POST | `/applications/:id/functions` | tog | `{name_ar, name_en?, reference?, weight?, progress?, enabled?}` — add a function (code `C<n>`, never reused). 201 `{function, impact}`, or 202 `{pending, request_id, impact}` for a data-entry user |
+| POST | `/functions/:id/remove` | tog | `{reason}` (required) — soft removal of any function (scope or added); 200 / 202 as above. `function_removed` if already removed |
+| POST | `/functions/:id/restore` | tog | Restore a removed function (included again); 200 / 202 |
+| POST | `/applications/:id/impact` | tog | Preview `{add}` / `{set: [{function_id, enabled}]}` / `{drop: [id]}` → `{app, dept, total: {before, after}, included, count, app_weight}` |
 | GET | `/weights` | — | Application weights, function-weight sums, calculation settings |
 | PUT | `/weights` | wgt | `{weights:{appId:number}, weight_mode?, notif_share?, reports_share?}` |
 | POST | `/weights/reset` | wgt + full scope | Restore default weights |

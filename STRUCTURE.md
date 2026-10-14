@@ -32,7 +32,8 @@ ets/
 │   │   │   │   ├── 002_import_approvals.sql  Import batches / changes, project roles and approval permissions
 │   │   │   │   ├── 003_branding.sql  Uploaded logo, favicon and login background
 │   │   │   │   ├── 004_edit_requests.sql  Data-entry edits waiting for the team lead
-│   │   │   │   └── 005_project_timeline.sql  Project close date, daily progress snapshots
+│   │   │   │   ├── 005_project_timeline.sql  Project close date, daily progress snapshots
+│   │   │   │   └── 006_function_lifecycle.sql  Removed / created markers on functions; new request kinds
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -59,6 +60,7 @@ ets/
 │   │   │   ├── legacy.js          Import/export in the original page's format
 │   │   │   ├── edits.js           Who needs approval, create / apply edit requests
 │   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
+│   │   │   ├── functions.js       Add / remove (soft) / restore functions
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/http.js          HttpError and input validation helpers
 │   ├── scripts/

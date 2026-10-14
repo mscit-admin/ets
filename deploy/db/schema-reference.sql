@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–005).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–006).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure.
 -- PostgreSQL database dump
@@ -164,7 +164,7 @@ CREATE TABLE public.edit_requests (
     decided_at timestamp with time zone,
     reason text,
     apply_result jsonb,
-    CONSTRAINT edit_requests_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'bulk'::text, 'report'::text]))),
+    CONSTRAINT edit_requests_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'bulk'::text, 'report'::text, 'add_function'::text, 'remove_function'::text, 'restore_function'::text]))),
     CONSTRAINT edit_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'rejected'::text, 'superseded'::text, 'withdrawn'::text])))
 );
 -- Name: edit_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -218,6 +218,11 @@ CREATE TABLE public.functions (
     sort integer DEFAULT 0 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by integer,
+    removed_at timestamp with time zone,
+    removed_by integer,
+    removed_reason text,
+    created_at timestamp with time zone,
+    created_by integer,
     CONSTRAINT functions_notif_status_check CHECK (((notif_status >= 0) AND (notif_status <= 3))),
     CONSTRAINT functions_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric))),
     CONSTRAINT functions_review_status_check CHECK (((review_status >= 0) AND (review_status <= 3))),
@@ -644,6 +649,12 @@ ALTER TABLE ONLY public.error_log
 -- Name: functions functions_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
+-- Name: functions functions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.functions
+    ADD CONSTRAINT functions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: functions functions_removed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.functions
+    ADD CONSTRAINT functions_removed_by_fkey FOREIGN KEY (removed_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: functions functions_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;

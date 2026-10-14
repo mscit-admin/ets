@@ -24,7 +24,7 @@ export async function applyLegacy(c, p, userId) {
     for (const [code, v] of Object.entries(items || {})) {
       const r = await c.query(`UPDATE functions SET weight=$3, progress=$4, enabled=$5, test_status=$6, note=$7,
           notif_status=$8, review_status=$9, updated_at=now(), updated_by=$10
-        WHERE app_id=$1 AND code=$2`,
+        WHERE app_id=$1 AND code=$2 AND removed_at IS NULL`,
         [appId, code, clamp(v.w, 0, 1000), clamp(v.p, 0, 100), !!v.on, clamp(v.t, 0, 3) | 0,
           typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', clamp(v.n, 0, 3) | 0, clamp(v.rv, 0, 3) | 0, userId]);
       counts.functions += r.rowCount;
@@ -59,7 +59,7 @@ export async function applyLegacy(c, p, userId) {
 
 // Builds a payload in the original format (v3) so the old page can also read it.
 export async function buildLegacy(c) {
-  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions')).rows;
+  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows;
   const f = {};
   for (const x of fns) {
     (f[x.app_id] ||= {})[x.code] = { w: x.weight, p: x.progress, on: x.enabled ? 1 : 0, t: x.test_status, nt: x.note, n: x.notif_status, rv: x.review_status };

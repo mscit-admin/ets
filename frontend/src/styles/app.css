@@ -465,3 +465,13 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .health-strip { color: inherit; text-decoration: none; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--gray-50); }
 .health-strip:hover { border-color: var(--border-strong); color: inherit; }
 .grid-2 > *, .grid-cards > * { min-width: 0; }
+
+/* ---------- add / remove functions ---------- */
+.btn-danger { background: #d63c3c; color: #fff; border-color: #d63c3c; }
+.btn-danger:hover:not(:disabled) { background: #b92f2f; color: #fff; }
+.plain-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.row-removed .fn-name > div:first-child { text-decoration: line-through; }
+.impact { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--gray-50); margin-top: 8px; }
+.impact-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.impact .table { background: transparent; }
+.impact .table td, .impact .table th { padding: 6px 8px; }

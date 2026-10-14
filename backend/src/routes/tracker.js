@@ -7,6 +7,7 @@ import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
+import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
 import { HttpError, bad, notFound, str, intIn, numIn } from '../utils/http.js';
 
 const r = Router();
@@ -20,7 +21,7 @@ async function loadVisible(user) {
     query('SELECT * FROM departments ORDER BY sort'),
     query('SELECT * FROM applications ORDER BY sort'),
     query(`SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status,
-             (note <> '') AS has_note FROM functions`),
+             (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`),
     query('SELECT * FROM app_reports'),
     allSettings(),
   ]);
@@ -87,7 +88,8 @@ r.get('/applications/:id', async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const v = await loadVisible(req.user);
   const [fns, rep, dept] = await Promise.all([
-    query(`SELECT f.*, u.full_name AS updated_by_name FROM functions f LEFT JOIN users u ON u.id=f.updated_by
+    query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name FROM functions f
+      LEFT JOIN users u ON u.id=f.updated_by LEFT JOIN users rb ON rb.id=f.removed_by
       WHERE f.app_id=$1 ORDER BY f.sort, f.id`, [a.id]),
     query('SELECT * FROM app_reports WHERE app_id=$1', [a.id]),
     query('SELECT * FROM departments WHERE id=$1', [a.department_id]),
@@ -125,6 +127,7 @@ r.patch('/functions/:id', async (req, res) => {
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
+  if (cur.removed_at) throw bad('function_removed');
   const body = req.body || {};
   // A user allowed to set a "with notes" status may write the note that goes with it in the same request.
   const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
@@ -191,33 +194,102 @@ r.post('/applications/:id/bulk', async (req, res) => {
   res.json({ updated: n });
 });
 
-// Add a custom requirement ("from experience") to an application.
-r.post('/applications/:id/functions', requirePerm('tog'), async (req, res) => {
+// ---- add / remove / restore functions (migration 006) ----
+// Before → after % of the application, its department and the project (user's scope) for a proposed change:
+// { add: {weight, progress, enabled} } or { set: [{function_id, enabled}] }.
+async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
+  const v = await loadVisible(user);
+  const app = v.apps.find(x => x.id === appId);
+  const byId = new Map(set.map(x => [x.function_id, x]));
+  const functions = v.functions.filter(f => !drop.includes(f.id)).map(f => (byId.has(f.id) ? { ...f, enabled: byId.get(f.id).enabled } : f));
+  for (const x of set) if (!v.functions.some(f => f.id === x.function_id) && x.enabled) {
+    const f = (await query('SELECT * FROM functions WHERE id=$1', [x.function_id])).rows[0];      // restoring a removed one
+    if (f) functions.push({ ...f, enabled: true, has_note: !!f.note });
+  }
+  if (add) functions.push({ id: -1, app_id: appId, source: 'custom', weight: add.weight, progress: add.progress, enabled: add.enabled,
+    test_status: 0, notif_status: 0, review_status: 0 });
+  const after = summarize({ departments: v.departments, applications: v.apps, functions, reports: v.reports, settings: v.settings });
+  const pick = (c) => ({ app: c.applications.find(x => x.id === appId), dept: c.departments.find(x => x.id === app.department_id), total: c.total });
+  const b = pick(v.calc), a = pick(after);
+  const row = (x, y, k = 'pct') => ({ before: x?.[k] ?? 0, after: y?.[k] ?? 0 });
+  const included = list => list.filter(f => f.app_id === appId && f.enabled).length;
+  return { app: row(b.app, a.app), dept: row(b.dept, a.dept), total: row(b.total, a.total),
+    count: row(b.app, a.app, 'count'), included: { before: included(v.functions), after: included(functions) },
+    app_weight: row(b.app, a.app, 'fnWeight') };
+}
+
+// Data-entry users (not approvers of the department) send additions / removals / restores to the team lead.
+async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
+  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind, summary, items: [{ kind: 'function', app_id: a.id, ...item }] }));
+    return res.status(202).json({ pending: true, request_id: rq.id, impact });
+  }
+  const f = await tx(direct);
+  res.status(kind === 'add_function' ? 201 : 200).json({ function: f, impact });
+}
+
+r.post('/applications/:id/impact', requirePerm('tog'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
-  const name = str(req.body?.name_ar, 1000);
-  if (!name) throw bad('name_required');
-  const reason = str(req.body?.reference, 1000) || null;
-  const f = await tx(async c => {
-    const n = (await c.query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND code LIKE 'C%'`, [a.id])).rows[0].n;
-    const row = (await c.query(`INSERT INTO functions(app_id,code,source,name_ar,reference,enabled,sort,updated_by)
-      VALUES ($1,$2,'custom',$3,$4,true,2000+$5,$6) RETURNING *`, [a.id, 'C' + n, name, reason, n, req.user.id])).rows[0];
-    await logAudit(req, { db: c, action: 'create', entity: 'function', entityId: row.id, summary: `${a.id}/${row.code}`, newValue: { name_ar: name, reference: reason } });
-    return row;
-  });
-  res.status(201).json({ function: f });
+  const b = req.body || {};
+  const add = b.add ? newFunctionDataOr400(b.add, true) : null;
+  const set = Array.isArray(b.set) ? b.set.filter(x => Number.isInteger(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
+  const drop = Array.isArray(b.drop) ? b.drop.filter(Number.isInteger).slice(0, 500) : [];
+  res.json(await impactOf(req.user, a.id, { add, set, drop }));
 });
 
-r.delete('/functions/:id', requirePerm('tog'), async (req, res) => {
+function newFunctionDataOr400(body, preview = false) {
+  try { return newFunctionData(preview ? { name_ar: 'x', ...body } : body); }
+  catch (e) { throw bad(e.code || 'invalid_value'); }
+}
+
+r.post('/applications/:id/functions', requirePerm('tog'), async (req, res) => {
+  const a = await getApp(req.user, req.params.id);
+  const d = newFunctionDataOr400(req.body);
+  const impact = await impactOf(req.user, a.id, { add: d });
+  await lifecycle(req, res, { a, kind: 'add_function', impact, summary: `+ ${d.name_ar.slice(0, 80)}`,
+    item: { field: 'create', old_value: null, new_value: d },
+    direct: async c => {
+      const f = await createFunction(c, a.id, d, req.user.id);
+      await logAudit(req, { db: c, action: 'create', entity: 'function', entityId: f.id, summary: `${a.id}/${f.code} ${d.name_ar.slice(0, 80)}`, newValue: d });
+      return f;
+    } });
+});
+
+async function loadFn(req, { removed }) {
   const id = parseInt(req.params.id, 10);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
-  await getApp(req.user, cur.app_id);
-  if (cur.source !== 'custom') throw bad('only_custom_deletable');
-  await tx(async c => {
-    await c.query('DELETE FROM functions WHERE id=$1', [id]);
-    await logAudit(req, { db: c, action: 'delete', entity: 'function', entityId: id, summary: `${cur.app_id}/${cur.code}`, oldValue: cur });
-  });
-  res.json({ ok: true });
+  const a = await getApp(req.user, cur.app_id);
+  if (removed === true && !cur.removed_at) throw bad('function_not_removed');
+  if (removed === false && cur.removed_at) throw bad('function_removed');
+  return { cur, a };
+}
+
+r.post('/functions/:id/remove', requirePerm('tog'), async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: false });
+  const reason = str(req.body?.reason, 1000);
+  if (!reason) throw bad('reason_required');
+  const impact = await impactOf(req.user, a.id, { drop: [cur.id] });
+  await lifecycle(req, res, { a, kind: 'remove_function', impact, summary: `− ${cur.code} ${cur.name_ar.slice(0, 80)}`,
+    item: { function_id: cur.id, field: 'removed', old_value: { removed: false }, new_value: { removed: true, reason } },
+    direct: async c => {
+      const f = await removeFunction(c, cur.id, reason, req.user.id);
+      await logAudit(req, { db: c, action: 'remove', entity: 'function', entityId: cur.id, summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`,
+        oldValue: { enabled: cur.enabled, weight: cur.weight, progress: cur.progress }, newValue: { reason } });
+      return f;
+    } });
+});
+
+r.post('/functions/:id/restore', requirePerm('tog'), async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: true });
+  const impact = await impactOf(req.user, a.id, { set: [{ function_id: cur.id, enabled: true }] });
+  await lifecycle(req, res, { a, kind: 'restore_function', impact, summary: `↺ ${cur.code} ${cur.name_ar.slice(0, 80)}`,
+    item: { function_id: cur.id, field: 'removed', old_value: { removed: true }, new_value: { removed: false } },
+    direct: async c => {
+      const f = await restoreFunction(c, cur.id, req.user.id);
+      await logAudit(req, { db: c, action: 'restore', entity: 'function', entityId: cur.id, summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}` });
+      return f;
+    } });
 });
 
 // ---- weights & calculation parameters ----
@@ -469,8 +541,8 @@ r.get('/search', async (req, res) => {
   const rows = (await query(`SELECT f.id, f.app_id, f.code, f.name_ar, f.name_en, f.reference, f.progress, f.enabled, f.source,
         a.department_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en
       FROM functions f JOIN applications a ON a.id=f.app_id
-      WHERE f.name_ar ILIKE $1 OR f.name_en ILIKE $1 OR f.reference ILIKE $1 OR f.note ILIKE $1
-         OR a.name_ar ILIKE $1 OR a.name_en ILIKE $1
+      WHERE f.removed_at IS NULL AND (f.name_ar ILIKE $1 OR f.name_en ILIKE $1 OR f.reference ILIKE $1 OR f.note ILIKE $1
+         OR a.name_ar ILIKE $1 OR a.name_en ILIKE $1)
       ORDER BY a.sort, f.sort LIMIT 200`, ['%' + q.replace(/[%_\\]/g, '\\$&') + '%'])).rows;
   res.json({ results: rows.filter(x => canSeeApp(req.user, { id: x.app_id, department_id: x.department_id })) });
 });
