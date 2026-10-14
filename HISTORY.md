@@ -12,6 +12,14 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.8.1] — 2026-10-14 — Functions catalog document
+
+### Added
+- docs(docs): `docs/handover/13-Functions-Catalog.xlsx` — all 513 catalog functions by module (department) and
+  application (code, name, source, reference, declared vendor status, counted by default) with a summary sheet
+  (formulas). Review: the catalog re-extracted from `reference/erp-tracker-original.html` is identical to
+  `catalog.json`; no duplicate codes, no empty names, every function linked to a valid application.
+
 ## [0.8.0] — 2026-10-14 — Add, remove and restore functions in any application
 
 ### Added

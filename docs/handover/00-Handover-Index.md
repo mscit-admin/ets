@@ -21,6 +21,7 @@ This folder contains every document delivered to the customer with the system. D
 | 10 | [Operations Runbook](10-Operations-Runbook.md) | IT operations | Start/stop, health checks, troubleshooting, updates |
 | 11 | [API Reference](11-API-Reference.md) | Developers | REST endpoints |
 | 12 | [Handover Checklist & Acceptance](12-Handover-Checklist-and-Acceptance.md) | Both parties | What is delivered, acceptance form |
+| 13 | [Functions Catalog (AR, Excel)](13-Functions-Catalog.xlsx) | All parties | قائمة الوظائف الـ513 حسب الموديول (الإدارة) والتطبيق، مع الرمز والمصدر والمرجع وحالة المورّد، وورقة ملخص |
 
 ## Delivered items
 
