@@ -8,16 +8,26 @@ server {
     listen __HTTPS_PORT__ ssl http2;
     listen [::]:__HTTPS_PORT__ ssl http2;
     server_name __SERVER_NAME__;
+    server_tokens off;
 
     ssl_certificate     __SSL_CERT__;
     ssl_certificate_key __SSL_KEY__;
+    # Mozilla "intermediate" profile: TLS 1.2/1.3, forward-secret AEAD cipher suites only
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:ETSSSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    # With a certificate from a public / organisation CA, OCSP stapling can be enabled:
+    #   ssl_stapling on; ssl_stapling_verify on; resolver <dns-server>;
 
+    # Headers for the API responses (they inherit these; helmet adds CSP / X-Frame-Options).
+    # The web pages (location / and /assets/ in ets-app.conf) include the full set from ets-headers.conf,
+    # because a location with its own add_header does not inherit these.
     add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy same-origin always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
 
     # HTTP sent to the HTTPS port → redirect to https on the same port
     error_page 497 =301 https://$host:$server_port$request_uri;

@@ -23,7 +23,7 @@
 | "502 Bad Gateway" | `systemctl status ets-backend`, `journalctl -u ets-backend -n 50` | Fix the reported error, then restart. Common causes: DB down, wrong `PGPASSWORD`, missing `APP_SECRET` |
 | `APP_SECRET must be set` in the journal | `/etc/ets/ets.env` | Restore `ets.env` from backup. Never invent a new secret on a running system: 2FA keys would become unreadable |
 | "Cannot reach the server" in the UI | API health | As above |
-| Users are logged out immediately | Is the site served over HTTPS? | With `COOKIE_SECURE=true` cookies only work over HTTPS. Use HTTPS, or (testing only) set it to `false` |
+| Users are logged out immediately | Is the site served over HTTPS? | Cookies only work over HTTPS: open the `https://` address. Do not set `COOKIE_SECURE=false` on a production server |
 | A user is locked | Admin → Users → *Locked* | **Unlock** |
 | All admins are locked out / lost 2FA | — | `cd /opt/ets/backend && sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env LOG_DIR=/var/log/ets node scripts/create-admin.js --username admin --reset-2fa` |
 | A user's 2FA codes are always "invalid" | Server clock: `timedatectl` | Enable NTP: `sudo timedatectl set-ntp true`. Codes depend on correct time |
@@ -37,7 +37,9 @@ cd ~/ets && git pull            # or unpack the new release
 sudo bash deploy/scripts/update.sh
 ```
 
-`update.sh` takes a backup, copies the new code, installs packages, builds the UI and restarts. Database
+`update.sh` takes an encrypted backup, builds the new version as the unprivileged `ets-build` user (and runs
+`npm audit`), copies it, re-deploys the service unit, nginx site and security headers, log rotation and the
+backup/restore commands from `/etc/ets/install.conf`, and restarts (checking the port in `ets.env`). Database
 migrations run automatically at start-up. Read [HISTORY.md](../../HISTORY.md) for what changed.
 
 Rollback: restore the previous code (`git checkout <previous tag>` + `update.sh`), and if the database was

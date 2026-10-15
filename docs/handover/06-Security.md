@@ -67,8 +67,11 @@
 | Threat | Control |
 |---|---|
 | CSRF | SameSite=Strict cookie, plus every state-changing request must send `X-Requested-With: ets` with JSON |
-| XSS | React escapes output; strict Content-Security-Policy (`default-src 'self'`, no inline scripts, no third-party hosts) |
-| Clickjacking | `frame-ancestors 'none'`, X-Frame-Options |
+| XSS | React escapes output; strict Content-Security-Policy (`default-src 'self'`, no inline scripts, no third-party hosts) on the API (helmet) **and** on the web pages and assets served by nginx (`/etc/nginx/snippets/ets-headers.conf`, included in every nginx location that sets its own headers, because nginx does not inherit `add_header` into such a location) |
+| Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` (API and web pages) |
+| Other headers | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `Permissions-Policy` (camera, microphone, geolocation… off), `Cross-Origin-Opener-Policy` / `-Resource-Policy: same-origin`; `server_tokens off` (no nginx version); `/api/health` does not show the application version |
+| TLS details | Always HTTPS (the installer has no plain-HTTP mode). nginx: TLS 1.2/1.3 with forward-secret AEAD ciphers only (Mozilla "intermediate"), no session tickets, HSTS, HTTP → HTTPS redirect. The self-signed certificate is a server certificate (`CA:FALSE`, `serverAuth`, for the ETS address only): never install it as a trusted root CA on client PCs |
+| Database connection | Local: loopback only. Remote: always TLS (`PGSSLMODE=require`, or `verify-full` with the DB server's CA in `PGSSLROOTCERT`) for the application and the backup/restore tools; the application refuses to start with an unencrypted connection to another machine |
 | SQL injection | Parameterised queries only; dynamic column names come from fixed allow-lists |
 | Transport | HTTPS (TLS 1.2/1.3) by nginx, HSTS, HTTP → HTTPS redirect |
 | CSV injection | Exported cells that could start a formula (`= + - @ \|`, their full-width forms, also after leading spaces/invisible characters, or starting with tab/CR/LF) are prefixed with `'`. Open exports with formulas disabled when in doubt |
@@ -80,11 +83,50 @@
 
 ## 6. Server hardening
 
-- The service runs as the unprivileged `ets` user with systemd sandboxing (`ProtectSystem=strict`,
-  `ProtectHome`, `NoNewPrivileges`, `PrivateTmp`). It can only write to `/var/log/ets`.
-- The API and PostgreSQL listen on `127.0.0.1` only. The firewall (ufw) allows only SSH, 80 and 443.
-- `/etc/ets/ets.env` is mode 640, `root:ets`.
-- The database role `ets` owns only the `ets` database (not a superuser).
+- The service runs as the unprivileged `ets` user with systemd sandboxing: no capabilities, `ProtectSystem=strict`,
+  `ProtectHome`, `PrivateTmp`, `PrivateDevices`, kernel/clock/hostname/log protection, `ProtectProc=invisible`,
+  `NoNewPrivileges`, `RestrictNamespaces`, `RestrictAddressFamilies` (Unix, IPv4/6, netlink), a system-call
+  filter (`@system-service`), `UMask=0027` (log files not world-readable) and an IP allow-list (loopback plus a
+  remote database given by IP address). It can only write to `/var/log/ets`. Check with
+  `systemd-analyze security ets-backend` (about 1.4 "OK" offline, was 7.4).
+- The API and PostgreSQL listen on `127.0.0.1` only (the installer warns when a local PostgreSQL listens on other
+  addresses or `pg_hba.conf` has trust/md5 network rules). The firewall (ufw) allows only SSH and the web ports.
+- `/etc/ets/ets.env` is mode 640, `root:ets`; its earlier versions `ets.env.bak-*` are root-only (5 kept).
+- The database role `ets` owns only the `ets` database (not a superuser); `PUBLIC` may not connect to it or
+  create objects in its `public` schema. The role's password is set as a SCRAM verifier, never in clear text on
+  a command line or in the PostgreSQL log.
+- `/opt/ets` holds only the runtime files (no docs, tests, reference data), owned by root; the backend is
+  readable by the `ets` group only, the built web pages by everyone (nginx). Packages are installed and the
+  frontend is built by the unprivileged `ets-build` user with `npm ci --ignore-scripts`, and `npm audit` runs at
+  every install/update. Node.js comes from the NodeSource apt repository, whose signing key fingerprint is
+  pinned in `deploy/scripts/deploy-lib.sh` (`NODESOURCE_FPR`; confirm it against NodeSource's documentation
+  when they rotate keys). Supported runtime: Node.js 22.12+ or 24+ (Node 22 is maintained until April 2027).
+- Dependency updates: `.github/dependabot.yml` proposes npm (backend, frontend) and GitHub Actions updates weekly,
+  only for versions published at least 7 days earlier.
+
+## 6a. Secrets and keys
+
+| Secret | Where | Protection |
+|---|---|---|
+| `APP_SECRET` | `/etc/ets/ets.env` | Encrypts the 2FA secrets (AES-256-GCM, key = HKDF-SHA-256 of `APP_SECRET`, 16-byte tag enforced, format `v2:<key id>:…`; older `v1` values are still read). Placeholders and short or low-variety values are refused at start |
+| Database password | `/etc/ets/ets.env` | Root and the `ets` group only |
+| Backup key | `/etc/ets/backup.key` (root, 600) | Encrypts the backups (gpg AES-256). Kept **separately** from the backups — see [08-Backup-and-Recovery.md](08-Backup-and-Recovery.md) |
+
+**Rotating `APP_SECRET`** (e.g. after a suspected leak of `ets.env`):
+
+```bash
+sudo nano /etc/ets/ets.env
+#   APP_SECRET_OLD='<the current value>'
+#   APP_SECRET='<new value from: openssl rand -base64 48>'
+sudo systemctl restart ets-backend                       # old 2FA secrets still readable via APP_SECRET_OLD
+cd /opt/ets/backend && sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env node scripts/rotate-app-secret.js
+#   → "Re-encrypted N 2FA secret(s); 0 failure(s)."
+sudo nano /etc/ets/ets.env                               # remove the APP_SECRET_OLD line
+sudo systemctl restart ets-backend
+```
+
+Then store the new `ets.env` in the safe place. Backups taken before the rotation need the old `APP_SECRET`
+to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the script again).
 
 ## 7. Recommendations for the customer
 
@@ -92,8 +134,9 @@
 2. Set the 2FA policy to **Required** after users have been trained. Exempt only service or emergency
    accounts.
 3. Keep two administrator accounts, both with 2FA.
-4. Keep a copy of `/etc/ets/ets.env` with the backups, stored securely and off the server.
+4. Keep a copy of `/etc/ets/ets.env` and of the backup key `/etc/ets/backup.key` off the server in a safe place
+   (password manager / sealed envelope), **not** together with the backup files.
 5. Review the *Login & security* log weekly (failed attempts, lockouts, access denied).
 6. Apply Ubuntu security updates monthly (`sudo apt update && sudo apt upgrade`) and enable
-   `unattended-upgrades`.
+   `unattended-upgrades`. Apply ETS updates (with their dependency fixes) with `deploy/scripts/update.sh`.
 7. Restrict SSH to key-based login and to administrator IPs.

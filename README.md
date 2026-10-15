@@ -17,12 +17,13 @@ multi-user system with a database, a login screen and full logging.
 ## Quick start (development)
 
 ```bash
-# 1. PostgreSQL database (once)
-sudo -u postgres psql -v db_name=ets -v db_user=ets -v db_password=devpass -f deploy/db/create-database.sql
+# 1. PostgreSQL database (once); the password is typed at the prompt, never on the command line
+sudo -u postgres psql -v db_name=ets -v db_user=ets -f deploy/db/create-database.sql
+sudo -u postgres psql -c '\password ets'
 
 # 2. Backend
 cd backend
-cp .env.example .env            # set APP_SECRET, PGPASSWORD=devpass, NODE_ENV=development, COOKIE_SECURE=false, LOG_DIR=./logs
+cp .env.example .env            # set APP_SECRET (openssl rand -base64 48), PGPASSWORD, NODE_ENV=development, COOKIE_SECURE=false, LOG_DIR=./logs
 npm install
 npm run setup                   # create tables + load the catalog (4 departments, 30 applications, 513 functions)
 npm run create-admin            # first administrator

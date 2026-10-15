@@ -10,3 +10,15 @@
     su ets ets
     create 0640 ets ets
 }
+
+# nightly backup output (written by root's cron job, kept outside the ets-writable /var/log/ets)
+/var/log/ets-backup.log {
+    monthly
+    rotate 12
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    create 0600 root root
+}

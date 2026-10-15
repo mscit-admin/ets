@@ -8,6 +8,7 @@
 | CPU / RAM | 2 vCPU / 2 GB | 4 vCPU / 4 GB |
 | Disk | 20 GB | 50 GB (logs and backups) |
 | Network | Outbound internet during installation (apt, NodeSource, npm) | — |
+| Node.js | 22.12+ or 24+ (installed by the wizard when missing or older) | — |
 | Access | SSH with a user that has `sudo` | — |
 | Address | A domain name **or** a fixed IP address | Domain name + certificate |
 
@@ -16,15 +17,16 @@
 | You will be asked for | Example | Notes |
 |---|---|---|
 | Domain name or IP address | `ets.company.ly` or `10.0.0.15` | The address users type in the browser |
-| Certificate type | self-signed / Let's Encrypt / your own files / none | Let's Encrypt only with a public domain and port 80 open to the internet |
+| Certificate type | self-signed / Let's Encrypt / your own files | Always HTTPS (plain HTTP is not offered). Let's Encrypt only with a public domain and port 80 open to the internet; your organisation's CA is best for an internal server |
 | Web port (HTTPS) | `443` or any free port such as `8443` | The port users open |
-| HTTP port | `80`, or `0` for none | Only redirects to HTTPS. With "none" (plain HTTP) this is the web port itself |
+| HTTP port | `80`, or `0` for none | Only redirects to HTTPS |
 | Internal application port | `3000` | Used only between nginx and the app on the same server |
 | Certificate files (if your own) | `/etc/ssl/company/ets.crt` + `.key` | Copy them to the server first |
 | E-mail (if Let's Encrypt) | `it@company.ly` | Certificate expiry notices |
 | Database location | this server / another PostgreSQL server | For another server, the DBA creates the database and user first (§5) |
-| Database host, port, name, user, password | `127.0.0.1`, `5432`, `ets`, `ets`, `********` | Password: 12+ characters, no spaces, quotes, `\`, `$` or `#`. For a local DB, press Enter to generate one |
-| Administrator username, full name, e-mail, password | `admin`, … | Password: 10+ characters with letters and digits, not containing the username |
+| Database host, port, name, user, password | `127.0.0.1`, `5432`, `ets`, `ets`, `********` | Password: 12+ printable characters, no spaces, quotes, `\`, `$` or `#`, not an example value. For a local DB, press Enter to generate one |
+| Remote database only: CA certificate | `/root/db-ca.crt` | The connection is always encrypted (TLS). With the CA file of the DB server's certificate it is also verified (`verify-full`) |
+| Administrator username, full name, e-mail, password | `admin`, … | Password: 12+ characters (max 72 bytes) with letters and digits, not containing the username, not a common or example word |
 | 2FA policy | off / optional / required | Can be changed later in Settings |
 | System names (Arabic / English) | `مركز متابعة إنجاز ERP` | Shown on the login screen |
 | Time zone | `Africa/Tripoli` | 2FA codes need a correct clock |
@@ -74,23 +76,22 @@ Then it shows a **summary** like this and asks `Proceed with these settings? [y/
   ...
 ```
 
-Nothing is changed before you answer `y`. The installation then runs 13 steps:
+Nothing is changed before you answer `y`. The installation then runs 12 steps:
 
 | # | Step |
 |---|---|
-| 1 | Installs packages: nginx, PostgreSQL (or only its client for a remote DB), Node.js 22, ufw, certbot if needed |
+| 1 | Installs packages: nginx, PostgreSQL (or only its client for a remote DB), ufw, certbot if needed, and Node.js 22 from the NodeSource apt repository (its signing key is checked against a pinned fingerprint; no `curl \| bash`) |
 | 2 | Sets the time zone and enables clock synchronisation (NTP) |
 | 3 | Creates the system user `ets` and the directories `/opt/ets`, `/etc/ets`, `/var/log/ets`, `/var/backups/ets` |
-| 4 | Copies the application to `/opt/ets` |
-| 5 | Creates the database and its user with the name, user and password you gave (local), or tests the connection (remote) |
+| 4 | Builds the application as the unprivileged user `ets-build` (packages installed with `npm ci --ignore-scripts`) and copies only the runtime files to `/opt/ets` (no docs, tests or reference data; owned by root, not world-readable except the built web pages) |
+| 5 | Creates the database and its user (local; the password is sent as a SCRAM verifier, never on a command line; other users may not connect or create objects), or tests the TLS connection (remote) |
 | 6 | Writes `/etc/ets/ets.env` (mode 640) with a new random `APP_SECRET` (an existing one is kept) |
-| 7 | Installs backend packages and builds the frontend |
-| 8 | Creates the tables and catalog, the administrator, the 2FA policy and system names, and imports the tracker file if given |
-| 9 | Creates or obtains the certificate |
-| 10 | Configures nginx on your ports |
-| 11 | Installs the `ets-backend` service, log rotation, the daily backup and the `ets-backup` / `ets-restore` commands |
-| 12 | Configures the firewall: SSH (its real port is detected) and your web ports |
-| 13 | Checks the service and the web server, and takes the first backup |
+| 7 | Creates the tables and catalog, the administrator, the 2FA policy and system names, and imports the tracker file if given |
+| 8 | Creates or obtains the certificate |
+| 9 | Configures nginx on your ports (TLS 1.2/1.3, security headers) |
+| 10 | Installs the `ets-backend` service (sandboxed), log rotation, the daily **encrypted** backup with its key `/etc/ets/backup.key`, and the `ets-backup` / `ets-restore` commands |
+| 11 | Configures the firewall: SSH (its real port is detected) and your web ports |
+| 12 | Checks the service and the web server, and takes the first backup |
 
 It ends with:
 
@@ -112,11 +113,15 @@ code with Google/Microsoft Authenticator. Continue with [09-Test-Plan-and-UAT.md
 ## 3. Unattended installation (answers file)
 
 ```bash
-cp deploy/answers.example /root/ets-answers
+install -m 600 deploy/answers.example /root/ets-answers
 nano /root/ets-answers                         # fill in address, ports, DB, admin…
 sudo bash deploy/install.sh --answers /root/ets-answers --yes
 shred -u /root/ets-answers                     # it contains passwords
 ```
+
+The file is read as plain `KEY=value` lines (it is never run as a script); put values with spaces in double
+quotes. The example passwords are placeholders and are refused. An administrator password given in a file
+or environment variable is temporary: it must be changed at the first sign-in.
 
 Any value missing from the file is asked interactively, unless `--yes` is used, in which case a missing
 required value stops the installer. Every answer can also be given as an environment variable with the same
@@ -132,22 +137,28 @@ database password, or to repair an installation. The previous answers are offere
 - `APP_SECRET` is **kept**, so users' 2FA keeps working.
 - For a local database, press Enter at the password question to keep the current one.
 - The administrator's password is set to the one you type. This also recovers a forgotten admin password.
-- The previous `ets.env` is saved as `ets.env.bak-<date>`.
+- The previous `ets.env` is saved as `ets.env.bak-<date>` (root only; the 5 newest are kept).
 
 ## 5. Using an existing (remote) PostgreSQL server
 
-Ask the DBA to run this on the database server (as a superuser), with the names and password you will give
-the wizard:
+Ask the DBA to run this on the database server (as a superuser), with the names you will give the wizard,
+then to set the password at the prompt (never on the command line — it would be visible in the process list
+and the shell history):
 
 ```bash
-sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_name=ets -v db_user=ets -v db_password='<password>' \
+sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_name=ets -v db_user=ets \
      -f create-database.sql          # file: deploy/db/create-database.sql
+sudo -u postgres psql -c '\password ets'
 ```
 
-Also make sure that PostgreSQL accepts connections from the ETS server (`listen_addresses` in
-`postgresql.conf`, plus a `host ets ets <ets-server-ip>/32 scram-sha-256` line in `pg_hba.conf`), and that the
-firewall between the two servers allows the DB port. In the wizard choose **"On another, existing PostgreSQL
-server"**. It tests the connection and the `citext` extension before installing anything.
+The connection between ETS and the database is always encrypted. The DBA enables TLS on the server
+(`ssl = on` with a server certificate in `postgresql.conf`), lets the ETS server in with a **`hostssl`** line
+(not `host`) in `pg_hba.conf`, e.g. `hostssl ets ets <ets-server-ip>/32 scram-sha-256`, sets `listen_addresses`,
+and opens the DB port in the firewall between the two servers. Ask for the CA certificate that signed the
+server certificate: given to the wizard, the server is also verified (`PGSSLMODE=verify-full`, the host name
+must match the certificate); without it the traffic is encrypted but the server is not verified
+(`PGSSLMODE=require`). In the wizard choose **"On another, existing PostgreSQL server"**. It tests the
+encrypted connection and the `citext` extension before installing anything.
 
 ## 6. Configuration reference (`/etc/ets/ets.env`)
 
@@ -166,6 +177,12 @@ The wizard writes this file. Edit it by hand only if needed, then run `sudo syst
 | `LOG_DIR`, `LOG_LEVEL`, `ACCESS_LOG_DB` | Logging |
 | `ETS_BACKUP_DIR`, `ETS_BACKUP_KEEP_DAYS` | Backups |
 
+Also written when needed: `PGSSLMODE` (`require` / `verify-ca` / `verify-full`) and `PGSSLROOTCERT`
+(`/etc/ets/db-ca.crt`) for a remote database — the application refuses to start with an unencrypted
+connection to a database on another machine; `ETS_BACKUP_KEY` (`/etc/ets/backup.key`, the backup encryption
+key); `APP_SECRET_OLD` only while `APP_SECRET` is being rotated ([06-Security.md](06-Security.md)).
+`APP_SECRET` placeholders (such as the one in `backend/.env.example`) and short or low-variety values are refused.
+
 ## 7. Verifying the installation
 
 ```bash
@@ -183,5 +200,5 @@ ls -l /var/log/ets/ /var/backups/ets/
 | `cannot connect to the database` | Remote DB: check host/port/user/password, `pg_hba.conf`, the firewall |
 | `the 'citext' extension is missing` | The DBA runs `CREATE EXTENSION citext;` in the database |
 | `Let's Encrypt failed` | The domain does not point to this server, or port 80 is not reachable from the internet. Use a self-signed certificate or your own instead |
-| Browser warning "not secure" | Normal with a self-signed certificate: import `/etc/ssl/certs/ets-selfsigned.crt` into the client PCs' trusted roots |
+| Browser warning "not secure" | Normal with a self-signed certificate. Compare the SHA-256 fingerprint shown at the end of the installation and accept the certificate for this site only. Do **not** add it to the client PCs' trusted root certificates; for a warning-free setup use a certificate from your organisation's CA (certificate type "your own files") |
 | Signed out immediately after login | You use `http://` while the certificate type is HTTPS: open the `https://` address |

@@ -150,7 +150,7 @@ Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial
 | F-01 | Settings: change the system name (AR/EN) | The login screen and navbar show the new name | |
 | F-01b | Settings → Branding: upload a logo, a favicon and a login background; then sign out | New logo in the top bar and login screen, new browser-tab icon, background picture behind the login form; "Restore default" brings back the original | |
 | F-02 | Settings → Data → **Export data** | A JSON file downloads | |
-| F-03 | Server: `sudo ets-backup` | A new `.dump` in `/var/backups/ets` | |
+| F-03 | Server: `sudo ets-backup` | A new encrypted `.dump.gpg` and its `.sha256` in `/var/backups/ets`; no `ets.env` copy there | |
 | F-04 | Server: restore the dump on a test DB (doc 08 §6) | The function count matches | |
 | F-05 | Server: `sudo systemctl restart ets-backend` | The site is back within seconds; log `startup` | |
 | F-06 | Server: reboot | ETS starts automatically | |
