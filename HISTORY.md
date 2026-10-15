@@ -12,6 +12,78 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.0.0] — 2026-10-15 — Security remediation
+
+### Security — deployment hardening and supply chain (WP5, WP8)
+- sec(deploy): backups are encrypted with gpg (AES-256, tamper-evident) using a separate root-only key
+  `/etc/ets/backup.key` created by the installer/update, get a `.sha256` checksum, are never overwritten, and no
+  longer have `ets.env` (APP_SECRET, DB password) copied next to them; an old `ets.env.backup` is deleted and old
+  plain dumps are encrypted at the next run. Key escrow and restore documented in doc 08 (ETS-SEC-009).
+- sec(backend,deploy): remote PostgreSQL always over TLS — `PGSSLMODE` / `PGSSLROOTCERT` (libpq semantics:
+  require / verify-ca / verify-full) in `config.js` + `db/pool.js` and for psql / pg_dump / pg_restore; default
+  `require` for a non-local host and the app refuses to start with an unencrypted remote connection; the
+  installer asks for the DB server's CA (→ verify-full) and checks the connection is encrypted; update.sh adds
+  `PGSSLMODE=require` to an existing remote install (ETS-SEC-010).
+- sec(deploy): plain-HTTP installation mode removed (`ETS_TLS=none` refused, previous plain-HTTP answers fall back
+  to self-signed, update.sh refuses a plain-HTTP install with a clear message); `COOKIE_SECURE=true` always;
+  `ets-http.conf.tpl` deleted (ETS-SEC-011).
+- sec(deploy): self-signed certificate is an end-entity certificate (`basicConstraints=critical,CA:FALSE`,
+  keyUsage digitalSignature/keyEncipherment, extendedKeyUsage serverAuth, SAN, RSA-3072, 825 days); an existing
+  CA:TRUE certificate is replaced by install/update; docs no longer say to import it as a trusted root (ETS-SEC-012).
+- sec(backend): `APP_SECRET` placeholders (e.g. the old `.env.example` value), values under 32 characters or with
+  fewer than 12 different characters are refused at start; `.env.example` ships empty secrets (ETS-SEC-031).
+- sec(backend): 2FA secret envelope `v2:<key id>:iv:tag:ct` with an HKDF-SHA-256 key, 16-byte GCM tag enforced,
+  optional AAD; `v1` still read; `APP_SECRET_OLD` + `npm run rotate-app-secret` (scripts/rotate-app-secret.js)
+  rotate the secret without losing 2FA enrolments (ETS-SEC-032, ETS-SEC-063 except AAD binding by callers).
+- sec(deploy,db): the DB role password is never on a command line or in the server log: the installer sends a
+  SCRAM-SHA-256 verifier (`deploy/db/scram-verifier.mjs`) on stdin; `create-database.sql` no longer takes a
+  password (DBAs use `\password`); psql gets `PGPASSWORD` only per call; `create-admin --password` warns that
+  it is deprecated (ETS-SEC-033, ETS-SEC-065).
+- sec(deploy): answers.example ships no usable passwords (admin `CHANGE-ME` is refused); example / common words
+  refused for DB and admin passwords; admin password 12+ characters, max 72 bytes; an admin password taken from
+  an answers file / environment variable gets `must_change_password` (`create-admin --must-change-password`)
+  (ETS-SEC-034).
+- sec(deploy): nginx sends CSP (mirrors helmet), X-Frame-Options DENY, nosniff, Referrer-Policy, HSTS,
+  Permissions-Policy, COOP/CORP on the SPA and assets via `snippets/ets-headers.conf`, included in every location
+  that has its own `add_header` (fixes the add_header inheritance gap) (ETS-SEC-035).
+- sec(deploy): systemd sandboxing extended (CapabilityBoundingSet=, PrivateDevices, ProtectKernelLogs/Clock/
+  Hostname, ProtectProc=invisible, RestrictNamespaces/Realtime/AddressFamilies, SystemCallFilter=@system-service,
+  SystemCallArchitectures=native, UMask=0027, RemoveIPC, IPAddressAllow=localhost [+ remote DB IP] /
+  IPAddressDeny=any); offline `systemd-analyze security` exposure 7.4 → 1.4 (ETS-SEC-036).
+- sec(deploy): legacy-import temp copy in a `mktemp -d` directory, mode 640 root:ets, removed afterwards (ETS-SEC-037).
+- sec(deploy,backend): `server_tokens off`; public `/api/health` no longer returns the version (ETS-SEC-038).
+- sec(deploy): TLS: Mozilla intermediate ECDHE+AEAD ciphers, `ssl_prefer_server_ciphers off`, session tickets off,
+  shared session cache 1 d (ETS-SEC-039).
+- sec(deploy,db): `REVOKE ALL ON DATABASE … FROM PUBLIC`, `GRANT CONNECT, TEMPORARY` to the app role,
+  `REVOKE CREATE ON SCHEMA public FROM PUBLIC` (create-database.sql and every local install run) (ETS-SEC-040).
+- sec(deploy): restore.sh verifies checksum + decryption + archive before touching anything, takes a
+  pre-restore backup, restores with `--single-transaction --exit-on-error` (extensions left to the DBA), fails
+  hard and restarts the service on error, passes the file name to SQL as a psql variable (ETS-SEC-041).
+- sec(deploy): only runtime files are copied to /opt/ets (allow-list: backend src/scripts/package files,
+  frontend sources for the build, deploy runtime files — no docs, tests, reference data, examples); code root-owned,
+  backend `root:ets 750`, only `frontend/dist` world-readable (ETS-SEC-042).
+- sec(deploy): nightly backup logs to root-only `/var/log/ets-backup.log` (outside the ets-writable /var/log/ets),
+  with its own logrotate entry (ETS-SEC-043).
+- sec(deploy): no `curl | bash`: NodeSource apt repo with a fingerprint-pinned signing key and `signed-by`;
+  npm ci and the Vite build run as the unprivileged `ets-build` user with `--ignore-scripts`, in a staging copy;
+  answers files and install.conf are parsed as KEY=value data, never sourced (nothing exported); PGPASSWORD is
+  scoped to individual psql calls (ETS-SEC-044, ETS-SEC-067).
+- sec(backend,frontend,deploy): Node.js `engines` `^22.12.0 || >=24` with `engine-strict`; the installer
+  upgrades any other version, update.sh refuses one (ETS-SEC-045).
+- sec(deploy): `.github/dependabot.yml` (npm backend + frontend, GitHub Actions; weekly, 7-day cooldown);
+  `npm audit --omit=dev` runs at every install/update (ETS-SEC-046, ETS-SEC-071).
+- sec(deploy): `ets.env.bak-*` are root:root 600, only the 5 newest kept; ets.env written atomically; a warning
+  before nginx's default site is disabled (ETS-SEC-064).
+- sec(deploy): existing-certificate mode warns when the private key is readable by others (ETS-SEC-066).
+- sec(deploy): update.sh re-deploys the systemd unit, nginx site/snippets, logrotate, backup/restore commands and
+  cron from install.conf, reads `PORT` from ets.env, and prints rollback instructions on failure (ETS-SEC-068).
+- sec(deploy): local PostgreSQL: warning when `listen_addresses` is not local-only or pg_hba has trust/password/md5
+  network rules (ETS-SEC-069).
+- test(tests): `config.test.js` (APP_SECRET placeholders, DB TLS options per sslmode, remote-without-TLS refused,
+  v2 envelope, tag length, AAD, v1 compatibility, rotation) and `rotate.test.js` (rotate-app-secret on a database).
+- docs(docs): 02, 06 (new §6a secrets and APP_SECRET rotation), 07, 08 (encrypted backups, key escrow, restore),
+  09, 10, README, STRUCTURE updated for the above.
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

@@ -1,6 +1,5 @@
 [Unit]
 Description=ETS — ERP Tracking System API
-Documentation=file:///opt/ets/docs/handover/02-Installation-Guide.md
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -17,17 +16,39 @@ RestartSec=5
 # stdout/stderr also go to the journal:  journalctl -u ets-backend
 StandardOutput=journal
 StandardError=journal
-# Hardening
+
+# Hardening (check with: systemd-analyze security ets-backend)
+# The service only needs to read /opt/ets/backend and /etc/ets, write /var/log/ets and talk TCP to
+# nginx and PostgreSQL. Not used: MemoryDenyWriteExecute (breaks the V8 JIT).
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/log/ets
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
 RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Network: only loopback (nginx, local PostgreSQL). deploy/install.sh adds the address of a remote
+# database server here, or removes both lines when it is given by host name.
+IPAddressAllow=localhost
+IPAddressDeny=any
 
 [Install]
 WantedBy=multi-user.target

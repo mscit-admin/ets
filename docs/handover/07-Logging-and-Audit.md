@@ -13,7 +13,7 @@ ETS records five kinds of logs. Each is stored **in the database**, where you ca
 | System | `system_log` | `app.log` | Start-up, shutdown, migrations, seeding, imports, backups, restores, retention purge |
 
 Other logs on the server: `/var/log/nginx/ets.access.log`, `/var/log/nginx/ets.error.log`,
-`/var/log/ets/backup.log` and `journalctl -u ets-backend`.
+`/var/log/ets-backup.log` (root-only) and `journalctl -u ets-backend`.
 
 ## 1. Login & security events (`auth_log.event`)
 

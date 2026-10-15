@@ -1,13 +1,15 @@
 # ETS — answers file for an unattended installation.
-#   cp deploy/answers.example /root/ets-answers && nano /root/ets-answers
+#   install -m 600 deploy/answers.example /root/ets-answers && nano /root/ets-answers
 #   sudo bash deploy/install.sh --answers /root/ets-answers --yes
 #   shred -u /root/ets-answers        # it contains passwords — delete it afterwards
 # Any variable left out (or commented) is asked interactively unless --yes is used.
+# The file is read as plain KEY=value data (never executed): put values with spaces in "double quotes".
+# Example/placeholder passwords (CHANGE-ME, …) are refused: type your own.
 
 ETS_ADDRESS=ets.company.ly          # domain name or IP address users will open
-ETS_TLS=selfsigned                  # selfsigned | letsencrypt (domain only) | existing | none
+ETS_TLS=selfsigned                  # selfsigned | letsencrypt (domain only) | existing  (always HTTPS)
 ETS_HTTPS_PORT=443                  # port users open (HTTPS)
-ETS_HTTP_PORT=80                    # HTTP port: redirects to HTTPS (0 = none); the web port itself when ETS_TLS=none
+ETS_HTTP_PORT=80                    # HTTP port that only redirects to HTTPS (0 = none)
 ETS_API_PORT=3000                   # internal application port (localhost only)
 #ETS_LE_EMAIL=it@company.ly         # letsencrypt only
 #ETS_CERT=/etc/ssl/company/ets.crt  # existing only
@@ -15,15 +17,19 @@ ETS_API_PORT=3000                   # internal application port (localhost only)
 
 ETS_DB_MODE=local                   # local (create on this server) | remote (existing PostgreSQL server)
 #ETS_DB_HOST=10.0.0.20              # remote only
+#ETS_DB_SSLROOTCERT=/root/db-ca.crt # remote only: CA certificate of the DB server → TLS verify-full
+                                    # (without it: TLS "require" = encrypted, server not verified)
 ETS_DB_PORT=5432
 ETS_DB_NAME=ets
 ETS_DB_USER=ets
-ETS_DB_PASSWORD=ChangeMe-DbPass-2026   # 12+ chars, no spaces/quotes/backslash/$/#; empty = generate (local)
+ETS_DB_PASSWORD=                    # local: empty = generate a strong one; remote: the role's password
+                                    # (12+ printable ASCII chars, no spaces/quotes/backslash/$/#)
 
 ETS_ADMIN_USER=admin
 ETS_ADMIN_NAME="System Administrator"
 ETS_ADMIN_EMAIL=
-ETS_ADMIN_PASSWORD=ChangeMe-Admin2026   # 10+ chars, letters and digits, not containing the username
+ETS_ADMIN_PASSWORD=CHANGE-ME        # REQUIRED: 12+ chars (max 72 bytes), letters and digits, not the username,
+                                    # not a common word; must be changed at the first sign-in
 
 ETS_MFA_MODE=optional               # off | optional | required
 ETS_ORG_NAME_AR="مركز متابعة إنجاز ERP"

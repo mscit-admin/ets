@@ -36,11 +36,13 @@ location = /api/auth/login {
 location /assets/ {
     expires 30d;
     add_header Cache-Control "public, immutable";
+    include /etc/nginx/snippets/ets-headers.conf;   # an add_header here hides the server-level headers
     try_files $uri =404;
 }
 
 # Single-page app: every other path serves index.html
 location / {
     add_header Cache-Control "no-cache";
+    include /etc/nginx/snippets/ets-headers.conf;
     try_files $uri /index.html;
 }

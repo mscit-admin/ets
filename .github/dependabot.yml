@@ -1,0 +1,33 @@
+# Automated dependency update and security-fix pull requests (ETS-SEC-046, ETS-SEC-071).
+# Security updates are proposed as soon as an advisory is published; regular version updates wait 7 days
+# after a release (cooldown) so that a compromised or broken release is usually caught before it is proposed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      backend-patch-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      frontend-patch-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
