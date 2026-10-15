@@ -69,6 +69,7 @@ const waitSettingsCache = () => import('../src/services/settings.js').then(m => 
 test('health endpoint', { skip }, async () => {
   const r = await fetch(base + '/health');
   assert.equal(r.status, 200);
+  assert.equal((await r.json()).version, undefined);   // public endpoint: no version disclosure (ETS-SEC-038)
 });
 
 test('login: wrong password, unknown user, success', { skip }, async () => {
