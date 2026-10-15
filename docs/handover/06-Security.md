@@ -10,6 +10,7 @@
 | Generic errors | Wrong user, wrong password, disabled account and a paused account all return the same `401 invalid_credentials` (the real reason is logged) |
 | Timing | Unknown usernames and paused accounts are checked against a dummy hash made with the same cost (`BCRYPT_ROUNDS`) as real hashes, so response time does not reveal valid usernames |
 | Lockout (progressive delay) | Every failed password, 2FA code or recovery-code check on an account counts (login, 2FA step, and the re-authentication on the profile page). From `MAX_FAILED_LOGINS` (5) failures, sign-in to the account pauses for 1, 2, 4, 8 … minutes, at most `LOCK_MINUTES` (15). The pause ends by itself; the counter restarts once the last failure is older than `LOCKOUT_RESET_MINUTES` (60) and is cleared only by a **complete** sign-in (password and 2FA) or by an admin (*Unlock*). Concurrent attempts on one account are checked one after another |
+| Client IP | Taken from nginx on the same server only (`TRUST_PROXY=loopback`); a client's own `X-Forwarded-For` cannot change it. Behind a load balancer configure nginx `real_ip` for the balancer's addresses only ([02 §9](02-Installation-Guide.md)); behind a shared NAT all users share the per-IP limits |
 | Rate limiting | API: 30 / 15 min per IP across all password / code checking endpoints (login, 2FA verify / setup / enable / disable, recovery codes, change password), and 30 failed requests / 15 min per account (by the username typed, whether or not it exists), answered with `429 too_many_attempts` + `retry_after` seconds. Every `/api` request: `API_RATE_LIMIT` (600) / min per IP (`429 too_many_requests`). nginx: 10 / min / IP on the same endpoints (any letter case, with or without a trailing slash) |
 
 ## 2. Two-factor authentication
@@ -33,9 +34,9 @@
 
 ## 3. Sessions
 
-- A random 256-bit token is sent in the cookie `ets_sid` (`HttpOnly`, `SameSite=Strict`, `Secure` in
-  production). With `Secure` the name is `__Host-ets_sid`, which browsers accept only over HTTPS for the whole
-  site. The database stores only its SHA-256. A production server (`NODE_ENV=production`) refuses to start with
+- A random 256-bit token is sent in the cookie `__Host-ets_sid` (`HttpOnly`, `SameSite=Strict`, `Secure`,
+  path `/`), which browsers accept only over HTTPS for the whole site (a development setup over plain http with
+  `COOKIE_SECURE=false` uses `ets_sid`). The database stores only its SHA-256. A production server (`NODE_ENV=production`) refuses to start with
   `COOKIE_SECURE=false` unless `ALLOW_INSECURE_COOKIES=true` is set (lab systems only).
 - Signing in again from a browser revokes the session it had; completing 2FA issues a new token.
 - The session expires 12 h after login (`SESSION_TTL_HOURS`) or after 60 min idle
@@ -47,7 +48,8 @@
 ## 4. Authorisation
 
 - Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `sch`, `rep`, `exp`, `imp`, `usr`,
-  `log`, `cfg`) **and** the data scope (departments/applications) on the server. The UI only hides what the
+  `log`, `cfg`, `apv_dept`, `apv_final`) **and**, for tracker data, the data scope (departments/applications) on
+  the server. The UI only hides what the
   server would refuse anyway.
 - Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`.
 - Project-wide parameters, the project schedule (`PUT /tracker/schedule`), import and settings (read and write)
@@ -69,7 +71,7 @@
 
 | Threat | Control |
 |---|---|
-| CSRF | SameSite=Strict cookie, plus every state-changing request must send `X-Requested-With: ets` with JSON |
+| CSRF | SameSite=Strict cookie, plus every state-changing request must send `X-Requested-With: ets` (refused otherwise: `403 csrf_rejected`, logged for signed-in users); request bodies must be `application/json` (`415` otherwise) |
 | XSS | React escapes output; strict Content-Security-Policy (`default-src 'self'`, no inline scripts, no third-party hosts) on the API (helmet) **and** on the web pages and assets served by nginx (`/etc/nginx/snippets/ets-headers.conf`, included in every nginx location that sets its own headers, because nginx does not inherit `add_header` into such a location) |
 | Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` (API and web pages) |
 | Other headers | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `Permissions-Policy` (camera, microphone, geolocation… off), `Cross-Origin-Opener-Policy` / `-Resource-Policy: same-origin`; `server_tokens off` (no nginx version); `/api/health` does not show the application version |
@@ -92,11 +94,12 @@
   filter (`@system-service`), `UMask=0027` (log files not world-readable) and an IP allow-list (loopback plus a
   remote database given by IP address). It can only write to `/var/log/ets`. Check with
   `systemd-analyze security ets-backend` (about 1.4 "OK" offline, was 7.4).
-- The API and PostgreSQL listen on `127.0.0.1` only (the installer warns when a local PostgreSQL listens on other
-  addresses or `pg_hba.conf` has trust/md5 network rules). The firewall (ufw) allows only SSH and the web ports.
+- The API listens on `127.0.0.1` only (`HOST`); a local PostgreSQL should too (the installer warns when it listens
+  on other addresses or `pg_hba.conf` has trust/md5 network rules). When the firewall option is chosen, ufw allows
+  only SSH and the web ports.
 - `/etc/ets/ets.env` is mode 640, `root:ets`; its earlier versions `ets.env.bak-*` are root-only (5 kept).
-- The database role `ets` owns only the `ets` database (not a superuser); `PUBLIC` may not connect to it or
-  create objects in its `public` schema. The role's password is set as a SCRAM verifier, never in clear text on
+- The database role `ets` owns only the `ets` database (not a superuser) and, on a protected installation, not
+  the log tables or schema `public`; `PUBLIC` may not connect to it or create objects in its `public` schema. The role's password is set as a SCRAM verifier, never in clear text on
   a command line or in the PostgreSQL log.
 - `/opt/ets` holds only the runtime files (no docs, tests, reference data), owned by root; the backend is
   readable by the `ets` group only, the built web pages by everyone (nginx). Packages are installed and the

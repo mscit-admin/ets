@@ -20,9 +20,9 @@ catalog and calculation rules and adds the following:
 | Original page | ETS |
 |---|---|
 | Data in one browser / embedded in the file | Central PostgreSQL database, shared by all users |
-| No real login | Username + password, lockout, optional/required 2FA |
+| No real login | Username + password, progressive sign-in pause and rate limits, optional/required 2FA |
 | Roles were advisory only | Roles, permissions and data scope enforced by the server |
-| Local activity list | Five server-side logs incl. a full audit trail with old/new values |
+| Local activity list | Five server-side logs incl. a full, tamper-evident (hash-chained, append-only) audit trail with old/new values |
 | Arabic only | Arabic and English, per-user choice |
 
 ## 2. Architecture
@@ -35,15 +35,15 @@ catalog and calculation rules and adds the following:
         │  proxies /api/* to 127.0.0.1:3000
         ▼
  Node.js API (systemd: ets-backend) ── writes logs ──► /var/log/ets/*.log
-        │  SQL (localhost:5432)
+        │  SQL (localhost:5432, or TLS to a remote database server)
         ▼
- PostgreSQL database "ets" ── daily pg_dump ──► /var/backups/ets
+ PostgreSQL database "ets" ── daily pg_dump, gpg-encrypted ──► /var/backups/ets
 ```
 
 | Layer | Technology | Location |
 |---|---|---|
 | UI | React 19, Vite build, plain CSS (ERPNext visual language), Cairo font bundled | `frontend/` |
-| API | Node.js 22, Express 5, pg, bcryptjs, helmet, pino | `backend/` |
+| API | Node.js 22.12+ or 24+, Express 5, pg, bcryptjs, helmet, express-rate-limit, pino | `backend/` |
 | Database | PostgreSQL 14+ | schema in `backend/src/db/migrations/` |
 | Web server | nginx (TLS, static files, reverse proxy, login rate limit) | `deploy/nginx/` |
 | Service | systemd unit with sandboxing | `deploy/systemd/` |
@@ -73,11 +73,14 @@ Users with a limited scope see totals calculated over their own scope only.
 - Department and application screens with inline editing. Changes save immediately and are audited.
 - Bulk set (progress or test status for all enabled functions); custom requirements can be added.
 - Weights screen, reports screen, S-curve and schedule with SPI and deviation, and search.
-- Users and permissions: 5 roles, 11 permissions, per-user grant/revoke, department/application scope.
+- Users and permissions: 9 roles, 13 permissions, per-user grant/revoke (user management for administrators
+  only), department/application scope (users of a scoped role without a scope see nothing).
 - Two-factor authentication: a policy (off / optional / required), per-user or bulk exemption, and admin
-  reset.
-- Logs viewer: login & security, audit, requests, errors and system. Filters, details and CSV export.
-- Settings: 2FA policy, system names, password length, log retention, import/export, system information.
+  reset; turning it off or new recovery codes need the password and a code.
+- Logs viewer: login & security, audit, requests, errors and system (security logs for administrators only;
+  others see the audit trail without IP addresses). Filters, details, CSV export and an integrity check.
+- Settings: 2FA policy, system names, password length, separate retention for the audit trail (at least 365
+  days) and the other logs, import/export, system information.
 - Import of the original page's data (HTML or JSON) and export in the same format.
 
 ## 5. Roles
@@ -85,13 +88,13 @@ Users with a limited scope see totals calculated over their own scope only.
 | Role | Default permissions |
 |---|---|
 | System Administrator (`admin`) | Everything, always full scope |
-| Department Manager (`mgr`) | Progress, weights, testing, enable items, schedule, reports, export, logs (own scope) |
+| Department Manager (`mgr`) | Progress, weights, testing, enable items, schedule (edit: full scope only), reports, export, audit trail (own scope) |
 | Application Editor (`ed`) | Progress, testing, reports within assigned applications |
 | Tester (`qa`) | Test status and notes only |
 | Observer (`obs`) | Read only |
-| Project Manager (`pm`) / Technical Project Manager (`tm`) | All departments: progress, weights, testing, items, schedule, reports, export, import, logs, **final approval** of team results |
-| Department Team Lead (`lead`) | Own department: progress, testing, items, reports, export, import, logs, **first approval** of the team's results |
-| Team Member (`member`) | Own department: progress, testing, reports, and uploading result files for approval |
+| Project Manager (`pm`) / Technical Project Manager (`tm`) | All departments: progress, weights, testing, items, schedule, reports, export, import, audit trail, **final approval** of team results |
+| Department Team Lead (`lead`) | Own department: progress, testing, items, reports, export, import, audit trail, **first approval** of the team's results and approval of members' edits |
+| Team Member (`member`) | Own department: progress, testing, items, reports, and uploading result files — all approved by the team lead |
 
 Permission keys: `pct` progress · `wgt` weights · `tst` test status/notes · `tog` enable/add items ·
 `sch` schedule · `rep` reports · `exp` export · `imp` import · `usr` users · `log` logs · `cfg` settings ·
@@ -101,4 +104,5 @@ Permission keys: `pct` progress · `wgt` weights · `tst` test status/notes · `
 Teams that still work in the original HTML page send their exported JSON. In *Imports & approvals* the uploader
 chooses **one department** or **Reports**; only that part of the file is compared with the approved data. The
 differences wait as a *batch* and change nothing until both the department team lead and the project (or
-technical) manager approve it; then they are applied together. Either can reject it with a reason.
+technical) manager approve it — two different people, neither of them the uploader; then they are applied
+together. Either can reject it with a reason.

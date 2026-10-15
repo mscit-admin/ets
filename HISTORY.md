@@ -245,6 +245,34 @@ and must be mentioned here with the migration name.
 - docs(docs): 07 §3 (protection, migrations, restores, remote DBA, undo), 08 §3 (restore of a protected
   database), 06, STRUCTURE (ETS-SEC-013)
 
+### Documentation accuracy (WP7)
+- docs(docs): client IP behind a load balancer / reverse proxy / NAT: nginx `real_ip` for the balancer's addresses
+  only, in `/etc/nginx/conf.d/ets-realip.conf` (survives updates), never `TRUST_PROXY=true`; the shared-IP effect
+  on the rate limits and what to do; in-memory API counters reset on restart (02 §9, 06, 10, 12, `.env.example`;
+  a pointer comment in `deploy/nginx/ets-https.conf.tpl`) (ETS-SEC-022)
+- docs(docs): consistency pass of the handover pack, README, STRUCTURE, `.env.example` and `answers.example` with
+  the 1.0.0 code: sign-in pause model (no "account locked" / 423), rate limits, cookie `__Host-ets_sid`, HTTPS
+  only, database TLS, encrypted backups and key escrow, nine roles and 13 permissions, scope fail-closed, `usr`
+  for administrators only, import two-person rule, security logs for administrators only, audit retention ≥ 365,
+  hash chain and `verify-audit`, audit-trail protection, new settings / env variables (`LOCKOUT_RESET_MINUTES`,
+  `API_RATE_LIMIT`, `ALLOW_INSECURE_COOKIES`, `APP_SECRET_OLD`, `PGSSL*`, `TRUST_PROXY`), new npm scripts,
+  `/api/health` without version, Node.js 22.12+ / 24+; example passwords removed from the docs (ETS-SEC-076)
+- docs(docs): 05 Database Design describes migrations 007–009 and 012 (`last_failed_at`, recovery-code hash
+  format, `usr` cleanup, hash-chain columns, `log_chain_head` / `log_chain_anchor`, chain functions and triggers,
+  `ets_purge_log`, ownership by `ets_log_owner`, new retention setting); `deploy/db/schema-reference.sql`
+  regenerated after migration 012 (ETS-SEC-076)
+- docs(docs): 09 Test plan: 90 automated tests; new UAT cases for the sign-in pause, password rules, rate limits,
+  cookie, health, 2FA step-up and recovery-code format, `usr` admin-only, self-grant, scope fail-closed,
+  application scope, last admin, admin-only logs, integrity check, audit retention, audit-trail protection,
+  two-person import rule, restore, update and key escrow (ETS-SEC-076)
+- docs(docs): 10 Runbook: security operations (verify-audit, broken chain, ets-log-protect, purge, backup key,
+  APP_SECRET rotation, create-admin) and sign-in pauses / unlocking; 12 Checklist: backup key escrow, audit-trail
+  protection, user scopes, network path, and the NodeSource key fingerprint that **must be verified against
+  NodeSource's published key before the first install**; 04 User guide (AR): https only, sign-in pause message,
+  password rules (10 / 12 characters), 2FA changes need password + code, recovery code format `xxxx-xxxx-xxxx`,
+  no-scope users, uploader cannot sign (ETS-SEC-076)
+- ops(backend, frontend): version 1.0.0 in `package.json` and `package-lock.json`
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

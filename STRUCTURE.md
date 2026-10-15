@@ -9,6 +9,7 @@ ets/
 ├── HISTORY.md                     History of all changes and fixes (changelog)
 ├── STRUCTURE.md                   This file
 ├── .gitignore
+├── .github/dependabot.yml         Weekly npm (backend, frontend) and GitHub Actions update proposals (7-day cooldown)
 │
 ├── reference/
 │   └── erp-tracker-original.html  The original single-file tracker (source of the catalog and legacy data)
@@ -16,8 +17,10 @@ ets/
 ├── tools/
 │   └── extract-catalog.js         Regenerates backend/src/db/seed/catalog.json from the original page
 │
-├── backend/                       REST API — Node.js 22, Express 5, PostgreSQL
-│   ├── package.json               Scripts: start, dev, migrate, seed, setup, create-admin, import-legacy, purge-logs, verify-audit, test
+├── backend/                       REST API — Node.js 22.12+ / 24+, Express 5, PostgreSQL
+│   ├── package.json               Scripts: start, dev, migrate, seed, setup, create-admin, import-legacy, purge-logs, verify-audit,
+│   │                              rotate-app-secret, test; engines node ^22.12.0 || >=24
+│   ├── .npmrc                     engine-strict=true (refuses an unsupported Node.js)
 │   ├── .env.example               All configuration variables, documented (copy to .env / /etc/ets/ets.env)
 │   ├── src/
 │   │   ├── server.js              Entry point: migrate + seed, start HTTP server, schedule log purge, graceful shutdown
@@ -35,11 +38,17 @@ ets/
 │   │   │   │   ├── 005_project_timeline.sql  Project close date, daily progress snapshots
 │   │   │   │   ├── 006_function_lifecycle.sql  Removed / created markers on functions; new request kinds
 │   │   │   │   ├── 007_audit_context.sql  Audit row context: via request / import, approvers, items before → after
+│   │   │   │   ├── 008_auth_lockout.sql  users.last_failed_at (sign-in pause that expires); recovery-code hash format
+│   │   │   │   ├── 009_usr_admin_only.sql  Removes `usr` overrides from non-admins (audited); lists users without scope
 │   │   │   │   └── 012_audit_integrity.sql  Append-only, hash-chained audit_log / auth_log; separate audit retention
+│   │   │   │                      (010 and 011 are not used)
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
-│   │   │   ├── auth.js            Session cookie → req.user, requireAuth, permissions, data scope helpers
+│   │   │   ├── auth.js            Session cookie (__Host-ets_sid) → req.user, requireAuth, permissions (usr admin-only),
+│   │   │   │                      data scope helpers (fail closed)
+│   │   │   ├── body.js            JSON body parsing: 100 kB / 32 levels before auth, 5 MB uploads after auth, bidi stripping
+│   │   │   ├── ratelimit.js       Per-IP and per-account limits on password / 2FA checks; general /api limit
 │   │   │   └── common.js          Access logging, CSRF guard, 404 and error handlers
 │   │   ├── routes/
 │   │   │   ├── auth.js            /api/auth — login, 2FA verify/setup/enable/disable, recovery codes, me, logout, password, language
@@ -56,7 +65,10 @@ ets/
 │   │   │   ├── calc.js            Progress calculation (function → application → department → project), S-curve
 │   │   │   ├── totp.js            TOTP/HOTP (RFC 6238/4226), base32, otpauth URI
 │   │   │   ├── crypto.js          AES-256-GCM for 2FA secrets, SHA-256, random tokens
-│   │   │   ├── passwords.js       bcrypt hashing, password policy, recovery code generation
+│   │   │   ├── passwords.js       bcrypt hashing (cost 10–14, re-hash), password policy (10 / 12 for admins, 72 bytes,
+│   │   │   │                      common-password list), recovery codes (xxxx-xxxx-xxxx, HMAC)
+│   │   │   ├── lockout.js         Progressive sign-in pause per account (expires, decays), one check at a time
+│   │   │   ├── images.js          Removes metadata / trailing bytes from uploaded branding images
 │   │   │   ├── logs.js            Writes every log type to the DB and to files (pino)
 │   │   │   ├── settings.js        Cached settings + validation rules
 │   │   │   ├── retention.js       Log retention purge (audit trail ≥ 365 days, recorded, chain anchors)
@@ -66,7 +78,9 @@ ets/
 │   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
 │   │   │   ├── functions.js       Add / remove (soft) / restore functions
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
-│   │   └── utils/http.js          HttpError and input validation helpers
+│   │   └── utils/
+│   │       ├── http.js            HttpError and input validation helpers (ids, dates, own keys, JSON depth)
+│   │       └── csv.js             CSV cells with formula neutralisation
 │   ├── scripts/
 │   │   ├── create-admin.js        Create / reset an administrator from the command line
 │   │   ├── import-legacy.js       Import the original page's data from the command line
@@ -80,6 +94,10 @@ ets/
 │       ├── config.test.js         APP_SECRET checks, database TLS options, 2FA secret encryption / rotation
 │       ├── rotate.test.js         rotate-app-secret script (needs TEST_DATABASE_URL)
 │       ├── audit-log.test.js      Audit trail integrity, logging events and privacy (needs TEST_DATABASE_URL)
+│       ├── auth-security.test.js  Lockout model, rate limits, session rotation, 2FA step-up (needs TEST_DATABASE_URL)
+│       ├── passwords.test.js      Password policy, recovery codes, cookie, general /api limit
+│       ├── authz.test.js          usr admin-only, scope fail-closed, approvals, import two-person rule, last admin
+│       ├── input.test.js          Request limits, validation, CSV neutralisation, branding image cleaning
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -156,7 +174,7 @@ ets/
 
 | Path | Content |
 |---|---|
-| `/opt/ets/` | Application code (backend, built frontend in `frontend/dist`, deploy, docs) |
+| `/opt/ets/` | Application code (backend, built frontend in `frontend/dist`, deploy files), root-owned; no docs, tests or reference data |
 | `/etc/ets/ets.env` | Configuration and secrets (APP_SECRET, DB password) — mode 640 |
 | `/etc/ets/install.conf` | Last installer answers (no secrets), defaults for the next run |
 | `/var/log/ets-install.log` | Installer output (root only, no passwords) |

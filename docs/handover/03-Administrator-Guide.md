@@ -12,7 +12,8 @@ from 2FA in bulk.
 
 ### Create a user
 1. **New user** → fill in the full name, username (Latin letters, digits, `. _ -`), email (optional),
-   language and an initial password.
+   language and an initial password (at least 10 characters — 12 for an administrator —, letters and digits,
+   not a common password, not containing the username, at most 72 bytes).
 2. Keep **Must change password at first login** ticked. The user then picks their own password.
 3. Choose a **role** (see the table below).
 4. Optionally adjust **permissions**. Each permission follows the role, or can be explicitly **granted** or
@@ -24,20 +25,25 @@ from 2FA in bulk.
    applications only, never the rest of the department.
 6. **Save**.
 
-| Role | Typical user |
-|---|---|
-| System Administrator | IT administrator of ETS |
-| Department Manager | Head of a department's ERP rollout (scope: their department) |
-| Application Editor | Functional lead for some applications (scope: those applications) |
-| Tester | QA staff recording test results |
-| Observer | Management / auditors (read only) |
+| Role | Typical user | Scope |
+|---|---|---|
+| System Administrator | IT administrator of ETS (the only role with *Manage users*) | always full |
+| Project Manager / Technical Project Manager | Run the project; final approval of team result files | always full |
+| Department Manager | Head of a department's ERP rollout | their department |
+| Department Team Lead | Leads a department team; first approval of team files and approval of data-entry edits | their department (or applications) |
+| Team Member | Enters progress / tests; edits and files wait for the team lead | their department (or applications) |
+| Application Editor | Functional lead for some applications | those applications |
+| Tester | QA staff recording test results | the applications they test |
+| Observer | Management / auditors (read only) | what they may see |
+
+Roles other than the three full-scope roles **must** be given a scope, otherwise the user sees nothing.
 
 ### Actions on a user
 | Button | Effect | Logged as |
 |---|---|---|
-| Reset password | Sets a new password, unlocks the account, signs out all sessions, forces a change at next login (optional) | `password_reset_by_admin` |
-| Unlink authenticator | Removes the user's 2FA app and recovery codes. If 2FA is required, they enrol again at next login | `mfa_reset_by_admin` |
-| Unlock | Clears a lockout caused by failed attempts | `account_unlocked_by_admin` |
+| Reset password | Sets a new password, clears a sign-in pause, signs out all sessions, forces a change at next login (optional) | `password_reset_by_admin` |
+| Unlink authenticator | Removes the user's 2FA app and recovery codes and signs the user out. If 2FA is required, they enrol again at next login | `mfa_reset_by_admin` |
+| Unlock | Shown while sign-in to the account is paused («مقفل / Locked»): clears the failure count and the pause | `account_unlocked_by_admin` |
 | End sessions | Signs the user out everywhere | `sessions_revoked_by_admin` |
 | Active (untick) | Disables the account and ends its sessions. Users are never deleted, so their history stays | audit `update user` |
 
@@ -48,6 +54,14 @@ Safety rules enforced by the server:
 - You cannot widen your own permissions or scope, or exempt yourself from 2FA — another administrator does that.
   Revoking a permission from yourself is allowed (unless you are the last administrator).
 - Disabling a user withdraws their edit requests still waiting for approval.
+
+**Sign-in pauses instead of a fixed lock (1.0.0).** After 5 failed password / 2FA / recovery-code checks
+(`MAX_FAILED_LOGINS`) sign-in to the account pauses for 1 minute, then 2, 4, 8 … up to 15 minutes
+(`LOCK_MINUTES`); the pause ends by itself and the count restarts after 60 minutes without failures
+(`LOCKOUT_RESET_MINUTES`) or after a complete sign-in. The login screen never says that an account is locked — it
+shows the same «incorrect username or password» message — so a user may report that their correct password does
+not work: check the *Locked* badge and *Logs → Login & security* (`account_locked`, `login_while_locked`), then
+let them wait or press **Unlock**. Too many attempts from one PC show «Too many attempts — wait N seconds».
 
 > **Upgrading to 1.0.0 — check the scope of existing users.** Before 1.0.0 a user of a scoped role (Department
 > Manager, Team Lead, Team Member, Application Editor, Tester, Observer) with no department/application ticked
@@ -135,9 +149,16 @@ Authy, FreeOTP and similar apps.
 An exempt user is never asked for a code, whatever the policy. Exemptions are logged
 (`mfa_exempted_by_admin`, `mfa_exemption_removed`).
 
+### What users must confirm themselves
+Turning 2FA on from *My account* asks for the password; turning it off or generating new recovery codes asks
+for the password **and** a current authenticator code (or a recovery code). Recovery codes have the form
+`xxxx-xxxx-xxxx`; users with codes from before 1.0.0 see a hint to generate new ones (the old ones keep working
+until used).
+
 ### Lost phone
 The user signs in with one of their **recovery codes** (link *Use a recovery code instead*). Each code
-works once. If they have no codes left, an administrator uses **Unlink authenticator** on that user.
+works once. If they have no codes left, an administrator uses **Unlink authenticator** on that user. Only an
+administrator can do this for another administrator; exempting users from 2FA in bulk is for administrators only.
 
 ## 3. Settings (Administration → Settings) — permission `cfg`
 
@@ -145,8 +166,8 @@ works once. If they have no codes left, an administrator uses **Unlink authentic
 |---|---|---|
 | Two-step verification | Policy; issuer name shown in the app | Optional; `ETS` |
 | General | System name (Arabic / English) on the login screen and navbar; default language (login screen and interface for a browser that has not chosen a language yet, and new users created without a language) | — ; Arabic |
-| Security | Minimum password length | 10 |
-| Log retention | Days to keep login/audit/error/system logs; days to keep the request log | 365; 90 |
+| Security | Minimum password length (10–64; administrators always need at least 12) | 10 |
+| Log retention | Days to keep the **audit trail** (change history, at least 365); days to keep the login, error and system logs (at least 30); days to keep the request log (at least 7). Lowering a value is flagged in the logs; every purge is recorded in the audit trail | 365; 365; 90 |
 | Data | Export all tracker data (JSON); import the original tracker file (HTML/JSON) | — |
 | System information | Version, PostgreSQL version, database size, uptime | — |
 
@@ -182,12 +203,18 @@ Branding images are public (the login screen shows them), so on upload the syste
 Tabs: **Login & security**, **Audit trail**, **Request log**, **Errors**, **System**.
 Filter by text, date range, event and result. Click a row to see all of its details (for audit rows this
 includes the old and new values). **Export CSV** downloads the current filter (opens in Excel; Arabic is
-kept).
-Users with a limited scope (for example Department Managers) see only the **audit trail** of their own
-applications. Full details are in [07-Logging-and-Audit.md](07-Logging-and-Audit.md).
+kept). Every export, and an administrator opening a security log, is itself recorded in the audit trail.
 
-The cards at the top show the last 24 hours: successful logins, failed attempts, changes, errors, active
-sessions and locked accounts. Check **failed attempts** and **errors** regularly.
+**Security logs are for System Administrators only.** The *Login & security*, *Request log*, *Errors* and
+*System* tabs, the statistics cards, IP addresses and user agents are shown to the System Administrator role
+only. Every other role with `log` (Project / Technical Project Manager, Department Manager, Team Lead) sees only
+the **audit trail** — of their own applications when their scope is limited — without IP addresses.
+Full details are in [07-Logging-and-Audit.md](07-Logging-and-Audit.md).
+
+The cards at the top (administrators) show the last 24 hours: successful logins, failed attempts, changes,
+errors, active sessions, locked accounts and log rows that could not be saved. Check **failed attempts** and
+**errors** regularly. **Verify log integrity** recomputes the hash chains of the audit trail and the sign-in log
+and shows their heads — note a head now and then outside the server (07 §3).
 
 ## 5. Weights and calculation — permission `wgt`
 
@@ -204,11 +231,19 @@ Project-wide parameters can only be changed by full-scope users.
 ```bash
 cd /opt/ets/backend
 E="sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env LOG_DIR=/var/log/ets"
-$E node scripts/create-admin.js --username admin2 --name "Second Admin"   # create/reset an admin
+$E node scripts/create-admin.js --username admin2 --name "Second Admin"   # create/reset an admin (password asked, 12+)
 $E node scripts/import-legacy.js /path/file.html                            # import original data
 $E node scripts/purge-logs.js                                               # apply retention now
-sudo ets-backup                                                             # backup now
+$E node scripts/verify-audit.js                                             # check the audit-trail hash chains
+$E node scripts/set-setting.js mfa.mode required                            # change a setting (audited as cli:<user>)
+$E node scripts/rotate-app-secret.js                                        # APP_SECRET rotation, see 06 §6a
+sudo ets-backup                                                             # encrypted backup now
+sudo ets-log-protect status                                                 # audit-trail protection (07 §3)
 ```
+
+These scripts write to the audit trail in the name of `cli:<operating-system user>`. `create-admin` signs the
+account out everywhere; `--must-change-password` forces a new password at the next sign-in; `--password` on the
+command line is deprecated (visible in the process list).
 
 If every administrator is locked out, `create-admin.js` with an existing username resets that account's
 password, unlocks it and makes it an active administrator. Add `--reset-2fa` if the administrator has also

@@ -1,17 +1,142 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–007).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
--- Kept for documentation and for DBAs reviewing the structure.
+-- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
+-- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
 -- PostgreSQL database dump
 -- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
--- *not* creating schema, since initdb creates it
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
-COMMENT ON SCHEMA public IS '';
 -- Name: citext; Type: EXTENSION; Schema: -; Owner: -
 CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 -- Name: EXTENSION citext; Type: COMMENT; Schema: -; Owner: -
 COMMENT ON EXTENSION citext IS 'data type for case-insensitive character strings';
+-- Name: ets_anchor_append_only(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_anchor_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'log_chain_anchor is append-only' USING ERRCODE = 'insufficient_privilege';
+END $$;
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.audit_log (
+    id bigint NOT NULL,
+    ts timestamp with time zone DEFAULT now() NOT NULL,
+    user_id integer,
+    username text,
+    action text NOT NULL,
+    entity text NOT NULL,
+    entity_id text,
+    summary text,
+    old_value jsonb,
+    new_value jsonb,
+    ip inet,
+    context jsonb,
+    chain_seq bigint,
+    prev_hash text,
+    row_hash text
+);
+-- Name: ets_audit_row_text(public.audit_log); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_audit_row_text(r public.audit_log) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT jsonb_build_array(r.id, r.chain_seq, extract(epoch FROM r.ts)::text, r.username, r.action, r.entity, r.entity_id,
+    r.summary, r.old_value, r.new_value, r.context, r.ip::text)::text $$;
+-- Name: auth_log; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.auth_log (
+    id bigint NOT NULL,
+    ts timestamp with time zone DEFAULT now() NOT NULL,
+    user_id integer,
+    username text,
+    event text NOT NULL,
+    success boolean NOT NULL,
+    ip inet,
+    user_agent text,
+    detail jsonb,
+    chain_seq bigint,
+    prev_hash text,
+    row_hash text
+);
+-- Name: ets_auth_row_text(public.auth_log); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_auth_row_text(r public.auth_log) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT jsonb_build_array(r.id, r.chain_seq, extract(epoch FROM r.ts)::text, r.username, r.event, r.success, r.ip::text,
+    r.user_agent, r.detail)::text $$;
+-- Name: ets_chain_hash(text, text); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_chain_hash(prev text, body text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT encode(sha256(convert_to(prev || '|' || body, 'UTF8')), 'hex') $$;
+-- Name: ets_log_append_only(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_log_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    -- the only change allowed: user_id → NULL when the user is deleted (foreign key ON DELETE SET NULL)
+    IF NEW.user_id IS NULL AND OLD.user_id IS NOT NULL
+       AND (to_jsonb(NEW) - 'user_id') = (to_jsonb(OLD) - 'user_id') THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION '% is append-only: rows cannot be changed', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
+  ELSIF TG_OP = 'DELETE' THEN
+    IF current_setting('ets.log_purge', true) = TG_TABLE_NAME
+       AND OLD.ts < now() - make_interval(days => CASE TG_TABLE_NAME WHEN 'audit_log' THEN 365 ELSE 30 END) THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION '% is append-only: rows are removed only by the retention purge (ets_purge_log)', TG_TABLE_NAME
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RAISE EXCEPTION '% is append-only: TRUNCATE is not allowed', TG_TABLE_NAME USING ERRCODE = 'insufficient_privilege';
+END $$;
+-- Name: ets_log_chain_insert(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_log_chain_insert() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE h log_chain_head%ROWTYPE;
+BEGIN
+  INSERT INTO log_chain_head(tbl) VALUES (TG_TABLE_NAME) ON CONFLICT (tbl) DO NOTHING;
+  SELECT * INTO h FROM log_chain_head WHERE tbl = TG_TABLE_NAME FOR UPDATE;
+  NEW.ts := now();
+  NEW.chain_seq := h.last_seq + 1;
+  NEW.prev_hash := h.last_hash;
+  IF TG_TABLE_NAME = 'audit_log' THEN
+    NEW.row_hash := ets_chain_hash(NEW.prev_hash, ets_audit_row_text(NEW::audit_log));
+  ELSE
+    NEW.row_hash := ets_chain_hash(NEW.prev_hash, ets_auth_row_text(NEW::auth_log));
+  END IF;
+  UPDATE log_chain_head SET last_seq = NEW.chain_seq, last_hash = NEW.row_hash WHERE tbl = TG_TABLE_NAME;
+  RETURN NEW;
+END $$;
+-- Name: ets_purge_log(text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_purge_log(p_tbl text, p_days integer, p_actor text) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE floor_days integer; cutoff timestamptz; keep_from bigint; first_kept record; n bigint;
+BEGIN
+  IF p_tbl NOT IN ('audit_log', 'auth_log') THEN RAISE EXCEPTION 'not a chained log table: %', p_tbl; END IF;
+  floor_days := CASE p_tbl WHEN 'audit_log' THEN 365 ELSE 30 END;
+  cutoff := now() - make_interval(days => greatest(coalesce(p_days, floor_days), floor_days));
+  PERFORM 1 FROM log_chain_head WHERE tbl = p_tbl FOR UPDATE;            -- no writer while the start moves
+  -- the oldest row that stays: every row before it in the chain is older than the cutoff
+  EXECUTE format('SELECT min(chain_seq) FROM %I WHERE ts >= $1', p_tbl) INTO keep_from USING cutoff;
+  IF keep_from IS NULL THEN
+    EXECUTE format('SELECT max(chain_seq) + 1 FROM %I', p_tbl) INTO keep_from;
+    IF keep_from IS NULL THEN RETURN 0; END IF;
+  END IF;
+  PERFORM set_config('ets.log_purge', p_tbl, true);
+  EXECUTE format('DELETE FROM %I WHERE chain_seq < $1', p_tbl) USING keep_from;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  PERFORM set_config('ets.log_purge', '', true);
+  IF n > 0 THEN
+    EXECUTE format('SELECT chain_seq, prev_hash FROM %I WHERE chain_seq = $1', p_tbl) INTO first_kept USING keep_from;
+    INSERT INTO log_chain_anchor(tbl, next_seq, prev_hash, deleted, cutoff, actor)
+    VALUES (p_tbl, keep_from,
+      coalesce(first_kept.prev_hash, (SELECT last_hash FROM log_chain_head WHERE tbl = p_tbl)), n, cutoff, left(p_actor, 100));
+  END IF;
+  RETURN n;
+END $_$;
 -- Name: access_log; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.access_log (
     id bigint NOT NULL,
@@ -62,21 +187,6 @@ CREATE TABLE public.applications (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by integer
 );
--- Name: audit_log; Type: TABLE; Schema: public; Owner: -
-CREATE TABLE public.audit_log (
-    id bigint NOT NULL,
-    ts timestamp with time zone DEFAULT now() NOT NULL,
-    user_id integer,
-    username text,
-    action text NOT NULL,
-    entity text NOT NULL,
-    entity_id text,
-    summary text,
-    old_value jsonb,
-    new_value jsonb,
-    ip inet,
-    context jsonb
-);
 -- Name: audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.audit_log_id_seq
     START WITH 1
@@ -86,18 +196,6 @@ CREATE SEQUENCE public.audit_log_id_seq
     CACHE 1;
 -- Name: audit_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
--- Name: auth_log; Type: TABLE; Schema: public; Owner: -
-CREATE TABLE public.auth_log (
-    id bigint NOT NULL,
-    ts timestamp with time zone DEFAULT now() NOT NULL,
-    user_id integer,
-    username text,
-    event text NOT NULL,
-    success boolean NOT NULL,
-    ip inet,
-    user_agent text,
-    detail jsonb
-);
 -- Name: auth_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.auth_log_id_seq
     START WITH 1
@@ -303,6 +401,32 @@ CREATE SEQUENCE public.import_changes_id_seq
     CACHE 1;
 -- Name: import_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.import_changes_id_seq OWNED BY public.import_changes.id;
+-- Name: log_chain_anchor; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.log_chain_anchor (
+    id bigint NOT NULL,
+    ts timestamp with time zone DEFAULT now() NOT NULL,
+    tbl text NOT NULL,
+    next_seq bigint NOT NULL,
+    prev_hash text NOT NULL,
+    deleted bigint NOT NULL,
+    cutoff timestamp with time zone NOT NULL,
+    actor text
+);
+-- Name: log_chain_anchor_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.log_chain_anchor_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: log_chain_anchor_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.log_chain_anchor_id_seq OWNED BY public.log_chain_anchor.id;
+-- Name: log_chain_head; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.log_chain_head (
+    tbl text NOT NULL,
+    last_seq bigint DEFAULT 0 NOT NULL,
+    last_hash text DEFAULT ''::text NOT NULL
+);
 -- Name: progress_snapshots; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.progress_snapshots (
     day date NOT NULL,
@@ -398,6 +522,8 @@ CREATE TABLE public.user_recovery_codes (
     used_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
+-- Name: COLUMN user_recovery_codes.code_hash; Type: COMMENT; Schema: public; Owner: -
+COMMENT ON COLUMN public.user_recovery_codes.code_hash IS 'h1:<hex HMAC-SHA-256> (1.0.0+) or legacy <hex SHA-256>';
 -- Name: user_recovery_codes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.user_recovery_codes_id_seq
     AS integer
@@ -439,6 +565,7 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by integer,
+    last_failed_at timestamp with time zone,
     CONSTRAINT users_language_check CHECK ((language = ANY (ARRAY['ar'::text, 'en'::text])))
 );
 -- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -469,6 +596,8 @@ ALTER TABLE ONLY public.functions ALTER COLUMN id SET DEFAULT nextval('public.fu
 ALTER TABLE ONLY public.import_batches ALTER COLUMN id SET DEFAULT nextval('public.import_batches_id_seq'::regclass);
 -- Name: import_changes id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.import_changes ALTER COLUMN id SET DEFAULT nextval('public.import_changes_id_seq'::regclass);
+-- Name: log_chain_anchor id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.log_chain_anchor ALTER COLUMN id SET DEFAULT nextval('public.log_chain_anchor_id_seq'::regclass);
 -- Name: system_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.system_log ALTER COLUMN id SET DEFAULT nextval('public.system_log_id_seq'::regclass);
 -- Name: user_recovery_codes id; Type: DEFAULT; Schema: public; Owner: -
@@ -517,6 +646,12 @@ ALTER TABLE ONLY public.import_batches
 -- Name: import_changes import_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.import_changes
     ADD CONSTRAINT import_changes_pkey PRIMARY KEY (id);
+-- Name: log_chain_anchor log_chain_anchor_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.log_chain_anchor
+    ADD CONSTRAINT log_chain_anchor_pkey PRIMARY KEY (id);
+-- Name: log_chain_head log_chain_head_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.log_chain_head
+    ADD CONSTRAINT log_chain_head_pkey PRIMARY KEY (tbl);
 -- Name: progress_snapshots progress_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.progress_snapshots
     ADD CONSTRAINT progress_snapshots_pkey PRIMARY KEY (day);
@@ -561,12 +696,16 @@ CREATE INDEX access_log_ts_idx ON public.access_log USING btree (ts DESC);
 CREATE INDEX access_log_user_id_ts_idx ON public.access_log USING btree (user_id, ts DESC);
 -- Name: applications_department_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX applications_department_id_idx ON public.applications USING btree (department_id);
+-- Name: audit_log_chain_seq_key; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX audit_log_chain_seq_key ON public.audit_log USING btree (chain_seq);
 -- Name: audit_log_entity_entity_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX audit_log_entity_entity_id_idx ON public.audit_log USING btree (entity, entity_id);
 -- Name: audit_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX audit_log_ts_idx ON public.audit_log USING btree (ts DESC);
 -- Name: audit_log_user_id_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX audit_log_user_id_ts_idx ON public.audit_log USING btree (user_id, ts DESC);
+-- Name: auth_log_chain_seq_key; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX auth_log_chain_seq_key ON public.auth_log USING btree (chain_seq);
 -- Name: auth_log_event_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX auth_log_event_idx ON public.auth_log USING btree (event);
 -- Name: auth_log_ts_idx; Type: INDEX; Schema: public; Owner: -
@@ -591,6 +730,8 @@ CREATE INDEX import_batches_status_target_department_id_idx ON public.import_bat
 CREATE INDEX import_batches_uploaded_at_idx ON public.import_batches USING btree (uploaded_at DESC);
 -- Name: import_changes_batch_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX import_changes_batch_id_idx ON public.import_changes USING btree (batch_id);
+-- Name: log_chain_anchor_tbl; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX log_chain_anchor_tbl ON public.log_chain_anchor USING btree (tbl, next_seq);
 -- Name: sessions_expires_at_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX sessions_expires_at_idx ON public.sessions USING btree (expires_at);
 -- Name: sessions_user_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -599,6 +740,22 @@ CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE INDEX system_log_ts_idx ON public.system_log USING btree (ts DESC);
 -- Name: user_recovery_codes_user_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX user_recovery_codes_user_id_idx ON public.user_recovery_codes USING btree (user_id);
+-- Name: audit_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_append_only();
+-- Name: auth_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.auth_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_append_only();
+-- Name: log_chain_anchor ets_append_only; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.log_chain_anchor FOR EACH ROW EXECUTE FUNCTION public.ets_anchor_append_only();
+-- Name: audit_log ets_chain; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_chain BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_chain_insert();
+-- Name: auth_log ets_chain; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_chain BEFORE INSERT ON public.auth_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_chain_insert();
+-- Name: audit_log ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EACH STATEMENT EXECUTE FUNCTION public.ets_log_append_only();
+-- Name: auth_log ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.auth_log FOR EACH STATEMENT EXECUTE FUNCTION public.ets_log_append_only();
+-- Name: log_chain_anchor ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.log_chain_anchor FOR EACH STATEMENT EXECUTE FUNCTION public.ets_anchor_append_only();
 -- Name: access_log access_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.access_log
     ADD CONSTRAINT access_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;

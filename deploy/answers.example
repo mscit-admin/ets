@@ -15,7 +15,9 @@ ETS_API_PORT=3000                   # internal application port (localhost only)
 #ETS_CERT=/etc/ssl/company/ets.crt  # existing only
 #ETS_KEY=/etc/ssl/company/ets.key   # existing only
 
-ETS_DB_MODE=local                   # local (create on this server) | remote (existing PostgreSQL server)
+ETS_DB_MODE=local                   # local (create on this server; the audit trail is protected in the database
+                                    # automatically) | remote (existing PostgreSQL server over TLS; the DBA
+                                    # protects the log tables — docs/handover/07-Logging-and-Audit.md §3)
 #ETS_DB_HOST=10.0.0.20              # remote only
 #ETS_DB_SSLROOTCERT=/root/db-ca.crt # remote only: CA certificate of the DB server → TLS verify-full
                                     # (without it: TLS "require" = encrypted, server not verified)

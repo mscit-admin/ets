@@ -4,16 +4,17 @@
 
 | Level | Who | How | Status at handover |
 |---|---|---|---|
-| Unit tests | Developer | `backend/test/totp.test.js`, `calc.test.js` | 9 tests, all pass |
-| API integration tests | Developer | `backend/test/api.test.js` against a disposable PostgreSQL DB | 14 tests, all pass |
+| Unit tests | Developer | `backend/test/totp.test.js`, `calc.test.js`, `config.test.js`, and the unit parts of `passwords.test.js` / `input.test.js` | run without a database |
+| API integration and security tests | Developer | `api.test.js`, `auth-security.test.js` (lockout, rate limits, sessions, 2FA step-up), `passwords.test.js` (password policy, recovery codes, cookie), `authz.test.js` (permissions, `usr` admin-only, scope fail-closed, approvals, two-person rule), `input.test.js` (request limits, validation, CSV, branding images), `audit-log.test.js` (append-only, hash chain, purge, admin-only logs), `rotate.test.js` (APP_SECRET rotation) against a disposable PostgreSQL DB | **90 tests**, all pass |
+| Deployment checks | Developer | Audit-trail protection with a non-superuser application role (install, migrations that change the log tables, backup, restore, refused tampering) — run by hand on a test cluster, see §2 E-11/E-12 | pass |
 | UAT | Customer | The test cases below, run in the browser on the installed server | To be run by the customer |
 
 How to run the automated tests:
 
 ```bash
-sudo -u postgres createdb -O ets ets_test
-cd backend && TEST_DATABASE_URL=postgres://ets:<pw>@127.0.0.1/ets_test npm test
-# expected: "# tests 23  # pass 23  # fail 0"
+sudo -u postgres createdb -O ets ets_test          # on a development / test machine
+cd backend && TEST_DATABASE_URL=postgres://ets:<password>@127.0.0.1/ets_test npm test
+# expected: "# tests 90  # pass 90  # fail 0"
 ```
 
 > `ets_test` is wiped by the tests. **Never** point `TEST_DATABASE_URL` at the production database.
@@ -21,9 +22,10 @@ cd backend && TEST_DATABASE_URL=postgres://ets:<pw>@127.0.0.1/ets_test npm test
 ### Test environment for UAT
 - Server installed per [02-Installation-Guide.md](02-Installation-Guide.md); browsers Chrome/Edge/Firefox
   (latest) and a phone browser.
-- Test accounts created by the administrator: `uat.admin` (System Administrator), `uat.hr` (Department
-  Manager, scope HR), `uat.editor` (Application Editor, scope Payroll), `uat.qa` (Tester), `uat.view`
-  (Observer).
+- Test accounts created by the administrator: `uat.admin` and `uat.admin2` (System Administrators), `uat.hr`
+  (Department Manager, scope HR), `uat.editor` (Application Editor, scope Payroll), `uat.qa` (Tester, scope HR),
+  `uat.view` (Observer, scope HR), `uat.noscope` (Tester with **no** scope), plus the accounts of §H.
+  Passwords: at least 10 characters (12 for administrators), not a common word.
 - A phone with Google Authenticator or Microsoft Authenticator.
 
 ### Recording results
@@ -35,23 +37,28 @@ result and a screenshot to the defect list (§4).
 ### A. Login & passwords
 | ID | Steps | Expected result | Result |
 |---|---|---|---|
-| A-01 | Open the site over `http://` | Redirected to `https://` | |
+| A-01 | Open the site over `http://` (when an HTTP port was configured) | Redirected to `https://`; there is no plain-HTTP mode | |
 | A-02 | Sign in with a correct username and password (2FA policy *Optional*, user not enrolled) | Dashboard opens; *Logs → Login & security* shows `login` success | |
 | A-03 | Sign in with a wrong password | "Incorrect username or password"; log shows `login_bad_password` | |
 | A-04 | Sign in with a non-existent username | Same message as A-03 (does not reveal that the user does not exist); log `login_unknown_user` | |
-| A-05 | Enter a wrong password 5 times, then the correct one | Account locked message; log `account_locked`; the admin sees the user as *Locked* | |
-| A-06 | Admin → user → **Unlock**; user signs in | Login works; log `account_unlocked_by_admin` | |
+| A-05 | Enter a wrong password 5 times, then the correct one at once | Every answer is the same "Incorrect username or password. After several failed attempts, sign-in to the account pauses for a few minutes and then resumes by itself" — the correct password is not accepted during the pause and the screen does not say the account is locked; log `account_locked`, then `login_while_locked`; the admin sees the user as *Locked* | |
+| A-05b | Wait 1 minute after A-05, sign in with the correct password | Sign-in works (the pause ends by itself; it doubles with each further failure, up to 15 min) | |
+| A-06 | Repeat A-05, then admin → user → **Unlock**; user signs in | Login works at once; log `account_unlocked_by_admin` | |
 | A-07 | Admin creates a user with "must change password"; user signs in | The *Change password* screen appears; no other screen is reachable until it is changed | |
-| A-08 | Try a new password `abc` | Refused with the policy message | |
+| A-08 | Try new passwords `abc`, `Abcdefg12` (9 characters) and `Password2026!` (common) | Each refused with the policy message (at least 10 characters, letters and digits, not common, not containing the username) | |
+| A-08b | Admin creates an administrator with an 11-character password | Refused: administrators need at least 12 characters | |
 | A-09 | Change the password correctly | Dashboard opens; log `password_changed` | |
 | A-10 | Stay idle for 60 minutes, then click anything | Returned to the login screen | |
 | A-11 | Click the avatar → **Log out** | Login screen; log `logout` | |
 | A-12 | Switch language on the login screen | All texts switch Arabic ↔ English and the direction changes RTL ↔ LTR | |
+| A-13 | Send more than 30 wrong sign-ins from one PC within 15 minutes (any usernames) | "Too many attempts — wait N seconds" (HTTP 429); log `rate_limited` written once for the window | |
+| A-14 | Browser developer tools → Application → Cookies after sign-in | One cookie `__Host-ets_sid`, *HttpOnly*, *Secure*, *SameSite=Strict*, path `/` | |
+| A-15 | Open `https://<address>/api/health` | `{"status":"ok"}` only — no version number | |
 
 ### B. Two-factor authentication
 | ID | Steps | Expected result | Result |
 |---|---|---|---|
-| B-01 | *My account* → **Enable two-step verification**, scan the QR, enter the code | 10 recovery codes shown; status *Enabled* | |
+| B-01 | *My account* → **Enable two-step verification**: enter your password, scan the QR, enter the code | The password is asked first; 10 recovery codes in the form `xxxx-xxxx-xxxx` shown once; status *Enabled* | |
 | B-02 | Log out and in again | After the password a 6-digit code is requested; a correct code opens the dashboard | |
 | B-03 | Enter a wrong code | "Invalid code"; log `mfa_bad_code` | |
 | B-04 | Use the same correct code for a second login within 30 s | Refused (`mfa_code_replay`) | |
@@ -62,7 +69,10 @@ result and a screenshot to the defect list (§4).
 | B-09 | Admin: **Exempt everyone from 2FA**, then **Remove exemption for everyone** | All exempt, then none exempt | |
 | B-10 | Admin: policy **Disabled for all users** | Enrolled users sign in without a code | |
 | B-11 | Admin: user → **Unlink authenticator** | That user's 2FA is removed; under *Required* they enrol again | |
-| B-12 | *My account* → **Generate new recovery codes** (password required) | New codes shown; old codes no longer work | |
+| B-12 | *My account* → **Generate new recovery codes** | Password **and** a current authenticator code (or a recovery code) are required; new codes shown; old codes no longer work | |
+| B-13 | *My account* → **Disable two-step verification** with the right password but a wrong code | Refused; with the password and a correct code it is disabled (log `mfa_disabled_by_user`) and the user's other sessions end | |
+| B-14 | At the 2FA step after the password, enter wrong codes until refused | After the limit: "Too many attempts — wait N seconds"; the failures count towards the account pause; a correct code during the pause is refused | |
+| B-15 | Admin → user → **Unlink authenticator** while that user is signed in elsewhere | The user's sessions end (signed out) | |
 
 ### C. Tracking
 | ID | Steps | Expected result | Result |
@@ -105,17 +115,28 @@ result and a screenshot to the defect list (§4).
 | D-05 | Admin: grant `uat.qa` the extra permission *Edit progress* | `uat.qa` can now edit progress | |
 | D-06 | Admin: try to change their own role, or disable themselves | Refused | |
 | D-07 | Admin: try to demote the only administrator | Refused ("at least one active administrator") | |
+| D-08 | Admin: give `uat.hr` (or a Project Manager) the *Manage users* permission | Refused: «صلاحية إدارة المستخدمين لمسؤولي النظام فقط»; *Users* is not in their menu | |
+| D-09 | `uat.admin` tries to widen their own permissions or scope, or exempt themselves from 2FA | Refused; `uat.admin2` can do it for them | |
+| D-10 | Sign in as `uat.noscope` (scoped role, nothing ticked) | Dashboard, departments, logs and approvals show **no data**; the Users list marks the account «بلا نطاق / No scope» | |
+| D-11 | A team lead scoped to **one application** opens an edit request or import batch of another application of the same department | Not listed / cannot approve | |
+| D-12 | Two administrators remove each other's admin role at the same time (two browsers) | One change is refused («at least one active administrator») | |
 
 ### E. Logs & audit
 | ID | Steps | Expected result | Result |
 |---|---|---|---|
 | E-01 | Logs → *Audit trail* after C-04 | A row `update function` with old `{progress:0}` and new `{progress:60}` | |
-| E-02 | Logs → *Login & security*, filter Result = Failure | Only failed events | |
+| E-02 | As `uat.admin`: Logs → *Login & security*, filter Result = Failure | Only failed events | |
 | E-03 | Logs → *Request log* | API requests with status and duration | |
 | E-04 | Logs → *System* | `startup`, `migration`, `seed` events present | |
 | E-05 | **Export CSV** and open it in Excel | Arabic text readable; columns as on screen | |
-| E-06 | Sign in as `uat.hr` → Logs | Only the *Audit trail* tab, limited to HR | |
+| E-06 | Sign in as `uat.hr` → Logs | Only the *Audit trail* tab, limited to HR, **without IP addresses** (also in its CSV export); no statistics cards | |
+| E-06b | Sign in as `uat.pm` → Logs; open `/api/logs/auth` in the browser | Only the audit trail; the API answers 403 `admin_only` for the login & security, request, error and system logs | |
 | E-07 | On the server: `ls /var/log/ets` | `app.log`, `error.log`, `access.log` exist and are growing | |
+| E-08 | Admin: Logs → **Verify log integrity** | Both chains reported intact; audit row `verify` / `log` | |
+| E-09 | Server: `cd /opt/ets/backend && sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env LOG_DIR=/var/log/ets node scripts/verify-audit.js; echo $?` | `OK` for `audit_log` and `auth_log`; exit code 0 | |
+| E-10 | Settings → «Keep the audit trail» = 300 | Refused (minimum 365); 400 accepted, and the change is in the audit trail | |
+| E-11 | Server (local database): `sudo ets-log-protect status` | `protected` (owner `ets_log_owner`), exit code 0 | |
+| E-12 | Server: `sudo -u ets psql -h 127.0.0.1 -U ets -d ets -c "UPDATE audit_log SET username='x'"` (password from `/etc/ets/ets.env`), and the same with `DELETE FROM audit_log`, `TRUNCATE audit_log`, `DROP TRIGGER ets_append_only ON audit_log` | Every statement refused (*permission denied* / *must be owner*); nothing changes | |
 
 ### H. Team result files and approvals
 Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial), `uat.commember` (Team Member, scope Commercial).
@@ -131,6 +152,7 @@ Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial
 | H-07 | Repeat H-01/H-03 with option **Reports**; `uat.pm` rejects with a reason | Status "Rejected" with the reason; reports unchanged | |
 | H-08 | Upload two files for the same department before approval | The first batch becomes "Replaced by a newer file" | |
 | H-09 | The same person tries to sign both approvals (user with both permissions) | Second signature refused | |
+| H-10 | `uat.comlead` uploads a file, then tries to sign it; `uat.pm` uploads a file and tries the final approval | Both refused: the uploader signs neither stage | |
 
 ### I. Data-entry edits approved by the team lead
 | ID | Steps | Expected result | Result |
@@ -154,6 +176,9 @@ Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial
 | F-04 | Server: restore the dump on a test DB (doc 08 §6) | The function count matches | |
 | F-05 | Server: `sudo systemctl restart ets-backend` | The site is back within seconds; log `startup` | |
 | F-06 | Server: reboot | ETS starts automatically | |
+| F-07 | Test server only: `sudo ets-restore <latest .dump.gpg>` (type YES) | Checksum and decryption checked; safety backup taken; data restored; `sudo ets-log-protect status` → protected; audit row `restore` / `database` | |
+| F-08 | Server: `sudo bash deploy/scripts/update.sh` from the same release copy | Backup taken, `update ok`; audit trail still protected | |
+| F-09 | Check that the backup key and `ets.env` are escrowed (08 §2) | The escrowed key's `sha256sum` matches `/etc/ets/backup.key` | |
 
 ### G. Usability
 | ID | Steps | Expected result | Result |
@@ -163,7 +188,7 @@ Accounts: `uat.pm` (Project Manager), `uat.comlead` (Team Lead, scope Commercial
 | G-03 | Arabic screens | Right-to-left layout; numbers and percentages display correctly (e.g. `49.2%`) | |
 
 ## 3. Exit criteria
-- All cases in A, B, D and E pass.
+- All cases in A, B, D and E pass, and F-03, F-07 and F-09.
 - No open defect of severity *Critical* or *High*.
 - Other failures have an agreed fix date.
 
