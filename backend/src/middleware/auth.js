@@ -22,7 +22,7 @@ export async function revokeSession(req, res, reason = 'logout') {
   res.clearCookie(config.session.cookieName, { ...cookieOpts(), maxAge: undefined });
 }
 
-export async function loadUserContext(userId) {
+async function loadUserContext(userId) {
   const r = await query(`SELECT u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active,
       u.must_change_password, u.totp_enabled, u.totp_exempt, r.full_scope, r.permissions AS role_perms,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en,

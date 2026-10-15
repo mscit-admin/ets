@@ -8,7 +8,7 @@ import { HttpError, bad, notFound } from '../utils/http.js';
 
 const r = Router();
 
-export const BRANDING_KEYS = ['logo', 'favicon', 'login_bg'];
+const BRANDING_KEYS = ['logo', 'favicon', 'login_bg'];
 const MAX_BYTES = { logo: 1024 * 1024, favicon: 512 * 1024, login_bg: 3 * 1024 * 1024 };
 
 // Only raster formats, recognised by their first bytes (the declared type is not trusted).

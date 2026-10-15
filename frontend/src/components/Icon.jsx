@@ -35,7 +35,6 @@ ship:'<rect x="3" y="4.8" width="18" height="14.4" rx="2.2"/><path d="M3 9.4h18"
 
 const UI = {
   home: "<path d=\"M3.5 11 12 4l8.5 7\"/><path d=\"M5.5 9.5V20h13V9.5\"/>",
-  chart: "<path d=\"M4 20V10M10 20V4M16 20v-7M21 20H3\"/>",
   scale: "<path d=\"M12 4v16M5 20h14M6 8h12\"/><path d=\"M6 8l-3 6a3 3 0 0 0 6 0zM18 8l-3 6a3 3 0 0 0 6 0z\"/>",
   report: "<path d=\"M6.2 3h7.6l4 4v14H6.2z\"/><path d=\"M13.8 3v4h4M9 17v-3M12 17v-5M15 17v-2\"/>",
   curve: "<path d=\"M3 20h18\"/><path d=\"M4 18c5 0 5-12 16-13\"/>",
@@ -58,16 +57,15 @@ const UI = {
   info: "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5.5M12 7.8h.01\"/>",
   flag: "<path d=\"M5 21V4\"/><path d=\"M5 4h12l-2.5 4.5L17 13H5\"/>",
   note: "<path d=\"M5 4h14v11l-5 5H5z\"/><path d=\"M14 20v-5h5M8.5 9h7M8.5 12.5h4\"/>",
-  key: "<circle cx=\"8\" cy=\"15\" r=\"4\"/><path d=\"m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2\"/>",
   filter: "<path d=\"M4 5h16l-6 7.5V19l-4 1.5v-8z\"/>",
 };
 
 const ALL = { ...APP, ...UI };
 
-export function Icon({ name, size = 16, stroke = 1.7, className = "" }) {
+export function Icon({ name, size = 16, className = "" }) {
   return (
     <svg className={"icon " + className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
       dangerouslySetInnerHTML={{ __html: ALL[name] || "" }} />
   );
 }

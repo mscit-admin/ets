@@ -4,18 +4,17 @@ import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { hashPassword, checkPolicy } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
-import { HttpError, bad, notFound, str } from '../utils/http.js';
+import { bad, notFound, str } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('usr'));
 
-export const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
+const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
 
+// Never includes secrets (password hash, TOTP secret), so rows can be returned as-is.
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,
   u.totp_enabled, u.totp_exempt, u.totp_enabled_at, u.failed_attempts, u.locked_until, u.last_login_at,
   host(u.last_login_ip) AS last_login_ip, u.created_at, u.updated_at, u.password_changed_at`;
-
-const publicUser = u => u; // the column list above never includes secrets
 
 r.get('/meta', async (req, res) => {
   const [roles, depts, apps] = await Promise.all([
@@ -33,7 +32,7 @@ r.get('/', async (req, res) => {
       (SELECT count(*)::int FROM user_scopes s WHERE s.user_id=u.id) AS scope_count,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en, r.full_scope AS role_full_scope
     FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.username`)).rows;
-  res.json({ users: rows.map(publicUser), mfa_mode: await getSetting('mfa.mode') });
+  res.json({ users: rows, mfa_mode: await getSetting('mfa.mode') });
 });
 
 async function loadUser(id) {

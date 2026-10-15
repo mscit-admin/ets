@@ -8,7 +8,7 @@ const int03 = v => clamp(v, 0, 3) | 0;
 const text = v => (typeof v === 'string' ? v.slice(0, 2000) : '');
 
 // legacy key → [column, normaliser]
-export const FN_FIELDS = {
+const FN_FIELDS = {
   w: ['weight', v => clamp(v, 0, 1000)],
   p: ['progress', v => clamp(v, 0, 100)],
   on: ['enabled', v => !!v],
@@ -17,7 +17,7 @@ export const FN_FIELDS = {
   rv: ['review_status', int03],
   nt: ['note', text],
 };
-export const REP_FIELDS = {
+const REP_FIELDS = {
   p: ['progress', v => clamp(v, 0, 100)],
   rs: ['status', int03],
   nt: ['note', text],
@@ -35,7 +35,7 @@ export async function diffTarget(c, payload, target, deptIds) {
   return out;
 }
 
-export async function diffDepartment(c, payload, deptId, { functions = true, reports = true, weights = true } = {}) {
+async function diffDepartment(c, payload, deptId, { functions = true, reports = true, weights = true } = {}) {
   const apps = (await c.query('SELECT id, weight FROM applications WHERE department_id=$1', [deptId])).rows;
   const changes = [];
   for (const a of apps) {
@@ -147,4 +147,4 @@ export async function applyBatch(c, batchId, userId) {
 }
 
 // Column names used above come only from these allow-lists.
-export const ALLOWED_FIELDS = new Set([...Object.values(FN_FIELDS), ...Object.values(REP_FIELDS)].map(x => x[0]).concat('weight'));
+const ALLOWED_FIELDS = new Set([...Object.values(FN_FIELDS), ...Object.values(REP_FIELDS)].map(x => x[0]));

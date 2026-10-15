@@ -17,7 +17,7 @@ const MONTH = 30.44;
 export const STATUS_COLOR = { done: 'green', on_track: 'green', at_risk: 'orange', delayed: 'red', overdue: 'red', not_started: 'gray', no_dates: 'gray' };
 
 // % per day from a series of {day, pct}, over the last `window` days; null without at least `minSpan` days.
-export function paceFrom(trend, now, window = 30, minSpan = 7) {
+function paceFrom(trend, window = 30, minSpan = 7) {
   if (!trend || trend.length < 2) return null;
   const pts = trend.map(d => ({ t: new Date(d.day + 'T00:00:00').getTime(), pct: +d.pct }));
   const last = pts[pts.length - 1];
@@ -48,7 +48,7 @@ export function projectHealth(m, st, now = new Date()) {
     h.delayDays = started ? Math.round((now - h.esDate) / DAY) : 0;
     h.spiT = started && now - start > DAY ? (h.esDate - start) / (now - start) : null;
     // pace and forecast
-    const recent = paceFrom(st.trend, now);
+    const recent = paceFrom(st.trend);
     const avg = started && h.elapsedDays > 0 ? actual / h.elapsedDays : null;
     h.pace = recent ? recent.perDay : avg;
     h.paceSource = recent ? 'recent' : avg !== null ? 'average' : null;
@@ -73,7 +73,7 @@ export function projectHealth(m, st, now = new Date()) {
   const plannedNow = h.ready ? h.planned : null;
   h.departments = st.departments.map(d => {
     const gap = plannedNow === null ? null : d.pct - plannedNow;
-    const p = paceFrom(st.dept_trend?.[d.id], now);
+    const p = paceFrom(st.dept_trend?.[d.id]);
     const status = gap === null ? null : d.pct >= 99.95 ? 'done' : gap >= -5 ? 'on_track' : gap >= -15 ? 'at_risk' : 'delayed';
     return { ...d, gap, change30: p ? p.change : null, status };
   }).sort((a, b) => (a.gap ?? a.pct) - (b.gap ?? b.pct));

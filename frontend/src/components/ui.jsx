@@ -8,11 +8,11 @@ export function Indicator({ color = 'gray', children, title }) {
   return <span className={'indicator-pill ' + color} title={title}>{children}</span>;
 }
 
-export function ProgressBar({ value, color }) {
+export function ProgressBar({ value }) {
   const v = Math.max(0, Math.min(100, +value || 0));
   return (
     <div className="progress" role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
-      <div className={'progress-bar ' + (color || pctColor(v))} style={{ width: v + '%' }} />
+      <div className={'progress-bar ' + pctColor(v)} style={{ width: v + '%' }} />
     </div>
   );
 }

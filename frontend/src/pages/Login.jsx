@@ -185,7 +185,7 @@ export function ForcePasswordChange() {
   );
 }
 
-export function PasswordForm({ onDone }) {
+export function PasswordForm() {
   const { t, errText } = useI18n();
   const { refresh } = useAuth();
   const [f, setF] = useState({ current_password: '', new_password: '', confirm: '' });
@@ -199,7 +199,7 @@ export function PasswordForm({ onDone }) {
     try {
       await api.post('/auth/change-password', { current_password: f.current_password, new_password: f.new_password });
       setOk(true); setF({ current_password: '', new_password: '', confirm: '' });
-      await refresh(); onDone?.();
+      await refresh();
     } catch (x) { setErr(x); }
     setBusy(false);
   };

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query, tx } from '../db/pool.js';
+import { tx } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { allSettings, invalidateSettings, SETTING_RULES } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';

@@ -6,7 +6,7 @@ import { useI18n } from '../i18n/index.jsx';
 import { pc } from '../lib/format.js';
 import { NumberCard } from './ui.jsx';
 
-export const sCurve = n => Array.from({ length: n }, (_, i) => { const t = (i + 1) / n; return +(100 * t * t * (3 - 2 * t)).toFixed(1); });
+const sCurve = n => Array.from({ length: n }, (_, i) => { const t = (i + 1) / n; return +(100 * t * t * (3 - 2 * t)).toFixed(1); });
 
 // Start date + k periods. Months keep the day of month, clamped to the month's length (31 Jan + 1 → 28/29 Feb).
 export function addPeriods(start, unit, k) {
@@ -57,8 +57,8 @@ export function scheduleModel(s, now = new Date()) {
     for (let k = 0; k < n; k++) if (P[k + 1] >= v) return P[k + 1] === P[k] ? k + 1 : k + (v - P[k]) / (P[k + 1] - P[k]);
     return n;
   };
-  return { n, plan, actual, P, bounds, xNow, plannedNow, current, deviation, spi, curIdx, lastActual,
-    xOf: bounds ? xOf : null, dateOf: bounds ? dateOf : null, xAtPlanned, plannedAt };
+  return { n, plan, actual, P, bounds, xNow, plannedNow, current, deviation, spi, curIdx,
+    xOf: bounds ? xOf : null, dateOf: bounds ? dateOf : null, xAtPlanned };
 }
 
 function useShortDate() {

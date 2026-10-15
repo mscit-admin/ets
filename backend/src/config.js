@@ -22,13 +22,11 @@ const int = (k, d) => parseInt(env(k, d), 10);
 
 export const config = {
   env: env('NODE_ENV', 'development'),
-  isProd: env('NODE_ENV', 'development') === 'production',
   port: int('PORT', 3000),
   host: env('HOST', '127.0.0.1'),
   // Long random string; used to encrypt 2FA secrets. Never change it after go-live
   // (existing 2FA enrolments would become unreadable).
   appSecret: env('APP_SECRET', ''),
-  appName: env('APP_NAME', 'ETS'),
   db: {
     connectionString: env('DATABASE_URL', ''),
     host: env('PGHOST', '127.0.0.1'),

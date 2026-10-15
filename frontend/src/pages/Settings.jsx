@@ -142,7 +142,7 @@ function BrandingCard() {
   const { t, errText } = useI18n();
   const b = useBranding();
   const slots = [
-    { key: 'logo', label: t('brand_logo'), hint: t('brand_logo_hint'), preview: b.custom.logo ? b.logo : '/favicon.svg', cls: 'pv-logo' },
+    { key: 'logo', label: t('brand_logo'), hint: t('brand_logo_hint'), preview: b.logo, cls: 'pv-logo' },
     { key: 'favicon', label: t('brand_favicon'), hint: t('brand_favicon_hint'), preview: b.custom.favicon ? `/api/branding/favicon?v=${b.versions.favicon}` : null, cls: 'pv-fav' },
     { key: 'login_bg', label: t('brand_login_bg'), hint: t('brand_login_bg_hint'), preview: b.loginBg, cls: 'pv-bg' },
   ];
@@ -224,7 +224,7 @@ function TimelineCard({ tl, setTl, unit }) {
           <Field label={t('project_end')}><input className="input" type="date" min={tl.start_date || undefined} value={tl.end_date} onChange={e => setTl({ ...tl, end_date: e.target.value })} /></Field>
           <div className="field"><span className="field-label">{t('project_duration')}</span>
             <div className="field-static">{ok ? <>{t('n_days', { n: days })} · {t('n_periods', { n: periods })} ({t('unit_' + unit)}) · {fmtDay(tl.start_date)} – {fmtDay(tl.end_date)}</>
-              : tl.start_date && tl.end_date ? <span className="text-red">{t('err_end_before_start')}</span> : '—'}</div>
+              : tl.start_date && tl.end_date ? <span className="red-text">{t('err_end_before_start')}</span> : '—'}</div>
           </div>
         </div>
         <div className="field-hint mt-s">{t('timeline_hint')}</div>

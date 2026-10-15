@@ -8,7 +8,7 @@ import { pool, tx } from './pool.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-export const ROLES = [
+const ROLES = [
   { id: 'admin', name_ar: 'مسؤول النظام', name_en: 'System Administrator', full_scope: true,
     description_ar: 'كل الشاشات والصلاحيات، وإدارة المستخدمين والسجلات',
     description_en: 'All screens and permissions, user and log administration',

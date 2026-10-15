@@ -49,12 +49,12 @@ export function makeAudit({ t, lang }) {
   }
 
   // [{field, label, from, to}] for every value that actually changed.
-  function diff(oldV, newV, fieldOf = k => k) {
+  function diff(oldV, newV) {
     const o = oldV && typeof oldV === 'object' ? oldV : {};
     const n = newV && typeof newV === 'object' ? newV : {};
     return [...new Set([...Object.keys(o), ...Object.keys(n)])]
       .filter(k => !sameValue(o[k], n[k]))
-      .map(k => { const f = fieldOf(k); return { field: f, label: fieldLabel(f), from: fmt(f, o[k]), to: fmt(f, n[k]) }; });
+      .map(k => ({ field: k, label: fieldLabel(k), from: fmt(k, o[k]), to: fmt(k, n[k]) }));
   }
 
   const fnName = x => {
@@ -148,20 +148,18 @@ export function makeAudit({ t, lang }) {
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);
         const only = ctx.items?.length === 1 ? ctx.items[0] : null;
-        const rv = { ...vars, id: r.entity_id };
-        if (!ctx.items) text = null;
-        else if (only?.field === 'create') text = t('au_edit_request_add', { ...rv, fn: items[0].item });
-        else if (only?.field === 'removed') text = t(only.new?.removed ? 'au_edit_request_remove' : 'au_edit_request_restore', { ...rv, fn: items[0].item });
+        if (only?.field === 'create') text = t('au_edit_request_add', { ...vars, fn: items[0].item });
+        else if (only?.field === 'removed') text = t(only.new?.removed ? 'au_edit_request_remove' : 'au_edit_request_restore', { ...vars, fn: items[0].item });
         else if (only) text = t(only.kind === 'report' ? 'au_edit_request_report_one' : 'au_edit_request_one',
-          { ...rv, fn: items[0].item, field: items[0].label, from: items[0].from, to: items[0].to });
-        else text = t('au_edit_request', { ...rv, n: ctx.items.length });
+          { ...vars, fn: items[0].item, field: items[0].label, from: items[0].from, to: items[0].to });
+        else if (ctx.items) text = t('au_edit_request', { ...vars, n: ctx.items.length });
         if (only) items = null;          // already said in the sentence
         break;
       }
       case 'edit_approve:edit_request': case 'edit_reject:edit_request': case 'edit_withdraw:edit_request': {
         if (!ctx.via) break;
         const res = r.new_value || {};
-        text = t('au_' + r.action, { ...vars, id: r.entity_id, req: person(ctx.requested_by), applied: res.applied ?? '' });
+        text = t('au_' + r.action, { ...vars, req: person(ctx.requested_by), applied: res.applied ?? '' });
         if (res.skipped) notes.push(t('au_skipped', { n: res.skipped }));
         if (ctx.reason) notes.push(t(r.action === 'edit_approve' ? 'au_approval_note' : 'au_reason', { reason: ctx.reason, note: ctx.reason }));
         items = itemLines(ctx.items);

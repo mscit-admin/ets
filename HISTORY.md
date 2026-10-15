@@ -33,6 +33,15 @@ and must be mentioned here with the migration name.
 - fix(backend): changes applied from an approved edit request were logged without a username.
 - fix(backend): saving weights no longer logs an unchanged application weight.
 
+### Removed
+- refactor(backend): dead code — unused imports (`query` in settings routes, `HttpError` in users routes), unread
+  `config.isProd` / `config.appName`, the identity `publicUser` mapper, a redundant `'weight'` in the import field
+  allow-list, and `export` on symbols used only in their own module.
+- refactor(frontend): dead code — unused `NOTIF_COLORS` / `REVIEW_COLORS`, `chart` / `key` icons, unused props
+  (`ProgressBar` `color`, `Icon` `stroke`, `PasswordForm` `onDone`), unused parameters in `paceFrom` and the audit
+  `diff`, unread `scheduleModel` fields, 23 unused translation keys, and duplicate / unused CSS rules
+  (`.text-green` / `.text-red` → `.green-text` / `.red-text`, `.indicator-pill.yellow`, `--green`).
+
 ## [0.8.1] — 2026-10-14 — Functions catalog document
 
 ### Added

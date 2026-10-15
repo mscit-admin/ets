@@ -1,6 +1,6 @@
 // Thin fetch wrapper. Errors are thrown as ApiError with the server's error code,
 // which pages translate with t('err_' + code).
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(status, code, data) { super(code); this.status = status; this.code = code; this.data = data; }
 }
 

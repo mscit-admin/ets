@@ -139,7 +139,7 @@ export default function ProjectStatus() {
                   <tr key={d.id}>
                     <td><Link to={'/department/' + d.id} className="link-row"><Icon name={d.emblem} size={15} /> {nm(d)}</Link></td>
                     <td className="num-col num">{pc(d.pct)}%</td>
-                    <td className={'num-col num ' + (d.gap === null ? '' : d.gap >= 0 ? 'text-green' : 'text-red')}>{d.gap === null ? '—' : signed(d.gap)}</td>
+                    <td className={'num-col num ' + (d.gap === null ? '' : d.gap >= 0 ? 'green-text' : 'red-text')}>{d.gap === null ? '—' : signed(d.gap)}</td>
                     <td className="num-col num">{d.change30 === null ? '—' : signed(d.change30)}</td>
                     <td>{d.status ? <StatusBadge status={d.status} /> : '—'}</td>
                   </tr>
@@ -167,10 +167,10 @@ export default function ProjectStatus() {
         <Card title={t('quality_flags')}>
           <div className="kv wide">
             <div><span>{t('ts_2')} / {t('ts_1')}</span><span className="num">{c.tests[2]} / {c.tests[1]}</span></div>
-            <div><span>{t('ts_3')}</span><span className={'num ' + (c.tests[3] ? 'text-red' : '')}>{c.tests[3]}</span></div>
+            <div><span>{t('ts_3')}</span><span className={'num ' + (c.tests[3] ? 'red-text' : '')}>{c.tests[3]}</span></div>
             <div><span>{t('ts_0')}</span><span className="num">{c.tests[0]}</span></div>
             <div><span>{t('with_notes')}</span><span className="num">{c.notes}</span></div>
-            <div><span>{t('notif_status')}: {t('ns_3')}</span><span className={'num ' + (c.notif_bad ? 'text-red' : '')}>{c.notif_bad}</span></div>
+            <div><span>{t('notif_status')}: {t('ns_3')}</span><span className={'num ' + (c.notif_bad ? 'red-text' : '')}>{c.notif_bad}</span></div>
             <div><span>{t('review_status')}: {t('rv_2')}</span><span className="num">{c.review_missing}</span></div>
             {c.reports > 0 && <div><span>{t('reports_title')}</span><span className="num">{pc(c.reports_pct)}% · {c.reports_done}/{c.reports}</span></div>}
             <div><span>{t('pending_approvals')}</span><span className="num">{st.pending.edits + st.pending.imports}</span></div>

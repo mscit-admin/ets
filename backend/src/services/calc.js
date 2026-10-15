@@ -11,7 +11,7 @@
 //
 // All inputs are plain rows so the same code runs for any user scope.
 
-export const NOTIF_SCORE = [null, 100, 50, 0];
+const NOTIF_SCORE = [null, 100, 50, 0];
 
 export function effectiveProgress(f, nw) {
   const n = f.notif_status | 0;

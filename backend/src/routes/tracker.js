@@ -119,8 +119,8 @@ const FIELD_OK = {
 };
 
 // Statuses that mean "… with notes": choosing one makes the note mandatory.
-export const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
-export const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
+const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
 r.patch('/functions/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -405,7 +405,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = v => ISO.test(v) && !Number.isNaN(new Date(v + 'T00:00:00Z').getTime()) && new Date(v + 'T00:00:00Z').toISOString().startsWith(v);
 
 // Start + k periods (months keep the day of month, clamped to the month's length), as 'YYYY-MM-DD'.
-export function addPeriods(start, unit, k) {
+function addPeriods(start, unit, k) {
   const d = new Date(start + 'T00:00:00Z');
   if (unit === 'month') {
     const day = d.getUTCDate();
@@ -415,7 +415,7 @@ export function addPeriods(start, unit, k) {
   return d.toISOString().slice(0, 10);
 }
 // Number of periods from start to close: the smallest k whose period end reaches the close date.
-export function periodsBetween(start, end, unit) {
+function periodsBetween(start, end, unit) {
   let k = 1;
   while (addPeriods(start, unit, k) < end && k <= 61) k++;
   return k;
