@@ -2,7 +2,7 @@
 import { hasPerm, canSeeApp, loadUserContext } from '../middleware/auth.js';
 import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
-import { namedItems, logAppliedChanges, loadUser, userRef } from './audit.js';
+import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en']);
@@ -84,13 +84,15 @@ export async function requestContext(c, rq, req, extra = {}) {
 export async function applyRequest(c, rq, req) {
   const userId = rq.requested_by;
   const actor = userRef(await loadUser(c, userId));
-  const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user) };
+  // rows in the requester's name carry the requester's IP; the approver's IP stays in the context (ETS-SEC-052)
+  const actorIp = await originIp(c, 'edit_request', 'edit_request', rq.id);
+  const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user), approver_ip: req.ip || null };
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
   const done = [];
   let applied = 0, skipped = 0;
   for (const it of items) {
     if (it.field === 'create' || it.field === 'removed') {
-      const r = await applyLifecycle(c, it, userId, req, actor, via);
+      const r = await applyLifecycle(c, it, userId, req, actor, actorIp, via);
       r.ok ? applied++ : skipped++;
       await c.query('UPDATE edit_request_items SET applied=$2, note=$3, function_id=COALESCE(function_id, $4) WHERE id=$1',
         [it.id, r.ok, r.ok ? null : r.note, r.functionId ?? null]);
@@ -110,20 +112,20 @@ export async function applyRequest(c, rq, req) {
     } else skipped++;
     await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, ok ? null : 'value changed after the request']);
   }
-  await logAppliedChanges(req, c, done, { actor, context: via });
+  await logAppliedChanges(req, c, done, { actor, actorIp, context: via });
   return { applied, skipped };
 }
 
 // Approved addition / removal / restore. new_value of 'removed': { removed: true, reason } or { removed: false }.
-async function applyLifecycle(c, it, userId, req, actor, via) {
+async function applyLifecycle(c, it, userId, req, actor, actorIp, via) {
   if (it.field === 'create') {
     const f = await createFunction(c, it.app_id, it.new_value, userId);
-    await logAudit(req, { db: c, actor, context: via, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
+    await logAudit(req, { db: c, actor, actorIp, context: via, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
     return { ok: true, functionId: f.id };
   }
   const f = it.new_value?.removed ? await removeFunction(c, it.function_id, it.new_value.reason, userId) : await restoreFunction(c, it.function_id, userId);
   if (!f) return { ok: false, note: 'already ' + (it.new_value?.removed ? 'removed' : 'restored') };
-  await logAudit(req, { db: c, actor, context: via, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
+  await logAudit(req, { db: c, actor, actorIp, context: via, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
     summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
   return { ok: true };
 }

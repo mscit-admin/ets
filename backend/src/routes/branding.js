@@ -1,7 +1,7 @@
 // Branding images (Settings → Branding): system logo, favicon, login background.
 // GET is public (the login screen needs it); upload / reset needs the 'cfg' permission.
 import { Router } from 'express';
-import { query } from '../db/pool.js';
+import { query, tx } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { logAudit } from '../services/logs.js';
 import { largeJson } from '../middleware/body.js';
@@ -54,10 +54,12 @@ r.put('/:key', requireAuth, requirePerm('cfg'), largeJson, async (req, res) => {
   // the image is public: metadata (EXIF/GPS, XMP, comments) and bytes after the end of the image are removed
   const buf = cleanImage(raw, mime);
   if (!buf) throw bad('invalid_image');
-  await query(`INSERT INTO branding_assets(key, mime, data, updated_by) VALUES ($1,$2,$3,$4)
-    ON CONFLICT (key) DO UPDATE SET mime=EXCLUDED.mime, data=EXCLUDED.data, updated_at=now(), updated_by=EXCLUDED.updated_by`,
-  [key, mime, buf, req.user.id]);
-  await logAudit(req, { action: 'update', entity: 'branding', entityId: key, summary: `${mime}, ${Math.round(buf.length / 1024)} KB` });
+  await tx(async c => {
+    await c.query(`INSERT INTO branding_assets(key, mime, data, updated_by) VALUES ($1,$2,$3,$4)
+      ON CONFLICT (key) DO UPDATE SET mime=EXCLUDED.mime, data=EXCLUDED.data, updated_at=now(), updated_by=EXCLUDED.updated_by`,
+    [key, mime, buf, req.user.id]);
+    await logAudit(req, { db: c, action: 'update', entity: 'branding', entityId: key, summary: `${mime}, ${Math.round(buf.length / 1024)} KB` });
+  });
   res.json({ ok: true, versions: await brandingVersions() });
 });
 
@@ -65,8 +67,10 @@ r.delete('/:key', requireAuth, requirePerm('cfg'), async (req, res) => {
   const key = req.params.key;
   if (!BRANDING_KEYS.includes(key)) throw notFound();
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
-  await query('DELETE FROM branding_assets WHERE key=$1', [key]);
-  await logAudit(req, { action: 'reset', entity: 'branding', entityId: key, summary: 'back to default' });
+  await tx(async c => {
+    await c.query('DELETE FROM branding_assets WHERE key=$1', [key]);
+    await logAudit(req, { db: c, action: 'reset', entity: 'branding', entityId: key, summary: 'back to default' });
+  });
   res.json({ ok: true, versions: await brandingVersions() });
 });
 

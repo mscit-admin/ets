@@ -228,19 +228,28 @@ test('bidi control characters are removed from stored text (ETS-SEC-061)', { ski
   const r = await root.patch('/tracker/functions/' + fn, { note: 'ok ' + RLO + 'txt.exe' + LRM });
   assert.equal(r.status, 200);
   assert.equal(r.data.function.note, 'ok txt.exe');
+  // an unknown name is stored masked (ETS-SEC-051); the mask is that of 'nimda': the control character was removed first
   await client().login(RLO + 'nimda', 'x');
-  const u = (await pool.query(`SELECT username FROM auth_log WHERE username LIKE '%nimda' ORDER BY id DESC LIMIT 1`)).rows[0].username;
-  assert.equal(u, 'nimda');
+  const { maskUsername } = await import('../src/services/logs.js');
+  const u = (await pool.query(`SELECT username FROM auth_log WHERE event='login_unknown_user' ORDER BY id DESC LIMIT 1`)).rows[0].username;
+  assert.equal(u, maskUsername('nimda'));
 });
 
-test('auth-log CSV export neutralises formulas typed as a username (ETS-SEC-059)', { skip }, async () => {
-  await client().login('|calc', 'x');
-  await client().login('\uFF1D1+1', 'x');
+test('auth-log CSV export neutralises formulas typed as a username or sent as user agent (ETS-SEC-059)', { skip }, async () => {
+  await client().login('|calc', 'x');                 // unknown name: stored masked (ETS-SEC-051), never as typed
+  for (const ua of ['|calc', '=1+1']) {
+    await fetch(base + '/auth/login', { method: 'POST', body: JSON.stringify({ username: 'nobody.ua', password: 'x' }),
+      headers: { 'content-type': 'application/json', 'x-requested-with': 'ets', 'user-agent': ua } });
+  }
   const root = client(); await root.login('root');
   const csv = (await root.get('/logs/auth/export')).data;
   assert.ok(csv.includes(`"'|calc"`));
-  assert.ok(csv.includes(`"'\uFF1D1+1"`));
+  assert.ok(csv.includes(`"'=1+1"`));
   assert.equal(csv.includes(`"|calc"`), false);
+  assert.equal(csv.includes(`"=1+1"`), false);
+  // full-width variants (not possible in an HTTP header) are neutralised by the same cell function
+  const { csvCell } = await import('../src/utils/csv.js');
+  assert.equal(csvCell('\uFF1D1+1'), `"'\uFF1D1+1"`);
 });
 
 test('branding upload is stored without EXIF and trailing bytes (ETS-SEC-070)', { skip }, async () => {

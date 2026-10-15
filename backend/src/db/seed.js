@@ -53,7 +53,8 @@ export const DEFAULT_SETTINGS = {
   'calc.notif_share': 0.10,            // share of notification status inside a function's %
   'calc.reports_share': 0.15,          // share of the reports track inside an application's %
   'security.password_min_length': 10,
-  'logs.retention_days': 365,          // auth/audit/error/system logs
+  'logs.retention_days': 365,          // auth/error/system logs
+  'logs.audit_retention_days': 365,    // change history (audit_log), at least 365
   'logs.access_retention_days': 90,    // HTTP access log
   'app.org_name_ar': 'مركز متابعة إنجاز ERP',
   'app.org_name_en': 'ERP Implementation Tracking Center',

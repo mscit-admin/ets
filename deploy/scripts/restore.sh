@@ -4,6 +4,8 @@
 # 1. checks the file: checksum (<file>.sha256), decryption with /etc/ets/backup.key, archive contents;
 # 2. takes a fresh backup of the current data (ets-backup);
 # 3. stops the service, restores in ONE transaction (all or nothing), starts the service.
+# The change history (audit_log) is replaced by the backup's copy too: the copy made in step 2 keeps the rows
+# written since that backup, and the restore itself is recorded in the restored change history.
 # If anything fails the database is left as it was and the service is started again.
 set -euo pipefail
 umask 077
@@ -70,5 +72,8 @@ PGPASSWORD="$PW" pg_restore --clean --if-exists --no-owner --single-transaction 
 systemctl start "$SERVICE"; STOPPED=0
 PGPASSWORD="$PW" psql -X -q -v ON_ERROR_STOP=1 -v f="$F" >/dev/null <<'SQL' || echo "warning: could not record the restore in system_log" >&2
 INSERT INTO system_log(event,message,detail) VALUES ('restore','database restored from backup', jsonb_build_object('file', :'f'));
+-- the change history continues from the backup: say so in it (the data before the restore is in the safety backup)
+INSERT INTO audit_log(username,action,entity,summary,new_value)
+VALUES ('cli:ets-restore','restore','database','database restored from backup', jsonb_build_object('file', :'f'));
 SQL
 echo "Restore finished. Check: systemctl status $SERVICE"

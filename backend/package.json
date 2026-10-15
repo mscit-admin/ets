@@ -17,6 +17,7 @@
     "create-admin": "node scripts/create-admin.js",
     "import-legacy": "node scripts/import-legacy.js",
     "purge-logs": "node scripts/purge-logs.js",
+    "verify-audit": "node scripts/verify-audit.js",
     "rotate-app-secret": "node scripts/rotate-app-secret.js",
     "test": "node --test --test-concurrency=1 \"test/*.test.js\""
   },

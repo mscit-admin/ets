@@ -144,6 +144,12 @@ export function makeAudit({ t, lang }) {
       case 'reset_password:user': text = t('au_reset_password', { target: quote(r.summary) }); break;
       case 'reset_2fa:user': text = t('au_reset_2fa', { target: quote(r.summary) }); break;
       case 'unlock:user': text = t('au_unlock', { target: quote(r.summary) }); break;
+      case 'revoke_sessions:user': text = t('au_revoke_sessions', { target: quote(r.summary) }); break;
+      case 'view:user': text = t('au_view_user', { target: quote(r.summary || r.entity_id) }); break;
+      case 'view:log': text = t('au_view_log', { log: t('log_' + r.entity_id) }); break;
+      case 'verify:log': text = t('au_verify_log', { summary: r.summary || '' }); break;
+      case 'purge:log': text = t('au_purge_log', { n: r.new_value?.deleted?.audit_log ?? 0, days: r.new_value?.audit_retention_days ?? '' }); break;
+      case 'restore:database': text = t('au_restore_database'); break;
       case 'bulk_update:user': text = t('au_bulk_user', { summary: r.summary || '' }); break;
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);

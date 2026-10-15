@@ -190,6 +190,45 @@ and must be mentioned here with the migration name.
 - docs(docs): 02, 06 (new §6a secrets and APP_SECRET rotation), 07, 08 (encrypted backups, key escrow, restore),
   09, 10, README, STRUCTURE updated for the above.
 
+### Security — audit trail, logging and privacy (WP6)
+- sec(db): migration `012_audit_integrity.sql` — `audit_log` and `auth_log` are append-only (triggers refuse UPDATE,
+  DELETE, TRUNCATE except the retention purge and the user_id → NULL of a deleted user) and hash-chained
+  (`chain_seq`, `prev_hash`, `row_hash`, computed by the database; existing rows chained in id order);
+  `log_chain_head`, `log_chain_anchor`; purge only through `ets_purge_log()` (oldest rows first, never younger than
+  365 / 30 days); new setting `logs.audit_retention_days` (kept at the previous period when longer) (ETS-SEC-013, ETS-SEC-048)
+- sec(backend): `npm run verify-audit` and `GET /api/logs/integrity` (admins) verify the chains; the daily purge
+  verifies first and writes the chain heads to the journal; `deploy/db/harden-log-tables.sql` (optional, run once by
+  the DBA) gives the log tables to a separate owner role so the application role can only read and append (ETS-SEC-013)
+- sec(deploy): ets-restore records the restore in the audit trail (ETS-SEC-013)
+- sec(backend): audit trail retention is its own setting, at least 365 days; every purge is recorded in the audit
+  trail with its actor (`system` / `cli:<OS user>`) and row counts; a shorter retention is flagged (ETS-SEC-048)
+- sec(backend): audit rows are strict (a failed write fails the request); unlock, bulk 2FA exemption, branding,
+  language, password change, 2FA setup/enable/disable, recovery codes, session revocation, admin resets and the
+  2FA policy change write their audit / auth_log rows in the same transaction; tracker and log exports are refused
+  without their audit row; a sign-in creates no session without its `login` row; soft writes (failed sign-ins,
+  denials, logout, reads) are counted and reported with `alert:true` (ETS-SEC-049)
+- sec(backend): new events `password_change_rejected`, `mfa_verify_while_locked`, `reauth_while_locked`,
+  `session_expired`, `session_revoked_reuse`, `csrf_rejected`, `password_change_required`, `admin_created_cli`,
+  `mfa_reset_cli`; audit rows for viewing a user record / security log, CLI `set-setting` and `create-admin`
+  (as `cli:<OS user>`), session revocation (ETS-SEC-050)
+- sec(backend): an unknown username (and the name sent with a rate-limited request) is stored masked
+  (`?x***#<HMAC>`), never as typed — DB, files, journal, export (ETS-SEC-051)
+- sec(backend): changes applied on approval carry the requester's own IP; the approver's IP is in
+  `context.approver_ip` (ETS-SEC-052)
+- sec(backend): security logs (auth, access, error, system), log statistics and IPs / user agents for
+  administrators only; others with `log` get the audit trail with IPs removed server-side, also in CSV (ETS-SEC-047)
+- sec(backend): only the first rate-limited sign-in of a window (then every 10^n) is written to auth_log; anonymous
+  404 / 429 are not stored in access_log; user agent and paths capped at 300 characters (ETS-SEC-077)
+- sec(backend): high-value events are written with `alert:true` for forwarding / SIEM rules (ETS-SEC-075)
+- sec(frontend): Logs shows the security tabs and statistics to administrators only, «Verify log integrity»
+  button, failed-log-write counter; Settings has the separate audit retention field (min 365); ar + en texts
+  (ETS-SEC-047, ETS-SEC-048, ETS-SEC-013)
+- test(tests): `audit-log.test.js` (append-only, chain verification and tamper detection, purge floors and anchors,
+  injected log-write failures, new events incl. CLI, masking, requester IP, admin-only logs, flood limits);
+  `input.test.js` adapted to masked unknown usernames.
+- docs(docs): 07 (who sees what, new events, masking, transactional audit, integrity §3, alerts, retention and
+  personal data), 06 (authorisation, audit trail, recommendations) (ETS-SEC-013, 047–052, 074, 075, 077).
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

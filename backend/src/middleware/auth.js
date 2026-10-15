@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { query } from '../db/pool.js';
 import { sha256, randomToken } from '../services/crypto.js';
 import { HttpError } from '../utils/http.js';
+import { logAuth } from '../services/logs.js';
 
 export const ADMIN_ROLE = 'admin';
 
@@ -73,12 +74,24 @@ export async function sessionMiddleware(req, res, next) {
   const t = req.cookies?.[cookieName()];
   if (!t) return next();
   const id = sha256(t);
-  const r = await query(`SELECT id, user_id, mfa_passed, mfa_stage, last_seen_at, expires_at, revoked_at,
+  const r = await query(`SELECT id, user_id, mfa_passed, mfa_stage, last_seen_at, expires_at, revoked_at, revoke_reason,
+      (SELECT username FROM users WHERE id=sessions.user_id) AS username,
       (last_seen_at < now() - ($2 || ' minutes')::interval) AS idle
     FROM sessions WHERE id=$1`, [id, String(config.session.idleMinutes)]);
   const s = r.rows[0];
   if (!s || s.revoked_at || new Date(s.expires_at) < new Date() || s.idle) {
-    if (s && !s.revoked_at) await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='expired' WHERE id=$1`, [id]);
+    // Expiry and the use of an ended session are recorded once per session / cookie (ETS-SEC-050); an unknown
+    // token is not (anyone can send one). The cookie is cleared, so a browser sends it only once.
+    if (s && !s.revoked_at) {
+      const q = await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='expired' WHERE id=$1 AND revoked_at IS NULL`, [id]);
+      if (q.rowCount) {
+        await logAuth(req, { userId: s.user_id, username: s.username, event: 'session_expired', success: false,
+          detail: { reason: s.idle ? 'idle' : 'absolute' } });
+      }
+    } else if (s) {
+      await logAuth(req, { userId: s.user_id, username: s.username, event: 'session_revoked_reuse', success: false,
+        detail: { revoke_reason: s.revoke_reason, revoked_at: s.revoked_at } });
+    }
     clearCookie(res);
     return next();
   }

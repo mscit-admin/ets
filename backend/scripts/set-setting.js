@@ -4,9 +4,9 @@
 //   node scripts/set-setting.js app.org_name_en "ERP Tracking Center"
 //   node scripts/set-setting.js logs.retention_days 365
 // Values are validated with the same rules as the Settings screen.
-import { pool, query } from '../src/db/pool.js';
-import { SETTING_RULES } from '../src/services/settings.js';
-import { logSystem } from '../src/services/logs.js';
+import { pool, tx } from '../src/db/pool.js';
+import { SETTING_RULES, getSetting } from '../src/services/settings.js';
+import { logAudit, logAuth, logSystem, cliActor } from '../src/services/logs.js';
 
 const [key, raw] = process.argv.slice(2);
 if (!key || raw === undefined || !Object.hasOwn(SETTING_RULES, key)) {
@@ -16,8 +16,18 @@ if (!key || raw === undefined || !Object.hasOwn(SETTING_RULES, key)) {
 let value = raw;
 if (/^-?\d+(\.\d+)?$/.test(raw)) value = Number(raw);
 if (!SETTING_RULES[key](value)) { console.error(`invalid value for ${key}: ${raw}`); process.exit(1); }
-await query(`INSERT INTO settings(key,value) VALUES ($1,$2)
-  ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`, [key, JSON.stringify(value)]);
-await logSystem('setting_cli', `setting ${key} changed from CLI`, { key, value });
+// The change and its audit row commit together, in the name of "cli:<operating-system user>" (ETS-SEC-050).
+const actor = cliActor();
+const before = await getSetting(key);
+await tx(async c => {
+  await c.query(`INSERT INTO settings(key,value) VALUES ($1,$2)
+    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now(), updated_by=NULL`, [key, JSON.stringify(value)]);
+  await logAudit(null, { db: c, actor, action: 'update', entity: 'setting', entityId: key, summary: 'command line',
+    oldValue: { value: before }, newValue: { value } });
+  if (key === 'mfa.mode' && before !== value) {
+    await logAuth(null, { db: c, username: actor.username, event: 'mfa_policy_changed', success: true, detail: { from: before, to: value, cli: true } });
+  }
+});
+await logSystem('setting_cli', `setting ${key} changed from CLI`, { key, value, by: actor.username });
 console.log(`${key} = ${JSON.stringify(value)}`);
 await pool.end();

@@ -109,16 +109,19 @@ permissions / scope / 2FA exemption), `last_admin` (would leave no active admini
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Editable settings |
-| PUT | `/` | `{"mfa.mode": "required", "logs.retention_days": 365, ...}` (validated) |
+| PUT | `/` | `{"mfa.mode": "required", "logs.retention_days": 365, "logs.audit_retention_days": 365, ...}` (validated; audit retention ≥ 365) |
 
 ## Logs — `/logs` (permission `log`)
 | Method | Path | Description |
 |---|---|---|
-| GET | `/stats` | 24 h counters (full scope) |
+| GET | `/stats` | 24 h counters and `log_write_failures` (administrators) |
+| GET | `/integrity` | Hash-chain verification of `audit_log` and `auth_log` → `{ok, tables:[{table, rows, first_seq, last_seq, head, purges, breaks}]}` (administrators) |
 | GET | `/:type` | `type` = auth, audit, access, error, system. Query: `q, from, to (YYYY-MM-DD), user_id, event, success, status, page, limit (≤500)` → `{rows, total, page, limit, events}` |
 | GET | `/:type/export` | CSV with the same filters |
 
-Non-full-scope users can only read `audit`, limited to their applications.
+`auth`, `access`, `error` and `system` are for administrators only (`403 admin_only` otherwise). Other users read
+`audit` only — non-full-scope users limited to their applications — with IP addresses and user agents removed
+(also inside `context`, and in the CSV).
 
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |

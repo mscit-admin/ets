@@ -107,6 +107,7 @@ export default function Settings() {
       <Card title={t('sec_logs')}>
         <div className="form-grid">
           <Field label={t('retention_days')}>{num('logs.retention_days', 30, 3650)}</Field>
+          <Field label={t('audit_retention_days')} hint={t('audit_retention_hint')}>{num('logs.audit_retention_days', 365, 10950)}</Field>
           <Field label={t('access_retention_days')}>{num('logs.access_retention_days', 7, 3650)}</Field>
         </div>
       </Card>

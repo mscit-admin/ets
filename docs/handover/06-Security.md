@@ -50,8 +50,10 @@
   `log`, `cfg`) **and** the data scope (departments/applications) on the server. The UI only hides what the
   server would refuse anyway.
 - Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`.
-- Project-wide parameters, the project schedule (`PUT /tracker/schedule`), import, settings (read and write) and
-  full logs need a full-scope user. Full scope comes only from the role (admin, PM, TM); a user of another role
+- Project-wide parameters, the project schedule (`PUT /tracker/schedule`), import and settings (read and write)
+  need a full-scope user. The security logs (login & security, requests, errors, system), the log statistics,
+  the integrity check and every IP address / user agent are for the **System Administrator role only**; other
+  holders of `log` see the audit trail of their scope without IPs (removed by the server, also in CSV exports). Full scope comes only from the role (admin, PM, TM); a user of another role
   with no scope rows sees nothing (fail closed). The JSON export contains only the applications in the user's
   scope (and the project schedule only for full-scope users).
 - `usr` (user management) is honoured for the System Administrator role only, and nobody can grant themselves
@@ -59,7 +61,8 @@
 - Application-level scope never counts as department scope: edit approvals, import uploads, import approvals and
   batch details are limited to the applications in scope. The import uploader signs neither approval stage.
 - An approved edit request or import is applied only if its author is still active and still allowed to make it.
-- Refused requests are logged as `access_denied` in the login & security log.
+- Refused requests are logged in the login & security log: `access_denied` (permission / scope), `csrf_rejected`
+  (missing CSRF header) and `password_change_required`.
 - At least one active administrator always remains.
 
 ## 5. Web protections
@@ -103,6 +106,10 @@
   when they rotate keys). Supported runtime: Node.js 22.12+ or 24+ (Node 22 is maintained until April 2027).
 - Dependency updates: `.github/dependabot.yml` proposes npm (backend, frontend) and GitHub Actions updates weekly,
   only for versions published at least 7 days earlier.
+- Audit trail: `audit_log` and `auth_log` are append-only (database triggers) and hash-chained; `npm run
+  verify-audit` / *Logs → Verify log integrity* recompute the chain. Retention: at least 365 days for the audit
+  trail, enforced by the database too. The optional `deploy/db/harden-log-tables.sql` moves the log tables to a
+  separate owner role so the application's database role can only read and append them (07-Logging-and-Audit.md §3).
 
 ## 6a. Secrets and keys
 
@@ -136,7 +143,10 @@ to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the scri
 3. Keep two administrator accounts, both with 2FA.
 4. Keep a copy of `/etc/ets/ets.env` and of the backup key `/etc/ets/backup.key` off the server in a safe place
    (password manager / sealed envelope), **not** together with the backup files.
-5. Review the *Login & security* log weekly (failed attempts, lockouts, access denied).
+5. Review the *Login & security* log weekly (failed attempts, lockouts, access denied), run *Logs → Verify log
+   integrity* and keep the chain heads it shows somewhere off the server. Forward the journal (`"alert":true`
+   events) to a central syslog / SIEM, and run `deploy/db/harden-log-tables.sql` once so that the application's
+   database role can only read and append the audit trail (see 07-Logging-and-Audit.md §3).
 6. Apply Ubuntu security updates monthly (`sudo apt update && sudo apt upgrade`) and enable
    `unattended-upgrades`. Apply ETS updates (with their dependency fixes) with `deploy/scripts/update.sh`.
 7. Restrict SSH to key-based login and to administrator IPs.

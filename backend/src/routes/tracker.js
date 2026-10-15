@@ -565,6 +565,7 @@ r.get('/search', async (req, res) => {
 // Only the applications in the user's scope; the project schedule only for full-scope users (ETS-SEC-006).
 r.get('/export', requirePerm('exp'), async (req, res) => {
   const payload = await tx(c => buildLegacy(c, { user: req.user }));
+  // strict: no data leaves without its audit row (ETS-SEC-049)
   await logAudit(req, { action: 'export', entity: 'tracker', summary: req.user.fullScope ? 'JSON export' : 'JSON export (own scope)',
     newValue: { applications: Object.keys(payload.appW).length } });
   res.setHeader('Content-Disposition', `attachment; filename="ets-export-${new Date().toISOString().slice(0, 10)}.json"`);

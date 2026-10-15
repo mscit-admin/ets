@@ -23,12 +23,17 @@ export function notFoundHandler(req, res) {
   res.status(404).json({ error: 'not_found' });
 }
 
+const DENIAL_EVENTS = { csrf_rejected: 'csrf_rejected', password_change_required: 'password_change_required' };
+
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
   if (err instanceof HttpError) {
-    if (err.status === 403) {
-      logAuth(req, { userId: req.user?.id, username: req.user?.username, event: 'access_denied', success: false,
-        detail: { path: req.originalUrl, method: req.method, code: err.code, ...err.extra } });
+    // an anonymous request refused by the CSRF check concerns no session: not stored, anyone could send many (ETS-SEC-077)
+    if (err.status === 403 && (req.user || err.code !== 'csrf_rejected')) {
+      // distinct events: a CSRF rejection (a forged cross-site request) is not the same as a missing permission (ETS-SEC-050)
+      const event = DENIAL_EVENTS[err.code] || 'access_denied';
+      logAuth(req, { userId: req.user?.id, username: req.user?.username, event, success: false,
+        detail: { path: req.originalUrl.slice(0, 200), method: req.method, code: err.code, ...err.extra } });
     }
     return res.status(err.status).json({ error: err.code, ...(err.extra || {}) });
   }

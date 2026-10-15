@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { tx } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { allSettings, invalidateSettings, SETTING_RULES } from '../services/settings.js';
-import { logAudit, logAuth } from '../services/logs.js';
+import { logAudit, logAuth, logger } from '../services/logs.js';
 import { HttpError, bad, own } from '../utils/http.js';
 
 const r = Router();
+const RETENTION_KEYS = ['logs.retention_days', 'logs.audit_retention_days', 'logs.access_retention_days'];
 r.use(requireAuth, requirePerm('cfg'));
 
 r.get('/', async (req, res) => {
@@ -30,10 +31,17 @@ r.put('/', async (req, res) => {
         ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now(), updated_by=EXCLUDED.updated_by`, [k, JSON.stringify(v), req.user.id]);
       await logAudit(req, { db: c, action: 'update', entity: 'setting', entityId: k, oldValue: { value: current[k] }, newValue: { value: v } });
     }
+    // in the same transaction, after the audit rows (one order of the two log chains for every transaction)
+    if (body['mfa.mode'] !== undefined && body['mfa.mode'] !== current['mfa.mode']) {
+      await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event: 'mfa_policy_changed', success: true,
+        detail: { from: current['mfa.mode'], to: body['mfa.mode'] } });
+    }
   });
-  if (body['mfa.mode'] !== undefined && body['mfa.mode'] !== current['mfa.mode']) {
-    await logAuth(req, { userId: req.user.id, username: req.user.username, event: 'mfa_policy_changed', success: true,
-      detail: { from: current['mfa.mode'], to: body['mfa.mode'] } });
+  // a shorter retention removes history sooner: flagged for whoever watches the logs (ETS-SEC-048 / 075)
+  for (const k of RETENTION_KEYS) {
+    if (body[k] !== undefined && body[k] < current[k]) {
+      logger.warn({ alert: true, kind: 'setting', key: k, from: current[k], to: body[k], by: req.user.username }, 'log retention reduced');
+    }
   }
   invalidateSettings();
   res.json({ ok: true });

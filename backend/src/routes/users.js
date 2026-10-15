@@ -47,8 +47,11 @@ async function loadUser(id) {
   return u;
 }
 
+// Opening a user record (sessions, IPs, devices) is recorded: who looked at whose personal data (ETS-SEC-050).
 r.get('/:id', async (req, res) => {
-  res.json({ user: await loadUser(idParam(req.params.id)) });
+  const user = await loadUser(idParam(req.params.id));
+  await logAudit(req, { soft: true, action: 'view', entity: 'user', entityId: user.id, summary: user.username });
+  res.json({ user });
 });
 
 async function validateCommon(body, { creating }) {
@@ -206,11 +209,12 @@ r.patch('/:id', async (req, res) => {
     await logAudit(req, { db: c, action: 'update', entity: 'user', entityId: id, summary: before.username,
       oldValue: { ...Object.fromEntries(keys.map(k => [k, before[k]])), ...(b.scopes ? { scopes: before.scopes } : {}), ...(b.overrides ? { overrides: before.overrides } : {}) },
       newValue: { ...v, ...(b.scopes ? { scopes: b.scopes } : {}), ...(b.overrides ? { overrides: b.overrides } : {}) } });
+    // audit row first, then the auth row: every transaction takes the two log chains in the same order
+    if (v.totp_exempt !== undefined && v.totp_exempt !== before.totp_exempt) {
+      await logAuth(req, { db: c, userId: id, username: before.username, event: v.totp_exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed',
+        success: true, detail: { by: req.user.username } });
+    }
   });
-  if (v.totp_exempt !== undefined && v.totp_exempt !== before.totp_exempt) {
-    await logAuth(req, { userId: id, username: before.username, event: v.totp_exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed', success: true,
-      detail: { by: req.user.username } });
-  }
   res.json({ user: await loadUser(id) });
 });
 
@@ -223,8 +227,8 @@ r.post('/:id/reset-password', async (req, res) => {
       last_failed_at=NULL, password_changed_at=now(), updated_at=now() WHERE id=$1`, [id, await hashPassword(req.body.password), req.body?.must_change !== false]);
     await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='password_reset' WHERE user_id=$1 AND revoked_at IS NULL`, [id]);
     await logAudit(req, { db: c, action: 'reset_password', entity: 'user', entityId: id, summary: u.username });
+    await logAuth(req, { db: c, userId: id, username: u.username, event: 'password_reset_by_admin', success: true, detail: { by: req.user.username } });
   });
-  await logAuth(req, { userId: id, username: u.username, event: 'password_reset_by_admin', success: true, detail: { by: req.user.username } });
   res.json({ ok: true });
 });
 
@@ -239,26 +243,33 @@ r.post('/:id/reset-2fa', async (req, res) => {
     await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='mfa_reset' WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`,
       [id, req.session.id]);
     await logAudit(req, { db: c, action: 'reset_2fa', entity: 'user', entityId: id, summary: u.username });
+    await logAuth(req, { db: c, userId: id, username: u.username, event: 'mfa_reset_by_admin', success: true, detail: { by: req.user.username } });
   });
-  await logAuth(req, { userId: id, username: u.username, event: 'mfa_reset_by_admin', success: true, detail: { by: req.user.username } });
   res.json({ ok: true });
 });
 
 r.post('/:id/unlock', async (req, res) => {
   const id = idParam(req.params.id);
   const u = await loadUser(id);
-  await query('UPDATE users SET failed_attempts=0, locked_until=NULL, last_failed_at=NULL WHERE id=$1', [id]);
-  await logAuth(req, { userId: id, username: u.username, event: 'account_unlocked_by_admin', success: true, detail: { by: req.user.username } });
-  await logAudit(req, { action: 'unlock', entity: 'user', entityId: id, summary: u.username });
+  await tx(async c => {
+    await c.query('UPDATE users SET failed_attempts=0, locked_until=NULL, last_failed_at=NULL WHERE id=$1', [id]);
+    await logAudit(req, { db: c, action: 'unlock', entity: 'user', entityId: id, summary: u.username });
+    await logAuth(req, { db: c, userId: id, username: u.username, event: 'account_unlocked_by_admin', success: true, detail: { by: req.user.username } });
+  });
   res.json({ ok: true });
 });
 
 r.post('/:id/revoke-sessions', async (req, res) => {
   const id = idParam(req.params.id);
   const u = await loadUser(id);
-  const q = await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
-    WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2`, [id, req.session.id]);
-  await logAuth(req, { userId: id, username: u.username, event: 'sessions_revoked_by_admin', success: true, detail: { by: req.user.username, count: q.rowCount } });
+  const q = await tx(async c => {
+    const q = await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
+      WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2`, [id, req.session.id]);
+    await logAudit(req, { db: c, action: 'revoke_sessions', entity: 'user', entityId: id, summary: u.username, newValue: { count: q.rowCount } });
+    await logAuth(req, { db: c, userId: id, username: u.username, event: 'sessions_revoked_by_admin', success: true,
+      detail: { by: req.user.username, count: q.rowCount } });
+    return q;
+  });
   res.json({ revoked: q.rowCount });
 });
 
@@ -267,13 +278,18 @@ r.post('/bulk-2fa', async (req, res) => {
   const { user_ids, all, exempt } = req.body || {};
   if (typeof exempt !== 'boolean') throw bad('invalid_value', { field: 'exempt' });
   if (!all && !(Array.isArray(user_ids) && user_ids.length && user_ids.length <= 10000 && user_ids.every(isId))) throw bad('invalid_value', { field: 'user_ids' });
-  const q = all
-    ? await query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 RETURNING id, username', [exempt])
-    : await query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 RETURNING id, username', [exempt, user_ids]);
-  for (const u of q.rows) {
-    await logAuth(req, { userId: u.id, username: u.username, event: exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed', success: true, detail: { by: req.user.username, bulk: true } });
-  }
-  await logAudit(req, { action: 'bulk_update', entity: 'user', summary: `totp_exempt=${exempt} on ${q.rowCount} users`, newValue: { all: !!all, user_ids: user_ids || null, exempt } });
+  const q = await tx(async c => {
+    const q = all
+      ? await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 RETURNING id, username', [exempt])
+      : await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 RETURNING id, username', [exempt, user_ids]);
+    await logAudit(req, { db: c, action: 'bulk_update', entity: 'user', summary: `totp_exempt=${exempt} on ${q.rowCount} users`,
+      newValue: { all: !!all, user_ids: user_ids || null, exempt } });
+    for (const u of q.rows) {
+      await logAuth(req, { db: c, userId: u.id, username: u.username, event: exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed', success: true,
+        detail: { by: req.user.username, bulk: true } });
+    }
+    return q;
+  });
   res.json({ updated: q.rowCount });
 });
 

@@ -17,7 +17,7 @@ ets/
 │   └── extract-catalog.js         Regenerates backend/src/db/seed/catalog.json from the original page
 │
 ├── backend/                       REST API — Node.js 22, Express 5, PostgreSQL
-│   ├── package.json               Scripts: start, dev, migrate, seed, setup, create-admin, import-legacy, purge-logs, test
+│   ├── package.json               Scripts: start, dev, migrate, seed, setup, create-admin, import-legacy, purge-logs, verify-audit, test
 │   ├── .env.example               All configuration variables, documented (copy to .env / /etc/ets/ets.env)
 │   ├── src/
 │   │   ├── server.js              Entry point: migrate + seed, start HTTP server, schedule log purge, graceful shutdown
@@ -34,7 +34,8 @@ ets/
 │   │   │   │   ├── 004_edit_requests.sql  Data-entry edits waiting for the team lead
 │   │   │   │   ├── 005_project_timeline.sql  Project close date, daily progress snapshots
 │   │   │   │   ├── 006_function_lifecycle.sql  Removed / created markers on functions; new request kinds
-│   │   │   │   └── 007_audit_context.sql  Audit row context: via request / import, approvers, items before → after
+│   │   │   │   ├── 007_audit_context.sql  Audit row context: via request / import, approvers, items before → after
+│   │   │   │   └── 012_audit_integrity.sql  Append-only, hash-chained audit_log / auth_log; separate audit retention
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -58,7 +59,8 @@ ets/
 │   │   │   ├── passwords.js       bcrypt hashing, password policy, recovery code generation
 │   │   │   ├── logs.js            Writes every log type to the DB and to files (pino)
 │   │   │   ├── settings.js        Cached settings + validation rules
-│   │   │   ├── retention.js       Log retention purge
+│   │   │   ├── retention.js       Log retention purge (audit trail ≥ 365 days, recorded, chain anchors)
+│   │   │   ├── logchain.js        Verification of the audit_log / auth_log hash chains
 │   │   │   ├── legacy.js          Import/export in the original page's format
 │   │   │   ├── edits.js           Who needs approval, create / apply edit requests
 │   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
@@ -70,12 +72,14 @@ ets/
 │   │   ├── import-legacy.js       Import the original page's data from the command line
 │   │   ├── set-setting.js         Change one system setting (used by the installer)
 │   │   ├── purge-logs.js          Apply log retention now
+│   │   ├── verify-audit.js        Verify the audit trail hash chains (npm run verify-audit)
 │   │   └── rotate-app-secret.js   Re-encrypt 2FA secrets after an APP_SECRET rotation (npm run rotate-app-secret)
 │   └── test/
 │       ├── totp.test.js           RFC test vectors
 │       ├── calc.test.js           Calculation rules
 │       ├── config.test.js         APP_SECRET checks, database TLS options, 2FA secret encryption / rotation
 │       ├── rotate.test.js         rotate-app-secret script (needs TEST_DATABASE_URL)
+│       ├── audit-log.test.js      Audit trail integrity, logging events and privacy (needs TEST_DATABASE_URL)
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -126,6 +130,7 @@ ets/
 │   ├── answers.example            Answers file template for unattended installation
 │   ├── db/
 │   │   ├── create-database.sql    Creates the `ets` role and database (password set separately)
+│   │   ├── harden-log-tables.sql  Optional: log tables owned by a separate role (app role may only read / append)
 │   │   ├── scram-verifier.mjs     SCRAM-SHA-256 verifier for the role password (used by install.sh)
 │   │   └── schema-reference.sql   Full schema dump for DBAs (reference only)
 │   ├── nginx/                     Templates filled in by install.sh
