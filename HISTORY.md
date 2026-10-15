@@ -12,6 +12,267 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.0.0] — 2026-10-15 — Security remediation
+
+### Security
+- sec(backend): request bodies are limited to 100 kB and 32 levels of nesting before the session is known; only the
+  file uploads (`POST /api/imports`, `/api/imports/preview`, `/api/tracker/import`, `PUT /api/branding/:key`) accept
+  up to 5 MB, parsed only after login, CSRF and permission checks; non-JSON bodies get `415`; imported files are
+  also refused when nested too deeply (ETS-SEC-008)
+- sec(deploy): nginx `client_max_body_size` 128k, 6m only on the upload routes (ETS-SEC-008)
+- sec(backend): allow-lists (settings, report/function fields, log types, `set-setting.js`) use own keys only, so
+  `toString`, `constructor`, `__proto__` … are refused with 400 instead of creating rows or failing (ETS-SEC-028)
+- sec(frontend): icon lookup uses own keys only (ETS-SEC-028)
+- sec(backend): ids (int4), dates (real calendar days), log page/user/status filters, scope/override/id lists,
+  `PUT /tracker/weights` without a body and malformed tracker import payloads give 400 instead of 500 and no longer
+  fill the error log (ETS-SEC-029)
+- sec(backend): CSV export neutralises formulas also after leading whitespace/invisible characters, for `|` and
+  the full-width `＝ ＋ － ＠`, and cells starting with tab/CR/LF (ETS-SEC-059)
+- sec(frontend): API paths are built with encoded segments, address-bar ids are checked before calling the API,
+  and pages show "not found" instead of crashing on an unexpected response (ETS-SEC-060)
+- sec(backend): bidirectional control characters (U+202A–202E, U+2066–2069, U+200E/200F) are removed from every
+  text value of a request body except passwords (ETS-SEC-061)
+- sec(tools): `extract-catalog.js` only runs the catalog block of the reviewed reference file (pinned SHA-256,
+  `--trust-source` to override) and runs it in an empty `vm` context with a timeout (ETS-SEC-062)
+- sec(backend): branding uploads are stored without metadata (EXIF/GPS, XMP, comments, PNG text chunks, WebP
+  EXIF/XMP) and without bytes after the end of the image; broken images are refused (ETS-SEC-070)
+- test(tests): `backend/test/input.test.js` covers the above
+- sec(backend): user management (`usr`) is for the System Administrator role only — a `usr` override on any other
+  role is ignored and refused by the API (`usr_admin_only`); all `/api/users` routes need the admin role. Nobody can
+  widen their own permissions, scope or 2FA exemption (`cannot_change_own_permissions`); only administrators
+  create/promote administrators, reset an administrator's password/2FA or bulk-exempt 2FA (ETS-SEC-004).
+- sec(db): migration `009_usr_admin_only.sql` — removes `usr` overrides held by non-administrators (each removal
+  recorded in the audit trail) and lists in the system log (`scope_fail_closed`, warning) the active users of a
+  scoped role without any scope (ETS-SEC-004, ETS-SEC-005).
+- sec(backend): scope fails closed — full scope comes from the role only (admin, PM, TM); a user of another role
+  with no scope rows sees no data anywhere (tracker, export, logs, approvals, imports, `/auth/me` `fullScope:false`)
+  (ETS-SEC-005). **Upgrade note for administrators:** such users saw everything before 1.0.0 and now see nothing
+  until a department/application is ticked for them in *Users* (shown as «بلا نطاق / No scope»); nothing is
+  granted automatically — see 03-Administrator-Guide §1.
+- sec(backend): last-administrator protection counts permission overrides (an active admin holding `usr` and `cfg`
+  must remain) and locks the administrator rows, so concurrent demotions cannot remove every admin
+  (ETS-SEC-023, race part of ETS-SEC-021).
+- sec(backend): `GET /api/tracker/export` returns only the applications in the user's scope; the project schedule
+  only for full-scope users (ETS-SEC-006).
+- sec(backend): application-level scope is no longer treated as department scope — edit-request visibility and
+  approval, import preview/upload (only the uploader's applications are compared), import lead/final approval and
+  rejection (every changed application must be in scope) and batch details (only in-scope changes and figures)
+  (ETS-SEC-007).
+- sec(backend): `PUT /api/tracker/schedule` needs a full-scope user (`can.sch` follows) (ETS-SEC-024).
+- sec(backend): import two-person rule — the uploader may sign neither approval stage; the final approver also needs
+  every changed application in scope (ETS-SEC-025).
+- sec(backend): a new import file supersedes only waiting batches nobody has signed yet (own, or entirely within
+  the uploader's scope) and never when it has no changes (ETS-SEC-026).
+- sec(backend): approving an edit request or the second signature of an import re-checks that the author is still
+  active, in scope and holds the needed permissions (409 `requester_not_allowed`; *Approve all* leaves such requests
+  pending and reports `blocked_requests`); deactivating a user withdraws their pending edit requests (ETS-SEC-027).
+- sec(backend): the "note with a noted status" exception only applies when the status really changes to it (or the
+  function has no note), so a user without `tst` cannot overwrite notes (ETS-SEC-056).
+- sec(backend): `GET /api/settings` needs full scope; the impact preview ignores functions of other applications
+  (ETS-SEC-058).
+- sec(frontend): Users screen — *Manage users* cannot be granted to non-administrator roles, own permissions /
+  scope / 2FA exemption cannot be widened, warning and «بلا نطاق» badge for users without scope, new error texts in
+  Arabic and English (ETS-SEC-004, ETS-SEC-005).
+- docs(docs): Administrator guide, Security and API reference updated for the rules above; review notes for imports
+  (weights, full import) (ETS-SEC-057).
+- test(tests): `backend/test/authz.test.js` — regression tests for P3-AUTHZ-01…10 and ETS-SEC-058.
+- sec(db): migration `008_auth_lockout.sql` — `users.last_failed_at` (time of the last failed check, for the
+  lockout decay); comment on the recovery-code hash formats. No data is changed.
+- sec(backend): a correct password no longer resets the failure counter while 2FA is pending; it is cleared only
+  by a complete sign-in, so wrong 2FA codes add up across logins (ETS-SEC-001).
+- sec(backend): lockout is now a progressive pause per account (1, 2, 4 … minutes from `MAX_FAILED_LOGINS`,
+  at most `LOCK_MINUTES`) that ends by itself; the counter restarts after `LOCKOUT_RESET_MINUTES` (60) without
+  failures, so one wrong attempt after a lock no longer locks again for the full time (ETS-SEC-002).
+- sec(backend): a paused account answers exactly like a wrong password or an unknown username (`401
+  invalid_credentials`, same bcrypt cost); no more `423 account_locked` with the lock time (ETS-SEC-014).
+- sec(backend): every endpoint that checks a password, 2FA code or recovery code (login, 2FA verify / setup /
+  enable / disable, recovery codes, change password) is limited per IP and per account (`429
+  too_many_attempts` with `retry_after`); wrong answers on the profile re-authentication count towards the
+  pause and, at the limit, end the session; a general per-IP limit applies to every `/api` request
+  (`API_RATE_LIMIT`, `429 too_many_requests`). Concurrent checks on one account run one after another
+  (ETS-SEC-003, ETS-SEC-021).
+- sec(deploy): nginx login limit covers all those endpoints, in any letter case and with a trailing slash, and
+  answers 429 (ETS-SEC-003).
+- sec(backend): completing 2FA issues a new session token and revokes the pre-2FA one; signing in again revokes
+  the browser's previous session (ETS-SEC-015).
+- sec(backend,frontend): turning 2FA on from the profile needs the password; turning it off and generating new
+  recovery codes need the password and an authenticator / recovery code (ETS-SEC-016).
+- sec(backend): `/auth/me` before 2FA returns only username, language and stage (ETS-SEC-017).
+- sec(backend): sessions are revoked on admin 2FA reset, self-service 2FA disable (other sessions) and
+  `create-admin` from the command line (ETS-SEC-018).
+- sec(backend): password policy — never below 10 characters, 12 for administrators (also in `create-admin`,
+  which now uses the Settings minimum), at most 72 bytes, built-in list of common passwords; `BCRYPT_ROUNDS`
+  kept within 10–14; hashes with another cost are re-hashed at the next sign-in (ETS-SEC-019, ETS-SEC-020).
+  Settings → minimum password length now accepts 10–64.
+- sec(backend): TOTP replay check is a conditional update and a recovery code can only be used once, also
+  under parallel requests (ETS-SEC-021).
+- sec(backend): recovery codes have 12 characters (about 59 bits, no modulo bias) and are stored as
+  HMAC-SHA-256 with an HKDF key from `APP_SECRET`; older codes keep working, the profile page suggests
+  generating new ones (ETS-SEC-030).
+- sec(backend): with `COOKIE_SECURE=true` the session cookie is named `__Host-ets_sid` (everyone signs in again
+  once after the upgrade); cookies are cleared with the same options everywhere; a production server refuses
+  to start with insecure cookies unless `ALLOW_INSECURE_COOKIES=true` (ETS-SEC-053).
+- sec(backend): the forced-password-change gate is an explicit middleware on the allowed endpoints instead of a
+  URL prefix test (ETS-SEC-054).
+- sec(backend): `/2fa/verify` answers `400 mfa_not_pending` instead of 500 when 2FA was reset meanwhile
+  (ETS-SEC-055).
+- test(tests): `auth-security.test.js` (lockout, decay, enumeration, rate limits, session rotation, step-up,
+  replay races, recovery codes, CLI) and `passwords.test.js` (policy, recovery codes, cookie name, API limiter).
+
+---
+### Security — deployment hardening and supply chain (WP5, WP8)
+- sec(deploy): backups are encrypted with gpg (AES-256, tamper-evident) using a separate root-only key
+  `/etc/ets/backup.key` created by the installer/update, get a `.sha256` checksum, are never overwritten, and no
+  longer have `ets.env` (APP_SECRET, DB password) copied next to them; an old `ets.env.backup` is deleted and old
+  plain dumps are encrypted at the next run. Key escrow and restore documented in doc 08 (ETS-SEC-009).
+- sec(backend,deploy): remote PostgreSQL always over TLS — `PGSSLMODE` / `PGSSLROOTCERT` (libpq semantics:
+  require / verify-ca / verify-full) in `config.js` + `db/pool.js` and for psql / pg_dump / pg_restore; default
+  `require` for a non-local host and the app refuses to start with an unencrypted remote connection; the
+  installer asks for the DB server's CA (→ verify-full) and checks the connection is encrypted; update.sh adds
+  `PGSSLMODE=require` to an existing remote install (ETS-SEC-010).
+- sec(deploy): plain-HTTP installation mode removed (`ETS_TLS=none` refused, previous plain-HTTP answers fall back
+  to self-signed, update.sh refuses a plain-HTTP install with a clear message); `COOKIE_SECURE=true` always;
+  `ets-http.conf.tpl` deleted (ETS-SEC-011).
+- sec(deploy): self-signed certificate is an end-entity certificate (`basicConstraints=critical,CA:FALSE`,
+  keyUsage digitalSignature/keyEncipherment, extendedKeyUsage serverAuth, SAN, RSA-3072, 825 days); an existing
+  CA:TRUE certificate is replaced by install/update; docs no longer say to import it as a trusted root (ETS-SEC-012).
+- sec(backend): `APP_SECRET` placeholders (e.g. the old `.env.example` value), values under 32 characters or with
+  fewer than 12 different characters are refused at start; `.env.example` ships empty secrets (ETS-SEC-031).
+- sec(backend): 2FA secret envelope `v2:<key id>:iv:tag:ct` with an HKDF-SHA-256 key, 16-byte GCM tag enforced,
+  optional AAD; `v1` still read; `APP_SECRET_OLD` + `npm run rotate-app-secret` (scripts/rotate-app-secret.js)
+  rotate the secret without losing 2FA enrolments (ETS-SEC-032, ETS-SEC-063 except AAD binding by callers).
+- sec(deploy,db): the DB role password is never on a command line or in the server log: the installer sends a
+  SCRAM-SHA-256 verifier (`deploy/db/scram-verifier.mjs`) on stdin; `create-database.sql` no longer takes a
+  password (DBAs use `\password`); psql gets `PGPASSWORD` only per call; `create-admin --password` warns that
+  it is deprecated (ETS-SEC-033, ETS-SEC-065).
+- sec(deploy): answers.example ships no usable passwords (admin `CHANGE-ME` is refused); example / common words
+  refused for DB and admin passwords; admin password 12+ characters, max 72 bytes; an admin password taken from
+  an answers file / environment variable gets `must_change_password` (`create-admin --must-change-password`)
+  (ETS-SEC-034).
+- sec(deploy): nginx sends CSP (mirrors helmet), X-Frame-Options DENY, nosniff, Referrer-Policy, HSTS,
+  Permissions-Policy, COOP/CORP on the SPA and assets via `snippets/ets-headers.conf`, included in every location
+  that has its own `add_header` (fixes the add_header inheritance gap) (ETS-SEC-035).
+- sec(deploy): systemd sandboxing extended (CapabilityBoundingSet=, PrivateDevices, ProtectKernelLogs/Clock/
+  Hostname, ProtectProc=invisible, RestrictNamespaces/Realtime/AddressFamilies, SystemCallFilter=@system-service,
+  SystemCallArchitectures=native, UMask=0027, RemoveIPC, IPAddressAllow=localhost [+ remote DB IP] /
+  IPAddressDeny=any); offline `systemd-analyze security` exposure 7.4 → 1.4 (ETS-SEC-036).
+- sec(deploy): legacy-import temp copy in a `mktemp -d` directory, mode 640 root:ets, removed afterwards (ETS-SEC-037).
+- sec(deploy,backend): `server_tokens off`; public `/api/health` no longer returns the version (ETS-SEC-038).
+- sec(deploy): TLS: Mozilla intermediate ECDHE+AEAD ciphers, `ssl_prefer_server_ciphers off`, session tickets off,
+  shared session cache 1 d (ETS-SEC-039).
+- sec(deploy,db): `REVOKE ALL ON DATABASE … FROM PUBLIC`, `GRANT CONNECT, TEMPORARY` to the app role,
+  `REVOKE CREATE ON SCHEMA public FROM PUBLIC` (create-database.sql and every local install run) (ETS-SEC-040).
+- sec(deploy): restore.sh verifies checksum + decryption + archive before touching anything, takes a
+  pre-restore backup, restores with `--single-transaction --exit-on-error` (extensions left to the DBA), fails
+  hard and restarts the service on error, passes the file name to SQL as a psql variable (ETS-SEC-041).
+- sec(deploy): only runtime files are copied to /opt/ets (allow-list: backend src/scripts/package files,
+  frontend sources for the build, deploy runtime files — no docs, tests, reference data, examples); code root-owned,
+  backend `root:ets 750`, only `frontend/dist` world-readable (ETS-SEC-042).
+- sec(deploy): nightly backup logs to root-only `/var/log/ets-backup.log` (outside the ets-writable /var/log/ets),
+  with its own logrotate entry (ETS-SEC-043).
+- sec(deploy): no `curl | bash`: NodeSource apt repo with a fingerprint-pinned signing key and `signed-by`;
+  npm ci and the Vite build run as the unprivileged `ets-build` user with `--ignore-scripts`, in a staging copy;
+  answers files and install.conf are parsed as KEY=value data, never sourced (nothing exported); PGPASSWORD is
+  scoped to individual psql calls (ETS-SEC-044, ETS-SEC-067).
+- sec(backend,frontend,deploy): Node.js `engines` `^22.12.0 || >=24` with `engine-strict`; the installer
+  upgrades any other version, update.sh refuses one (ETS-SEC-045).
+- sec(deploy): `.github/dependabot.yml` (npm backend + frontend, GitHub Actions; weekly, 7-day cooldown);
+  `npm audit --omit=dev` runs at every install/update (ETS-SEC-046, ETS-SEC-071).
+- sec(deploy): `ets.env.bak-*` are root:root 600, only the 5 newest kept; ets.env written atomically; a warning
+  before nginx's default site is disabled (ETS-SEC-064).
+- sec(deploy): existing-certificate mode warns when the private key is readable by others (ETS-SEC-066).
+- sec(deploy): update.sh re-deploys the systemd unit, nginx site/snippets, logrotate, backup/restore commands and
+  cron from install.conf, reads `PORT` from ets.env, and prints rollback instructions on failure (ETS-SEC-068).
+- sec(deploy): local PostgreSQL: warning when `listen_addresses` is not local-only or pg_hba has trust/password/md5
+  network rules (ETS-SEC-069).
+- test(tests): `config.test.js` (APP_SECRET placeholders, DB TLS options per sslmode, remote-without-TLS refused,
+  v2 envelope, tag length, AAD, v1 compatibility, rotation) and `rotate.test.js` (rotate-app-secret on a database).
+- docs(docs): 02, 06 (new §6a secrets and APP_SECRET rotation), 07, 08 (encrypted backups, key escrow, restore),
+  09, 10, README, STRUCTURE updated for the above.
+
+### Security — audit trail, logging and privacy (WP6)
+- sec(db): migration `012_audit_integrity.sql` — `audit_log` and `auth_log` are append-only (triggers refuse UPDATE,
+  DELETE, TRUNCATE except the retention purge and the user_id → NULL of a deleted user) and hash-chained
+  (`chain_seq`, `prev_hash`, `row_hash`, computed by the database; existing rows chained in id order);
+  `log_chain_head`, `log_chain_anchor`; purge only through `ets_purge_log()` (oldest rows first, never younger than
+  365 / 30 days); new setting `logs.audit_retention_days` (kept at the previous period when longer) (ETS-SEC-013, ETS-SEC-048)
+- sec(backend): `npm run verify-audit` and `GET /api/logs/integrity` (admins) verify the chains; the daily purge
+  verifies first and writes the chain heads to the journal; `deploy/db/harden-log-tables.sql` (optional, run once by
+  the DBA) gives the log tables to a separate owner role so the application role can only read and append (ETS-SEC-013)
+- sec(deploy): ets-restore records the restore in the audit trail (ETS-SEC-013)
+- sec(backend): audit trail retention is its own setting, at least 365 days; every purge is recorded in the audit
+  trail with its actor (`system` / `cli:<OS user>`) and row counts; a shorter retention is flagged (ETS-SEC-048)
+- sec(backend): audit rows are strict (a failed write fails the request); unlock, bulk 2FA exemption, branding,
+  language, password change, 2FA setup/enable/disable, recovery codes, session revocation, admin resets and the
+  2FA policy change write their audit / auth_log rows in the same transaction; tracker and log exports are refused
+  without their audit row; a sign-in creates no session without its `login` row; soft writes (failed sign-ins,
+  denials, logout, reads) are counted and reported with `alert:true` (ETS-SEC-049)
+- sec(backend): new events `password_change_rejected`, `mfa_verify_while_locked`, `reauth_while_locked`,
+  `session_expired`, `session_revoked_reuse`, `csrf_rejected`, `password_change_required`, `admin_created_cli`,
+  `mfa_reset_cli`; audit rows for viewing a user record / security log, CLI `set-setting` and `create-admin`
+  (as `cli:<OS user>`), session revocation (ETS-SEC-050)
+- sec(backend): an unknown username (and the name sent with a rate-limited request) is stored masked
+  (`?x***#<HMAC>`), never as typed — DB, files, journal, export (ETS-SEC-051)
+- sec(backend): changes applied on approval carry the requester's own IP; the approver's IP is in
+  `context.approver_ip` (ETS-SEC-052)
+- sec(backend): security logs (auth, access, error, system), log statistics and IPs / user agents for
+  administrators only; others with `log` get the audit trail with IPs removed server-side, also in CSV (ETS-SEC-047)
+- sec(backend): only the first rate-limited sign-in of a window (then every 10^n) is written to auth_log; anonymous
+  404 / 429 are not stored in access_log; user agent and paths capped at 300 characters (ETS-SEC-077)
+- sec(backend): high-value events are written with `alert:true` for forwarding / SIEM rules (ETS-SEC-075)
+- sec(frontend): Logs shows the security tabs and statistics to administrators only, «Verify log integrity»
+  button, failed-log-write counter; Settings has the separate audit retention field (min 365); ar + en texts
+  (ETS-SEC-047, ETS-SEC-048, ETS-SEC-013)
+- test(tests): `audit-log.test.js` (append-only, chain verification and tamper detection, purge floors and anchors,
+  injected log-write failures, new events incl. CLI, masking, requester IP, admin-only logs, flood limits);
+  `input.test.js` adapted to masked unknown usernames.
+- docs(docs): 07 (who sees what, new events, masking, transactional audit, integrity §3, alerts, retention and
+  personal data), 06 (authorisation, audit trail, recommendations) (ETS-SEC-013, 047–052, 074, 075, 077).
+
+### Security — audit-trail protection applied automatically (WP6 follow-up)
+- sec(deploy): the audit-trail protection (`deploy/db/harden-log-tables.sql`: log tables, chain functions and
+  schema `public` owned by the NOLOGIN role `ets_log_owner`; the application role may only read and append) is
+  applied automatically on every install and update of a local database, as the PostgreSQL superuser, by the new
+  `/usr/local/sbin/ets-log-protect` (`deploy/scripts/log-protect.sh`: `apply`, `migrate`, `restore`, `status`).
+  Migrations and restores run as the application role inside one superuser transaction in which the log objects
+  are lent to it and protected again before COMMIT, so later migrations that change the log tables and restores
+  keep working; `update.sh` stops the service and migrates before starting the new version; `ets-restore` uses it
+  automatically and refuses (before changing anything) a protected database it cannot restore. Remote database:
+  migrations as the application role (all-or-nothing, clear DBA instructions on failure) and a note telling the
+  DBA how to apply the protection (`ETS_SU_CONNINFO=… ets-log-protect apply` or psql). The script is idempotent,
+  checks inside its transaction that the application role can no longer change the logs, grants SELECT on the log
+  sequences (needed by `ets-backup`), and is a no-op before migration 012. Restores use `--no-acl` (ETS-SEC-013)
+- docs(docs): 07 §3 (protection, migrations, restores, remote DBA, undo), 08 §3 (restore of a protected
+  database), 06, STRUCTURE (ETS-SEC-013)
+
+### Documentation accuracy (WP7)
+- docs(docs): client IP behind a load balancer / reverse proxy / NAT: nginx `real_ip` for the balancer's addresses
+  only, in `/etc/nginx/conf.d/ets-realip.conf` (survives updates), never `TRUST_PROXY=true`; the shared-IP effect
+  on the rate limits and what to do; in-memory API counters reset on restart (02 §9, 06, 10, 12, `.env.example`;
+  a pointer comment in `deploy/nginx/ets-https.conf.tpl`) (ETS-SEC-022)
+- docs(docs): consistency pass of the handover pack, README, STRUCTURE, `.env.example` and `answers.example` with
+  the 1.0.0 code: sign-in pause model (no "account locked" / 423), rate limits, cookie `__Host-ets_sid`, HTTPS
+  only, database TLS, encrypted backups and key escrow, nine roles and 13 permissions, scope fail-closed, `usr`
+  for administrators only, import two-person rule, security logs for administrators only, audit retention ≥ 365,
+  hash chain and `verify-audit`, audit-trail protection, new settings / env variables (`LOCKOUT_RESET_MINUTES`,
+  `API_RATE_LIMIT`, `ALLOW_INSECURE_COOKIES`, `APP_SECRET_OLD`, `PGSSL*`, `TRUST_PROXY`), new npm scripts,
+  `/api/health` without version, Node.js 22.12+ / 24+; example passwords removed from the docs (ETS-SEC-076)
+- docs(docs): 05 Database Design describes migrations 007–009 and 012 (`last_failed_at`, recovery-code hash
+  format, `usr` cleanup, hash-chain columns, `log_chain_head` / `log_chain_anchor`, chain functions and triggers,
+  `ets_purge_log`, ownership by `ets_log_owner`, new retention setting); `deploy/db/schema-reference.sql`
+  regenerated after migration 012 (ETS-SEC-076)
+- docs(docs): 09 Test plan: 90 automated tests; new UAT cases for the sign-in pause, password rules, rate limits,
+  cookie, health, 2FA step-up and recovery-code format, `usr` admin-only, self-grant, scope fail-closed,
+  application scope, last admin, admin-only logs, integrity check, audit retention, audit-trail protection,
+  two-person import rule, restore, update and key escrow (ETS-SEC-076)
+- docs(docs): 10 Runbook: security operations (verify-audit, broken chain, ets-log-protect, purge, backup key,
+  APP_SECRET rotation, create-admin) and sign-in pauses / unlocking; 12 Checklist: backup key escrow, audit-trail
+  protection, user scopes, network path, and the NodeSource key fingerprint that **must be verified against
+  NodeSource's published key before the first install**; 04 User guide (AR): https only, sign-in pause message,
+  password rules (10 / 12 characters), 2FA changes need password + code, recovery code format `xxxx-xxxx-xxxx`,
+  no-scope users, uploader cannot sign (ETS-SEC-076)
+- ops(backend, frontend): version 1.0.0 in `package.json` and `package-lock.json`
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

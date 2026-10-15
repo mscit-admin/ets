@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { config } from './config.js';
 import { sessionMiddleware } from './middleware/auth.js';
 import { accessLog, csrfGuard, errorHandler, notFoundHandler } from './middleware/common.js';
+import { jsonBody } from './middleware/body.js';
 import authRoutes from './routes/auth.js';
 import trackerRoutes from './routes/tracker.js';
 import userRoutes from './routes/users.js';
@@ -15,6 +16,7 @@ import importRoutes from './routes/imports.js';
 import brandingRoutes from './routes/branding.js';
 import approvalRoutes from './routes/approvals.js';
 import systemRoutes, { health } from './routes/system.js';
+import { apiLimiter } from './middleware/ratelimit.js';
 
 export function createApp() {
   const app = express();
@@ -30,9 +32,10 @@ export function createApp() {
     },
   }));
   app.get('/api/health', health);
+  app.use('/api', apiLimiter);   // general per-IP request ceiling (ETS-SEC-003)
 
   const api = express.Router();
-  api.use(express.json({ limit: '5mb' }));
+  api.use(jsonBody);       // 100 kB; file uploads are parsed inside their routes after auth (middleware/body.js)
   api.use(cookieParser());
   api.use(sessionMiddleware);
   api.use(accessLog);

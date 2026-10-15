@@ -5,6 +5,7 @@ server {
     listen __HTTP_PORT__;
     listen [::]:__HTTP_PORT__;
     server_name __SERVER_NAME__;
+    server_tokens off;
 
     # Let's Encrypt renewals (certbot --webroot)
     location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }

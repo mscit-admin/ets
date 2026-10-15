@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api, qs } from '../lib/api.js';
+import { api, path, qs } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, Empty, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { makeAudit } from '../lib/audit.js';
@@ -107,15 +107,22 @@ export default function Logs() {
   const { t, fmtDate, lang } = useI18n();
   const describe = useMemo(() => makeAudit({ t, lang }), [t, lang]);
   const { user } = useAuth();
-  const types = user.fullScope ? TYPES : ['audit'];
+  // sign-in, request, error and system logs (and every IP address) are for system administrators only (ETS-SEC-047)
+  const admin = user.role === 'admin';
+  const types = admin ? TYPES : ['audit'];
   const [type, setType] = useState(types[0]);
   const [f, setF] = useState({ q: '', from: '', to: '', event: '', success: '' });
   const [applied, setApplied] = useState(f);
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState(null);
   const query = { ...applied, page, limit: 50 };
-  const { data, error, loading } = useLoad(() => api.get(`/logs/${type}${qs(query)}`), [type, JSON.stringify(query)]);
-  const stats = useLoad(() => (user.fullScope ? api.get('/logs/stats') : Promise.resolve(null)), []);
+  const { data, error, loading } = useLoad(() => api.get(path`/logs/${type}` + qs(query)), [type, JSON.stringify(query)]);
+  const stats = useLoad(() => (admin ? api.get('/logs/stats') : Promise.resolve(null)), []);
+  const [integrity, setIntegrity] = useState(null);
+  const verify = async () => {
+    setIntegrity({ busy: true });
+    try { setIntegrity(await api.get('/logs/integrity')); } catch (e) { setIntegrity({ error: e }); }
+  };
   const cols = columns(type, t, fmtDate, describe);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 
@@ -124,8 +131,24 @@ export default function Logs() {
   return (
     <div>
       <PageHeader title={t('logs_title')} icon="logs">
-        <a className="btn btn-default btn-sm" href={`/api/logs/${type}/export${qs(applied)}`}><Icon name="download" size={14} /> {t('export_csv')}</a>
+        {admin && (
+          <button className="btn btn-default btn-sm" onClick={verify} disabled={integrity?.busy}>
+            <Icon name="check" size={14} /> {t('verify_integrity')}
+          </button>
+        )}
+        <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>
       </PageHeader>
+      {integrity && !integrity.busy && (integrity.error ? <ErrorBox error={integrity.error} /> : (
+        <Card>
+          <Indicator color={integrity.ok ? 'green' : 'red'}>{integrity.ok ? t('integrity_ok') : t('integrity_broken')}</Indicator>
+          {integrity.tables.map(x => (
+            <div key={x.table} className="muted small" dir="ltr">
+              {x.table}: {x.rows} · seq {x.first_seq ?? '-'}…{x.last_seq ?? '-'} · head {x.head.seq}:{x.head.hash.slice(0, 16)}
+              {x.breaks.length > 0 && <> · <span className="code">{x.breaks.slice(0, 5).map(b => b.kind + '@' + (b.seq ?? '')).join(', ')}</span></>}
+            </div>
+          ))}
+        </Card>
+      ))}
       {stats.data && (
         <div className="grid-cards">
           <NumberCard label={t('logins_24h')} value={stats.data.logins_24h} color="green" />
@@ -133,6 +156,7 @@ export default function Logs() {
           <NumberCard label={t('changes_24h')} value={stats.data.changes_24h} color="blue" />
           <NumberCard label={t('errors_24h')} value={stats.data.errors_24h} color={stats.data.errors_24h ? 'red' : ''} />
           <NumberCard label={t('active_sessions')} value={stats.data.active_sessions} sub={`${t('locked_users')}: ${stats.data.locked_users}`} />
+          {stats.data.log_write_failures > 0 && <NumberCard label={t('log_write_failures')} value={stats.data.log_write_failures} color="red" />}
         </div>
       )}
       <div className="tabs">

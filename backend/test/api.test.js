@@ -8,21 +8,20 @@ import fs from 'node:fs';
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'TEST_DATABASE_URL not set';
 
-let server, base, pool, totp, decrypt;
+let server, base, pool, totp;
 
 before(async () => {
   if (skip) return;
   Object.assign(process.env, {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR: new URL('../logs-test', import.meta.url).pathname, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
-    MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '1000', ETS_ENV_FILE: 'none',
+    MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
   });
   ({ pool } = await import('../src/db/pool.js'));
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await (await import('../src/db/migrate.js')).migrate({ log: () => {} });
   await (await import('../src/db/seed.js')).seed({ log: () => {} });
   ({ totp } = await import('../src/services/totp.js'));
-  ({ decrypt } = await import('../src/services/crypto.js'));
   const { hashPassword } = await import('../src/services/passwords.js');
   const h = await hashPassword('Passw0rd-123');
   await pool.query(`INSERT INTO users(username,full_name,password_hash,role_id,must_change_password) VALUES
@@ -30,6 +29,8 @@ before(async () => {
     ('newbie','New',$1,'obs',true), ('locky','Lock',$1,'obs',false)`, [h]);
   const hred = (await pool.query(`SELECT id FROM users WHERE username='hred'`)).rows[0].id;
   await pool.query(`INSERT INTO user_scopes(user_id,kind,ref_id) VALUES ($1,'department','hr')`, [hred]);
+  // a scoped role without scope rows sees nothing (ETS-SEC-005), so the tester gets the HR department
+  await pool.query(`INSERT INTO user_scopes(user_id,kind,ref_id) SELECT id,'department','hr' FROM users WHERE username='tester'`);
   const { createApp } = await import('../src/app.js');
   server = createApp().listen(0);
   base = `http://127.0.0.1:${server.address().port}/api`;
@@ -62,13 +63,13 @@ function client() {
   };
 }
 
-const secretOf = async u => decrypt((await pool.query('SELECT totp_secret FROM users WHERE username=$1', [u])).rows[0].totp_secret);
 const setMfa = mode => pool.query(`UPDATE settings SET value=$1 WHERE key='mfa.mode'`, [JSON.stringify(mode)]);
 const waitSettingsCache = () => import('../src/services/settings.js').then(m => m.invalidateSettings());
 
 test('health endpoint', { skip }, async () => {
   const r = await fetch(base + '/health');
   assert.equal(r.status, 200);
+  assert.equal((await r.json()).version, undefined);   // public endpoint: no version disclosure (ETS-SEC-038)
 });
 
 test('login: wrong password, unknown user, success', { skip }, async () => {
@@ -91,10 +92,13 @@ test('state-changing requests require the CSRF header', { skip }, async () => {
 test('account locks after repeated failures', { skip }, async () => {
   const c = client();
   for (let i = 0; i < 3; i++) await c.login('locky', 'bad');
+  // paused: even the right password gets the same answer as a wrong one (no 423 that reveals the account)
   const r = await c.login('locky');
-  assert.equal(r.status, 423);
+  assert.equal(r.status, 401);
+  assert.deepEqual(r.data, { error: 'invalid_credentials' });
   const ev = (await pool.query(`SELECT event FROM auth_log WHERE username='locky' ORDER BY id`)).rows.map(x => x.event);
   assert.ok(ev.includes('account_locked'));
+  assert.ok(ev.includes('login_while_locked'));
 });
 
 test('unauthenticated access is refused', { skip }, async () => {
@@ -108,14 +112,15 @@ test('2FA: required policy → enrol, verify, replay blocked, recovery code', { 
   assert.equal((await c.get('/tracker/summary')).status, 401);           // partial session is not enough
   const setup = await c.post('/auth/2fa/setup');
   assert.match(setup.data.uri, /^otpauth:\/\/totp\//);
-  const en = await c.post('/auth/2fa/enable', { code: totp(setup.data.secret) });
+  const used = totp(setup.data.secret);                                   // reused below: a replay must fail even across a 30 s step
+  const en = await c.post('/auth/2fa/enable', { code: used });
   assert.equal(en.data.recovery_codes.length, 10);
   assert.equal((await c.get('/tracker/summary')).status, 200);
 
   // new login → verify stage; same code again is a replay
   const c2 = client();
   assert.equal((await c2.login('tester')).data.stage, 'verify');
-  assert.equal((await c2.post('/auth/2fa/verify', { code: totp(await secretOf('tester')) })).data.error, 'invalid_code');
+  assert.equal((await c2.post('/auth/2fa/verify', { code: used })).data.error, 'invalid_code');
   // recovery code works once
   const code = en.data.recovery_codes[0];
   assert.equal((await c2.post('/auth/2fa/verify', { recovery_code: code })).data.stage, 'done');

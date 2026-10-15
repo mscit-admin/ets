@@ -6,6 +6,13 @@ const MAX_ITEMS = 500;
 
 export const userRef = u => (u ? { id: u.id, username: u.username, full_name: u.full_name || null } : null);
 
+// The IP from which a request / import was sent: the one on its own audit row ('edit_request' / 'import_submit').
+// Changes applied later are recorded with it, not with the IP of the approver (ETS-SEC-052).
+export async function originIp(c, action, entity, id) {
+  return (await c.query(`SELECT host(ip) AS ip FROM audit_log WHERE action=$1 AND entity=$2 AND entity_id=$3
+    ORDER BY chain_seq LIMIT 1`, [action, entity, String(id)])).rows[0]?.ip || null;
+}
+
 export async function loadUser(c, id) {
   if (!id) return null;
   return (await c.query('SELECT id, username, full_name FROM users WHERE id=$1', [id])).rows[0] || null;
@@ -27,7 +34,7 @@ export async function namedItems(c, items) {
 
 // Writes one 'update' audit row per function / report / application weight that an approved request or
 // import changed, so each item's history shows its own before → after values.
-export async function logAppliedChanges(req, c, items, { actor = null, context = null } = {}) {
+export async function logAppliedChanges(req, c, items, { actor = null, actorIp = null, context = null } = {}) {
   const groups = new Map();
   for (const it of items) {
     const key = it.kind === 'function' ? `f${it.function_id}` : `${it.kind}${it.app_id}`;
@@ -42,6 +49,6 @@ export async function logAppliedChanges(req, c, items, { actor = null, context =
     const f = fns.get(g.function_id);
     const [entity, entityId, summary] = g.kind === 'function' ? ['function', g.function_id, f && `${f.app_id}/${f.code} ${f.name_ar.slice(0, 80)}`]
       : g.kind === 'report' ? ['report', g.app_id, null] : ['application', g.app_id, 'weight'];
-    await logAudit(req, { db: c, actor, action: 'update', entity, entityId, summary, oldValue: g.old, newValue: g.new, context });
+    await logAudit(req, { db: c, actor, actorIp, action: 'update', entity, entityId, summary, oldValue: g.old, newValue: g.new, context });
   }
 }

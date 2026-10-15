@@ -1,15 +1,24 @@
 # 05 — Database Design
 
-**DBMS:** PostgreSQL 14+ · **Database:** `ets` · **Owner role:** `ets` · **Extension:** `citext`
+**DBMS:** PostgreSQL 14+ · **Database:** `ets` · **Application role / database owner:** `ets` ·
+**Log owner role:** `ets_log_owner` (no login, owns the log tables — §3a) · **Extension:** `citext`
 **Creation script:** `deploy/db/create-database.sql` · **Schema source:** `backend/src/db/migrations/*.sql`
-**Full DDL for review:** `deploy/db/schema-reference.sql`
+(001–009 and 012; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
+(after migration 012)
 
 ## 1. How the schema is managed
 
 - Every structural change is a new numbered file in `backend/src/db/migrations/` (`001_init.sql`,
   `002_…sql`, …). Applied files are never edited.
 - `node src/db/migrate.js` applies pending files in order. Each file runs in its own transaction and is
-  recorded in `schema_migrations`. The service also runs pending migrations at start-up.
+  recorded in `schema_migrations` (and in `system_log`, event `migration`). The service also runs pending
+  migrations at start-up.
+- On a server with a local database, `install.sh` and `update.sh` apply the migrations **before** the service
+  starts, through `ets-log-protect migrate` (as the PostgreSQL superuser, all pending files in one transaction
+  in which the migration SQL runs as the application role), and then protect the log tables again (§3a). This is
+  what lets a later migration change `audit_log` / `auth_log` although the application role does not own them.
+- Database privileges: only the application role may connect (`REVOKE ALL ON DATABASE … FROM PUBLIC`), and
+  `PUBLIC` may not create objects in schema `public`.
 - `node src/db/seed.js` is idempotent. It creates the roles and default settings, and inserts the catalog
   rows that are missing. It refreshes descriptive fields but **never overwrites progress data**.
 
@@ -31,11 +40,11 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 ### Identity & access
 | Table | Purpose | Key columns |
 |---|---|---|
-| `roles` | The five roles | `id` (admin, mgr, ed, qa, obs), `name_ar/en`, `full_scope`, `permissions text[]` |
-| `users` | Accounts | `username citext unique`, `password_hash` (bcrypt), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM encrypted), `totp_enabled`, `totp_exempt`, `totp_last_step`, `failed_attempts`, `locked_until`, `last_login_at/ip` |
-| `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (SHA-256), `used_at` |
-| `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool` |
-| `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. No rows = full scope |
+| `roles` | The nine roles | `id` (admin, pm, tm, mgr, lead, member, ed, qa, obs), `name_ar/en`, `full_scope` (true only for admin, pm, tm), `permissions text[]` |
+| `users` | Accounts | `username citext unique`, `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip` |
+| `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (`h1:` + HMAC-SHA-256, migration 008; older plain SHA-256 codes stay valid until used or regenerated), `used_at` |
+| `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool`. `usr` may be granted to the admin role only (migration 009 removed other grants, each recorded in the audit trail) |
+| `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. Full scope comes from `roles.full_scope` only: a user of another role with **no rows sees nothing** (fail closed; migration 009 lists such users in `system_log`, event `scope_fail_closed`) |
 | `sessions` | Server-side sessions | `id` = SHA-256 of the cookie token, `mfa_passed`, `mfa_stage`, `expires_at`, `last_seen_at`, `revoked_at`, `revoke_reason` |
 | `settings` | System settings | `key`, `value jsonb`, `updated_by` |
 
@@ -72,7 +81,25 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 
 ### Logs (details in [07-Logging-and-Audit.md](07-Logging-and-Audit.md))
 `auth_log`, `audit_log`, `access_log`, `error_log`, `system_log`. All have `ts timestamptz` indexed
-descending.
+descending. `audit_log.context jsonb` (migration 007) holds how a change came in (direct, edit request,
+import), who asked and approved, and the items of a bulk change.
+
+### 3a. Audit-trail integrity (migration 012)
+| Object | Purpose |
+|---|---|
+| `audit_log`, `auth_log`: `chain_seq bigint` (unique), `prev_hash`, `row_hash` | Hash chain: `row_hash` = SHA-256(`prev_hash` + `|` + canonical row text); `chain_seq` 1, 2, 3 … in writing order. Set by the database on insert (also `ts := now()`); `user_id` is not hashed (it becomes NULL when a user is deleted), the username is |
+| `log_chain_head` | One row per chained table: `tbl`, `last_seq`, `last_hash`. Its row lock serialises writers of that table |
+| `log_chain_anchor` | One row per retention purge: `tbl`, `next_seq` and `prev_hash` where the remaining chain starts, `deleted`, `cutoff`, `actor`, `ts` (append-only too) |
+| `ets_audit_row_text(audit_log)`, `ets_auth_row_text(auth_log)`, `ets_chain_hash(text, text)` | Canonical row content and hash |
+| Trigger `ets_chain` → `ets_log_chain_insert()` | BEFORE INSERT: next link of the chain (SECURITY DEFINER) |
+| Triggers `ets_append_only`, `ets_no_truncate` → `ets_log_append_only()` / `ets_anchor_append_only()` | Refuse UPDATE, DELETE, TRUNCATE; allowed only: `user_id → NULL` of a deleted user, and DELETE inside the purge function of rows older than 365 days (audit) / 30 days (auth) |
+| `ets_purge_log(tbl, days, actor)` | The only way to remove log rows: oldest rows first (a prefix of the chain), never younger than the floors above, records an anchor; SECURITY DEFINER |
+
+**Ownership.** On a local database `ets-log-protect` (`deploy/db/harden-log-tables.sql`) gives the four tables,
+the seven functions and schema `public` to `ets_log_owner` (NOLOGIN). The application role `ets` has `SELECT`,
+`INSERT` on `audit_log` / `auth_log`, `SELECT` on `log_chain_head` / `log_chain_anchor` and the log sequences,
+`EXECUTE` on `ets_purge_log`, and `USAGE, CREATE` on schema `public`; it owns every other table. Remote database:
+the DBA applies the same script ([07 §3](07-Logging-and-Audit.md)). Check: `sudo ets-log-protect status`.
 
 ## 4. Code values
 
@@ -99,9 +126,10 @@ the same keys as the original tracker page, which is what makes import possible.
 | `calc.weight_mode` | `"fixed"` (`fixed` / `auto`) |
 | `calc.notif_share` | `0.10` |
 | `calc.reports_share` | `0.15` |
-| `security.password_min_length` | `10` |
-| `logs.retention_days` | `365` |
-| `logs.access_retention_days` | `90` |
+| `security.password_min_length` | `10` (allowed 10–64; administrators always need at least 12) |
+| `logs.retention_days` | `365` — sign-in, error and system logs (allowed 30–3650; the sign-in log never purges rows younger than 30 days) |
+| `logs.audit_retention_days` | `365` — change history (`audit_log`), allowed 365–10950; migration 012 kept a longer previous period |
+| `logs.access_retention_days` | `90` (allowed 7–3650) |
 | `app.org_name_ar` / `app.org_name_en` | System names |
 | `app.default_language` | `"ar"` — login screen / new browsers and new users without a chosen language |
 
@@ -115,6 +143,12 @@ FROM applications a JOIN functions f ON f.app_id=a.id AND f.enabled GROUP BY a.i
 -- who changed what today
 SELECT ts, username, action, entity, entity_id, summary FROM audit_log WHERE ts::date = current_date ORDER BY ts DESC;
 
+-- accounts whose sign-in is paused now
+SELECT username, failed_attempts, locked_until FROM users WHERE locked_until > now();
+
 -- failed logins in the last 24h by user / IP
 SELECT username, host(ip), count(*) FROM auth_log WHERE NOT success AND ts > now()-interval '1 day' GROUP BY 1,2 ORDER BY 3 DESC;
 ```
+
+Do not change log rows by hand: the database refuses it, and the hash chain would report it. Verify the chains
+with `node scripts/verify-audit.js` (see [07 §3](07-Logging-and-Audit.md)).

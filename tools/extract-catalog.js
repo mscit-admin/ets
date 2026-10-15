@@ -10,13 +10,13 @@
  *     appended after them, exactly as the original page concatenates them.
  *   - X codes: "from experience" items, after the DROP list was removed.
  *
- * Usage: node tools/extract-catalog.js [path/to/original.html]
+ * Usage: node tools/extract-catalog.js [path/to/original.html] [--trust-source]
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const src = process.argv[2] || path.join(root, 'reference/erp-tracker-original.html');
+const src = process.argv.slice(2).find(a => !a.startsWith('--')) || path.join(root, 'reference/erp-tracker-original.html');
 const out = path.join(root, 'backend/src/db/seed/catalog.json');
 
 const lines = fs.readFileSync(src, 'utf8').split('\n');
@@ -24,9 +24,20 @@ const start = lines.findIndex(l => l.startsWith('const DIRS'));
 const end = lines.findIndex(l => l.startsWith('/* ========== 2.'));
 if (start < 0 || end < 0) throw new Error('Catalog block not found in ' + src);
 
-// The block is plain data plus two loops (DROP removal, XL concat); evaluate it.
+// The block is plain data plus two loops (DROP removal, XL concat), so it has to be run, not just parsed.
+// Running JavaScript taken from a file is only safe for a file we have reviewed (ETS-SEC-062): the block must
+// match the reviewed reference copy, unless --trust-source is given after checking the file by hand.
+// It runs in an empty context (no require/process) with a time limit. This is a developer tool only;
+// it is never run by the installer or the server.
 const block = lines.slice(start, end).join('\n');
-const { DIRS, APPS, FN, XL } = new Function(block + ';return {DIRS,APPS,FN,XL};')();
+const REVIEWED_SHA256 = '1b65ee3179d31d3c33b01d77f7770ead856796cb56a67fc56aa47a637fda20a1';   // reference/erp-tracker-original.html
+const sha = require('crypto').createHash('sha256').update(block).digest('hex');
+if (sha !== REVIEWED_SHA256 && !process.argv.includes('--trust-source')) {
+  console.error(`The catalog block of ${src} differs from the reviewed reference copy (sha256 ${sha}).\n` +
+    'It is JavaScript and would be executed. Review it, then run again with --trust-source.');
+  process.exit(1);
+}
+const { DIRS, APPS, FN, XL } = require('vm').runInNewContext(block + ';({DIRS,APPS,FN,XL})', Object.create(null), { timeout: 5000 });
 
 const DIR_EN = {
   hr: ['Human Resources & Services', 'Human Resources'],

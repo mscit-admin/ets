@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api } from '../lib/api.js';
+import { api, path, notFoundError } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
@@ -8,7 +8,8 @@ import { Card, ErrorBox, Indicator, Loading, PageHeader, Pct, ProgressBar, useLo
 export default function Department() {
   const { id } = useParams();
   const { t, nm } = useI18n();
-  const { data, error, loading } = useLoad(() => api.get('/tracker/departments/' + id), [id]);
+  const { data, error, loading } = useLoad(() => api.get(path`/tracker/departments/${id}`)
+    .then(d => (d?.department && Array.isArray(d.applications) ? d : Promise.reject(notFoundError()))), [id]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { department: d, applications } = data;

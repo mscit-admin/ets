@@ -1,22 +1,49 @@
 // Edits made in the screens that must wait for the department team lead (see migration 004).
-import { hasPerm, canSeeDept } from '../middleware/auth.js';
+import { hasPerm, canSeeApp, loadUserContext } from '../middleware/auth.js';
 import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
-import { namedItems, logAppliedChanges, loadUser, userRef } from './audit.js';
+import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en']);
 const REP_COLS = new Set(['progress', 'status', 'note']);
 const same = (a, b) => (typeof a === 'number' || typeof b === 'number' ? Number(a) === Number(b) : a === b);
 
-// Approver of a department's edits: team lead permission + scope covering the department.
-export const isDeptApprover = (user, deptId, apps) => hasPerm(user, 'apv_dept') && canSeeDept(user, deptId, apps);
+// Approver of an application's edits: team lead permission + scope covering that application (a lead scoped to
+// one application of a department is not an approver for the department's other applications — ETS-SEC-007).
+// app: { id, department_id }
+export const isAppApprover = (user, app) => !!app && hasPerm(user, 'apv_dept') && canSeeApp(user, app);
 
-// Does this user's edit in this department have to wait for the team lead?
-export async function needsLeadApproval(user, deptId, apps) {
+// Does this user's edit of this application have to wait for the team lead?
+export async function needsLeadApproval(user, app) {
   if (!(await getSetting('approval.edits_need_lead'))) return false;
   if (hasPerm(user, 'cfg') || hasPerm(user, 'apv_final')) return false;   // administrators, project / technical managers
-  return !isDeptApprover(user, deptId, apps);                              // team leads of the department
+  return !isAppApprover(user, app);                                        // team leads of the application's department
+}
+
+// Permission an edit-request item needs (same rules as the direct edit in routes/tracker.js).
+const ITEM_PERM = {
+  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_en: 'tog', create: 'tog', removed: 'tog',
+    test_status: 'tst', review_status: 'tst', note: 'tst' },
+  report: { progress: 'rep', status: 'rep', note: 'rep' },
+};
+
+const NOTED = { test_status: 1, notif_status: 2, review_status: 3 };   // statuses "… with notes" (routes/tracker.js)
+
+// Re-checks, when a request is approved, that its author may still make every change in it: account active,
+// application in scope, field permissions held (ETS-SEC-027). Returns null when allowed, else the reason.
+export async function requesterBlocked(c, rq) {
+  const u = await loadUserContext(rq.requested_by);
+  if (!u || !u.is_active) return 'requester_inactive';
+  const app = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.app_id])).rows[0];
+  if (!app || !canSeeApp(u, app)) return 'requester_out_of_scope';
+  const items = (await c.query('SELECT kind, function_id, field, new_value FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
+  // the note that goes with a "with notes" status the author may set (see routes/tracker.js)
+  const notedStatus = it => items.some(x => x.kind === 'function' && x.function_id === it.function_id && NOTED[x.field] !== undefined &&
+    Number(x.new_value) === NOTED[x.field] && hasPerm(u, ITEM_PERM.function[x.field]));
+  const allowed = it => hasPerm(u, ITEM_PERM[it.kind]?.[it.field]) || (it.kind === 'function' && it.field === 'note' && notedStatus(it));
+  if (!items.every(allowed)) return 'requester_lacks_permission';
+  return null;
 }
 
 // Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value}]
@@ -57,13 +84,15 @@ export async function requestContext(c, rq, req, extra = {}) {
 export async function applyRequest(c, rq, req) {
   const userId = rq.requested_by;
   const actor = userRef(await loadUser(c, userId));
-  const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user) };
+  // rows in the requester's name carry the requester's IP; the approver's IP stays in the context (ETS-SEC-052)
+  const actorIp = await originIp(c, 'edit_request', 'edit_request', rq.id);
+  const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user), approver_ip: req.ip || null };
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
   const done = [];
   let applied = 0, skipped = 0;
   for (const it of items) {
     if (it.field === 'create' || it.field === 'removed') {
-      const r = await applyLifecycle(c, it, userId, req, actor, via);
+      const r = await applyLifecycle(c, it, userId, req, actor, actorIp, via);
       r.ok ? applied++ : skipped++;
       await c.query('UPDATE edit_request_items SET applied=$2, note=$3, function_id=COALESCE(function_id, $4) WHERE id=$1',
         [it.id, r.ok, r.ok ? null : r.note, r.functionId ?? null]);
@@ -83,20 +112,20 @@ export async function applyRequest(c, rq, req) {
     } else skipped++;
     await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, ok ? null : 'value changed after the request']);
   }
-  await logAppliedChanges(req, c, done, { actor, context: via });
+  await logAppliedChanges(req, c, done, { actor, actorIp, context: via });
   return { applied, skipped };
 }
 
 // Approved addition / removal / restore. new_value of 'removed': { removed: true, reason } or { removed: false }.
-async function applyLifecycle(c, it, userId, req, actor, via) {
+async function applyLifecycle(c, it, userId, req, actor, actorIp, via) {
   if (it.field === 'create') {
     const f = await createFunction(c, it.app_id, it.new_value, userId);
-    await logAudit(req, { db: c, actor, context: via, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
+    await logAudit(req, { db: c, actor, actorIp, context: via, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
     return { ok: true, functionId: f.id };
   }
   const f = it.new_value?.removed ? await removeFunction(c, it.function_id, it.new_value.reason, userId) : await restoreFunction(c, it.function_id, userId);
   if (!f) return { ok: false, note: 'already ' + (it.new_value?.removed ? 'removed' : 'restored') };
-  await logAudit(req, { db: c, actor, context: via, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
+  await logAudit(req, { db: c, actor, actorIp, context: via, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
     summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
   return { ok: true };
 }

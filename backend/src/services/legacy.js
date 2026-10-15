@@ -1,17 +1,26 @@
 // Import/export compatible with the original single-file tracker
 // (reference/erp-tracker-original.html): its JSON export, or a standalone HTML
 // copy with the state embedded in window.__SAVED.
+import { isDate, jsonDepth, MAX_JSON_DEPTH } from '../utils/http.js';
+
+import { canSeeApp } from '../middleware/auth.js';
 
 const KEY = 'window.__SAVED=';
 
 export function parseLegacy(text) {
   const t = String(text || '');
-  if (/^\s*\{/.test(t)) return JSON.parse(t);
+  if (/^\s*\{/.test(t)) return parseShallow(t);
   const i = t.indexOf(KEY);
   if (i < 0) throw new Error('no_legacy_state');
   const seg = t.slice(i + KEY.length);
   const end = seg.indexOf(';</' + 'script>');
-  return JSON.parse(end > 0 ? seg.slice(0, end) : seg);
+  return parseShallow(end > 0 ? seg.slice(0, end) : seg);
+}
+
+// The file is a few levels deep; a deeply nested one is refused before JSON.parse spends seconds on it (ETS-SEC-008).
+function parseShallow(json) {
+  if (jsonDepth(json) > MAX_JSON_DEPTH) throw new Error('too_deep');
+  return JSON.parse(json);
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
@@ -21,7 +30,9 @@ export async function applyLegacy(c, p, userId) {
   if (!p || typeof p !== 'object' || !p.f) throw new Error('no_legacy_state');
   const counts = { functions: 0, weights: 0, reports: 0, settings: 0, schedule: 0 };
   for (const [appId, items] of Object.entries(p.f)) {
-    for (const [code, v] of Object.entries(items || {})) {
+    if (!items || typeof items !== 'object') continue;
+    for (const [code, v] of Object.entries(items)) {
+      if (!v || typeof v !== 'object') continue;
       const r = await c.query(`UPDATE functions SET weight=$3, progress=$4, enabled=$5, test_status=$6, note=$7,
           notif_status=$8, review_status=$9, updated_at=now(), updated_by=$10
         WHERE app_id=$1 AND code=$2 AND removed_at IS NULL`,
@@ -30,11 +41,12 @@ export async function applyLegacy(c, p, userId) {
       counts.functions += r.rowCount;
     }
   }
-  if (p.appW) for (const [id, w] of Object.entries(p.appW)) {
+  if (p.appW && typeof p.appW === 'object') for (const [id, w] of Object.entries(p.appW)) {
     counts.weights += (await c.query('UPDATE applications SET weight=$2, updated_at=now(), updated_by=$3 WHERE id=$1',
       [id, clamp(w, 0, 1000), userId])).rowCount;
   }
-  if (p.rep) for (const [id, v] of Object.entries(p.rep)) {
+  if (p.rep && typeof p.rep === 'object') for (const [id, v] of Object.entries(p.rep)) {
+    if (!v || typeof v !== 'object') continue;
     counts.reports += (await c.query('UPDATE app_reports SET progress=$2, status=$3, note=$4, updated_at=now(), updated_by=$5 WHERE app_id=$1',
       [id, clamp(v.p, 0, 100), clamp(v.rs, 0, 3) | 0, typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', userId])).rowCount;
   }
@@ -46,34 +58,38 @@ export async function applyLegacy(c, p, userId) {
   if (p.mode === 'fixed' || p.mode === 'auto') await setS('calc.weight_mode', p.mode);
   if (typeof p.nw === 'number') await setS('calc.notif_share', clamp(p.nw, 0, 0.5));
   if (typeof p.repW === 'number') await setS('calc.reports_share', clamp(p.repW, 0, 0.5));
-  if (p.sch) {
+  if (p.sch && typeof p.sch === 'object') {
     const n = Math.min(60, Math.max(1, parseInt(p.sch.n, 10) || 11));
     const plan = Array.isArray(p.sch.plan) && p.sch.plan.length === n ? p.sch.plan.map(v => clamp(v, 0, 100)) : null;
     const act = Array.isArray(p.sch.act) ? p.sch.act.slice(0, n).map(v => (v === null || v === undefined || v === '' ? null : clamp(v, 0, 100))) : null;
     await c.query(`UPDATE schedule SET start_date=$1, periods=$2, unit=$3, plan=$4, actual=$5, updated_at=now(), updated_by=$6 WHERE id=1`,
-      [/^\d{4}-\d{2}-\d{2}$/.test(p.sch.start || '') ? p.sch.start : null, n, p.sch.unit === 'fortnight' ? 'fortnight' : 'month', plan, act, userId]);
+      [isDate(p.sch.start) ? p.sch.start : null, n, p.sch.unit === 'fortnight' ? 'fortnight' : 'month', plan, act, userId]);
     counts.schedule = 1;
   }
   return counts;
 }
 
 // Builds a payload in the original format (v3) so the old page can also read it.
-export async function buildLegacy(c) {
-  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows;
+// user: whose scope limits the content (ETS-SEC-006) — applications outside it are left out, and the
+// project-wide schedule is included for full-scope users only.
+export async function buildLegacy(c, { user }) {
+  const visible = new Set((await c.query('SELECT id, department_id FROM applications')).rows.filter(a => canSeeApp(user, a)).map(a => a.id));
+  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows
+    .filter(x => visible.has(x.app_id));
   const f = {};
   for (const x of fns) {
     (f[x.app_id] ||= {})[x.code] = { w: x.weight, p: x.progress, on: x.enabled ? 1 : 0, t: x.test_status, nt: x.note, n: x.notif_status, rv: x.review_status };
   }
-  const appW = Object.fromEntries((await c.query('SELECT id, weight FROM applications')).rows.map(a => [a.id, a.weight]));
+  const appW = Object.fromEntries((await c.query('SELECT id, weight FROM applications')).rows.filter(a => visible.has(a.id)).map(a => [a.id, a.weight]));
   const rep = Object.fromEntries((await c.query('SELECT app_id, progress, status, note FROM app_reports')).rows
-    .map(r => [r.app_id, { p: r.progress, rs: r.status, nt: r.note }]));
+    .filter(r => visible.has(r.app_id)).map(r => [r.app_id, { p: r.progress, rs: r.status, nt: r.note }]));
   const s = Object.fromEntries((await c.query('SELECT key, value FROM settings')).rows.map(r => [r.key, r.value]));
   const sch = (await c.query('SELECT * FROM schedule WHERE id=1')).rows[0] || {};
   return {
     v: 3, ts: Date.now(), mode: s['calc.weight_mode'] || 'fixed', appW,
     rep, nw: s['calc.notif_share'] ?? 0.1, repW: s['calc.reports_share'] ?? 0.15,
-    sch: { start: sch.start_date ? new Date(sch.start_date).toISOString().slice(0, 10) : '', n: sch.periods || 11,
-      unit: sch.unit || 'month', plan: sch.plan, act: sch.actual || [] },
+    ...(user.fullScope ? { sch: { start: sch.start_date ? new Date(sch.start_date).toISOString().slice(0, 10) : '', n: sch.periods || 11,
+      unit: sch.unit || 'month', plan: sch.plan, act: sch.actual || [] } } : {}),
     f, source: 'ets-backend',
   };
 }

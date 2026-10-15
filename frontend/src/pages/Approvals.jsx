@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api } from '../lib/api.js';
+import { api, path, qs } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
@@ -32,19 +32,23 @@ export default function Approvals() {
   const [status, setStatus] = useState('pending');
   const [mine, setMine] = useState(false);
   const [dlg, setDlg] = useState(null); // {req, mode:'reject'}
-  const q = `?status=${status}${mine ? '&mine=1' : ''}`;
-  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + (status ? q : (mine ? '?mine=1' : ''))), [status, mine]);
+  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ status, mine: mine ? 1 : '' })), [status, mine]);
 
   const act = async (rq, action, body = {}) => {
     try {
-      const r = await api.post(`/approvals/${rq.id}/${action}`, body);
+      const r = await api.post(path`/approvals/${rq.id}/${action}`, body);
       toast(r.applied ? t('applied_result', { a: r.applied_changes, s: r.skipped_changes }) : t('saved'));
       setDlg(null); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
   const approveAll = async () => {
     if (!window.confirm(t('are_you_sure'))) return;
-    try { const r = await api.post('/approvals/approve-all', {}); toast(t('applied_result', { a: r.applied_changes, s: r.skipped_changes })); reload(); }
+    try {
+      const r = await api.post('/approvals/approve-all', {});
+      toast(t('applied_result', { a: r.applied_changes, s: r.skipped_changes }));
+      if (r.blocked_requests) toast(t('blocked_requests_n', { n: r.blocked_requests }), 'red');
+      reload();
+    }
     catch (e) { toast(errText(e), 'red'); }
   };
 

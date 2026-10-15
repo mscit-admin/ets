@@ -1,8 +1,8 @@
 # ETS — Handover Pack · حزمة التسليم
 
 **System:** ETS — ERP Tracking System (مركز متابعة إنجاز ERP)
-**Version:** 0.8.0 (see [HISTORY.md](../../HISTORY.md))
-**Date:** 2026-10-14
+**Version:** 1.0.0 (see [HISTORY.md](../../HISTORY.md))
+**Date:** 2026-10-15
 
 This folder contains every document delivered to the customer with the system. Documents marked
 **(AR)** are in Arabic for end users; technical documents are in English.
@@ -26,8 +26,9 @@ This folder contains every document delivered to the customer with the system. D
 ## Delivered items
 
 1. Source code (this repository): `backend/`, `frontend/`, `deploy/`, `tools/`, `reference/`.
-2. Database creation script `deploy/db/create-database.sql` and migrations `backend/src/db/migrations/`.
+2. Database creation script `deploy/db/create-database.sql`, audit-trail protection `deploy/db/harden-log-tables.sql`
+   and migrations `backend/src/db/migrations/`.
 3. Schema reference `deploy/db/schema-reference.sql`.
-4. Installer `deploy/install.sh` and operations scripts (`ets-backup`, `ets-restore`, `update.sh`).
+4. Installer `deploy/install.sh` and operations scripts (`ets-backup`, `ets-restore`, `ets-log-protect`, `update.sh`).
 5. This documentation pack.
-6. Automated tests (`backend/test/`).
+6. Automated tests (`backend/test/`, 90 tests).

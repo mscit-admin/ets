@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api } from '../lib/api.js';
+import { api, path, notFoundError } from '../lib/api.js';
 import { pc, VENDOR_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
@@ -47,7 +47,8 @@ function StatusSelect({ value, prefix, disabled, onChange, label }) {
 export default function Application() {
   const { id } = useParams();
   const { t, nm, errText, fmtDate } = useI18n();
-  const { data, error, loading, reload } = useLoad(() => api.get('/tracker/applications/' + id), [id]);
+  const { data, error, loading, reload } = useLoad(() => api.get(path`/tracker/applications/${id}`)
+    .then(d => (d?.application && Array.isArray(d.functions) ? d : Promise.reject(notFoundError()))), [id]);
   const [fns, setFns] = useState([]);
   const [filter, setFilter] = useState({ q: '', source: '', test: '', showOff: false, showRemoved: false });
   const [noteFor, setNoteFor] = useState(null);
@@ -79,7 +80,7 @@ export default function Application() {
   const patch = async (f, body) => {
     setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body } : x)));
     try {
-      const r = await api.patch('/tracker/functions/' + f.id, body);
+      const r = await api.patch(path`/tracker/functions/${f.id}`, body);
       if (r?.pending) toast(t('sent_for_approval'), 'blue');
       reload();
     } catch (e) {
@@ -287,7 +288,7 @@ function BulkModal({ app, can, onClose, onDone }) {
   const [err, setErr] = useState(null);
   const run = async () => {
     try {
-      const r = await api.post(`/tracker/applications/${app.id}/bulk`, { field, value: +value });
+      const r = await api.post(path`/tracker/applications/${app.id}/bulk`, { field, value: +value });
       toast(r.pending ? t('sent_for_approval') : t('done_n', { n: r.updated }), r.pending ? 'blue' : 'green'); onDone();
     } catch (e) { setErr(e); }
   };
@@ -314,7 +315,7 @@ function useImpact(appId, body, key) {
   useEffect(() => {
     let alive = true;
     const h = setTimeout(() => {
-      api.post(`/tracker/applications/${appId}/impact`, body).then(r => { if (alive) setV(r); }).catch(() => { if (alive) setV(null); });
+      api.post(path`/tracker/applications/${appId}/impact`, body).then(r => { if (alive) setV(r); }).catch(() => { if (alive) setV(null); });
     }, 250);
     return () => { alive = false; clearTimeout(h); };
   }, [appId, key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -360,7 +361,7 @@ function AddModal({ app, onClose, onDone }) {
   const run = async () => {
     setBusy(true); setErr(null);
     try {
-      const r = await api.post(`/tracker/applications/${app.id}/functions`, { ...f, weight: +f.weight, progress: +f.progress });
+      const r = await api.post(path`/tracker/applications/${app.id}/functions`, { ...f, weight: +f.weight, progress: +f.progress });
       toast(r?.pending ? t('sent_for_approval') : t('fn_added'), r?.pending ? 'blue' : 'green'); onDone();
     } catch (e) { setErr(e); }
     setBusy(false);
@@ -396,7 +397,7 @@ function ConfirmModal({ app, f, mode, enabled, onClose, onDone }) {
     if (mode === 'toggle') return onDone();
     setBusy(true); setErr(null);
     try {
-      const r = await api.post(`/tracker/functions/${f.id}/${mode}`, mode === 'remove' ? { reason } : {});
+      const r = await api.post(path`/tracker/functions/${f.id}/${mode}`, mode === 'remove' ? { reason } : {});
       toast(r?.pending ? t('sent_for_approval') : mode === 'remove' ? t('fn_removed') : t('fn_restored'), r?.pending ? 'blue' : 'green');
       onDone();
     } catch (e) { setErr(e); setBusy(false); }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api } from '../lib/api.js';
+import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
@@ -40,7 +40,7 @@ export function ImportList() {
   const [params] = useSearchParams();
   const [status, setStatus] = useState(params.get('status') || '');
   const [open, setOpen] = useState(false);
-  const { data, error, loading } = useLoad(() => api.get('/imports' + (status ? '?status=' + status : '')), [status]);
+  const { data, error, loading } = useLoad(() => api.get('/imports' + (status ? '?status=' + encodeURIComponent(status) : '')), [status]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   return (
@@ -180,7 +180,8 @@ export function ImportDetail() {
   const { id } = useParams();
   const { t, nm, errText, fmtDate } = useI18n();
   const fmt = useFmt();
-  const { data, error, loading, reload } = useLoad(() => api.get('/imports/' + id), [id]);
+  const { data, error, loading, reload } = useLoad(() => (isIdParam(id) ? api.get(path`/imports/${id}`) : Promise.reject(notFoundError()))
+    .then(d => (d?.batch && Array.isArray(d.changes) ? d : Promise.reject(notFoundError()))), [id]);
   const [dlg, setDlg] = useState(null); // {mode:'lead'|'final'|'reject'}
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -266,8 +267,8 @@ function DecisionModal({ mode, batchId, onClose, onDone, errText }) {
   const reject = mode === 'reject';
   const run = async () => {
     try {
-      const r = reject ? await api.post(`/imports/${batchId}/reject`, { reason: text })
-        : await api.post(`/imports/${batchId}/approve`, { stage: mode, note: text });
+      const r = reject ? await api.post(path`/imports/${batchId}/reject`, { reason: text })
+        : await api.post(path`/imports/${batchId}/approve`, { stage: mode, note: text });
       onDone(r);
     } catch (e) { setErr(e); }
   };

@@ -8,7 +8,8 @@ import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
-import { HttpError, bad, notFound, str, intIn, numIn } from '../utils/http.js';
+import { largeJson } from '../middleware/body.js';
+import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -40,8 +41,6 @@ async function getApp(user, id) {
   if (!canSeeApp(user, a)) throw new HttpError(403, 'out_of_scope', { application: id });
   return a;
 }
-
-const allApps = async () => (await query('SELECT id, department_id FROM applications')).rows;
 
 // Pending (not yet approved) edits of an application, for the "awaiting approval" badges.
 async function pendingFor(appId) {
@@ -101,7 +100,7 @@ r.get('/applications/:id', async (req, res) => {
     functions: fns.rows,
     report: rep.rows[0] || null,
     pending: await pendingFor(a.id),
-    needs_approval: await needsLeadApproval(u, a.department_id, await allApps()),
+    needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
     can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), rep: hasPerm(u, 'rep') },
   });
@@ -123,17 +122,19 @@ const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
 r.patch('/functions/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
   if (cur.removed_at) throw bad('function_removed');
   const body = req.body || {};
-  // A user allowed to set a "with notes" status may write the note that goes with it in the same request.
-  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
+  // A user allowed to set a "with notes" status may write the note that goes with it in the same request — only
+  // when the status really changes to it (or the function has no note yet), not to overwrite a note (ETS-SEC-056).
+  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]) &&
+    (cur[k] !== v || !String(cur.note || '').trim()));
   const changes = {};
   for (const [k, v] of Object.entries(body)) {
-    if (!(k in FIELD_PERM)) throw bad('unknown_field', { field: k });
+    if (!Object.hasOwn(FIELD_PERM, k)) throw bad('unknown_field', { field: k });
     const allowed = hasPerm(req.user, FIELD_PERM[k]) || (k === 'note' && settingNotedStatus);
     if (!allowed) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[k], field: k });
     if (!FIELD_OK[k](v)) throw bad('invalid_value', { field: k });
@@ -145,8 +146,8 @@ r.patch('/functions/:id', async (req, res) => {
     throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
   }
   const keys = Object.keys(changes);
-  const app = (await query('SELECT department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
-  if (await needsLeadApproval(req.user, app.department_id, await allApps())) {
+  const app = (await query('SELECT id, department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
+  if (await needsLeadApproval(req.user, app)) {
     const rq = await tx(c => createRequest(c, req, { deptId: app.department_id, appId: cur.app_id, kind: 'function',
       summary: `${cur.code} ${cur.name_ar.slice(0, 80)}`,
       items: keys.map(k => ({ kind: 'function', app_id: cur.app_id, function_id: id, field: k, old_value: cur[k], new_value: changes[k] })) }));
@@ -175,7 +176,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
   }
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
       .filter(x => Number(x.v) !== Number(value));
     if (!rows.length) return res.json({ updated: 0 });
@@ -225,7 +226,7 @@ async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
 
 // Data-entry users (not approvers of the department) send additions / removals / restores to the team lead.
 async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind, summary, items: [{ kind: 'function', app_id: a.id, ...item }] }));
     return res.status(202).json({ pending: true, request_id: rq.id, impact });
   }
@@ -237,8 +238,13 @@ r.post('/applications/:id/impact', requirePerm('tog'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const b = req.body || {};
   const add = b.add ? newFunctionDataOr400(b.add, true) : null;
-  const set = Array.isArray(b.set) ? b.set.filter(x => Number.isInteger(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
-  const drop = Array.isArray(b.drop) ? b.drop.filter(Number.isInteger).slice(0, 500) : [];
+  let set = Array.isArray(b.set) ? b.set.filter(x => isId(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
+  // only functions of this application (ETS-SEC-058)
+  if (set.length) {
+    const own = new Set((await query('SELECT id FROM functions WHERE app_id=$1 AND id = ANY($2)', [a.id, set.map(x => x.function_id)])).rows.map(x => x.id));
+    set = set.filter(x => own.has(x.function_id));
+  }
+  const drop = Array.isArray(b.drop) ? b.drop.filter(isId).slice(0, 500) : [];
   res.json(await impactOf(req.user, a.id, { add, set, drop }));
 });
 
@@ -261,7 +267,7 @@ r.post('/applications/:id/functions', requirePerm('tog'), async (req, res) => {
 });
 
 async function loadFn(req, { removed }) {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   const a = await getApp(req.user, cur.app_id);
@@ -310,6 +316,7 @@ r.get('/weights', async (req, res) => {
 
 r.put('/weights', requirePerm('wgt'), async (req, res) => {
   const { weights = {}, weight_mode, notif_share, reports_share } = req.body || {};
+  if (!weights || typeof weights !== 'object' || Array.isArray(weights)) throw bad('invalid_value', { field: 'weights' });
   const apps = (await query('SELECT * FROM applications')).rows;
   const byId = new Map(apps.map(a => [a.id, a]));
   for (const [id, w] of Object.entries(weights)) {
@@ -379,13 +386,13 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   const ok = { progress: v => numIn(v, 0, 100), status: v => intIn(v, 0, 3), note: v => typeof v === 'string' && v.length <= 2000 };
   const changes = {};
   for (const [k, v] of Object.entries(req.body || {})) {
-    if (!ok[k]) throw bad('unknown_field', { field: k });
+    if (!Object.hasOwn(ok, k)) throw bad('unknown_field', { field: k });
     if (!ok[k](v)) throw bad('invalid_value', { field: k });
     if (cur[k] !== v) changes[k] = v;
   }
   const keys = Object.keys(changes);
   if (!keys.length) return res.json({ report: cur });
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'report', summary: keys.join(', '),
       items: keys.map(k => ({ kind: 'report', app_id: a.id, field: k, old_value: cur[k], new_value: changes[k] })) }));
     return res.status(202).json({ pending: true, request_id: rq.id, report: cur });
@@ -435,7 +442,7 @@ r.get('/schedule', async (req, res) => {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const v = await loadVisible(req.user);
   res.json({ ...scheduleJson(s), current_pct: v.calc.total.pct,
-    can: { sch: hasPerm(req.user, 'sch'), timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
+    can: { sch: hasPerm(req.user, 'sch') && !!req.user.fullScope, timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
 });
 
 // Periods follow the close date when one is set; arrays are cut to fit, the plan returns to the S-curve
@@ -463,6 +470,8 @@ async function saveSchedule(req, next) {
 }
 
 r.put('/schedule', requirePerm('sch'), async (req, res) => {
+  // a single project-wide schedule → full-scope users only, like the other project-wide parameters (ETS-SEC-024)
+  if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope', { setting: 'schedule' });
   const { periods, unit, plan, actual } = req.body || {};
   const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   // The start and close dates belong to Settings; the schedule screen only keeps the start date when no close date is set.
@@ -535,7 +544,7 @@ r.get('/project-status', async (req, res) => {
     },
     pending: { edits: pend(edits.rows), imports: pend(imports.rows) },
     trend, dept_trend: deptTrend,
-    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') },
+    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') && !!req.user.fullScope },
   });
 });
 
@@ -553,23 +562,26 @@ r.get('/search', async (req, res) => {
 });
 
 // ---- export / import (original tracker format) ----
+// Only the applications in the user's scope; the project schedule only for full-scope users (ETS-SEC-006).
 r.get('/export', requirePerm('exp'), async (req, res) => {
-  const payload = await tx(c => buildLegacy(c));
-  await logAudit(req, { action: 'export', entity: 'tracker', summary: 'JSON export' });
+  const payload = await tx(c => buildLegacy(c, { user: req.user }));
+  // strict: no data leaves without its audit row (ETS-SEC-049)
+  await logAudit(req, { action: 'export', entity: 'tracker', summary: req.user.fullScope ? 'JSON export' : 'JSON export (own scope)',
+    newValue: { applications: Object.keys(payload.appW).length } });
   res.setHeader('Content-Disposition', `attachment; filename="ets-export-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json(payload);
 });
 
 // Full import of everything (all departments, settings, schedule) WITHOUT approval: initial migration only,
 // so it needs 'cfg' as well. Team results go through /api/imports (per department, approved).
-r.post('/import', requirePerm('imp'), requirePerm('cfg'), async (req, res) => {
+r.post('/import', requirePerm('imp'), requirePerm('cfg'), largeJson, async (req, res) => {
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   let payload;
   try { payload = typeof req.body?.content === 'string' ? parseLegacy(req.body.content) : req.body?.payload; }
   catch { throw bad('invalid_import_file'); }
-  if (!payload?.f) throw bad('invalid_import_file');
+  if (!payload || typeof payload !== 'object' || !payload.f || typeof payload.f !== 'object') throw bad('invalid_import_file');
   const counts = await tx(async c => {
-    const before = await buildLegacy(c);
+    const before = await buildLegacy(c, { user: req.user });   // full scope (checked above)
     const n = await applyLegacy(c, payload, req.user.id);
     await logAudit(req, { db: c, action: 'import', entity: 'tracker', summary: JSON.stringify(n), oldValue: before });
     return n;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api, downloadText } from '../lib/api.js';
+import { api, downloadText, path } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { useBranding } from '../lib/branding.jsx';
@@ -100,13 +100,14 @@ export default function Settings() {
 
       <Card title={t('sec_security')}>
         <div className="form-grid">
-          <Field label={t('password_min_length')}>{num('security.password_min_length', 8, 64)}</Field>
+          <Field label={t('password_min_length')}>{num('security.password_min_length', 10, 64)}</Field>
         </div>
       </Card>
 
       <Card title={t('sec_logs')}>
         <div className="form-grid">
           <Field label={t('retention_days')}>{num('logs.retention_days', 30, 3650)}</Field>
+          <Field label={t('audit_retention_days')} hint={t('audit_retention_hint')}>{num('logs.audit_retention_days', 365, 10950)}</Field>
           <Field label={t('access_retention_days')}>{num('logs.access_retention_days', 7, 3650)}</Field>
         </div>
       </Card>
@@ -149,7 +150,7 @@ function BrandingCard() {
   const upload = async (key, file) => {
     if (!file) return;
     const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-    try { await api.put('/branding/' + key, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.put(path`/branding/${key}`, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
   // logo size: applied live while dragging, saved when released
   const [h, setH] = useState(null);
@@ -163,7 +164,7 @@ function BrandingCard() {
   };
   const reset = async key => {
     if (!window.confirm(t('are_you_sure'))) return;
-    try { await api.del('/branding/' + key); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.del(path`/branding/${key}`); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
   return (
     <Card title={t('sec_branding')}>

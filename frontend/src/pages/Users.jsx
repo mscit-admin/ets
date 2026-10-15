@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api } from '../lib/api.js';
+import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 
@@ -67,7 +67,7 @@ export function UserList() {
                     {u.locked_until && new Date(u.locked_until) > new Date() && <> <Indicator color="red">{t('locked')}</Indicator></>}
                   </td>
                   <td><TfaBadge u={u} /></td>
-                  <td className="hide-mobile">{u.role_full_scope || !u.scope_count ? t('full_scope') : u.scope_count}</td>
+                  <td className="hide-mobile">{u.role_full_scope ? t('full_scope') : u.scope_count || <Indicator color="red">{t('no_scope')}</Indicator>}</td>
                   <td className="hide-mobile muted small">{fmtDate(u.last_login_at)}</td>
                 </tr>
               ))}
@@ -92,7 +92,8 @@ function UserFormInner({ id }) {
   const { user: me } = useAuth();
   const nav = useNavigate();
   const meta = useLoad(() => api.get('/users/meta'), []);
-  const usr = useLoad(() => (isNew ? Promise.resolve({ user: null }) : api.get('/users/' + id)), [id]);
+  const usr = useLoad(() => (isNew ? Promise.resolve({ user: null }) : !isIdParam(id) ? Promise.reject(notFoundError())
+    : api.get(path`/users/${id}`).then(d => (d?.user ? d : Promise.reject(notFoundError())))), [id]);
   const [f, setF] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -112,6 +113,8 @@ function UserFormInner({ id }) {
   if ((meta.loading && !meta.data) || (usr.loading && !usr.data) || !f) return meta.error || usr.error ? <ErrorBox error={meta.error || usr.error} /> : <Loading />;
   const m = meta.data, u = usr.data.user;
   const role = m.roles.find(r => r.id === f.role_id);
+  const self = !isNew && u.id === me.id;                       // nobody widens their own permissions or scope
+  const isAdminRole = f.role_id === 'admin';                   // 'usr' (user management) belongs to administrators only
   const hasScope = (kind, ref) => f.scopes.some(s => s.kind === kind && s.ref_id === ref);
   const toggleScope = (kind, ref) => setF({ ...f, scopes: hasScope(kind, ref) ? f.scopes.filter(s => !(s.kind === kind && s.ref_id === ref)) : [...f.scopes, { kind, ref_id: ref }] });
   const ov = p => f.overrides.find(o => o.permission === p);
@@ -124,21 +127,22 @@ function UserFormInner({ id }) {
     setBusy(true); setErr(null);
     try {
       const body = { ...f, email: f.email || '' };
+      if (!isAdminRole) body.overrides = f.overrides.filter(o => !(o.permission === 'usr' && o.granted));
       if (!body.language) delete body.language;   // the server applies Settings → default language
       if (isNew) {
         const r = await api.post('/users', body);
-        toast(t('saved')); nav('/users/' + r.user.id, { replace: true });
+        toast(t('saved')); nav(path`/users/${r.user.id}`, { replace: true });
       } else {
         delete body.password;
-        await api.patch('/users/' + id, body);
+        await api.patch(path`/users/${id}`, body);
         toast(t('saved')); usr.reload();
       }
     } catch (e) { setErr(e); }
     setBusy(false);
   };
-  const action = async (path, confirm = true) => {
+  const action = async (what, confirm = true) => {
     if (confirm && !window.confirm(t('are_you_sure'))) return;
-    try { await api.post(`/users/${id}/${path}`); toast(t('saved')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.post(path`/users/${id}/${what}`); toast(t('saved')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
 
   return (
@@ -168,8 +172,9 @@ function UserFormInner({ id }) {
         <div className="checks">
           <label className="check"><input type="checkbox" checked={f.is_active} disabled={!isNew && u.id === me.id} onChange={e => setF({ ...f, is_active: e.target.checked })} /> {t('active')}</label>
           <label className="check"><input type="checkbox" checked={f.must_change_password} onChange={e => setF({ ...f, must_change_password: e.target.checked })} /> {t('must_change_pw_next')}</label>
-          <label className="check"><input type="checkbox" checked={f.totp_exempt} onChange={e => setF({ ...f, totp_exempt: e.target.checked })} /> {t('exempt_2fa')}</label>
+          <label className="check"><input type="checkbox" checked={f.totp_exempt} disabled={self && !f.totp_exempt} onChange={e => setF({ ...f, totp_exempt: e.target.checked })} /> {t('exempt_2fa')}</label>
         </div>
+        {self && <p className="muted small">{t('own_permissions_hint')}</p>}
         {!isNew && (
           <div className="kv mt">
             <div><span>{t('two_fa')}</span><TfaBadge u={u} />{u.totp_enabled && <span className="muted small"> {t('tfa_enabled_since', { date: fmtDate(u.totp_enabled_at) })} · {t('codes_left', { n: u.recovery_codes_left })}</span>}</div>
@@ -197,16 +202,20 @@ function UserFormInner({ id }) {
             {m.permissions.map(p => {
               const fromRole = role?.permissions.includes(p);
               const o = ov(p);
-              const eff = o ? o.granted : fromRole;
+              const adminOnly = p === 'usr' && !isAdminRole;
+              const eff = adminOnly ? false : o ? o.granted : fromRole;
               return (
                 <tr key={p}>
                   <td>{t('perm_' + p)}</td>
                   <td>{fromRole ? <Icon name="check" size={15} className="green-text" /> : <span className="muted">—</span>}</td>
                   <td>
-                    <select className="input input-sm" value={o ? (o.granted ? 'grant' : 'revoke') : ''} onChange={e => setOv(p, e.target.value)}>
-                      <option value="">{t('perm_from_role')}</option><option value="grant">{t('perm_grant')}</option><option value="revoke">{t('perm_revoke')}</option>
+                    <select className="input input-sm" value={o && !(adminOnly && o.granted) ? (o.granted ? 'grant' : 'revoke') : ''} disabled={adminOnly}
+                      onChange={e => setOv(p, e.target.value)}>
+                      <option value="">{t('perm_from_role')}</option>
+                      <option value="grant" disabled={self && !eff}>{t('perm_grant')}</option><option value="revoke">{t('perm_revoke')}</option>
                     </select>
                     {' '}{eff ? <Indicator color="green">✓</Indicator> : <Indicator color="gray">✗</Indicator>}
+                    {adminOnly && <span className="muted small"> {t('usr_admin_only_hint')}</span>}
                   </td>
                 </tr>
               );
@@ -216,13 +225,14 @@ function UserFormInner({ id }) {
       </Card>
 
       <Card title={t('scope')} actions={<span className="muted small">{role?.full_scope ? t('full_scope') : t('scope_hint')}</span>}>
+        {!role?.full_scope && !f.scopes.length && <Alert kind="orange">{t('scope_empty_warning')}</Alert>}
         <div className="scope-grid">
           {m.departments.map(d => (
             <div key={d.id} className="scope-dept">
-              <label className="check strong"><input type="checkbox" checked={hasScope('department', d.id)} disabled={role?.full_scope} onChange={() => toggleScope('department', d.id)} /> {nm(d)}</label>
+              <label className="check strong"><input type="checkbox" checked={hasScope('department', d.id)} disabled={role?.full_scope || self} onChange={() => toggleScope('department', d.id)} /> {nm(d)}</label>
               <div className="scope-apps">
                 {m.applications.filter(a => a.department_id === d.id).map(a => (
-                  <label key={a.id} className="check"><input type="checkbox" disabled={role?.full_scope || hasScope('department', d.id)}
+                  <label key={a.id} className="check"><input type="checkbox" disabled={role?.full_scope || self || hasScope('department', d.id)}
                     checked={hasScope('department', d.id) || hasScope('application', a.id)} onChange={() => toggleScope('application', a.id)} /> {nm(a)}</label>
                 ))}
               </div>
@@ -242,7 +252,7 @@ function ResetPassword({ id, onClose, onDone }) {
   const [must, setMust] = useState(true);
   const [err, setErr] = useState(null);
   const run = async () => {
-    try { await api.post(`/users/${id}/reset-password`, { password: pw, must_change: must }); toast(t('saved')); onDone(); }
+    try { await api.post(path`/users/${id}/reset-password`, { password: pw, must_change: must }); toast(t('saved')); onDone(); }
     catch (e) { setErr(e); }
   };
   return (

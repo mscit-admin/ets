@@ -26,8 +26,10 @@ export const SETTING_RULES = {
   'calc.weight_mode': v => ['fixed', 'auto'].includes(v),
   'calc.notif_share': v => typeof v === 'number' && v >= 0 && v <= 0.5,
   'calc.reports_share': v => typeof v === 'number' && v >= 0 && v <= 0.5,
-  'security.password_min_length': v => Number.isInteger(v) && v >= 8 && v <= 64,
-  'logs.retention_days': v => Number.isInteger(v) && v >= 30 && v <= 3650,
+  'security.password_min_length': v => Number.isInteger(v) && v >= 10 && v <= 64,   // 10 = code floor (passwords.js)
+  'logs.retention_days': v => Number.isInteger(v) && v >= 30 && v <= 3650,             // sign-in, error, system logs
+  // change history: owner decision, at least one year (also enforced by the database, migration 012) (ETS-SEC-048)
+  'logs.audit_retention_days': v => Number.isInteger(v) && v >= 365 && v <= 10950,
   'logs.access_retention_days': v => Number.isInteger(v) && v >= 7 && v <= 3650,
   'app.org_name_ar': v => typeof v === 'string' && v.length <= 120,
   'app.org_name_en': v => typeof v === 'string' && v.length <= 120,

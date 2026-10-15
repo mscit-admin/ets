@@ -37,6 +37,14 @@ export const api = {
   del: url => request('DELETE', url),
 };
 
+// API path with encoded segments: path`/users/${id}/reset-password`. A route parameter such as "..%2Fauth%2Fme"
+// stays one segment instead of turning into another API call.
+export const path = (parts, ...vals) => parts.reduce((s, p, i) => s + p + (i < vals.length ? encodeURIComponent(String(vals[i])) : ''), '');
+
+// Ids taken from the address bar are checked before they are sent to the API.
+export const isIdParam = v => /^[0-9]{1,10}$/.test(String(v ?? ''));
+export const notFoundError = () => Object.assign(new Error('not_found'), { status: 404, code: 'not_found' });
+
 export const qs = obj => {
   const p = new URLSearchParams();
   Object.entries(obj).forEach(([k, v]) => { if (v !== '' && v !== null && v !== undefined) p.set(k, v); });
