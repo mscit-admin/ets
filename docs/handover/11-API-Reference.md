@@ -48,11 +48,11 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | GET | `/reports` | — | Reports track |
 | PATCH | `/reports/:appId` | rep | `{progress?, status?, note?}` |
 | GET | `/schedule` | — | Schedule (`start_date`, `end_date`, periods, plan, actual) + current computed % |
-| PUT | `/schedule` | sch | `{start_date, periods, unit, plan \| null, actual[]}` — when a close date is set, the dates and the number of periods are kept from Settings |
+| PUT | `/schedule` | sch + full scope | `{start_date, periods, unit, plan \| null, actual[]}` — when a close date is set, the dates and the number of periods are kept from Settings |
 | PUT | `/timeline` | cfg (full scope) | `{start_date, end_date}` — project start and planned close; errors `end_before_start`, `start_required`, `timeline_too_long` |
 | GET | `/project-status` | — | Schedule, total and department progress, function/test/quality counts, pending approvals and daily progress trend, for the user's scope |
 | GET | `/search?q=` | — | Up to 200 functions within scope |
-| GET | `/export` | exp | Data in the original tracker's JSON format (v3) |
+| GET | `/export` | exp | Data in the original tracker's JSON format (v3), limited to the applications in the user's scope; `sch` only for full-scope users |
 | POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}` |
 
 ## Imports & approvals — `/imports` (signed in)
@@ -62,9 +62,9 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 | POST | `/` | imp | `{content, filename, target: 'department' \| 'reports', department_id}` → pending batch |
 | GET | `/?status=` | — | Batches within scope, with `can` flags |
 | GET | `/pending-count` | — | `{awaiting_me, pending}` |
-| GET | `/:id` | scope | Batch, changes (before/after), signatures |
-| POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; both signed → applied → `{applied, applied_changes, skipped_changes}` |
-| POST | `/:id/reject` | apv_dept / apv_final | `{reason}` |
+| GET | `/:id` | scope | Batch, changes (before/after) of the applications in the reader's scope, signatures |
+| POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; every changed application in scope; never the uploader; both signed → applied → `{applied, applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the uploader is no longer active / allowed |
+| POST | `/:id/reject` | apv_dept / apv_final | `{reason}`; every changed application in scope |
 
 ## Edit approvals — `/approvals` (signed in)
 Function, bulk and report edits by data-entry users answer **202** `{pending: true, request_id}` instead of applying.
@@ -73,10 +73,10 @@ Function, bulk and report edits by data-entry users answer **202** `{pending: tr
 |---|---|---|
 | GET | `/?status=&mine=1` | Requests visible to the user, with items (before/after) and `can` flags |
 | GET | `/pending-count` | `{awaiting_me, mine}` |
-| POST | `/:id/approve` | Department team lead only → applied `{applied_changes, skipped_changes}` |
+| POST | `/:id/approve` | Team lead with the request's application in scope → applied `{applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the author is no longer active / in scope / permitted |
 | POST | `/:id/reject` | `{reason}` (required) |
 | POST | `/:id/withdraw` | Requester only |
-| POST | `/approve-all` | All pending requests the user can approve (or `{ids:[…]}`) |
+| POST | `/approve-all` | All pending requests the user can approve (or `{ids:[…]}`) → `{requests, applied_changes, skipped_changes, blocked_requests}` (blocked = author no longer allowed, left pending) |
 
 ## Branding — `/branding`
 | Method | Path | Permission | Description |
@@ -85,7 +85,9 @@ Function, bulk and report edits by data-entry users answer **202** `{pending: tr
 | PUT | `/:key` | cfg | `{data: "data:image/png;base64,…"}` — PNG/JPEG/WebP/ICO only |
 | DELETE | `/:key` | cfg | Back to default |
 
-## Users — `/users` (permission `usr`)
+## Users — `/users` (permission `usr`, System Administrator role only)
+Errors: `usr_admin_only` (granting `usr` to another role), `cannot_change_own_permissions` (widening your own
+permissions / scope / 2FA exemption), `last_admin` (would leave no active administrator holding `usr` and `cfg`).
 | Method | Path | Description |
 |---|---|---|
 | GET | `/meta` | Roles, permission keys, departments, applications, 2FA policy |

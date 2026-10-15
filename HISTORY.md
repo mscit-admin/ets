@@ -12,6 +12,49 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.0.0] — 2026-10-15 — Security remediation
+
+### Security
+- sec(backend): user management (`usr`) is for the System Administrator role only — a `usr` override on any other
+  role is ignored and refused by the API (`usr_admin_only`); all `/api/users` routes need the admin role. Nobody can
+  widen their own permissions, scope or 2FA exemption (`cannot_change_own_permissions`); only administrators
+  create/promote administrators, reset an administrator's password/2FA or bulk-exempt 2FA (ETS-SEC-004).
+- sec(db): migration `009_usr_admin_only.sql` — removes `usr` overrides held by non-administrators (each removal
+  recorded in the audit trail) and lists in the system log (`scope_fail_closed`, warning) the active users of a
+  scoped role without any scope (ETS-SEC-004, ETS-SEC-005).
+- sec(backend): scope fails closed — full scope comes from the role only (admin, PM, TM); a user of another role
+  with no scope rows sees no data anywhere (tracker, export, logs, approvals, imports, `/auth/me` `fullScope:false`)
+  (ETS-SEC-005). **Upgrade note for administrators:** such users saw everything before 1.0.0 and now see nothing
+  until a department/application is ticked for them in *Users* (shown as «بلا نطاق / No scope»); nothing is
+  granted automatically — see 03-Administrator-Guide §1.
+- sec(backend): last-administrator protection counts permission overrides (an active admin holding `usr` and `cfg`
+  must remain) and locks the administrator rows, so concurrent demotions cannot remove every admin
+  (ETS-SEC-023, race part of ETS-SEC-021).
+- sec(backend): `GET /api/tracker/export` returns only the applications in the user's scope; the project schedule
+  only for full-scope users (ETS-SEC-006).
+- sec(backend): application-level scope is no longer treated as department scope — edit-request visibility and
+  approval, import preview/upload (only the uploader's applications are compared), import lead/final approval and
+  rejection (every changed application must be in scope) and batch details (only in-scope changes and figures)
+  (ETS-SEC-007).
+- sec(backend): `PUT /api/tracker/schedule` needs a full-scope user (`can.sch` follows) (ETS-SEC-024).
+- sec(backend): import two-person rule — the uploader may sign neither approval stage; the final approver also needs
+  every changed application in scope (ETS-SEC-025).
+- sec(backend): a new import file supersedes only waiting batches nobody has signed yet (own, or entirely within
+  the uploader's scope) and never when it has no changes (ETS-SEC-026).
+- sec(backend): approving an edit request or the second signature of an import re-checks that the author is still
+  active, in scope and holds the needed permissions (409 `requester_not_allowed`; *Approve all* leaves such requests
+  pending and reports `blocked_requests`); deactivating a user withdraws their pending edit requests (ETS-SEC-027).
+- sec(backend): the "note with a noted status" exception only applies when the status really changes to it (or the
+  function has no note), so a user without `tst` cannot overwrite notes (ETS-SEC-056).
+- sec(backend): `GET /api/settings` needs full scope; the impact preview ignores functions of other applications
+  (ETS-SEC-058).
+- sec(frontend): Users screen — *Manage users* cannot be granted to non-administrator roles, own permissions /
+  scope / 2FA exemption cannot be widened, warning and «بلا نطاق» badge for users without scope, new error texts in
+  Arabic and English (ETS-SEC-004, ETS-SEC-005).
+- docs(docs): Administrator guide, Security and API reference updated for the rules above; review notes for imports
+  (weights, full import) (ETS-SEC-057).
+- test(tests): `backend/test/authz.test.js` — regression tests for P3-AUTHZ-01…10 and ETS-SEC-058.
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

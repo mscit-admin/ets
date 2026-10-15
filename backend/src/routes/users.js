@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
-import { requireAuth, requirePerm } from '../middleware/auth.js';
+import { requireAuth, requirePerm, requireAdmin, ADMIN_ROLE } from '../middleware/auth.js';
 import { hashPassword, checkPolicy } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
 import { bad, notFound, str } from '../utils/http.js';
 
 const r = Router();
-r.use(requireAuth, requirePerm('usr'));
+// User administration = system administrators only (owner decision, ETS-SEC-004): 'usr' AND the admin role.
+r.use(requireAuth, requirePerm('usr'), requireAdmin);
 
 const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
 
@@ -83,6 +84,34 @@ async function validatePassword(pw, username) {
   if (errs.length) throw bad('weak_password', { reasons: errs });
 }
 
+// 'usr' (user administration) may only be held by the admin role — never granted to another role by override.
+function assertOverridesAllowed(roleId, overrides) {
+  if (!Array.isArray(overrides)) return;
+  if (roleId !== ADMIN_ROLE && overrides.some(o => o?.permission === 'usr' && o.granted === true)) throw bad('usr_admin_only');
+}
+
+// Effective permissions of a role + overrides (same rule as the session context).
+function effectivePerms(rolePerms, overrides) {
+  const p = new Set(rolePerms);
+  for (const o of overrides) o.granted ? p.add(o.permission) : p.delete(o.permission);
+  return p;
+}
+
+// Nobody grants themselves permissions or scope (ETS-SEC-004): an administrator editing their own account may
+// only keep or reduce their permissions, may not change their scope, and may not exempt themselves from 2FA.
+async function assertNoSelfGrant(before, b, v) {
+  if (Array.isArray(b.overrides)) {
+    const rolePerms = (await query('SELECT permissions FROM roles WHERE id=$1', [before.role_id])).rows[0].permissions;
+    const now = effectivePerms(rolePerms, before.overrides), next = effectivePerms(rolePerms, b.overrides);
+    if ([...next].some(p => !now.has(p))) throw bad('cannot_change_own_permissions');
+  }
+  if (Array.isArray(b.scopes)) {
+    const key = list => list.map(s => `${s?.kind}:${s?.ref_id}`).sort().join('|');
+    if (key(b.scopes) !== key(before.scopes)) throw bad('cannot_change_own_permissions');
+  }
+  if (v.totp_exempt === true && !before.totp_exempt) throw bad('cannot_change_own_permissions');
+}
+
 async function writeScopes(c, userId, scopes, overrides) {
   if (Array.isArray(scopes)) {
     await c.query('DELETE FROM user_scopes WHERE user_id=$1', [userId]);
@@ -107,6 +136,7 @@ r.post('/', async (req, res) => {
   const v = await validateCommon(b, { creating: true });
   await validatePassword(b.password, v.username);
   if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
+  assertOverridesAllowed(v.role_id, b.overrides);
   v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
   const id = await tx(async c => {
     const row = (await c.query(`INSERT INTO users(username,full_name,email,password_hash,role_id,language,is_active,must_change_password,totp_exempt,created_by)
@@ -121,13 +151,21 @@ r.post('/', async (req, res) => {
   res.status(201).json({ user: await loadUser(id) });
 });
 
-// Prevents locking everybody out: there must always be one active admin.
-async function assertAdminRemains(c, userId, next) {
-  const cur = (await c.query('SELECT role_id, is_active FROM users WHERE id=$1', [userId])).rows[0];
-  const losesAdmin = cur.role_id === 'admin' && cur.is_active && ((next.role_id && next.role_id !== 'admin') || next.is_active === false);
-  if (!losesAdmin) return;
-  const n = (await c.query(`SELECT count(*)::int AS n FROM users WHERE role_id='admin' AND is_active AND id<>$1`, [userId])).rows[0].n;
-  if (!n) throw bad('last_admin');
+// Prevents locking everybody out: there must always be one active admin who still holds user administration
+// and settings after permission overrides (ETS-SEC-023).
+const EFFECTIVE_ADMINS = `SELECT count(*)::int AS n FROM users u JOIN roles ro ON ro.id=u.role_id
+  WHERE u.role_id='admin' AND u.is_active AND ${['usr', 'cfg'].map(p => `(EXISTS (SELECT 1 FROM user_permissions o WHERE o.user_id=u.id AND o.permission='${p}' AND o.granted)
+    OR ('${p}' = ANY(ro.permissions) AND NOT EXISTS (SELECT 1 FROM user_permissions o WHERE o.user_id=u.id AND o.permission='${p}' AND NOT o.granted)))`).join(' AND ')}`;
+const effectiveAdmins = async c => (await c.query(EFFECTIVE_ADMINS)).rows[0].n;
+// Called at the start of the transaction: locks every admin row (and the edited one) so that two concurrent
+// changes cannot each believe another administrator remains (ETS-SEC-021/023). Returns the count before.
+async function lockAdmins(c, userId) {
+  await c.query(`SELECT id FROM users WHERE role_id='admin' OR id=$1 ORDER BY id FOR UPDATE`, [userId]);
+  return effectiveAdmins(c);
+}
+// Called after the change, inside the same transaction: rolls it back when it removed the last administrator.
+async function assertAdminRemains(c, before) {
+  if (before > 0 && (await effectiveAdmins(c)) === 0) throw bad('last_admin');
 }
 
 r.patch('/:id', async (req, res) => {
@@ -138,16 +176,25 @@ r.patch('/:id', async (req, res) => {
   if (v.username && v.username.toLowerCase() !== before.username.toLowerCase() &&
       (await query('SELECT 1 FROM users WHERE username=$1 AND id<>$2', [v.username, id])).rowCount) throw bad('username_taken');
   if (id === req.user.id && (v.is_active === false || (v.role_id && v.role_id !== before.role_id))) throw bad('cannot_change_own_role');
+  if (id === req.user.id) await assertNoSelfGrant(before, b, v);
+  const nextRole = v.role_id || before.role_id;
+  assertOverridesAllowed(nextRole, b.overrides);
   await tx(async c => {
-    await assertAdminRemains(c, id, v);
+    const admins = await lockAdmins(c, id);
     const keys = Object.keys(v);
     if (keys.length) {
       await c.query(`UPDATE users SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')}, updated_at=now() WHERE id=$1`,
         [id, ...keys.map(k => v[k])]);
     }
     await writeScopes(c, id, b.scopes, b.overrides);
+    // leaving the admin role also drops a stored 'usr' grant (it would be ignored anyway)
+    if (nextRole !== ADMIN_ROLE) await c.query(`DELETE FROM user_permissions WHERE user_id=$1 AND permission='usr' AND granted`, [id]);
+    await assertAdminRemains(c, admins);
     if (v.is_active === false) {
       await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='user_deactivated' WHERE user_id=$1 AND revoked_at IS NULL`, [id]);
+      // the deactivated user's edits still waiting for approval are withdrawn (ETS-SEC-027)
+      await c.query(`UPDATE edit_requests SET status='withdrawn', decided_at=now(), reason='user deactivated'
+        WHERE requested_by=$1 AND status='pending'`, [id]);
     }
     await logAudit(req, { db: c, action: 'update', entity: 'user', entityId: id, summary: before.username,
       oldValue: { ...Object.fromEntries(keys.map(k => [k, before[k]])), ...(b.scopes ? { scopes: before.scopes } : {}), ...(b.overrides ? { overrides: before.overrides } : {}) },

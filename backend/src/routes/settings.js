@@ -9,6 +9,7 @@ const r = Router();
 r.use(requireAuth, requirePerm('cfg'));
 
 r.get('/', async (req, res) => {
+  if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');   // project-wide settings (ETS-SEC-058)
   const s = await allSettings();
   res.json({ settings: Object.fromEntries(Object.keys(SETTING_RULES).map(k => [k, s[k]])) });
 });

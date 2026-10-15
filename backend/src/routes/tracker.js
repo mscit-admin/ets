@@ -41,8 +41,6 @@ async function getApp(user, id) {
   return a;
 }
 
-const allApps = async () => (await query('SELECT id, department_id FROM applications')).rows;
-
 // Pending (not yet approved) edits of an application, for the "awaiting approval" badges.
 async function pendingFor(appId) {
   return (await query(`SELECT i.kind, i.function_id, i.field, i.new_value, r.id AS request_id, r.requested_at,
@@ -101,7 +99,7 @@ r.get('/applications/:id', async (req, res) => {
     functions: fns.rows,
     report: rep.rows[0] || null,
     pending: await pendingFor(a.id),
-    needs_approval: await needsLeadApproval(u, a.department_id, await allApps()),
+    needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
     can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), rep: hasPerm(u, 'rep') },
   });
@@ -129,8 +127,10 @@ r.patch('/functions/:id', async (req, res) => {
   await getApp(req.user, cur.app_id);
   if (cur.removed_at) throw bad('function_removed');
   const body = req.body || {};
-  // A user allowed to set a "with notes" status may write the note that goes with it in the same request.
-  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
+  // A user allowed to set a "with notes" status may write the note that goes with it in the same request — only
+  // when the status really changes to it (or the function has no note yet), not to overwrite a note (ETS-SEC-056).
+  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]) &&
+    (cur[k] !== v || !String(cur.note || '').trim()));
   const changes = {};
   for (const [k, v] of Object.entries(body)) {
     if (!(k in FIELD_PERM)) throw bad('unknown_field', { field: k });
@@ -145,8 +145,8 @@ r.patch('/functions/:id', async (req, res) => {
     throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
   }
   const keys = Object.keys(changes);
-  const app = (await query('SELECT department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
-  if (await needsLeadApproval(req.user, app.department_id, await allApps())) {
+  const app = (await query('SELECT id, department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
+  if (await needsLeadApproval(req.user, app)) {
     const rq = await tx(c => createRequest(c, req, { deptId: app.department_id, appId: cur.app_id, kind: 'function',
       summary: `${cur.code} ${cur.name_ar.slice(0, 80)}`,
       items: keys.map(k => ({ kind: 'function', app_id: cur.app_id, function_id: id, field: k, old_value: cur[k], new_value: changes[k] })) }));
@@ -175,7 +175,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
   }
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
       .filter(x => Number(x.v) !== Number(value));
     if (!rows.length) return res.json({ updated: 0 });
@@ -225,7 +225,7 @@ async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
 
 // Data-entry users (not approvers of the department) send additions / removals / restores to the team lead.
 async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind, summary, items: [{ kind: 'function', app_id: a.id, ...item }] }));
     return res.status(202).json({ pending: true, request_id: rq.id, impact });
   }
@@ -237,7 +237,12 @@ r.post('/applications/:id/impact', requirePerm('tog'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const b = req.body || {};
   const add = b.add ? newFunctionDataOr400(b.add, true) : null;
-  const set = Array.isArray(b.set) ? b.set.filter(x => Number.isInteger(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
+  let set = Array.isArray(b.set) ? b.set.filter(x => Number.isInteger(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
+  // only functions of this application (ETS-SEC-058)
+  if (set.length) {
+    const own = new Set((await query('SELECT id FROM functions WHERE app_id=$1 AND id = ANY($2)', [a.id, set.map(x => x.function_id)])).rows.map(x => x.id));
+    set = set.filter(x => own.has(x.function_id));
+  }
   const drop = Array.isArray(b.drop) ? b.drop.filter(Number.isInteger).slice(0, 500) : [];
   res.json(await impactOf(req.user, a.id, { add, set, drop }));
 });
@@ -385,7 +390,7 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   }
   const keys = Object.keys(changes);
   if (!keys.length) return res.json({ report: cur });
-  if (await needsLeadApproval(req.user, a.department_id, await allApps())) {
+  if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'report', summary: keys.join(', '),
       items: keys.map(k => ({ kind: 'report', app_id: a.id, field: k, old_value: cur[k], new_value: changes[k] })) }));
     return res.status(202).json({ pending: true, request_id: rq.id, report: cur });
@@ -435,7 +440,7 @@ r.get('/schedule', async (req, res) => {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const v = await loadVisible(req.user);
   res.json({ ...scheduleJson(s), current_pct: v.calc.total.pct,
-    can: { sch: hasPerm(req.user, 'sch'), timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
+    can: { sch: hasPerm(req.user, 'sch') && !!req.user.fullScope, timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
 });
 
 // Periods follow the close date when one is set; arrays are cut to fit, the plan returns to the S-curve
@@ -463,6 +468,8 @@ async function saveSchedule(req, next) {
 }
 
 r.put('/schedule', requirePerm('sch'), async (req, res) => {
+  // a single project-wide schedule → full-scope users only, like the other project-wide parameters (ETS-SEC-024)
+  if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope', { setting: 'schedule' });
   const { periods, unit, plan, actual } = req.body || {};
   const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   // The start and close dates belong to Settings; the schedule screen only keeps the start date when no close date is set.
@@ -535,7 +542,7 @@ r.get('/project-status', async (req, res) => {
     },
     pending: { edits: pend(edits.rows), imports: pend(imports.rows) },
     trend, dept_trend: deptTrend,
-    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') },
+    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') && !!req.user.fullScope },
   });
 });
 
@@ -553,9 +560,11 @@ r.get('/search', async (req, res) => {
 });
 
 // ---- export / import (original tracker format) ----
+// Only the applications in the user's scope; the project schedule only for full-scope users (ETS-SEC-006).
 r.get('/export', requirePerm('exp'), async (req, res) => {
-  const payload = await tx(c => buildLegacy(c));
-  await logAudit(req, { action: 'export', entity: 'tracker', summary: 'JSON export' });
+  const payload = await tx(c => buildLegacy(c, { user: req.user }));
+  await logAudit(req, { action: 'export', entity: 'tracker', summary: req.user.fullScope ? 'JSON export' : 'JSON export (own scope)',
+    newValue: { applications: Object.keys(payload.appW).length } });
   res.setHeader('Content-Disposition', `attachment; filename="ets-export-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json(payload);
 });
@@ -569,7 +578,7 @@ r.post('/import', requirePerm('imp'), requirePerm('cfg'), async (req, res) => {
   catch { throw bad('invalid_import_file'); }
   if (!payload?.f) throw bad('invalid_import_file');
   const counts = await tx(async c => {
-    const before = await buildLegacy(c);
+    const before = await buildLegacy(c, { user: req.user });   // full scope (checked above)
     const n = await applyLegacy(c, payload, req.user.id);
     await logAudit(req, { db: c, action: 'import', entity: 'tracker', summary: JSON.stringify(n), oldValue: before });
     return n;
