@@ -11,9 +11,10 @@
 --      - the retention purge, done only by ets_purge_log(): oldest rows first (a prefix of the chain), never rows
 --        younger than the floor (audit_log 365 days, auth_log 30 days). Each purge leaves a log_chain_anchor row
 --        (prev_hash of the first kept row, rows deleted, who), so the verification accepts the shortened chain.
---    The database role of the application still owns these tables and could drop the triggers (DDL): the chain
---    makes such tampering detectable, and deploy/db/harden-log-tables.sql (run once by the DBA as postgres)
---    moves the log tables to a separate owner role so that the application role can only read and append.
+--    The database role of the application still owns these tables after this migration and could drop the
+--    triggers (DDL): the chain makes such tampering detectable, and deploy/db/harden-log-tables.sql (applied by
+--    ets-log-protect on every install/update of a local database, or by the DBA) moves the log tables to a
+--    separate owner role so that the application role can only read and append.
 -- 3) Audit retention is its own setting (logs.audit_retention_days, at least 365 days). An installation
 --    that kept everything longer than 365 days keeps that period for the audit trail.
 

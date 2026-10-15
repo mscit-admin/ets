@@ -108,8 +108,10 @@
   only for versions published at least 7 days earlier.
 - Audit trail: `audit_log` and `auth_log` are append-only (database triggers) and hash-chained; `npm run
   verify-audit` / *Logs → Verify log integrity* recompute the chain. Retention: at least 365 days for the audit
-  trail, enforced by the database too. The optional `deploy/db/harden-log-tables.sql` moves the log tables to a
-  separate owner role so the application's database role can only read and append them (07-Logging-and-Audit.md §3).
+  trail, enforced by the database too. The log tables belong to a separate owner role (`ets_log_owner`), so the
+  application's database role can only read and append them; the installer and `update.sh` apply this
+  automatically for a local database (`ets-log-protect`), a remote database's DBA applies it once
+  (07-Logging-and-Audit.md §3).
 
 ## 6a. Secrets and keys
 
@@ -145,8 +147,8 @@ to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the scri
    (password manager / sealed envelope), **not** together with the backup files.
 5. Review the *Login & security* log weekly (failed attempts, lockouts, access denied), run *Logs → Verify log
    integrity* and keep the chain heads it shows somewhere off the server. Forward the journal (`"alert":true`
-   events) to a central syslog / SIEM, and run `deploy/db/harden-log-tables.sql` once so that the application's
-   database role can only read and append the audit trail (see 07-Logging-and-Audit.md §3).
+   events) to a central syslog / SIEM. Check `sudo ets-log-protect status` after updates and restores; with a
+   remote database, have the DBA protect the log tables (see 07-Logging-and-Audit.md §3).
 6. Apply Ubuntu security updates monthly (`sudo apt update && sudo apt upgrade`) and enable
    `unattended-upgrades`. Apply ETS updates (with their dependency fixes) with `deploy/scripts/update.sh`.
 7. Restrict SSH to key-based login and to administrator IPs.

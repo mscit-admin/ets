@@ -63,6 +63,15 @@ sudo ets-restore /var/backups/ets/ets-20261012-013000.dump.gpg
 2. takes a fresh backup of the current data (so a restore can itself be undone);
 3. stops the service, restores in **one transaction** (any error → nothing is changed), starts the service.
 
+The change history and sign-in log are protected in the database (owned by `ets_log_owner`, see
+[07 §3](07-Logging-and-Audit.md)), so the application role alone cannot replace them. For a local database
+`ets-restore` therefore restores through `ets-log-protect restore`: one PostgreSQL-superuser transaction in which
+the restore runs as the application role and the protection is applied again before `COMMIT`. Then it applies the
+migrations of the installed version (a backup from an older version is brought up to date) and checks
+`ets-log-protect status`. For a **remote** database whose log tables the DBA has protected, `ets-restore` stops
+before changing anything unless the DBA provides a superuser connection:
+`sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full' ets-restore <file>`.
+
 Then check: sign in, open the dashboard, look at *Logs → System* (`restore` event). Older, unencrypted
 `.dump` files can still be restored (a warning is shown).
 
@@ -97,7 +106,7 @@ sudo sh -c "cd /var/backups/ets && sha256sum -c $(basename "$F").sha256"
 sudo gpg --batch --pinentry-mode loopback --passphrase-file /etc/ets/backup.key -d "$F" > /tmp/ets-test.dump
 sudo chown postgres /tmp/ets-test.dump
 sudo -u postgres createdb ets_restore_test
-sudo -u postgres pg_restore -d ets_restore_test /tmp/ets-test.dump
+sudo -u postgres pg_restore --no-owner --no-acl -d ets_restore_test /tmp/ets-test.dump
 sudo -u postgres psql -d ets_restore_test -c "SELECT count(*) FROM functions; SELECT max(ts) FROM audit_log;"
 sudo -u postgres dropdb ets_restore_test; sudo shred -u /tmp/ets-test.dump
 ```

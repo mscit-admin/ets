@@ -3,7 +3,8 @@
 #   cd /path/to/new/ets && sudo bash deploy/scripts/update.sh
 # Takes an encrypted backup first, builds the new version as the unprivileged ets-build user, copies it to
 # /opt/ets, re-deploys the service unit, nginx site and headers, logrotate, backup/restore commands and
-# cron job from the answers of the installation (/etc/ets/install.conf), then restarts and checks.
+# cron job from the answers of the installation (/etc/ets/install.conf), applies the database migrations and
+# (local database) the audit-trail protection as the PostgreSQL superuser, then restarts and checks.
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck disable=SC2034  # APP is used by deploy-lib.sh
@@ -60,7 +61,10 @@ nginx -t
 
 systemctl daemon-reload
 systemctl reload nginx
-# migrations run automatically when the service starts
+# Migrations before the new version starts: for a local database as the PostgreSQL superuser through
+# ets-log-protect, which then protects the audit trail again (ETS-SEC-013); remote: see migrate_db.
+systemctl stop ets-backend
+migrate_db "${DEF_DB_MODE:-local}"
 systemctl restart ets-backend
 ok=0
 for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && { ok=1; break; }; sleep 1; done

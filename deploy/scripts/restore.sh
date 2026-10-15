@@ -7,6 +7,10 @@
 # The change history (audit_log) is replaced by the backup's copy too: the copy made in step 2 keeps the rows
 # written since that backup, and the restore itself is recorded in the restored change history.
 # If anything fails the database is left as it was and the service is started again.
+# The log tables are owned by a separate role (ETS-SEC-013), so the application role cannot replace them: when
+# the PostgreSQL superuser is reachable (local database, or a DBA connection in ETS_SU_CONNINFO) the restore runs
+# through ets-log-protect, which restores as the application role inside a superuser transaction and protects
+# the audit trail again before COMMIT. Without it a protected database is not touched (instructions are printed).
 set -euo pipefail
 umask 077
 ENVF="${ETS_ENV_FILE:-/etc/ets/ets.env}"
@@ -57,6 +61,21 @@ pg_restore --list "$WORK/db.dump" >"$WORK/all.list" || fail "$F is not a valid p
 # extensions (citext) belong to the database administrator and already exist: leave them alone
 grep -Ev '^[0-9]+; [0-9]+ [0-9]+ (EXTENSION|COMMENT - EXTENSION) ' "$WORK/all.list" >"$WORK/restore.list"
 
+# who may replace the log tables? (protected = owned by another role than the application role)
+PROTECT=${ETS_LOG_PROTECT_CMD:-/usr/local/sbin/ets-log-protect}
+PROTECTED=$(PGPASSWORD="$PW" psql -X -qtA -c "SELECT pg_get_userbyid(relowner) <> current_user FROM pg_class WHERE oid = to_regclass('public.audit_log')") \
+  || fail "cannot connect to the database — nothing was changed"
+VIA_SU=0
+if [[ -x "$PROTECT" ]] && "$PROTECT" check; then
+  VIA_SU=1
+elif [[ "$PROTECTED" == t ]]; then
+  fail "the audit trail is protected (log tables owned by another role): the restore needs the PostgreSQL superuser.
+    Local database: run ets-restore as root on the database server (sudo -u postgres must work).
+    Remote database: the DBA gives a superuser connection:
+      sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full' ets-restore $F
+    Nothing was changed."
+fi
+
 read -rp "This REPLACES all data in database '${PGDATABASE:-?}' on ${PGHOST:-localhost} with $F. Type YES to continue: " ok
 [[ "$ok" == "YES" ]] || exit 1
 
@@ -66,9 +85,18 @@ echo "Backing up the current data first"
 
 # 3. restore (single transaction: on any error everything is rolled back)
 systemctl stop "$SERVICE"; STOPPED=1
-PGPASSWORD="$PW" pg_restore --clean --if-exists --no-owner --single-transaction --exit-on-error \
-  --use-list="$WORK/restore.list" --dbname="$PGDATABASE" "$WORK/db.dump" \
-  || fail "RESTORE FAILED — the transaction was rolled back; the database still holds the previous data"
+if [[ $VIA_SU == 1 ]]; then
+  "$PROTECT" restore "$WORK/db.dump" "$WORK/restore.list" >/dev/null \
+    || fail "RESTORE FAILED — the transaction was rolled back; the database still holds the previous data"
+  # a backup of an older version: its migrations are applied now, then the protection is checked again
+  "$PROTECT" migrate || echo "warning: migrating the restored database failed — see the message above" >&2
+  "$PROTECT" status || echo "warning: the audit trail is not protected — run: sudo ets-log-protect apply" >&2
+else
+  # --no-acl: privileges are re-applied by the installation (a backup of a protected database names other roles)
+  PGPASSWORD="$PW" pg_restore --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error \
+    --use-list="$WORK/restore.list" --dbname="$PGDATABASE" "$WORK/db.dump" \
+    || fail "RESTORE FAILED — the transaction was rolled back; the database still holds the previous data"
+fi
 systemctl start "$SERVICE"; STOPPED=0
 PGPASSWORD="$PW" psql -X -q -v ON_ERROR_STOP=1 -v f="$F" >/dev/null <<'SQL' || echo "warning: could not record the restore in system_log" >&2
 INSERT INTO system_log(event,message,detail) VALUES ('restore','database restored from backup', jsonb_build_object('file', :'f'));

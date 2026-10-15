@@ -121,8 +121,8 @@ remaining chain starts, how many rows were deleted, who ran it), so a purged sta
 
 **Checking it.**
 - *Logs → «Verify log integrity»* (administrators), or `GET /api/logs/integrity`;
-- on the server: `cd /opt/ets/app/backend && sudo -u ets npm run verify-audit` (exit code 0 = intact,
-  2 = broken; `-- --json` for details). Break kinds: `hash_mismatch` (row changed), `link_broken` (row replaced
+- on the server: `cd /opt/ets/backend && sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env LOG_DIR=/var/log/ets node scripts/verify-audit.js` (exit code 0 = intact,
+  2 = broken; add `--json` for details). Break kinds: `hash_mismatch` (row changed), `link_broken` (row replaced
   or inserted), `gap` (rows deleted in the middle), `start` (first rows deleted without a purge), `tail` (last
   rows deleted), `unchained` (rows written with the triggers disabled);
 - the daily purge verifies both chains first; a break is written to `system_log` (`log_chain_broken`) and to
@@ -130,25 +130,54 @@ remaining chain starts, how many rows were deleted, who ran it), so a purged sta
   journal and `app.log` (`log_purge`, `detail.chain_heads`). Keep a copy of a head outside the server from time
   to time (ticket, e-mail): a head that is no longer in the chain shows a chain rebuilt end to end.
 
-**Residual risk and the optional hardening.** Out of the box the application's database role still owns these
-tables, so someone who can run SQL as that role (e.g. after taking over the server account) could drop the
-triggers and even recompute the chain; only the comparison with an outside copy of the head would show it.
-To take that away, the DBA runs once, as `postgres`, after the first start of 1.0.0:
+**Protection in the database (applied automatically for a local database).** The log tables, their chain
+functions and schema `public` belong to a role without login, `ets_log_owner`. The application's database role
+keeps only `SELECT` + `INSERT` on `audit_log` / `auth_log`, `SELECT` on `log_chain_head` / `log_chain_anchor`
+and their sequences, and `EXECUTE` on the purge function; it still owns (and creates) every other table. So even
+someone who can run SQL as the application role (for example after taking over the server account and reading
+`ets.env`) cannot `UPDATE`, `DELETE`, `TRUNCATE`, drop or disable the triggers, drop the tables or the schema,
+or replace the chain functions — the database answers *permission denied* / *must be owner*.
 
-```bash
-sudo -u postgres psql -v ON_ERROR_STOP=1 -v db_user=ets -v log_owner=ets_log_owner -d ets \
-     -f /opt/ets/app/deploy/db/harden-log-tables.sql
-```
+- **Local database (installer default):** `deploy/install.sh` and `deploy/scripts/update.sh` apply it on every
+  install and update, as the PostgreSQL superuser, through `/usr/local/sbin/ets-log-protect`
+  (`deploy/scripts/log-protect.sh`, which runs `deploy/db/harden-log-tables.sql`). It is idempotent.
+- **Migrations and restores keep working.** Work that needs the owner's rights is done by `ets-log-protect` in
+  **one superuser transaction**: the log objects are lent to the application role, the migrations (or the
+  `pg_restore` script) run *as the application role* (`SET ROLE`), and the protection is applied again before
+  `COMMIT`. Other sessions never see the tables unprotected; any error rolls everything back. `update.sh` stops
+  the service, runs `ets-log-protect migrate`, then starts the new version; `ets-restore` uses
+  `ets-log-protect restore` automatically when it can reach the superuser.
+- **Check it:** `sudo ets-log-protect status` (exit 0 = protected, 3 = not protected). Re-apply:
+  `sudo ets-log-protect apply`.
+- **Database on another server:** the installer cannot assume superuser rights there. It applies the
+  migrations as the application role and prints whether the log tables are protected. Ask the DBA to protect
+  them once, as a superuser — either from the ETS server:
 
-It gives the log tables, their functions and schema `public` to a role without login (`ets_log_owner`); the
-application keeps SELECT + INSERT on them and the purge function, and still owns (and migrates) every other
-table. Afterwards: a future migration that changes these two tables must be applied by the DBA, and a restore
-must run as `postgres` (`PGUSER=postgres ets-restore …`, then run the script again). To undo it:
-`ALTER TABLE audit_log OWNER TO ets;` (same for `auth_log`, `log_chain_head`, `log_chain_anchor`, the `ets_*`
-functions and `ALTER SCHEMA public OWNER TO ets`).
+  ```bash
+  sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full sslrootcert=/etc/ets/db-ca.crt' ets-log-protect apply
+  ```
+
+  or with psql from anywhere (`deploy/db/harden-log-tables.sql` from the release):
+
+  ```bash
+  psql -v ON_ERROR_STOP=1 -v db_user=ets -v log_owner=ets_log_owner -d ets -f harden-log-tables.sql
+  ```
+
+  Fail-safe behaviour afterwards: a migration that would change the log tables fails as the application role
+  **without changing anything** (each migration is all-or-nothing); `update.sh` stops with the command for the
+  DBA (`ETS_SU_CONNINFO=… ets-log-protect migrate`). `ets-restore` on a protected remote database refuses
+  before stopping anything unless `ETS_SU_CONNINFO` is given. Until the DBA has done it, the hash chain still
+  detects changes (`npm run verify-audit`), but a full rewrite is only visible against an outside copy of the head.
+- **What remains:** the PostgreSQL superuser (and root on a local database server) can still change anything,
+  and the owner of the database can drop the whole database (not silent). Keep backups and chain heads off the
+  server, and forward the journal to a SIEM.
+- **To undo** (not recommended): as `postgres`, `ALTER TABLE audit_log OWNER TO ets;` (same for `auth_log`,
+  `log_chain_head`, `log_chain_anchor`, the `ets_*` functions) and `ALTER SCHEMA public OWNER TO ets;` — the next
+  update applies the protection again.
 
 **Restore.** `ets-restore` replaces the audit trail with the backup's copy (the safety backup it takes first
-keeps the rows written since), and records the restore in the restored audit trail (`restore` / `database`).
+keeps the rows written since), protects it again, and records the restore in the restored audit trail
+(`restore` / `database`).
 
 ## 4. File format
 

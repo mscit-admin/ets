@@ -499,7 +499,9 @@ render_answers "$ANSF"; chmod 644 "$ANSF"
 step "Database tables, catalog, administrator and settings"
 RUN=(sudo -u ets env ETS_ENV_FILE="$ENVF")
 cd "$APP/backend"
-"${RUN[@]}" node src/db/migrate.js
+# local database: migrations as the PostgreSQL superuser, then the audit trail is protected (the application role
+# may only read and append audit_log / auth_log — ETS-SEC-013); remote database: as the application role
+migrate_db "$ETS_DB_MODE"
 "${RUN[@]}" node src/db/seed.js
 # password passed through the environment (not the command line, so it never shows in `ps`);
 # a password that came from an answers file / environment variable must be changed at first sign-in
@@ -592,6 +594,7 @@ ${GR}  ETS is installed${N}
   Administrator:   $ETS_ADMIN_USER  (the password you entered$( [[ $ADMIN_PW_PRESET == 1 ]] && echo " — must be changed at first sign-in"))
   2FA policy:      $ETS_MFA_MODE
   Database:        $ETS_DB_NAME on $ETS_DB_HOST:$ETS_DB_PORT, user $ETS_DB_USER
+  Audit trail:     $( [[ $ETS_DB_MODE == local ]] && echo "protected in the database (read/append only for $ETS_DB_USER) · sudo ets-log-protect status" || echo "see the note above about the DBA protecting the log tables" )
 EOF
 # shown on the terminal only, never written to the install log
 [[ $DB_PW_SOURCE == generated ]] && printf '  DB password:     %s   (generated — also stored in %s)\n' "$ETS_DB_PASSWORD" "$ENVF" >"$TTY" 2>/dev/null || true

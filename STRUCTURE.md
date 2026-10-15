@@ -130,7 +130,8 @@ ets/
 │   ├── answers.example            Answers file template for unattended installation
 │   ├── db/
 │   │   ├── create-database.sql    Creates the `ets` role and database (password set separately)
-│   │   ├── harden-log-tables.sql  Optional: log tables owned by a separate role (app role may only read / append)
+│   │   ├── harden-log-tables.sql  Log tables owned by a separate role (app role may only read / append); applied by
+│   │   │                          ets-log-protect, or by the DBA for a remote database
 │   │   ├── scram-verifier.mjs     SCRAM-SHA-256 verifier for the role password (used by install.sh)
 │   │   └── schema-reference.sql   Full schema dump for DBAs (reference only)
 │   ├── nginx/                     Templates filled in by install.sh
@@ -143,7 +144,9 @@ ets/
 │   └── scripts/
 │       ├── backup.sh              → /usr/local/bin/ets-backup (daily cron; encrypted dumps)
 │       ├── restore.sh             → /usr/local/bin/ets-restore (checks, pre-restore backup, one transaction)
-│       ├── update.sh              Upgrade an installed system (code and deployment files)
+│       ├── log-protect.sh         → /usr/local/sbin/ets-log-protect (audit-trail protection; migrations and
+│       │                          restores as the PostgreSQL superuser in one transaction)
+│       ├── update.sh              Upgrade an installed system (code, deployment files, migrations, protection)
 │       └── deploy-lib.sh          Functions shared by install.sh and update.sh
 │
 └── docs/handover/                 Documents handed over to the customer (see 00-Handover-Index.md)

@@ -229,6 +229,22 @@ and must be mentioned here with the migration name.
 - docs(docs): 07 (who sees what, new events, masking, transactional audit, integrity §3, alerts, retention and
   personal data), 06 (authorisation, audit trail, recommendations) (ETS-SEC-013, 047–052, 074, 075, 077).
 
+### Security — audit-trail protection applied automatically (WP6 follow-up)
+- sec(deploy): the audit-trail protection (`deploy/db/harden-log-tables.sql`: log tables, chain functions and
+  schema `public` owned by the NOLOGIN role `ets_log_owner`; the application role may only read and append) is
+  applied automatically on every install and update of a local database, as the PostgreSQL superuser, by the new
+  `/usr/local/sbin/ets-log-protect` (`deploy/scripts/log-protect.sh`: `apply`, `migrate`, `restore`, `status`).
+  Migrations and restores run as the application role inside one superuser transaction in which the log objects
+  are lent to it and protected again before COMMIT, so later migrations that change the log tables and restores
+  keep working; `update.sh` stops the service and migrates before starting the new version; `ets-restore` uses it
+  automatically and refuses (before changing anything) a protected database it cannot restore. Remote database:
+  migrations as the application role (all-or-nothing, clear DBA instructions on failure) and a note telling the
+  DBA how to apply the protection (`ETS_SU_CONNINFO=… ets-log-protect apply` or psql). The script is idempotent,
+  checks inside its transaction that the application role can no longer change the logs, grants SELECT on the log
+  sequences (needed by `ets-backup`), and is a no-op before migration 012. Restores use `--no-acl` (ETS-SEC-013)
+- docs(docs): 07 §3 (protection, migrations, restores, remote DBA, undo), 08 §3 (restore of a protected
+  database), 06, STRUCTURE (ETS-SEC-013)
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

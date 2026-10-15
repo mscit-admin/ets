@@ -146,6 +146,7 @@ install_runtime_files() {
   install -m 644 "$APP/deploy/logrotate/ets" /etc/logrotate.d/ets
   install -m 755 "$APP/deploy/scripts/backup.sh" /usr/local/bin/ets-backup
   install -m 755 "$APP/deploy/scripts/restore.sh" /usr/local/bin/ets-restore
+  install -m 750 "$APP/deploy/scripts/log-protect.sh" /usr/local/sbin/ets-log-protect
   touch "$BACKUP_LOG"; chown root:root "$BACKUP_LOG"; chmod 600 "$BACKUP_LOG"
   echo "30 1 * * * root /usr/local/bin/ets-backup >> $BACKUP_LOG 2>&1" >/etc/cron.d/ets-backup
   ensure_backup_key
@@ -155,6 +156,55 @@ install_runtime_files() {
     echo "Removed the old configuration copy $BACKUPS/ets.env.backup"
   fi
   prune_env_backups
+}
+
+# ---------------------------------------------------------------- database migrations and audit-trail protection
+# psql as the application role, with the connection settings of ets.env (password only in this call's environment)
+app_psql() {
+  (
+    for k in PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE PGSSLROOTCERT PGSSLCERT PGSSLKEY; do
+      v=$(env_get "$ENVF" "$k"); if [[ -n "$v" ]]; then export "$k=$v"; fi
+    done
+    psql -X "$@"
+  )
+}
+# t when the change history is owned by another role than the application role (deploy/db/harden-log-tables.sql)
+logs_protected() {
+  app_psql -qtAc "SELECT pg_get_userbyid(relowner) <> current_user FROM pg_class WHERE oid = to_regclass('public.audit_log')" 2>/dev/null || true
+}
+# migrate_db DB_MODE — applies the pending migrations (ETS-SEC-013):
+#  - local database (or a DBA's superuser connection in ETS_SU_CONNINFO): through ets-log-protect, as the
+#    PostgreSQL superuser in one transaction, then the audit trail is protected (again) — every install/update;
+#  - database on another server: as the application role (each migration all-or-nothing). If the DBA has
+#    protected the log tables and a migration needs to change them, it fails without changing anything and the
+#    DBA must apply it (instructions printed); if they are not protected, the DBA is told how to do it.
+migrate_db() {
+  local protect="$APP/deploy/scripts/log-protect.sh"
+  if [[ $1 == local || -n "${ETS_SU_CONNINFO:-}" ]]; then
+    ETS_ENV_FILE="$ENVF" ETS_APP_DIR="$APP" bash "$protect" migrate
+    ETS_ENV_FILE="$ENVF" ETS_APP_DIR="$APP" bash "$protect" status \
+      || die "the audit trail could not be protected (see the messages above)"
+    return
+  fi
+  if ! (cd "$APP/backend" && sudo -u ets env ETS_ENV_FILE="$ENVF" node src/db/migrate.js); then
+    [[ "$(logs_protected)" == t ]] && warn "the log tables are protected by the DBA: a migration that changes them needs the owner's rights."
+    die "the database migration failed and was rolled back (nothing of that migration was applied). If the message says
+    'must be owner', ask the DBA to apply it with a superuser connection from this server:
+      sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full sslrootcert=$CONF/db-ca.crt' bash $protect migrate
+    then run this command again."
+  fi
+  remote_protection_note
+}
+remote_protection_note() {
+  if [[ "$(logs_protected)" == t ]]; then
+    echo "The audit trail is protected in the database (log tables not owned by the application role)."
+  else
+    warn "The audit trail is NOT protected in the database server yet (ETS-SEC-013). Ask the DBA to run once,
+    as a superuser, from this server (and again after each restore):
+      sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full sslrootcert=$CONF/db-ca.crt' ets-log-protect apply
+    or with psql anywhere: psql -v db_user=<app role> -v log_owner=ets_log_owner -d <db> -f deploy/db/harden-log-tables.sql
+    (docs/handover/07-Logging-and-Audit.md §3). Until then the hash chain still detects changes (npm run verify-audit)."
+  fi
 }
 
 # ---------------------------------------------------------------- certificate
