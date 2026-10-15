@@ -78,8 +78,8 @@ async function validateCommon(body, { creating }) {
   return out;
 }
 
-async function validatePassword(pw, username) {
-  const errs = checkPolicy(pw, { minLength: await getSetting('security.password_min_length'), username });
+async function validatePassword(pw, username, roleId) {
+  const errs = checkPolicy(pw, { minLength: await getSetting('security.password_min_length'), username, admin: roleId === 'admin' });
   if (errs.length) throw bad('weak_password', { reasons: errs });
 }
 
@@ -105,7 +105,7 @@ async function writeScopes(c, userId, scopes, overrides) {
 r.post('/', async (req, res) => {
   const b = req.body || {};
   const v = await validateCommon(b, { creating: true });
-  await validatePassword(b.password, v.username);
+  await validatePassword(b.password, v.username, v.role_id);
   if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
   v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
   const id = await tx(async c => {
@@ -163,10 +163,10 @@ r.patch('/:id', async (req, res) => {
 r.post('/:id/reset-password', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const u = await loadUser(id);
-  await validatePassword(req.body?.password, u.username);
+  await validatePassword(req.body?.password, u.username, u.role_id);
   await tx(async c => {
     await c.query(`UPDATE users SET password_hash=$2, must_change_password=$3, failed_attempts=0, locked_until=NULL,
-      password_changed_at=now(), updated_at=now() WHERE id=$1`, [id, await hashPassword(req.body.password), req.body?.must_change !== false]);
+      last_failed_at=NULL, password_changed_at=now(), updated_at=now() WHERE id=$1`, [id, await hashPassword(req.body.password), req.body?.must_change !== false]);
     await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='password_reset' WHERE user_id=$1 AND revoked_at IS NULL`, [id]);
     await logAudit(req, { db: c, action: 'reset_password', entity: 'user', entityId: id, summary: u.username });
   });
@@ -181,6 +181,9 @@ r.post('/:id/reset-2fa', async (req, res) => {
   await tx(async c => {
     await c.query('UPDATE users SET totp_enabled=false, totp_secret=NULL, totp_last_step=NULL, totp_enabled_at=NULL WHERE id=$1', [id]);
     await c.query('DELETE FROM user_recovery_codes WHERE user_id=$1', [id]);
+    // signed-in sessions passed the removed second factor: they end too (ETS-SEC-018)
+    await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='mfa_reset' WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`,
+      [id, req.session.id]);
     await logAudit(req, { db: c, action: 'reset_2fa', entity: 'user', entityId: id, summary: u.username });
   });
   await logAuth(req, { userId: id, username: u.username, event: 'mfa_reset_by_admin', success: true, detail: { by: req.user.username } });
@@ -190,7 +193,7 @@ r.post('/:id/reset-2fa', async (req, res) => {
 r.post('/:id/unlock', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const u = await loadUser(id);
-  await query('UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=$1', [id]);
+  await query('UPDATE users SET failed_attempts=0, locked_until=NULL, last_failed_at=NULL WHERE id=$1', [id]);
   await logAuth(req, { userId: id, username: u.username, event: 'account_unlocked_by_admin', success: true, detail: { by: req.user.username } });
   await logAudit(req, { action: 'unlock', entity: 'user', entityId: id, summary: u.username });
   res.json({ ok: true });

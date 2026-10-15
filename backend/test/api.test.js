@@ -15,7 +15,7 @@ before(async () => {
   Object.assign(process.env, {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR: new URL('../logs-test', import.meta.url).pathname, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
-    MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '1000', ETS_ENV_FILE: 'none',
+    MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
   });
   ({ pool } = await import('../src/db/pool.js'));
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
@@ -91,10 +91,13 @@ test('state-changing requests require the CSRF header', { skip }, async () => {
 test('account locks after repeated failures', { skip }, async () => {
   const c = client();
   for (let i = 0; i < 3; i++) await c.login('locky', 'bad');
+  // paused: even the right password gets the same answer as a wrong one (no 423 that reveals the account)
   const r = await c.login('locky');
-  assert.equal(r.status, 423);
+  assert.equal(r.status, 401);
+  assert.deepEqual(r.data, { error: 'invalid_credentials' });
   const ev = (await pool.query(`SELECT event FROM auth_log WHERE username='locky' ORDER BY id`)).rows.map(x => x.event);
   assert.ok(ev.includes('account_locked'));
+  assert.ok(ev.includes('login_while_locked'));
 });
 
 test('unauthenticated access is refused', { skip }, async () => {
