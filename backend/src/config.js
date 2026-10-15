@@ -87,20 +87,52 @@ export function appSecretProblem(s) {
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '']);
 const SSL_MODES = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'];
 
-// Host the pool connects to (from DATABASE_URL when set); a path means a Unix socket.
-export function dbHost(db = config.db) {
-  if (db.connectionString) {
-    try {
-      const u = new URL(db.connectionString);
-      return decodeURIComponent(u.hostname || u.searchParams.get('host') || '').replace(/^\[|\]$/g, '');
-    } catch { return ''; }
+// TLS parameters node-postgres reads from a connection string. They are taken out of DATABASE_URL and turned
+// into the pool's `ssl` option here, so the startup check and the pool always use the same mode (V4-N1).
+const URL_TLS_KEYS = ['sslmode', 'ssl', 'sslrootcert', 'sslcert', 'sslkey', 'uselibpqcompat'];
+
+// Host and TLS parameters of DATABASE_URL, read the way node-postgres (pg-connection-string) reads them:
+// a leading "/" is a socket directory, a ?host= parameter wins over the URL host, "socket:" URLs are
+// sockets, and a URL with an empty host ("postgres://u@/db") is retried with a dummy host. Unparseable → error.
+function parseDbUrl(str) {
+  if (str.charAt(0) === '/') return { host: str.split(' ')[0], params: {} };
+  if (/ |%[^a-f0-9]|%[a-f0-9][^a-f0-9]/i.test(str)) str = encodeURI(str).replace(/%25(\d\d)/g, '%$1');
+  let u, dummy = false;
+  try { u = new URL(str, 'postgres://base'); } catch {
+    try { u = new URL(str.replace('@/', '@___DUMMY___/'), 'postgres://base'); dummy = true; } catch {
+      throw new Error('DATABASE_URL is not a valid connection string');
+    }
   }
+  const params = Object.fromEntries(u.searchParams.entries());
+  const host = u.protocol === 'socket:' ? decodeURI(u.pathname)
+    : params.host || decodeURIComponent((dummy ? '' : u.hostname).replace(/^\[(.+)\]$/, '$1'));
+  return { host, params };
+}
+
+// Host the pool connects to (from DATABASE_URL when set; an empty URL host falls back to PGHOST, as in
+// node-postgres); a path means a Unix socket.
+export function dbHost(db = config.db) {
+  if (db.connectionString) return parseDbUrl(db.connectionString).host || db.host;
   return db.host;
 }
 export const isLocalDb = (db = config.db) => { const h = dbHost(db); return LOCAL_HOSTS.has(h) || h.startsWith('/'); };
 
-// Effective sslmode: the explicit PGSSLMODE, else no TLS on loopback/socket and "require" for a remote host.
-export const dbSslMode = (db = config.db) => (db.sslMode || (isLocalDb(db) ? 'disable' : 'require')).toLowerCase();
+// TLS settings in force: DATABASE_URL parameters (sslmode, else ssl=true/1/false/0) win over PGSSLMODE and
+// the certificate files over PGSSL*; with neither, no TLS on loopback/socket and "require" for a remote host.
+// node-postgres treats ssl=true as a fully verified connection, so it maps to verify-full.
+function dbTls(db) {
+  const p = db.connectionString ? parseDbUrl(db.connectionString).params : {};
+  let mode = p.sslmode;
+  if (mode === undefined && p.ssl !== undefined) {
+    const v = p.ssl.toLowerCase();
+    mode = ['true', '1'].includes(v) ? 'verify-full' : ['false', '0'].includes(v) ? 'disable' : `ssl=${p.ssl}`;
+  }
+  mode = (mode || db.sslMode || (isLocalDb(db) ? 'disable' : 'require')).toLowerCase();
+  return { mode, rootCert: p.sslrootcert || db.sslRootCert, cert: p.sslcert || db.sslCert, key: p.sslkey || db.sslKey };
+}
+
+// Effective sslmode (see dbTls).
+export const dbSslMode = (db = config.db) => dbTls(db).mode;
 
 // node-postgres `ssl` option for the pool, following libpq semantics:
 //   disable/allow/prefer → no TLS (node-postgres has no opportunistic mode)
@@ -108,18 +140,40 @@ export const dbSslMode = (db = config.db) => (db.sslMode || (isLocalDb(db) ? 'di
 //   verify-ca            → certificate must chain to PGSSLROOTCERT (host name not checked)
 //   verify-full          → chain (PGSSLROOTCERT, else the system CAs) and host name are verified
 export function dbSslOptions(db = config.db, readFile = f => fs.readFileSync(f)) {
-  const mode = dbSslMode(db);
+  const t = dbTls(db), mode = t.mode;
   if (!SSL_MODES.includes(mode)) throw new Error(`PGSSLMODE "${mode}" is not one of: ${SSL_MODES.join(', ')}`);
   if (['disable', 'allow', 'prefer'].includes(mode)) return false;
   const ssl = {};
-  if (db.sslRootCert) ssl.ca = readFile(db.sslRootCert);
-  if (db.sslCert) ssl.cert = readFile(db.sslCert);
-  if (db.sslKey) ssl.key = readFile(db.sslKey);
+  if (t.rootCert) ssl.ca = readFile(t.rootCert);
+  if (t.cert) ssl.cert = readFile(t.cert);
+  if (t.key) ssl.key = readFile(t.key);
   if (mode === 'require' && !ssl.ca) return { ...ssl, rejectUnauthorized: false };
   if (mode === 'verify-ca' && !ssl.ca) throw new Error('PGSSLMODE=verify-ca needs PGSSLROOTCERT (the CA certificate file)');
   ssl.rejectUnauthorized = true;
   if (mode !== 'verify-full') ssl.checkServerIdentity = () => undefined;
   return ssl;
+}
+
+// DATABASE_URL without its TLS parameters: node-postgres would otherwise let them override the `ssl`
+// option built above (an embedded sslmode=disable used to win over the startup check, V4-N1).
+export function stripUrlTls(str) {
+  const i = str.indexOf('?');
+  if (i < 0) return str;
+  const j = str.indexOf('#', i), end = j < 0 ? str.length : j;
+  const keep = str.slice(i + 1, end).split('&').filter(kv => {
+    const k = kv.split('=')[0];
+    let name = k; try { name = decodeURIComponent(k); } catch { /* keep the raw name */ }
+    return kv && !URL_TLS_KEYS.includes(name.toLowerCase());
+  });
+  return str.slice(0, i) + (keep.length ? '?' + keep.join('&') : '') + str.slice(end);
+}
+
+// Options for new pg.Pool(): TLS always comes from dbSslOptions (the mode assertConfig checked).
+export function dbPoolConfig(db = config.db, readFile) {
+  const ssl = dbSslOptions(db, readFile);
+  return db.connectionString
+    ? { connectionString: stripUrlTls(db.connectionString), max: db.max, ssl }
+    : { host: db.host, port: db.port, database: db.database, user: db.user, password: db.password, max: db.max, ssl };
 }
 
 export function assertConfig() {
@@ -128,7 +182,8 @@ export function assertConfig() {
   // A database on another machine must be reached over TLS (sslmode require or stricter).
   if (!isLocalDb() && ['disable', 'allow', 'prefer'].includes(dbSslMode())) {
     throw new Error(`The database server ${dbHost()} is not on this machine: set PGSSLMODE=require ` +
-      `(or verify-full with PGSSLROOTCERT) so the connection is encrypted`);
+      `(or verify-full with PGSSLROOTCERT) and remove any weaker sslmode/ssl parameter from DATABASE_URL, ` +
+      `so the connection is encrypted`);
   }
   dbSslOptions();   // fails early on an unknown mode or an unreadable certificate file
 }

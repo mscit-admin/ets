@@ -57,11 +57,37 @@ const sees = (user, b, meta, appIds = []) => {
     all: ds.length === 0 ? user.fullScope : ds.every(d => coversDept(user, d)) };
 };
 
-// A reader who sees only part of a batch gets the per-application figures of their own applications only.
-function forReader(user, b, meta) {
-  const apps = b.summary?.applications;
-  if (user.fullScope || !Array.isArray(apps)) return b;
-  return { ...b, summary: { ...b.summary, applications: apps.filter(x => { const a = meta.apps.find(y => y.id === x.id); return !!a && canSeeApp(user, a); }) } };
+// A reader who sees only part of a batch gets figures computed from the changes they may see: the per-application
+// figures of their own applications, the department figures of departments they fully cover, the change count,
+// counts and apply result of the visible changes only, and no project figure (it mixes in the other applications'
+// changes — V2-N2). visible: the batch's import_changes rows in the reader's scope (kind, function_id, applied).
+function forReader(user, b, meta, appIds, visible) {
+  if (user.fullScope || sees(user, b, meta, appIds).all) return b;
+  const inScope = x => { const a = meta.apps.find(y => y.id === x.id); return !!a && canSeeApp(user, a); };
+  const sm = b.summary || {};
+  const fns = visible.filter(c => c.kind === 'function');
+  const summary = { ...sm,
+    applications: Array.isArray(sm.applications) ? sm.applications.filter(inScope) : sm.applications,
+    departments: Array.isArray(sm.departments) ? sm.departments.filter(d => coversDept(user, d.id)) : sm.departments,
+    project: null,
+    counts: { total: visible.length, functions: new Set(fns.map(c => c.function_id)).size,
+      reports: visible.filter(c => c.kind === 'report').length, weights: visible.filter(c => c.kind === 'weight').length } };
+  const out = { ...b, summary, change_count: visible.length };
+  if (b.apply_result) out.apply_result = { applied: visible.filter(c => c.applied === true).length, skipped: visible.filter(c => c.applied === false).length };
+  return out;
+}
+
+// The changes of these batches that the user may see: Map batch id → rows (only batches the user sees partly).
+async function visibleChanges(user, meta, rows, appsOf) {
+  const ids = rows.filter(b => !user.fullScope && !sees(user, b, meta, appsOf.get(b.id) || []).all).map(b => b.id);
+  const out = new Map(ids.map(id => [id, []]));
+  if (!ids.length) return out;
+  const q = await query('SELECT batch_id, kind, app_id, function_id, applied FROM import_changes WHERE batch_id = ANY($1)', [ids]);
+  for (const ch of q.rows) {
+    const a = meta.apps.find(x => x.id === ch.app_id);
+    if (a && canSeeApp(user, a)) out.get(ch.batch_id).push(ch);
+  }
+  return out;
 }
 
 function abilities(user, b, meta, appIds) {
@@ -182,8 +208,9 @@ r.get('/', async (req, res) => {
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.uploaded_at DESC LIMIT 300`, params)).rows;
   const meta = await loadMeta();
   const appsOf = await batchApps({ query }, rows.map(b => b.id));
-  const visible = rows.filter(b => sees(req.user, b, meta, appsOf.get(b.id)).any)
-    .map(b => ({ ...forReader(req.user, b, meta), can: abilities(req.user, b, meta, appsOf.get(b.id)) }));
+  const seen = rows.filter(b => sees(req.user, b, meta, appsOf.get(b.id)).any);
+  const vis = await visibleChanges(req.user, meta, seen, appsOf);
+  const visible = seen.map(b => ({ ...forReader(req.user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: abilities(req.user, b, meta, appsOf.get(b.id)) }));
   res.json({ batches: visible, can_import: hasPerm(req.user, 'imp') });
 });
 
@@ -213,7 +240,7 @@ r.get('/:id', async (req, res) => {
   const changes = (await query(`SELECT ch.*, a.name_ar AS app_name_ar, a.name_en AS app_name_en, a.icon, a.department_id, f.name_ar AS fn_name_ar, f.source
     FROM import_changes ch JOIN applications a ON a.id=ch.app_id LEFT JOIN functions f ON f.id=ch.function_id
     WHERE ch.batch_id=$1 ORDER BY a.sort, ch.kind, f.sort, ch.id`, [id])).rows.filter(ch => canSeeApp(req.user, { id: ch.app_id, department_id: ch.department_id }));
-  res.json({ batch: { ...forReader(req.user, b, meta), can: abilities(req.user, b, meta, apps) }, changes, departments: meta.depts });
+  res.json({ batch: { ...forReader(req.user, b, meta, apps, changes), can: abilities(req.user, b, meta, apps) }, changes, departments: meta.depts });
 });
 
 r.post('/:id/approve', async (req, res) => {

@@ -149,6 +149,8 @@ export function makeAudit({ t, lang }) {
       case 'view:log': text = t('au_view_log', { log: t('log_' + r.entity_id) }); break;
       case 'verify:log': text = t('au_verify_log', { summary: r.summary || '' }); break;
       case 'purge:log': text = t('au_purge_log', { n: r.new_value?.deleted?.audit_log ?? 0, days: r.new_value?.audit_retention_days ?? '' }); break;
+      case 'purge_skipped:log': text = t('au_purge_skipped_log', { tables: (r.new_value?.tables || []).map(x => x.table).join(', ') }); break;
+      case 'purge_acknowledge:log': text = t('au_purge_acknowledge_log', { tables: (r.new_value?.tables || []).map(x => x.table).join(', ') }); break;
       case 'restore:database': text = t('au_restore_database'); break;
       case 'bulk_update:user': text = t('au_bulk_user', { summary: r.summary || '' }); break;
       case 'edit_request:edit_request': {

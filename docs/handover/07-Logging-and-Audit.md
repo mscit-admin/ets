@@ -72,7 +72,7 @@ counted (*Logs → statistics: «Events not saved to the database»*) and report
 
 | Field | Example |
 |---|---|
-| `action` | `create`, `update`, `delete`, `bulk_update`, `reset`, `import`, `export`, `reset_password`, `reset_2fa`, `unlock`, `revoke_sessions`, `view`, `verify`, `purge`, `restore` |
+| `action` | `create`, `update`, `delete`, `bulk_update`, `reset`, `import`, `export`, `reset_password`, `reset_2fa`, `unlock`, `revoke_sessions`, `view`, `verify`, `purge`, `purge_skipped`, `purge_acknowledge`, `restore` |
 | `entity` / `entity_id` | `function` / `125`, `application` / `pay`, `report` / `pay`, `user` / `7`, `setting` / `mfa.mode`, `schedule` / `1`, `tracker`, `log`, `database` |
 | `summary` | `per/D0 الوظائف والدرجة الوظيفية…` |
 | `old_value` / `new_value` | `{"progress": 40}` → `{"progress": 60}` |
@@ -83,7 +83,8 @@ An import stores the complete previous state in `old_value`, so an import can be
 
 Also in the audit trail: an administrator **opening a user record** (`view` / `user`) or a security log (`view` /
 `log`, at most once per reader and log every 15 minutes); each **retention purge** (`purge` / `log`, by `system`
-or `cli:<OS user>`, with the rows deleted per table); a **database restore** (`restore` / `database`); an
+or `cli:<OS user>`, with the rows deleted per table; `purge_skipped` when a broken chain stopped it and
+`purge_acknowledge` when an administrator acknowledged the break); a **database restore** (`restore` / `database`); an
 **integrity check** from the Logs screen (`verify` / `log`); and changes made with the command-line scripts
 `set-setting` and `create-admin`, in the name of `cli:<operating-system user>`.
 
@@ -126,7 +127,10 @@ remaining chain starts, how many rows were deleted, who ran it), so a purged sta
   or inserted), `gap` (rows deleted in the middle), `start` (first rows deleted without a purge), `tail` (last
   rows deleted), `unchained` (rows written with the triggers disabled);
 - the daily purge verifies both chains first; a break is written to `system_log` (`log_chain_broken`) and to
-  `error.log` with `"alert":true`. It also writes the **chain heads** (last `chain_seq` + `row_hash`) to the
+  `error.log` with `"alert":true`, and **the purge then deletes nothing** (otherwise the broken old rows would be
+  removed and the chain would verify clean again): it records `purge_skipped` / `log` in the audit trail and
+  `log_purge_skipped` in `system_log`, both with `"alert":true` and the broken tables, and repeats this every day
+  until the break is dealt with (see *Retention* below for the acknowledgement). A successful purge also writes the **chain heads** (last `chain_seq` + `row_hash`) to the
   journal and `app.log` (`log_purge`, `detail.chain_heads`). Keep a copy of a head outside the server from time
   to time (ticket, e-mail): a head that is no longer in the chain shows a chain rebuilt end to end.
 
@@ -215,6 +219,18 @@ The purge runs daily (and with `npm run purge-logs`, recorded as `cli:<OS user>`
 **audit trail** (`purge` / `log`: who, the retention used and the rows deleted per table), in `system_log`
 (`log_purge`) and, for the two chained tables, in `log_chain_anchor`. The database refuses to purge audit rows
 younger than 365 days or sign-in rows younger than 30 days even if the settings were changed directly.
+
+**A broken chain stops the purge.** When `audit_log` or `auth_log` does not verify, no table is purged (not even
+the plain logs or expired sessions): the daily run records `purge_skipped` (see §3) and `npm run purge-logs`
+exits with status 2. After investigating the break as a security incident (keep `verify-audit.js --json` and the
+chain heads first — [10](10-Operations-Runbook.md)), an administrator lets the purge continue once with:
+
+`cd /opt/ets/backend && sudo -u ets env ETS_ENV_FILE=/etc/ets/ets.env LOG_DIR=/var/log/ets node scripts/purge-logs.js --acknowledge-broken-chain`
+
+This first records `purge_acknowledge` / `log` in the audit trail (who — `cli:<OS user>` — and the broken tables
+with their first breaks; kept at least 365 days) and `log_chain_break_acknowledged` in `system_log`, then purges;
+the purge's own row carries `chains_intact_before: false` and `break_acknowledged: true`. Breaks in rows younger
+than the retention stay visible afterwards; only rows older than the retention are removed.
 
 **Personal data.** IP addresses, user agents, usernames and activity of staff are personal data. Besides the
 database they are in the files under `/var/log/ets`, the journal, nginx logs and backups, each with its own

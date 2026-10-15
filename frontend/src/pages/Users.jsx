@@ -150,7 +150,7 @@ function UserFormInner({ id }) {
       <div className="breadcrumb"><Link to="/users">{t('nav_users')}</Link><Icon name="chevron" size={12} className="flip" /><span>{isNew ? t('new_user') : u.full_name}</span></div>
       <PageHeader title={isNew ? t('new_user') : u.full_name} sub={!isNew && <span dir="ltr">{u.username}</span>} icon="user">
         {!isNew && <>
-          <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>
+          {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>}
           {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => action('reset-2fa')}>{t('reset_2fa')}</button>}
           {u.locked_until && new Date(u.locked_until) > new Date() && <button className="btn btn-default btn-sm" onClick={() => action('unlock', false)}>{t('unlock')}</button>}
           {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}

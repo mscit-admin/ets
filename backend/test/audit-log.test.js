@@ -173,16 +173,34 @@ test('ETS-SEC-048: separate audit retention (>= 365 days), floors enforced by th
   await bypass(`UPDATE audit_log SET ts = now() - interval '100 days' WHERE chain_seq = $1 + 3`, [a.lo]);
   const au = await one('SELECT min(chain_seq) AS lo FROM auth_log');
   await bypass(`UPDATE auth_log SET ts = now() - interval '40 days' WHERE chain_seq < $1 + 4`, [au.lo]);
-  const before = await count('SELECT count(*) n FROM audit_log');
+  // backdating behind the triggers' back changes hashed values: the chains no longer verify, so the purge
+  // deletes nothing, records why (alert) and waits for an acknowledgement (V5-O1)
+  const before0 = await count('SELECT count(*) n FROM audit_log');
+  const authBefore = await count('SELECT count(*) n FROM auth_log');
   (await import('../src/services/settings.js')).invalidateSettings();
-  const out = await purgeLogs({ actor: 'cli:tester' });
+  const skipped = await purgeLogs({ actor: 'system' });
+  assert.equal(skipped.skipped, true);
+  assert.deepEqual(skipped.tables, ['audit_log', 'auth_log']);
+  assert.equal(await count('SELECT count(*) n FROM audit_log'), before0 + 1);       // only the purge_skipped row
+  assert.equal(await count('SELECT count(*) n FROM auth_log'), authBefore);
+  assert.equal(await count('SELECT count(*) n FROM log_chain_anchor'), 0);
+  const sk = await one(`SELECT * FROM audit_log WHERE action='purge_skipped' ORDER BY id DESC LIMIT 1`);
+  assert.equal(sk.new_value.alert, true); assert.equal(sk.new_value.reason, 'chain_broken');
+  assert.ok(await count(`SELECT count(*) n FROM system_log WHERE event='log_purge_skipped' AND (detail->>'alert')::boolean`) >= 1);
+  // an administrator acknowledges the break (recorded with who and which tables), then the purge runs
+  const before = await count('SELECT count(*) n FROM audit_log');
+  const out = await purgeLogs({ actor: 'cli:tester', acknowledgeBrokenChain: true });
   assert.equal(out.audit_log, 3);                                    // the 100-day row stays (audit retention 400)
   assert.equal(out.auth_log, 4);
-  assert.equal(await count('SELECT count(*) n FROM audit_log'), before - 3 + 1);   // + the purge's own row
+  assert.equal(await count('SELECT count(*) n FROM audit_log'), before - 3 + 2);   // + acknowledgement + the purge's own row
+  const ack = await one(`SELECT * FROM audit_log WHERE action='purge_acknowledge' ORDER BY id DESC LIMIT 1`);
+  assert.equal(ack.username, 'cli:tester');
+  assert.deepEqual(ack.new_value.tables.map(t => t.table), ['audit_log', 'auth_log']);
   const rec = await one(`SELECT * FROM audit_log WHERE action='purge' ORDER BY id DESC LIMIT 1`);
   assert.equal(rec.username, 'cli:tester');
   assert.equal(rec.new_value.deleted.audit_log, 3);
   assert.equal(rec.new_value.audit_retention_days, 400);
+  assert.equal(rec.new_value.chains_intact_before, false); assert.equal(rec.new_value.break_acknowledged, true);
   const anchors = (await pool.query('SELECT * FROM log_chain_anchor ORDER BY id')).rows;
   assert.deepEqual(anchors.map(x => [x.tbl, Number(x.deleted)]), [['audit_log', 3], ['auth_log', 4]]);
   assert.equal(await count('SELECT count(*) n FROM audit_log WHERE id=$1', [kept.id]), 1);
@@ -193,6 +211,22 @@ test('ETS-SEC-048: separate audit retention (>= 365 days), floors enforced by th
   assert.equal(v.ok, true, JSON.stringify(v.tables.map(t => t.breaks)));
   assert.ok(await count(`SELECT count(*) n FROM system_log WHERE event='log_purge' AND detail->>'actor'='cli:tester'`) >= 1);
   await root.put('/settings', { 'logs.retention_days': 365, 'logs.audit_retention_days': 365 });
+  // the CLI: a broken chain → nothing deleted, exit status 2; --acknowledge-broken-chain proceeds; unknown option → 64
+  const cliRun = (...args) => spawnSync(process.execPath, ['scripts/purge-logs.js', ...args],
+    { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, ...ENV }, encoding: 'utf8' });
+  const victimRow = await one('SELECT id, summary FROM audit_log ORDER BY chain_seq DESC LIMIT 1');
+  await bypass(`UPDATE audit_log SET summary = 'tampered' WHERE id=$1`, [victimRow.id]);
+  const n0 = await count('SELECT count(*) n FROM log_chain_anchor');
+  let cli = cliRun();
+  assert.equal(cli.status, 2, cli.stderr + cli.stdout);
+  assert.match(cli.stderr, /--acknowledge-broken-chain/);
+  assert.equal(await count('SELECT count(*) n FROM log_chain_anchor'), n0);
+  assert.equal(cliRun('--bogus').status, 64);
+  cli = cliRun('--acknowledge-broken-chain');
+  assert.equal(cli.status, 0, cli.stderr + cli.stdout);
+  assert.ok(await count(`SELECT count(*) n FROM audit_log WHERE action='purge_acknowledge' AND username LIKE 'cli:%' AND username <> 'cli:tester'`) >= 1);
+  await bypass('UPDATE audit_log SET summary = $2 WHERE id=$1', [victimRow.id, victimRow.summary]);
+  assert.equal((await verifyAll()).ok, true);
 });
 
 test('ETS-SEC-049: changes do not commit without their audit / auth row; exports are refused', { skip }, async () => {

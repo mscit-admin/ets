@@ -51,7 +51,9 @@
   `log`, `cfg`, `apv_dept`, `apv_final`) **and**, for tracker data, the data scope (departments/applications) on
   the server. The UI only hides what the
   server would refuse anyway.
-- Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`.
+- Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`. A user without
+  `tst` who sets a «with notes» status may write its note only while the function has no note yet; changing an
+  existing note always needs `tst` (also re-checked when such a request is approved).
 - Project-wide parameters, the project schedule (`PUT /tracker/schedule`), import and settings (read and write)
   need a full-scope user. The security logs (login & security, requests, errors, system), the log statistics,
   the integrity check and every IP address / user agent are for the **System Administrator role only**; other
@@ -59,9 +61,14 @@
   with no scope rows sees nothing (fail closed). The JSON export contains only the applications in the user's
   scope (and the project schedule only for full-scope users).
 - `usr` (user management) is honoured for the System Administrator role only, and nobody can grant themselves
-  permissions, scope or a 2FA exemption.
+  permissions, scope or a 2FA exemption (also not through the bulk 2FA exemption, which leaves the caller out).
+  An administrator changes their own password only through *My account* (current password asked), never with
+  the *Reset password* action on their own account.
 - Application-level scope never counts as department scope: edit approvals, import uploads, import approvals and
-  batch details are limited to the applications in scope. The import uploader signs neither approval stage.
+  batch details are limited to the applications in scope. A reader who sees only part of an import batch gets its
+  figures (change count, counts, department figures) computed from the visible changes only and no project
+  figure; pending counts on the project status page include only requests / batches of applications in scope.
+  The import uploader signs neither approval stage.
 - An approved edit request or import is applied only if its author is still active and still allowed to make it.
 - Refused requests are logged in the login & security log: `access_denied` (permission / scope), `csrf_rejected`
   (missing CSRF header) and `password_change_required`.
@@ -76,7 +83,7 @@
 | Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` (API and web pages) |
 | Other headers | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `Permissions-Policy` (camera, microphone, geolocation… off), `Cross-Origin-Opener-Policy` / `-Resource-Policy: same-origin`; `server_tokens off` (no nginx version); `/api/health` does not show the application version |
 | TLS details | Always HTTPS (the installer has no plain-HTTP mode). nginx: TLS 1.2/1.3 with forward-secret AEAD ciphers only (Mozilla "intermediate"), no session tickets, HSTS, HTTP → HTTPS redirect. The self-signed certificate is a server certificate (`CA:FALSE`, `serverAuth`, for the ETS address only): never install it as a trusted root CA on client PCs |
-| Database connection | Local: loopback only. Remote: always TLS (`PGSSLMODE=require`, or `verify-full` with the DB server's CA in `PGSSLROOTCERT`) for the application and the backup/restore tools; the application refuses to start with an unencrypted connection to another machine |
+| Database connection | Local: loopback only. Remote: always TLS (`PGSSLMODE=require`, or `verify-full` with the DB server's CA in `PGSSLROOTCERT`) for the application and the backup/restore tools; the application refuses to start with an unencrypted connection to another machine. A hand-written `DATABASE_URL` is checked the same way: its host (also `?host=`) and its `sslmode` / `ssl` parameters count (they win over `PGSSLMODE`; `ssl=true` = verify-full), `sslmode=disable/allow/prefer` or `ssl=false/0` to another machine is refused, and the pool always uses the checked TLS settings |
 | SQL injection | Parameterised queries only; dynamic column names come from fixed allow-lists |
 | Transport | HTTPS (TLS 1.2/1.3) by nginx, HSTS, HTTP → HTTPS redirect |
 | CSV injection | Exported cells that could start a formula (`= + - @ \|`, their full-width forms, also after leading spaces/invisible characters, or starting with tab/CR/LF) are prefixed with `'`. Open exports with formulas disabled when in doubt |

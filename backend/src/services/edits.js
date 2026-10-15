@@ -38,9 +38,13 @@ export async function requesterBlocked(c, rq) {
   const app = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.app_id])).rows[0];
   if (!app || !canSeeApp(u, app)) return 'requester_out_of_scope';
   const items = (await c.query('SELECT kind, function_id, field, new_value FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
-  // the note that goes with a "with notes" status the author may set (see routes/tracker.js)
-  const notedStatus = it => items.some(x => x.kind === 'function' && x.function_id === it.function_id && NOTED[x.field] !== undefined &&
-    Number(x.new_value) === NOTED[x.field] && hasPerm(u, ITEM_PERM.function[x.field]));
+  // the note that goes with a "with notes" status the author may set, and only while the function still has no
+  // note — checked again now, as a note may have been written since the request (see routes/tracker.js, ETS-SEC-056)
+  const fids = [...new Set(items.filter(it => it.kind === 'function' && it.field === 'note' && it.function_id).map(it => it.function_id))];
+  const noted = new Set(fids.length ? (await c.query('SELECT id, note FROM functions WHERE id = ANY($1)', [fids])).rows
+    .filter(x => String(x.note || '').trim()).map(x => x.id) : []);
+  const notedStatus = it => !noted.has(it.function_id) && items.some(x => x.kind === 'function' && x.function_id === it.function_id &&
+    NOTED[x.field] !== undefined && Number(x.new_value) === NOTED[x.field] && hasPerm(u, ITEM_PERM.function[x.field]));
   const allowed = it => hasPerm(u, ITEM_PERM[it.kind]?.[it.field]) || (it.kind === 'function' && it.field === 'note' && notedStatus(it));
   if (!items.every(allowed)) return 'requester_lacks_permission';
   return null;

@@ -78,6 +78,65 @@ test('assertConfig requires TLS for a remote database', () => {
   } finally { Object.assign(cfg.config.db, saved); }
 });
 
+// V4-N1: TLS parameters inside DATABASE_URL count for the startup check and never reach the pool unchecked.
+test('DATABASE_URL sslmode / ssl parameters are part of the TLS rule', async () => {
+  const { dbSslMode, dbSslOptions, isLocalDb, dbHost, dbPoolConfig, stripUrlTls } = cfg;
+  const read = f => Buffer.from('PEM:' + f);
+  const db = o => ({ connectionString: '', host: '127.0.0.1', sslMode: '', sslRootCert: '', sslCert: '', sslKey: '', ...o });
+  const url = q => db({ connectionString: `postgres://u:p@10.0.0.20:5432/ets${q}` });
+  assert.equal(dbSslMode(url('?sslmode=disable')), 'disable');
+  assert.equal(dbSslMode(url('?sslmode=allow')), 'allow');
+  assert.equal(dbSslMode(url('?SSL=x&ssl=false')), 'disable');
+  assert.equal(dbSslMode(url('?ssl=0')), 'disable');
+  assert.equal(dbSslMode(url('?ssl=true')), 'verify-full');
+  assert.equal(dbSslMode(url('?ssl=1&sslmode=require')), 'require');          // sslmode wins, as in node-postgres
+  assert.equal(dbSslMode({ ...url('?sslmode=verify-full'), sslMode: 'disable' }), 'verify-full');   // URL beats PGSSLMODE
+  assert.equal(dbSslMode({ ...url(''), sslMode: 'verify-full' }), 'verify-full');
+  assert.throws(() => dbSslOptions(url('?ssl=maybe'), read), /not one of/);
+  // URL certificate files are used
+  const o = dbSslOptions(url('?sslmode=verify-ca&sslrootcert=/u/ca.crt'), read);
+  assert.equal(String(o.ca), 'PEM:/u/ca.crt'); assert.equal(o.rejectUnauthorized, true);
+  // host as node-postgres resolves it: ?host= wins, empty URL host → PGHOST, sockets are local
+  assert.equal(dbHost(db({ connectionString: 'postgres://u@127.0.0.1/ets?host=db.example.ly' })), 'db.example.ly');
+  assert.equal(isLocalDb(db({ connectionString: 'postgres://u@/ets?host=db.example.ly&sslmode=disable' })), false);
+  assert.equal(isLocalDb(db({ connectionString: 'postgres://u@/ets', host: '10.0.0.9' })), false);
+  assert.equal(isLocalDb(db({ connectionString: 'postgres://u@/ets?host=/var/run/postgresql' })), true);
+  assert.equal(isLocalDb(db({ connectionString: 'socket:/var/run/postgresql?db=ets' })), true);
+  assert.equal(isLocalDb(db({ connectionString: '/var/run/postgresql ets' })), true);
+  assert.equal(isLocalDb(db({ connectionString: 'postgres://u@[::1]:5432/ets' })), true);
+  // the pool never sees a TLS parameter: the ssl option is the checked one
+  assert.equal(stripUrlTls('postgres://u@h/ets?sslmode=disable&application_name=x&ssl=0#f'), 'postgres://u@h/ets?application_name=x#f');
+  assert.equal(stripUrlTls('postgres://u@h/ets?ssl%6dode=disable'), 'postgres://u@h/ets');
+  assert.equal(stripUrlTls('postgres://u@h/ets'), 'postgres://u@h/ets');
+  const { default: ConnectionParameters } = await import('pg/lib/connection-parameters.js');
+  for (const q of ['?sslmode=require', '?sslmode=verify-full&ssl=false', '?ssl=true', '?uselibpqcompat=true&sslmode=require']) {
+    const pc = dbPoolConfig(url(q), read);
+    assert.deepEqual(new ConnectionParameters(pc).ssl, pc.ssl, q);
+  }
+  const local = dbPoolConfig(db({ connectionString: 'postgres://u@127.0.0.1/ets?sslmode=disable' }), read);
+  assert.equal(new ConnectionParameters(local).ssl, false);
+});
+
+test('assertConfig refuses a weak sslmode inside DATABASE_URL for a remote host', () => {
+  const saved = { ...cfg.config.db };
+  try {
+    for (const q of ['sslmode=disable', 'sslmode=allow', 'sslmode=prefer', 'ssl=false', 'ssl=0']) {
+      Object.assign(cfg.config.db, { connectionString: `postgres://u:p@10.0.0.20:5432/ets?${q}`, host: '127.0.0.1', sslMode: '' });
+      assert.throws(() => cfg.assertConfig(), /PGSSLMODE=require/, q);
+      cfg.config.db.sslMode = 'verify-full';                   // PGSSLMODE does not rescue a weaker URL mode
+      assert.throws(() => cfg.assertConfig(), /PGSSLMODE=require/, q);
+    }
+    cfg.config.db.connectionString = 'postgres://u@/ets?host=10.0.0.20&sslmode=disable';
+    assert.throws(() => cfg.assertConfig(), /PGSSLMODE=require/);
+    Object.assign(cfg.config.db, { connectionString: 'postgres://u:p@10.0.0.20:5432/ets?sslmode=require', sslMode: '' });
+    assert.doesNotThrow(() => cfg.assertConfig());
+    cfg.config.db.connectionString = 'postgres://u:p@10.0.0.20:5432/ets?ssl=true';
+    assert.doesNotThrow(() => cfg.assertConfig());
+    cfg.config.db.connectionString = 'postgres://u:p@127.0.0.1:5432/ets?sslmode=disable';
+    assert.doesNotThrow(() => cfg.assertConfig());                // loopback may stay plaintext
+  } finally { Object.assign(cfg.config.db, saved); }
+});
+
 test('2FA secret envelope: v2 with key id, tag length enforced, rotation via APP_SECRET_OLD', () => {
   const c = cfg.config;
   const first = c.appSecret;

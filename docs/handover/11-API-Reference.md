@@ -50,7 +50,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | GET | `/summary` | — | Totals, departments, applications with computed %, counters |
 | GET | `/departments/:id` | scope | Department + its applications |
 | GET | `/applications/:id` | scope | Application, functions, report, `can` flags |
-| PATCH | `/functions/:id` | per field | `progress` (pct), `notif_status` (pct), `weight` (wgt), `enabled` (tog), `test_status`/`review_status`/`note` (tst), `name_en` (tog) |
+| PATCH | `/functions/:id` | per field | `progress` (pct), `notif_status` (pct), `weight` (wgt), `enabled` (tog), `test_status`/`review_status`/`note` (tst), `name_en` (tog). Without `tst`, a note may only accompany a «with notes» status the user may set while the function has no note yet |
 | POST | `/applications/:id/bulk` | pct / tst | `{field: "progress" \| "test_status", value}` |
 | POST | `/applications/:id/functions` | tog | `{name_ar, name_en?, reference?, weight?, progress?, enabled?}` — add a function (code `C<n>`, never reused). 201 `{function, impact}`, or 202 `{pending, request_id, impact}` for a data-entry user |
 | POST | `/functions/:id/remove` | tog | `{reason}` (required) — soft removal of any function (scope or added); 200 / 202 as above. `function_removed` if already removed |
@@ -64,7 +64,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | GET | `/schedule` | — | Schedule (`start_date`, `end_date`, periods, plan, actual) + current computed % |
 | PUT | `/schedule` | sch + full scope | `{start_date, periods, unit, plan \| null, actual[]}` — when a close date is set, the dates and the number of periods are kept from Settings |
 | PUT | `/timeline` | cfg (full scope) | `{start_date, end_date}` — project start and planned close; errors `end_before_start`, `start_required`, `timeline_too_long` |
-| GET | `/project-status` | — | Schedule, total and department progress, function/test/quality counts, pending approvals and daily progress trend, for the user's scope |
+| GET | `/project-status` | — | Schedule, total and department progress, function/test/quality counts, pending approvals (scoped users: only requests / batches of applications in scope) and daily progress trend, for the user's scope |
 | GET | `/search?q=` | — | Up to 200 functions within scope |
 | GET | `/export` | exp | Data in the original tracker's JSON format (v3), limited to the applications in the user's scope; `sch` only for full-scope users |
 | POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}` |
@@ -76,7 +76,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | POST | `/` | imp | `{content, filename, target: 'department' \| 'reports', department_id}` → pending batch |
 | GET | `/?status=` | — | Batches within scope, with `can` flags |
 | GET | `/pending-count` | — | `{awaiting_me, pending}` |
-| GET | `/:id` | scope | Batch, changes (before/after) of the applications in the reader's scope, signatures |
+| GET | `/:id` | scope | Batch, changes (before/after) of the applications in the reader's scope, signatures. A reader who sees only part of the batch gets `change_count`, `summary.counts`, `apply_result` of the visible changes, department figures only for departments fully in scope and `summary.project: null` (same in the list) |
 | POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; every changed application in scope; never the uploader; both signed → applied → `{applied, applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the uploader is no longer active / allowed |
 | POST | `/:id/reject` | apv_dept / apv_final | `{reason}`; every changed application in scope |
 
@@ -101,7 +101,9 @@ Function, bulk and report edits by data-entry users answer **202** `{pending: tr
 
 ## Users — `/users` (permission `usr`, System Administrator role only)
 Errors: `usr_admin_only` (granting `usr` to another role), `cannot_change_own_permissions` (widening your own
-permissions / scope / 2FA exemption), `last_admin` (would leave no active administrator holding `usr` and `cfg`).
+permissions / scope / 2FA exemption), `last_admin` (would leave no active administrator holding `usr` and `cfg`),
+`invalid_permission` (unknown or duplicate permission in `overrides`), `use_change_password` (resetting your own
+password — use `POST /auth/change-password`).
 | Method | Path | Description |
 |---|---|---|
 | GET | `/meta` | Roles, permission keys, departments, applications, 2FA policy |
@@ -109,11 +111,11 @@ permissions / scope / 2FA exemption), `last_admin` (would leave no active admini
 | GET | `/:id` | User with scopes, overrides, active sessions, recovery codes left (recorded as `view` / `user` in the audit trail) |
 | POST | `/` | Create: `{username, full_name, email?, role_id, language?, password, must_change_password?, totp_exempt?, is_active?, scopes?:[{kind, ref_id}], overrides?:[{permission, granted}]}` |
 | PATCH | `/:id` | Update any of the above (except password) |
-| POST | `/:id/reset-password` | `{password, must_change?}` — also clears the sign-in pause; signs the user out |
+| POST | `/:id/reset-password` | `{password, must_change?}` — also clears the sign-in pause; signs the user out. Not for your own account (400 `use_change_password`) |
 | POST | `/:id/reset-2fa` | Remove the authenticator; signs the user out |
 | POST | `/:id/unlock` | Clears the failure count and the sign-in pause |
 | POST | `/:id/revoke-sessions` | |
-| POST | `/bulk-2fa` | `{all: true, exempt}` or `{user_ids: [..], exempt}` |
+| POST | `/bulk-2fa` | `{all: true, exempt}` or `{user_ids: [..], exempt}` → `{updated}`. With `exempt: true`, `all` leaves the caller out and a list naming the caller is refused (400 `cannot_change_own_permissions`); removing exemptions includes the caller |
 
 ## Settings — `/settings` (permission `cfg`, full scope)
 | Method | Path | Description |

@@ -119,6 +119,8 @@ async function assertNoSelfGrant(before, b, v) {
 function assertShapes(scopes, overrides) {
   if (Array.isArray(scopes) && scopes.some(s => !s || !['department', 'application'].includes(s.kind) || typeof s.ref_id !== 'string')) throw bad('invalid_scope');
   if (Array.isArray(overrides) && overrides.some(o => !o || !PERMISSIONS.includes(o.permission) || typeof o.granted !== 'boolean')) throw bad('invalid_permission');
+  // one entry per permission: a duplicate would hit the unique key and end as a 500 (V2-N4)
+  if (Array.isArray(overrides) && new Set(overrides.map(o => o.permission)).size !== overrides.length) throw bad('invalid_permission', { reason: 'duplicate' });
 }
 
 async function writeScopes(c, userId, scopes, overrides) {
@@ -145,6 +147,7 @@ r.post('/', async (req, res) => {
   const v = await validateCommon(b, { creating: true });
   await validatePassword(b.password, v.username, v.role_id);
   if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
+  assertShapes(b.scopes, b.overrides);
   assertOverridesAllowed(v.role_id, b.overrides);
   v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
   const id = await tx(async c => {
@@ -220,6 +223,9 @@ r.patch('/:id', async (req, res) => {
 
 r.post('/:id/reset-password', async (req, res) => {
   const id = idParam(req.params.id);
+  // an administrator changes their own password through /auth/change-password, which asks for the current
+  // one: a hijacked session must not be able to set a new password without it (V2-N5)
+  if (id === req.user.id) throw bad('use_change_password');
   const u = await loadUser(id);
   await validatePassword(req.body?.password, u.username, u.role_id);
   await tx(async c => {
@@ -278,10 +284,14 @@ r.post('/bulk-2fa', async (req, res) => {
   const { user_ids, all, exempt } = req.body || {};
   if (typeof exempt !== 'boolean') throw bad('invalid_value', { field: 'exempt' });
   if (!all && !(Array.isArray(user_ids) && user_ids.length && user_ids.length <= 10000 && user_ids.every(isId))) throw bad('invalid_value', { field: 'user_ids' });
+  // nobody exempts themselves (same rule as PATCH, V2-N1): a list naming the caller is refused, and "all"
+  // leaves the caller out. Removing exemptions stays allowed for everyone, the caller included.
+  if (exempt && !all && user_ids.includes(req.user.id)) throw bad('cannot_change_own_permissions');
+  const skip = exempt ? req.user.id : 0;
   const q = await tx(async c => {
     const q = all
-      ? await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 RETURNING id, username', [exempt])
-      : await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 RETURNING id, username', [exempt, user_ids]);
+      ? await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 AND id<>$2 RETURNING id, username', [exempt, skip])
+      : await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 AND id<>$3 RETURNING id, username', [exempt, user_ids, skip]);
     await logAudit(req, { db: c, action: 'bulk_update', entity: 'user', summary: `totp_exempt=${exempt} on ${q.rowCount} users`,
       newValue: { all: !!all, user_ids: user_ids || null, exempt } });
     for (const u of q.rows) {

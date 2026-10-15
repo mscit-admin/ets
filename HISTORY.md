@@ -273,6 +273,31 @@ and must be mentioned here with the migration name.
   no-scope users, uploader cannot sign (ETS-SEC-076)
 - ops(backend, frontend): version 1.0.0 in `package.json` and `package-lock.json`
 
+### Security — Phase 7 verification leftovers (R8)
+- sec(users): `POST /users/bulk-2fa` no longer exempts the caller: a list naming the caller is refused with
+  `cannot_change_own_permissions`, `all: true` leaves the caller out; removing exemptions is unchanged. UI label
+  «Exempt everyone else from 2FA» (ar+en) (ETS-SEC-004, V2-N1)
+- sec(config): the DB TLS guard also reads `DATABASE_URL` — its host (`?host=`, empty host → PGHOST, sockets) and
+  its `sslmode` / `ssl` parameters (URL wins over PGSSLMODE; `ssl=true` = verify-full); a weaker mode to another
+  machine is refused at start, and the pool gets the TLS parameters stripped from the URL and the checked `ssl`
+  options instead, so an embedded `sslmode=disable` can no longer win (ETS-SEC-010, V4-N1)
+- sec(tracker): without `tst`, a note may accompany a «with notes» status only while the function has no note;
+  the two-step overwrite (status away and back with a new note) is refused, and an approved request re-checks
+  that the note is still empty (ETS-SEC-056)
+- sec(logging): a broken audit/auth hash chain stops the retention purge — nothing is deleted, `purge_skipped`
+  (alert) is recorded in the audit trail and system log, `npm run purge-logs` exits 2; an administrator continues
+  with `npm run purge-logs -- --acknowledge-broken-chain`, recorded as `purge_acknowledge` with who and which
+  tables; docs 07 §3/§5 and 10 (ETS-SEC-013, ETS-SEC-048, V5-O1)
+- fix(users): a duplicate permission in `overrides` is a 400 `invalid_permission` instead of a 500 (V2-N4)
+- fix(migrations): 009 records the full override list before/after in its audit rows and does not repeat the
+  `scope_fail_closed` warning when re-run; already-migrated databases are unaffected (applied by file name) (V2-N6)
+- sec(imports, tracker): a reader who sees part of an import batch gets change count, counts, apply result and
+  department figures from the visible changes only and no project figure; project-status pending counts include
+  only requests / batches of applications in the reader's scope (ETS-SEC-007, V2-N2, V2-N3)
+- sec(users): an administrator cannot reset their own password with `POST /users/<self>/reset-password` (400
+  `use_change_password`, ar+en message; the button is hidden on their own account) — `/auth/change-password`
+  asks for the current password (V2-N5)
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

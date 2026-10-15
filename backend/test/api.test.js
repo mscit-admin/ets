@@ -146,6 +146,9 @@ test('2FA: admin exemption and global off', { skip }, async () => {
   assert.equal(bulk.data.updated, 1);
   assert.equal((await client().login('tester')).data.stage, 'done');
   await r.post('/users/bulk-2fa', { all: true, exempt: true });  // later tests log in without codes
+  // …except the caller: nobody exempts themselves, not even with "all" (V2-N1); the fixture does it directly
+  assert.equal((await pool.query(`SELECT totp_exempt FROM users WHERE username='root'`)).rows[0].totp_exempt, false);
+  await pool.query(`UPDATE users SET totp_exempt=true WHERE username='root'`);
 });
 
 test('permissions: tester may set test status but not progress', { skip }, async () => {

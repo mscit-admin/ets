@@ -52,6 +52,8 @@ Safety rules enforced by the server:
   overrides) must always exist; concurrent changes are serialised so two administrators cannot remove each other.
 - You cannot change your own role or disable yourself.
 - You cannot widen your own permissions or scope, or exempt yourself from 2FA — another administrator does that.
+- Your own password is changed in *My account* (it asks for the current one); *Reset password* is not offered on
+  your own account.
   Revoking a permission from yourself is allowed (unless you are the last administrator).
 - Disabling a user withdraws their edit requests still waiting for approval.
 
@@ -144,7 +146,7 @@ Authy, FreeOTP and similar apps.
 - One user: open the user → tick **Exempt from two-step verification** → Save.
 - Several users: **Users** list → tick the users → **Exempt selected** (or **Remove exemption for
   selected**).
-- Everyone: **Exempt everyone from 2FA** / **Remove exemption for everyone**.
+- Everyone: **Exempt everyone else from 2FA** (your own account is left out) / **Remove exemption for everyone**.
 
 An exempt user is never asked for a code, whatever the policy. Exemptions are logged
 (`mfa_exempted_by_admin`, `mfa_exemption_removed`).
