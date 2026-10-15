@@ -4,7 +4,7 @@ import { query, tx } from '../db/pool.js';
 import { requireAuth, hasPerm, canSeeDept } from '../middleware/auth.js';
 import { isDeptApprover, applyRequest, requestContext } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
-import { HttpError, bad, notFound, str } from '../utils/http.js';
+import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -55,7 +55,7 @@ r.get('/pending-count', async (req, res) => {
 });
 
 async function decide(req, res, action) {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const reason = str(req.body?.reason, 1000) || null;
   if (action === 'reject' && !reason) throw bad('reason_required');
   const apps = await allApps();
@@ -89,7 +89,7 @@ r.post('/:id/withdraw', (req, res) => decide(req, res, 'withdraw'));
 // Approve every pending request of a department the user leads (or a list of ids).
 r.post('/approve-all', async (req, res) => {
   const apps = await allApps();
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(Number.isInteger) : null;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(isId) : null;
   const rows = (await query(`SELECT * FROM edit_requests WHERE status='pending' ${ids ? 'AND id = ANY($1)' : ''} ORDER BY requested_at`, ids ? [ids] : [])).rows
     .filter(x => abilities(req.user, x, apps).approve);
   let applied = 0, skipped = 0;

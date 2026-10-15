@@ -8,7 +8,8 @@ import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
-import { HttpError, bad, notFound, str, intIn, numIn } from '../utils/http.js';
+import { largeJson } from '../middleware/body.js';
+import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -123,7 +124,7 @@ const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
 r.patch('/functions/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
@@ -133,7 +134,7 @@ r.patch('/functions/:id', async (req, res) => {
   const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
   const changes = {};
   for (const [k, v] of Object.entries(body)) {
-    if (!(k in FIELD_PERM)) throw bad('unknown_field', { field: k });
+    if (!Object.hasOwn(FIELD_PERM, k)) throw bad('unknown_field', { field: k });
     const allowed = hasPerm(req.user, FIELD_PERM[k]) || (k === 'note' && settingNotedStatus);
     if (!allowed) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[k], field: k });
     if (!FIELD_OK[k](v)) throw bad('invalid_value', { field: k });
@@ -237,8 +238,8 @@ r.post('/applications/:id/impact', requirePerm('tog'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const b = req.body || {};
   const add = b.add ? newFunctionDataOr400(b.add, true) : null;
-  const set = Array.isArray(b.set) ? b.set.filter(x => Number.isInteger(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
-  const drop = Array.isArray(b.drop) ? b.drop.filter(Number.isInteger).slice(0, 500) : [];
+  const set = Array.isArray(b.set) ? b.set.filter(x => isId(x?.function_id) && typeof x.enabled === 'boolean').slice(0, 500) : [];
+  const drop = Array.isArray(b.drop) ? b.drop.filter(isId).slice(0, 500) : [];
   res.json(await impactOf(req.user, a.id, { add, set, drop }));
 });
 
@@ -261,7 +262,7 @@ r.post('/applications/:id/functions', requirePerm('tog'), async (req, res) => {
 });
 
 async function loadFn(req, { removed }) {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   const a = await getApp(req.user, cur.app_id);
@@ -310,6 +311,7 @@ r.get('/weights', async (req, res) => {
 
 r.put('/weights', requirePerm('wgt'), async (req, res) => {
   const { weights = {}, weight_mode, notif_share, reports_share } = req.body || {};
+  if (!weights || typeof weights !== 'object' || Array.isArray(weights)) throw bad('invalid_value', { field: 'weights' });
   const apps = (await query('SELECT * FROM applications')).rows;
   const byId = new Map(apps.map(a => [a.id, a]));
   for (const [id, w] of Object.entries(weights)) {
@@ -379,7 +381,7 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   const ok = { progress: v => numIn(v, 0, 100), status: v => intIn(v, 0, 3), note: v => typeof v === 'string' && v.length <= 2000 };
   const changes = {};
   for (const [k, v] of Object.entries(req.body || {})) {
-    if (!ok[k]) throw bad('unknown_field', { field: k });
+    if (!Object.hasOwn(ok, k)) throw bad('unknown_field', { field: k });
     if (!ok[k](v)) throw bad('invalid_value', { field: k });
     if (cur[k] !== v) changes[k] = v;
   }
@@ -562,12 +564,12 @@ r.get('/export', requirePerm('exp'), async (req, res) => {
 
 // Full import of everything (all departments, settings, schedule) WITHOUT approval: initial migration only,
 // so it needs 'cfg' as well. Team results go through /api/imports (per department, approved).
-r.post('/import', requirePerm('imp'), requirePerm('cfg'), async (req, res) => {
+r.post('/import', requirePerm('imp'), requirePerm('cfg'), largeJson, async (req, res) => {
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   let payload;
   try { payload = typeof req.body?.content === 'string' ? parseLegacy(req.body.content) : req.body?.payload; }
   catch { throw bad('invalid_import_file'); }
-  if (!payload?.f) throw bad('invalid_import_file');
+  if (!payload || typeof payload !== 'object' || !payload.f || typeof payload.f !== 'object') throw bad('invalid_import_file');
   const counts = await tx(async c => {
     const before = await buildLegacy(c);
     const n = await applyLegacy(c, payload, req.user.id);

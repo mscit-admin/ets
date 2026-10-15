@@ -12,6 +12,32 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.0.0] — 2026-10-15 — Security remediation
+
+### Security
+- sec(backend): request bodies are limited to 100 kB and 32 levels of nesting before the session is known; only the
+  file uploads (`POST /api/imports`, `/api/imports/preview`, `/api/tracker/import`, `PUT /api/branding/:key`) accept
+  up to 5 MB, parsed only after login, CSRF and permission checks; non-JSON bodies get `415`; imported files are
+  also refused when nested too deeply (ETS-SEC-008)
+- sec(deploy): nginx `client_max_body_size` 128k, 6m only on the upload routes (ETS-SEC-008)
+- sec(backend): allow-lists (settings, report/function fields, log types, `set-setting.js`) use own keys only, so
+  `toString`, `constructor`, `__proto__` … are refused with 400 instead of creating rows or failing (ETS-SEC-028)
+- sec(frontend): icon lookup uses own keys only (ETS-SEC-028)
+- sec(backend): ids (int4), dates (real calendar days), log page/user/status filters, scope/override/id lists,
+  `PUT /tracker/weights` without a body and malformed tracker import payloads give 400 instead of 500 and no longer
+  fill the error log (ETS-SEC-029)
+- sec(backend): CSV export neutralises formulas also after leading whitespace/invisible characters, for `|` and
+  the full-width `＝ ＋ － ＠`, and cells starting with tab/CR/LF (ETS-SEC-059)
+- sec(frontend): API paths are built with encoded segments, address-bar ids are checked before calling the API,
+  and pages show "not found" instead of crashing on an unexpected response (ETS-SEC-060)
+- sec(backend): bidirectional control characters (U+202A–202E, U+2066–2069, U+200E/200F) are removed from every
+  text value of a request body except passwords (ETS-SEC-061)
+- sec(tools): `extract-catalog.js` only runs the catalog block of the reviewed reference file (pinned SHA-256,
+  `--trust-source` to override) and runs it in an empty `vm` context with a timeout (ETS-SEC-062)
+- sec(backend): branding uploads are stored without metadata (EXIF/GPS, XMP, comments, PNG text chunks, WebP
+  EXIF/XMP) and without bytes after the end of the image; broken images are refused (ETS-SEC-070)
+- test(tests): `backend/test/input.test.js` covers the above
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added

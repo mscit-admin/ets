@@ -4,6 +4,10 @@ Base URL: `https://<server>/api`. All responses are JSON. Authentication uses th
 which is set by `/auth/login`.
 
 **Every POST/PUT/PATCH/DELETE must send** `X-Requested-With: ets` and `Content-Type: application/json`.
+A body in another format is refused with `415 unsupported_media_type`. Bodies are limited to 100 kB and 32 levels of
+nesting (`413 payload_too_large`, `400 invalid_json`); the file uploads `POST /imports`, `POST /imports/preview`,
+`POST /tracker/import` and `PUT /branding/:key` accept up to 5 MB. Numeric ids in paths must be whole numbers in
+the int4 range (`400 invalid_id`). Bidirectional control characters are removed from text values.
 
 Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credentials`, `account_locked`,
 `too_many_attempts`, `invalid_code`, `mfa_required`, `not_authenticated`, `forbidden` (with `permission`),

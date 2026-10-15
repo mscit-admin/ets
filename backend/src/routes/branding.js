@@ -4,6 +4,8 @@ import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { logAudit } from '../services/logs.js';
+import { largeJson } from '../middleware/body.js';
+import { cleanImage } from '../services/images.js';
 import { HttpError, bad, notFound } from '../utils/http.js';
 
 const r = Router();
@@ -39,16 +41,19 @@ r.get('/:key', async (req, res) => {
 });
 
 // Body: { data: "data:image/png;base64,...." }
-r.put('/:key', requireAuth, requirePerm('cfg'), async (req, res) => {
+r.put('/:key', requireAuth, requirePerm('cfg'), largeJson, async (req, res) => {
   const key = req.params.key;
   if (!BRANDING_KEYS.includes(key)) throw notFound();
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   const m = /^data:[^;,]*;base64,([A-Za-z0-9+/=\s]+)$/.exec(String(req.body?.data || ''));
   if (!m) throw bad('invalid_image');
-  const buf = Buffer.from(m[1], 'base64');
-  const mime = sniff(buf);
+  const raw = Buffer.from(m[1], 'base64');
+  const mime = sniff(raw);
   if (!mime) throw bad('invalid_image');
-  if (buf.length > MAX_BYTES[key]) throw bad('image_too_large', { max_kb: MAX_BYTES[key] / 1024 });
+  if (raw.length > MAX_BYTES[key]) throw bad('image_too_large', { max_kb: MAX_BYTES[key] / 1024 });
+  // the image is public: metadata (EXIF/GPS, XMP, comments) and bytes after the end of the image are removed
+  const buf = cleanImage(raw, mime);
+  if (!buf) throw bad('invalid_image');
   await query(`INSERT INTO branding_assets(key, mime, data, updated_by) VALUES ($1,$2,$3,$4)
     ON CONFLICT (key) DO UPDATE SET mime=EXCLUDED.mime, data=EXCLUDED.data, updated_at=now(), updated_by=EXCLUDED.updated_by`,
   [key, mime, buf, req.user.id]);

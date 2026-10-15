@@ -137,6 +137,8 @@ the size changes live and is saved when you release the slider. Wide logos keep 
 
 **Upload image** replaces it immediately for everyone; **Restore default** returns to the built-in icon / plain
 background. Images are stored in the database and included in backups. SVG files are not accepted.
+Branding images are public (the login screen shows them), so on upload the system removes their metadata
+(camera, GPS position, author, comments) and anything after the end of the image; the picture itself is unchanged.
 
 ## 4. Logs (Administration → Logs) — permission `log`
 

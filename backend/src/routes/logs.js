@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { requireAuth, requirePerm, canSeeApp } from '../middleware/auth.js';
 import { logAudit } from '../services/logs.js';
-import { HttpError, bad, str } from '../utils/http.js';
+import { HttpError, bad, str, own, isDate, isId } from '../utils/http.js';
+import { csvCell } from '../utils/csv.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('log'));
@@ -46,10 +47,16 @@ function buildQuery(t, qs) {
   const add = (sql, v) => { params.push(v); where.push(sql.replace('?', '$' + params.length)); };
   if (qs.from) add('l.ts >= ?', qs.from);
   if (qs.to) add('l.ts < (?::date + 1)', qs.to);
-  if (qs.user_id) add('l.user_id = ?', parseInt(qs.user_id, 10));
+  if (qs.user_id) {
+    if (!/^[0-9]{1,10}$/.test(qs.user_id) || !isId(+qs.user_id)) throw bad('invalid_value', { field: 'user_id' });
+    add('l.user_id = ?', +qs.user_id);
+  }
   if (qs.event) add(`${t.event} = ?`, str(qs.event, 100));
   if (t.table === 'auth_log' && (qs.success === 'true' || qs.success === 'false')) add('l.success = ?', qs.success === 'true');
-  if (t.table === 'access_log' && qs.status) add('l.status = ?', parseInt(qs.status, 10));
+  if (t.table === 'access_log' && qs.status) {
+    if (!/^[1-5][0-9]{2}$/.test(qs.status)) throw bad('invalid_value', { field: 'status' });
+    add('l.status = ?', +qs.status);
+  }
   const q = str(qs.q, 200);
   if (q) {
     params.push('%' + q.replace(/[%_\\]/g, '\\$&') + '%');
@@ -58,7 +65,9 @@ function buildQuery(t, qs) {
   return { where, params };
 }
 
-const validDate = d => !d || /^\d{4}-\d{2}-\d{2}$/.test(d);
+const validDate = d => d === undefined || d === '' || isDate(d);
+// Deepest page offered; larger values would only make PostgreSQL skip rows for nothing (ETS-SEC-029).
+const MAX_PAGE = 100000;
 
 r.get('/stats', async (req, res) => {
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
@@ -73,13 +82,13 @@ r.get('/stats', async (req, res) => {
 });
 
 r.get('/:type', async (req, res) => {
-  const t = TYPES[req.params.type];
+  const t = own(TYPES, req.params.type);
   if (!t) throw bad('unknown_log');
   if (!validDate(req.query.from) || !validDate(req.query.to)) throw bad('invalid_date');
   const { where, params } = buildQuery(t, req.query);
   await scopeFilter(req.user, req.params.type, where, params);
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 50));
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const page = Math.min(MAX_PAGE, Math.max(1, parseInt(req.query.page, 10) || 1));
   const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const [rows, count] = await Promise.all([
     query(`SELECT ${t.cols} FROM ${t.table} l ${t.join || ''} ${w} ORDER BY l.ts DESC, l.id DESC LIMIT ${limit} OFFSET ${(page - 1) * limit}`, params),
@@ -89,15 +98,8 @@ r.get('/:type', async (req, res) => {
   res.json({ rows: rows.rows, total: count.rows[0].n, page, limit, events });
 });
 
-const csvCell = v => {
-  const s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
-  // neutralise spreadsheet formula injection
-  const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
-  return '"' + safe.replace(/"/g, '""') + '"';
-};
-
 r.get('/:type/export', async (req, res) => {
-  const t = TYPES[req.params.type];
+  const t = own(TYPES, req.params.type);
   if (!t) throw bad('unknown_log');
   if (!validDate(req.query.from) || !validDate(req.query.to)) throw bad('invalid_date');
   const { where, params } = buildQuery(t, req.query);

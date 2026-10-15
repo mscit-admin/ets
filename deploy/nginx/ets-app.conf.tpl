@@ -4,7 +4,8 @@
 access_log /var/log/nginx/ets.access.log;
 error_log  /var/log/nginx/ets.error.log;
 
-client_max_body_size 6m;
+# Small request bodies everywhere; only the file-upload API routes below accept up to 6 MB (ETS-SEC-008).
+client_max_body_size 128k;
 gzip on;
 gzip_types text/css application/javascript application/json image/svg+xml;
 
@@ -13,6 +14,19 @@ index index.html;
 
 # API → Node.js backend
 location /api/ {
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}
+
+# File uploads (team result imports, full tracker import, branding images): larger bodies.
+# The API itself only reads them after authentication (backend/src/middleware/body.js).
+location ~ ^/api/(imports|imports/preview|tracker/import|branding/[a-z_]+)$ {
+    client_max_body_size 6m;
     proxy_pass http://127.0.0.1:__API_PORT__;
     proxy_http_version 1.1;
     proxy_set_header Host $host;

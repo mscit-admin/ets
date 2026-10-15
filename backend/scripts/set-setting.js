@@ -9,7 +9,7 @@ import { SETTING_RULES } from '../src/services/settings.js';
 import { logSystem } from '../src/services/logs.js';
 
 const [key, raw] = process.argv.slice(2);
-if (!key || raw === undefined || !SETTING_RULES[key]) {
+if (!key || raw === undefined || !Object.hasOwn(SETTING_RULES, key)) {
   console.error('usage: set-setting.js <key> <value>\nkeys: ' + Object.keys(SETTING_RULES).join(', '));
   process.exit(1);
 }

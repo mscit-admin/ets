@@ -12,7 +12,8 @@ import { parseLegacy } from '../services/legacy.js';
 import { diffTarget, impactSummary, applyBatch } from '../services/imports.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef } from '../services/audit.js';
-import { HttpError, bad, notFound, str } from '../utils/http.js';
+import { largeJson } from '../middleware/body.js';
+import { HttpError, bad, notFound, str, idParam } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -29,7 +30,7 @@ function parseContent(body) {
     return p;
   } catch { throw bad('invalid_import_file'); }
 }
-const fileTs = p => (Number.isFinite(+p.ts) && +p.ts > 0 ? new Date(+p.ts) : null);
+const fileTs = p => (+p.ts > 0 && !Number.isNaN(new Date(+p.ts).getTime()) ? new Date(+p.ts) : null);   // 1e300 → null, not a 500
 
 // Departments a reports import covers for this user: departments with a reports track, within scope.
 const reportDepts = (user, meta) => meta.depts.filter(d => !d.is_base && canSeeDept(user, d.id, meta.apps)).map(d => d.id);
@@ -59,7 +60,7 @@ async function batchContext(c, b) {
 }
 
 // 1) Read a file and list the import options with the number of changes in each.
-r.post('/preview', requirePerm('imp'), async (req, res) => {
+r.post('/preview', requirePerm('imp'), largeJson, async (req, res) => {
   const p = parseContent(req.body);
   const meta = await loadMeta();
   const options = [];
@@ -81,7 +82,7 @@ r.post('/preview', requirePerm('imp'), async (req, res) => {
 });
 
 // 2) Submit the chosen part of the file for approval.
-r.post('/', requirePerm('imp'), async (req, res) => {
+r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
   const p = parseContent(req.body);
   const target = req.body?.target === 'reports' ? 'reports' : 'department';
   const meta = await loadMeta();
@@ -156,7 +157,7 @@ r.get('/pending-count', async (req, res) => {
 });
 
 r.get('/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const b = (await query(`SELECT ${LIST_COLS} FROM import_batches b ${LIST_JOINS} WHERE b.id=$1`, [id])).rows[0];
   if (!b) throw notFound();
   const meta = await loadMeta();
@@ -168,7 +169,7 @@ r.get('/:id', async (req, res) => {
 });
 
 r.post('/:id/approve', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const stage = req.body?.stage;
   if (!['lead', 'final'].includes(stage)) throw bad('invalid_value', { field: 'stage' });
   const note = str(req.body?.note, 1000) || null;
@@ -201,7 +202,7 @@ r.post('/:id/approve', async (req, res) => {
 });
 
 r.post('/:id/reject', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const reason = str(req.body?.reason, 1000);
   if (!reason) throw bad('reason_required');
   const meta = await loadMeta();

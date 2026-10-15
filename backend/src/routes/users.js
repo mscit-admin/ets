@@ -4,7 +4,7 @@ import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { hashPassword, checkPolicy } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
-import { bad, notFound, str } from '../utils/http.js';
+import { bad, notFound, str, idParam, isId } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('usr'));
@@ -47,7 +47,7 @@ async function loadUser(id) {
 }
 
 r.get('/:id', async (req, res) => {
-  res.json({ user: await loadUser(parseInt(req.params.id, 10)) });
+  res.json({ user: await loadUser(idParam(req.params.id)) });
 });
 
 async function validateCommon(body, { creating }) {
@@ -68,7 +68,7 @@ async function validateCommon(body, { creating }) {
     out.email = e || null;
   }
   if (creating || body.role_id !== undefined) {
-    if (!(await query('SELECT 1 FROM roles WHERE id=$1', [body.role_id])).rowCount) throw bad('invalid_role');
+    if (typeof body.role_id !== 'string' || !(await query('SELECT 1 FROM roles WHERE id=$1', [body.role_id])).rowCount) throw bad('invalid_role');
     out.role_id = body.role_id;
   }
   if (body.language !== undefined) { if (!['ar', 'en'].includes(body.language)) throw bad('invalid_language'); out.language = body.language; }
@@ -87,7 +87,7 @@ async function writeScopes(c, userId, scopes, overrides) {
   if (Array.isArray(scopes)) {
     await c.query('DELETE FROM user_scopes WHERE user_id=$1', [userId]);
     for (const s of scopes) {
-      if (!['department', 'application'].includes(s.kind)) throw bad('invalid_scope');
+      if (!s || !['department', 'application'].includes(s.kind) || typeof s.ref_id !== 'string') throw bad('invalid_scope');
       const table = s.kind === 'department' ? 'departments' : 'applications';
       if (!(await c.query(`SELECT 1 FROM ${table} WHERE id=$1`, [s.ref_id])).rowCount) throw bad('invalid_scope');
       await c.query('INSERT INTO user_scopes(user_id,kind,ref_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [userId, s.kind, s.ref_id]);
@@ -96,7 +96,7 @@ async function writeScopes(c, userId, scopes, overrides) {
   if (Array.isArray(overrides)) {
     await c.query('DELETE FROM user_permissions WHERE user_id=$1', [userId]);
     for (const o of overrides) {
-      if (!PERMISSIONS.includes(o.permission) || typeof o.granted !== 'boolean') throw bad('invalid_permission');
+      if (!o || !PERMISSIONS.includes(o.permission) || typeof o.granted !== 'boolean') throw bad('invalid_permission');
       await c.query('INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,$2,$3)', [userId, o.permission, o.granted]);
     }
   }
@@ -131,7 +131,7 @@ async function assertAdminRemains(c, userId, next) {
 }
 
 r.patch('/:id', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const before = await loadUser(id);
   const b = req.body || {};
   const v = await validateCommon(b, { creating: false });
@@ -161,7 +161,7 @@ r.patch('/:id', async (req, res) => {
 });
 
 r.post('/:id/reset-password', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const u = await loadUser(id);
   await validatePassword(req.body?.password, u.username);
   await tx(async c => {
@@ -176,7 +176,7 @@ r.post('/:id/reset-password', async (req, res) => {
 
 // Removes the user's authenticator; they enrol again on next login if 2FA is required.
 r.post('/:id/reset-2fa', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const u = await loadUser(id);
   await tx(async c => {
     await c.query('UPDATE users SET totp_enabled=false, totp_secret=NULL, totp_last_step=NULL, totp_enabled_at=NULL WHERE id=$1', [id]);
@@ -188,7 +188,7 @@ r.post('/:id/reset-2fa', async (req, res) => {
 });
 
 r.post('/:id/unlock', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const u = await loadUser(id);
   await query('UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=$1', [id]);
   await logAuth(req, { userId: id, username: u.username, event: 'account_unlocked_by_admin', success: true, detail: { by: req.user.username } });
@@ -197,7 +197,7 @@ r.post('/:id/unlock', async (req, res) => {
 });
 
 r.post('/:id/revoke-sessions', async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = idParam(req.params.id);
   const u = await loadUser(id);
   const q = await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
     WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2`, [id, req.session.id]);
@@ -209,7 +209,7 @@ r.post('/:id/revoke-sessions', async (req, res) => {
 r.post('/bulk-2fa', async (req, res) => {
   const { user_ids, all, exempt } = req.body || {};
   if (typeof exempt !== 'boolean') throw bad('invalid_value', { field: 'exempt' });
-  if (!all && !(Array.isArray(user_ids) && user_ids.length && user_ids.every(Number.isInteger))) throw bad('invalid_value', { field: 'user_ids' });
+  if (!all && !(Array.isArray(user_ids) && user_ids.length && user_ids.length <= 10000 && user_ids.every(isId))) throw bad('invalid_value', { field: 'user_ids' });
   const q = all
     ? await query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 RETURNING id, username', [exempt])
     : await query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 RETURNING id, username', [exempt, user_ids]);

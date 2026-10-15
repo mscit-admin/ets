@@ -3,7 +3,7 @@ import { tx } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { allSettings, invalidateSettings, SETTING_RULES } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
-import { HttpError, bad } from '../utils/http.js';
+import { HttpError, bad, own } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('cfg'));
@@ -17,8 +17,9 @@ r.put('/', async (req, res) => {
   const body = req.body || {};
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   for (const [k, v] of Object.entries(body)) {
-    if (!SETTING_RULES[k]) throw bad('unknown_setting', { key: k });
-    if (!SETTING_RULES[k](v)) throw bad('invalid_value', { key: k });
+    const rule = own(SETTING_RULES, k);        // own keys only: 'toString', '__proto__'… are unknown settings
+    if (!rule) throw bad('unknown_setting', { key: k.slice(0, 100) });
+    if (!rule(v)) throw bad('invalid_value', { key: k });
   }
   const current = await allSettings();
   await tx(async c => {

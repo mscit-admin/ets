@@ -34,6 +34,9 @@ export function errorHandler(err, req, res, next) {
   }
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'payload_too_large' });
+  if (err?.type === 'entity.too.deep') return res.status(400).json({ error: 'invalid_json' });
+  // other body-parser rejections (unsupported charset/encoding, aborted upload…) are client errors, not server faults
+  if (err?.type && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) return res.status(err.status).json({ error: 'invalid_request' });
   logError(req, err);
   res.status(500).json({ error: 'server_error' });
 }
