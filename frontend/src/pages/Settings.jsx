@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api, downloadText } from '../lib/api.js';
+import { api, downloadText, path } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { useBranding } from '../lib/branding.jsx';
@@ -149,7 +149,7 @@ function BrandingCard() {
   const upload = async (key, file) => {
     if (!file) return;
     const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-    try { await api.put('/branding/' + key, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.put(path`/branding/${key}`, { data }); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
   // logo size: applied live while dragging, saved when released
   const [h, setH] = useState(null);
@@ -163,7 +163,7 @@ function BrandingCard() {
   };
   const reset = async key => {
     if (!window.confirm(t('are_you_sure'))) return;
-    try { await api.del('/branding/' + key); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.del(path`/branding/${key}`); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
   return (
     <Card title={t('sec_branding')}>

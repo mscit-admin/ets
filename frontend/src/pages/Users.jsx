@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api } from '../lib/api.js';
+import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 
@@ -92,7 +92,8 @@ function UserFormInner({ id }) {
   const { user: me } = useAuth();
   const nav = useNavigate();
   const meta = useLoad(() => api.get('/users/meta'), []);
-  const usr = useLoad(() => (isNew ? Promise.resolve({ user: null }) : api.get('/users/' + id)), [id]);
+  const usr = useLoad(() => (isNew ? Promise.resolve({ user: null }) : !isIdParam(id) ? Promise.reject(notFoundError())
+    : api.get(path`/users/${id}`).then(d => (d?.user ? d : Promise.reject(notFoundError())))), [id]);
   const [f, setF] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -127,18 +128,18 @@ function UserFormInner({ id }) {
       if (!body.language) delete body.language;   // the server applies Settings → default language
       if (isNew) {
         const r = await api.post('/users', body);
-        toast(t('saved')); nav('/users/' + r.user.id, { replace: true });
+        toast(t('saved')); nav(path`/users/${r.user.id}`, { replace: true });
       } else {
         delete body.password;
-        await api.patch('/users/' + id, body);
+        await api.patch(path`/users/${id}`, body);
         toast(t('saved')); usr.reload();
       }
     } catch (e) { setErr(e); }
     setBusy(false);
   };
-  const action = async (path, confirm = true) => {
+  const action = async (what, confirm = true) => {
     if (confirm && !window.confirm(t('are_you_sure'))) return;
-    try { await api.post(`/users/${id}/${path}`); toast(t('saved')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
+    try { await api.post(path`/users/${id}/${what}`); toast(t('saved')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
 
   return (
@@ -242,7 +243,7 @@ function ResetPassword({ id, onClose, onDone }) {
   const [must, setMust] = useState(true);
   const [err, setErr] = useState(null);
   const run = async () => {
-    try { await api.post(`/users/${id}/reset-password`, { password: pw, must_change: must }); toast(t('saved')); onDone(); }
+    try { await api.post(path`/users/${id}/reset-password`, { password: pw, must_change: must }); toast(t('saved')); onDone(); }
     catch (e) { setErr(e); }
   };
   return (

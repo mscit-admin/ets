@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api, qs } from '../lib/api.js';
+import { api, path, qs } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, Empty, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { makeAudit } from '../lib/audit.js';
@@ -114,7 +114,7 @@ export default function Logs() {
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState(null);
   const query = { ...applied, page, limit: 50 };
-  const { data, error, loading } = useLoad(() => api.get(`/logs/${type}${qs(query)}`), [type, JSON.stringify(query)]);
+  const { data, error, loading } = useLoad(() => api.get(path`/logs/${type}` + qs(query)), [type, JSON.stringify(query)]);
   const stats = useLoad(() => (user.fullScope ? api.get('/logs/stats') : Promise.resolve(null)), []);
   const cols = columns(type, t, fmtDate, describe);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
@@ -124,7 +124,7 @@ export default function Logs() {
   return (
     <div>
       <PageHeader title={t('logs_title')} icon="logs">
-        <a className="btn btn-default btn-sm" href={`/api/logs/${type}/export${qs(applied)}`}><Icon name="download" size={14} /> {t('export_csv')}</a>
+        <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>
       </PageHeader>
       {stats.data && (
         <div className="grid-cards">

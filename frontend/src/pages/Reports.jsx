@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api } from '../lib/api.js';
+import { api, path } from '../lib/api.js';
 import { REPORT_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
@@ -25,7 +25,7 @@ export default function Reports() {
 
   const save = async (a, body) => {
     try {
-      const r = await api.patch('/tracker/reports/' + a.id, body);
+      const r = await api.patch(path`/tracker/reports/${a.id}`, body);
       toast(r?.pending ? t('sent_for_approval') : t('saved'), r?.pending ? 'blue' : 'green'); setEdit(null); reload();
     }
     catch (e) { toast(errText(e), 'red'); }
