@@ -51,9 +51,10 @@
 | XSS | React escapes output; strict Content-Security-Policy (`default-src 'self'`, no inline scripts, no third-party hosts) on the API (helmet) **and** on the web pages and assets served by nginx (`/etc/nginx/snippets/ets-headers.conf`, included in every nginx location that sets its own headers, because nginx does not inherit `add_header` into such a location) |
 | Clickjacking | `frame-ancestors 'none'`, `X-Frame-Options: DENY` (API and web pages) |
 | Other headers | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `Permissions-Policy` (camera, microphone, geolocation… off), `Cross-Origin-Opener-Policy` / `-Resource-Policy: same-origin`; `server_tokens off` (no nginx version); `/api/health` does not show the application version |
-| SQL injection | Parameterised queries only; dynamic column names come from fixed allow-lists |
-| Transport | Always HTTPS (the installer has no plain-HTTP mode). nginx: TLS 1.2/1.3 with forward-secret AEAD ciphers only (Mozilla "intermediate"), no session tickets, HSTS, HTTP → HTTPS redirect. The self-signed certificate is a server certificate (`CA:FALSE`, `serverAuth`, for the ETS address only): never install it as a trusted root CA on client PCs |
+| TLS details | Always HTTPS (the installer has no plain-HTTP mode). nginx: TLS 1.2/1.3 with forward-secret AEAD ciphers only (Mozilla "intermediate"), no session tickets, HSTS, HTTP → HTTPS redirect. The self-signed certificate is a server certificate (`CA:FALSE`, `serverAuth`, for the ETS address only): never install it as a trusted root CA on client PCs |
 | Database connection | Local: loopback only. Remote: always TLS (`PGSSLMODE=require`, or `verify-full` with the DB server's CA in `PGSSLROOTCERT`) for the application and the backup/restore tools; the application refuses to start with an unencrypted connection to another machine |
+| SQL injection | Parameterised queries only; dynamic column names come from fixed allow-lists |
+| Transport | HTTPS (TLS 1.2/1.3) by nginx, HSTS, HTTP → HTTPS redirect |
 | CSV injection | Exported cells beginning with `= + - @` are prefixed with `'` |
 | Caching of data | `Cache-Control: no-store` on all API responses |
 | Large payloads | 5 MB JSON limit (API), 6 MB (nginx) |
