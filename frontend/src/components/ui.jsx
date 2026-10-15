@@ -75,6 +75,7 @@ export function NumberCard({ label, value, sub, color }) {
 }
 
 export function Modal({ title, onClose, children, footer, wide }) {
+  const { t } = useI18n();
   const ref = useRef(null);
   useEffect(() => {
     const k = e => { if (e.key === 'Escape') onClose(); };
@@ -87,7 +88,7 @@ export function Modal({ title, onClose, children, footer, wide }) {
       <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="btn-icon" onClick={onClose} aria-label="close"><Icon name="x" /></button>
+          <button className="btn-icon" onClick={onClose} aria-label={t('close')}><Icon name="x" /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

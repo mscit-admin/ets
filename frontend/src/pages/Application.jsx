@@ -68,8 +68,11 @@ export default function Application() {
   if (error) return <ErrorBox error={error} />;
   const { application: a, department: d, report, can, settings } = data;
   // values waiting for the team lead, per function: { [function_id]: [{field, new_value, requested_by_name}] }
+  // (add/remove/restore requests are listed in the lifecycle box above the table instead)
   const pendingByFn = {};
-  for (const p of data.pending || []) if (p.function_id) (pendingByFn[p.function_id] ||= []).push(p);
+  for (const p of data.pending || []) {
+    if (p.function_id && p.field !== 'removed' && p.field !== 'create') (pendingByFn[p.function_id] ||= []).push(p);
+  }
   const calc = a.calc;
   const totalW = calc.fnWeight || 0;
 

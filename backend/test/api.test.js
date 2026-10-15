@@ -217,6 +217,23 @@ test('settings validation and audit', { skip }, async () => {
   assert.equal(a.length, 1);
 });
 
+test('default language setting: login screen and new users', { skip }, async () => {
+  const c = client(); await c.login('root');
+  assert.equal((await c.put('/settings', { 'app.default_language': 'en' })).status, 200);
+  try {
+    assert.equal((await client().get('/auth/public-info')).data.default_language, 'en');
+    const u = await c.post('/users', { username: 'lang.default', full_name: 'Lang Default', role_id: 'obs', password: 'Language-2026x' });
+    assert.equal(u.status, 201);
+    assert.equal(u.data.user.language, 'en');
+    // an explicit choice still wins
+    const ar = await c.post('/users', { username: 'lang.ar', full_name: 'Lang Ar', role_id: 'obs', password: 'Language-2026x', language: 'ar' });
+    assert.equal(ar.data.user.language, 'ar');
+  } finally {
+    await c.put('/settings', { 'app.default_language': 'ar' }); await waitSettingsCache();
+  }
+  assert.equal((await client().get('/auth/public-info')).data.default_language, 'ar');
+});
+
 test('legacy import from the original tracker file', { skip }, async () => {
   const c = client(); await c.login('root');
   const html = fs.readFileSync(new URL('../../reference/erp-tracker-original.html', import.meta.url), 'utf8');

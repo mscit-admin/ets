@@ -107,6 +107,7 @@ r.post('/', async (req, res) => {
   const v = await validateCommon(b, { creating: true });
   await validatePassword(b.password, v.username);
   if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
+  v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
   const id = await tx(async c => {
     const row = (await c.query(`INSERT INTO users(username,full_name,email,password_hash,role_id,language,is_active,must_change_password,totp_exempt,created_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,

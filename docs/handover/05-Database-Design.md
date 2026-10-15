@@ -103,7 +103,7 @@ the same keys as the original tracker page, which is what makes import possible.
 | `logs.retention_days` | `365` |
 | `logs.access_retention_days` | `90` |
 | `app.org_name_ar` / `app.org_name_en` | System names |
-| `app.default_language` | `"ar"` |
+| `app.default_language` | `"ar"` — login screen / new browsers and new users without a chosen language |
 
 ## 6. Useful queries
 

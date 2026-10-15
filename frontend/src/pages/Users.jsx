@@ -105,7 +105,7 @@ function UserFormInner({ id }) {
       username: u.username, full_name: u.full_name, email: u.email || '', role_id: u.role_id, language: u.language,
       is_active: u.is_active, must_change_password: u.must_change_password, totp_exempt: u.totp_exempt,
       scopes: u.scopes, overrides: u.overrides,
-    } : { username: '', full_name: '', email: '', role_id: 'obs', language: 'ar', is_active: true, must_change_password: true,
+    } : { username: '', full_name: '', email: '', role_id: 'obs', language: '', is_active: true, must_change_password: true,
       totp_exempt: false, scopes: [], overrides: [], password: '' });
   }, [usr.data]);
 
@@ -124,6 +124,7 @@ function UserFormInner({ id }) {
     setBusy(true); setErr(null);
     try {
       const body = { ...f, email: f.email || '' };
+      if (!body.language) delete body.language;   // the server applies Settings → default language
       if (isNew) {
         const r = await api.post('/users', body);
         toast(t('saved')); nav('/users/' + r.user.id, { replace: true });
@@ -160,7 +161,7 @@ function UserFormInner({ id }) {
           <Field label={t('username')}><input className="input" dir="ltr" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} /></Field>
           <Field label={t('email')}><input className="input" dir="ltr" type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} /></Field>
           <Field label={t('language')}>
-            <select className="input" value={f.language} onChange={e => setF({ ...f, language: e.target.value })}><option value="ar">العربية</option><option value="en">English</option></select>
+            <select className="input" value={f.language} onChange={e => setF({ ...f, language: e.target.value })}>{isNew && <option value="">{t('default_language')}</option>}<option value="ar">العربية</option><option value="en">English</option></select>
           </Field>
           {isNew && <Field label={t('password')} hint={t('password_hint')}><input className="input" dir="ltr" type="password" autoComplete="new-password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></Field>}
         </div>

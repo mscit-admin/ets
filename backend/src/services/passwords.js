@@ -6,7 +6,10 @@ export const hashPassword = pw => bcrypt.hash(String(pw), config.security.bcrypt
 export const verifyPassword = (pw, hash) => bcrypt.compare(String(pw), hash);
 
 // A constant hash used to keep login timing equal when the username does not exist.
-export const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 4);
+// It uses the same cost as real hashes (bcrypt time follows the cost stored in the hash);
+// made once on first use (server.js warms it at startup) so importing this module stays fast.
+let dummyHash;
+export const getDummyHash = () => (dummyHash ??= bcrypt.hash('not-a-real-password', config.security.bcryptRounds));
 
 // Returns a list of error codes (empty = valid).
 export function checkPolicy(pw, { minLength = 10, username = '' } = {}) {

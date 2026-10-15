@@ -28,10 +28,28 @@ and must be mentioned here with the migration name.
   «تعديل نسبة الإنجاز للوظيفة «D0 …» في تطبيق المبيعات: من 70% إلى 75%», with action type, the approver and
   request number, and reasons; the details window has a field / previous value / new value table and the list
   of items affected. Statuses, percentages and settings are shown by name.
+- feat(frontend,backend): Settings → default language now takes effect: it is the language of the login screen
+  and interface for a browser with no stored choice (from `GET /api/auth/public-info`; the language button,
+  profile and the account's language after sign-in still win), and of new users created without a language
+  (`POST /api/users`, the new-user form's «default language» option, and `npm run create-admin` for a new account).
+- test(tests): default language applies to `public-info` and to a new user created without a language.
 
 ### Fixed
 - fix(backend): changes applied from an approved edit request were logged without a username.
 - fix(backend): saving weights no longer logs an unchanged application weight.
+- fix(frontend): a pending removal / restore of a function no longer shows «removed [object Object]» in the
+  function's "awaiting approval" chip; those requests are listed only in the lifecycle box above the table.
+- fix(frontend): 21 API error codes had no message and showed the generic error (`csrf_rejected`,
+  `not_authenticated`, `mfa_*`, `full_name_required`, `invalid_email` / `_language` / `_permission` / `_role` /
+  `_scope` / `_date` / `_json`, `unknown_setting` / `_field` / `_application` / `_log`, `no_reports_track`,
+  `payload_too_large`); Arabic and English texts added.
+- fix(frontend): the dialog close button's accessible name is translated (was the English word "close").
+- docs(deploy): `deploy/db/schema-reference.sql` regenerated after migrations 001–007 (adds `audit_log.context`).
+
+### Security
+- sec(backend): the dummy hash checked for unknown usernames at login used bcrypt cost 4 while real hashes use
+  `BCRYPT_ROUNDS` (12), so unknown usernames answered faster (username enumeration). It now uses the configured
+  cost, built once at startup.
 
 ### Removed
 - refactor(backend): dead code — unused imports (`query` in settings routes, `HttpError` in users routes), unread

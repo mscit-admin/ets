@@ -107,7 +107,7 @@ works once. If they have no codes left, an administrator uses **Unlink authentic
 | Section | Setting | Default |
 |---|---|---|
 | Two-step verification | Policy; issuer name shown in the app | Optional; `ETS` |
-| General | System name (Arabic / English) on the login screen and navbar; default language | — ; Arabic |
+| General | System name (Arabic / English) on the login screen and navbar; default language (login screen and interface for a browser that has not chosen a language yet, and new users created without a language) | — ; Arabic |
 | Security | Minimum password length | 10 |
 | Log retention | Days to keep login/audit/error/system logs; days to keep the request log | 365; 90 |
 | Data | Export all tracker data (JSON); import the original tracker file (HTML/JSON) | — |

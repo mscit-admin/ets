@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { config } from '../config.js';
 import { query, tx } from '../db/pool.js';
 import { createSession, revokeSession, requireAuth, requirePartial } from '../middleware/auth.js';
-import { hashPassword, verifyPassword, DUMMY_HASH, checkPolicy, generateRecoveryCodes } from '../services/passwords.js';
+import { hashPassword, verifyPassword, getDummyHash, checkPolicy, generateRecoveryCodes } from '../services/passwords.js';
 import { encrypt, decrypt, sha256 } from '../services/crypto.js';
 import { generateSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import { getSetting, allSettings } from '../services/settings.js';
@@ -59,7 +59,7 @@ r.post('/login', limiter, async (req, res) => {
 
   const u = (await query('SELECT * FROM users WHERE username=$1', [username])).rows[0];
   if (!u) {
-    await verifyPassword(password, DUMMY_HASH); // equal timing
+    await verifyPassword(password, await getDummyHash()); // equal timing
     await logAuth(req, { username, event: 'login_unknown_user', success: false });
     throw new HttpError(401, 'invalid_credentials');
   }

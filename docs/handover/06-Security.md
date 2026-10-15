@@ -8,7 +8,7 @@
 | Password policy | Minimum length (setting, default 10), letters + digits, must not contain the username, must differ from the current one |
 | Forced change | `must_change_password` set when an admin creates or resets an account. The API refuses everything except `/api/auth/*` until it is changed |
 | Generic errors | Wrong user, wrong password and disabled account all return `invalid_credentials` (the real reason is logged) |
-| Timing | Unknown usernames are checked against a dummy hash, so response time does not reveal valid usernames |
+| Timing | Unknown usernames are checked against a dummy hash made with the same cost (`BCRYPT_ROUNDS`) as real hashes, so response time does not reveal valid usernames |
 | Lockout | After `MAX_FAILED_LOGINS` (5) failures, locked for `LOCK_MINUTES` (15). Wrong 2FA codes count too. Admins can unlock |
 | Rate limiting | 30 requests / 15 min / IP on login and 2FA endpoints in the API, plus 10 / min / IP on `/api/auth/login` in nginx |
 

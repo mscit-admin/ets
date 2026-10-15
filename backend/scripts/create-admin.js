@@ -9,6 +9,7 @@
 import readline from 'node:readline';
 import { pool, query } from '../src/db/pool.js';
 import { hashPassword, checkPolicy } from '../src/services/passwords.js';
+import { getSetting } from '../src/services/settings.js';
 import { logSystem } from '../src/services/logs.js';
 
 const arg = k => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -32,12 +33,13 @@ const errs = checkPolicy(password, { minLength: 10, username });
 if (errs.length) { console.error('Weak password: ' + errs.join(', ') + ' (min 10 chars, letters and digits)'); process.exit(1); }
 
 const email = arg('email') || null;
-const r = await query(`INSERT INTO users(username, full_name, email, password_hash, role_id, must_change_password)
-  VALUES ($1,$2,$3,$4,'admin',false)
+// A new account gets the default language from Settings; an existing account keeps its own.
+const r = await query(`INSERT INTO users(username, full_name, email, password_hash, role_id, language, must_change_password)
+  VALUES ($1,$2,$3,$4,'admin',$5,false)
   ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
     full_name=COALESCE(NULLIF(EXCLUDED.full_name,''), users.full_name), email=COALESCE(EXCLUDED.email, users.email),
     failed_attempts=0, locked_until=NULL, password_changed_at=now(), updated_at=now()
-  RETURNING id, (xmax = 0) AS created`, [username, name, email, await hashPassword(password)]);
+  RETURNING id, (xmax = 0) AS created`, [username, name, email, await hashPassword(password), await getSetting('app.default_language')]);
 if (process.argv.includes('--reset-2fa')) {
   await query('UPDATE users SET totp_enabled=false, totp_secret=NULL, totp_last_step=NULL WHERE id=$1', [r.rows[0].id]);
   await query('DELETE FROM user_recovery_codes WHERE user_id=$1', [r.rows[0].id]);

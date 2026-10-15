@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
+import { useI18n } from '../i18n/index.jsx';
 
 // Branding uploaded in Settings → Branding. Falls back to the built-in icon when nothing is uploaded.
 const Ctx = createContext(null);
@@ -9,6 +10,10 @@ export function BrandingProvider({ children }) {
   const [info, setInfo] = useState(null);
   const reload = useCallback(() => api.get('/auth/public-info').then(setInfo).catch(() => setInfo({})), []);
   useEffect(() => { reload(); }, [reload]);
+
+  // the organisation's default language applies until the visitor picks one
+  const { setDefaultLang } = useI18n();
+  useEffect(() => { if (info?.default_language) setDefaultLang(info.default_language); }, [info?.default_language, setDefaultLang]);
 
   const value = useMemo(() => {
     const v = info?.branding || {};

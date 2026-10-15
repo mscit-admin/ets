@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–006).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–007).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure.
 -- PostgreSQL database dump
@@ -74,7 +74,8 @@ CREATE TABLE public.audit_log (
     summary text,
     old_value jsonb,
     new_value jsonb,
-    ip inet
+    ip inet,
+    context jsonb
 );
 -- Name: audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.audit_log_id_seq

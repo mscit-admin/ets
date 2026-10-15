@@ -6,12 +6,15 @@ import { seed } from './db/seed.js';
 import { logger, logSystem } from './services/logs.js';
 import { purgeLogs } from './services/retention.js';
 import { takeSnapshot } from './services/snapshots.js';
+import { getDummyHash } from './services/passwords.js';
 
 assertConfig();
 
 // Bring the schema and catalog up to date on every start (both are idempotent).
 await migrate({ log: m => logger.info(m) });
 await seed({ log: m => logger.info(m) });
+// Build the login dummy hash now so the first unknown-username login is not slower than the rest.
+await getDummyHash();
 
 const app = createApp();
 const server = app.listen(config.port, config.host, () => {
