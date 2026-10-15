@@ -36,9 +36,11 @@ location ~ ^/api/(imports|imports/preview|tracker/import|branding/[a-z_]+)$ {
     proxy_read_timeout 120s;
 }
 
-# Brute-force protection on the login endpoint
-location = /api/auth/login {
+# Brute-force protection on every endpoint that checks a password, 2FA code or recovery code.
+# Case-insensitive and with an optional trailing slash, like the API's own routing (ETS-SEC-003).
+location ~* ^/api/auth/(login|change-password|2fa/(verify|setup|enable|disable|recovery-codes))/?$ {
     limit_req zone=ets_login burst=5 nodelay;
+    limit_req_status 429;
     proxy_pass http://127.0.0.1:__API_PORT__;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;

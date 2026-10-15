@@ -100,7 +100,7 @@ export default function Settings() {
 
       <Card title={t('sec_security')}>
         <div className="form-grid">
-          <Field label={t('password_min_length')}>{num('security.password_min_length', 8, 64)}</Field>
+          <Field label={t('password_min_length')}>{num('security.password_min_length', 10, 64)}</Field>
         </div>
       </Card>
 

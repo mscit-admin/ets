@@ -8,7 +8,7 @@
 // --reset-2fa also removes its authenticator (recovery when the phone is lost).
 import readline from 'node:readline';
 import { pool, query } from '../src/db/pool.js';
-import { hashPassword, checkPolicy } from '../src/services/passwords.js';
+import { hashPassword, checkPolicy, ADMIN_MIN_LENGTH } from '../src/services/passwords.js';
 import { getSetting } from '../src/services/settings.js';
 import { logSystem } from '../src/services/logs.js';
 
@@ -29,8 +29,13 @@ if (!password) {
   password = await ask('Password: ', true);
   if ((await ask('Repeat password: ', true)) !== password) { console.error('Passwords do not match'); process.exit(1); }
 }
-const errs = checkPolicy(password, { minLength: 10, username });
-if (errs.length) { console.error('Weak password: ' + errs.join(', ') + ' (min 10 chars, letters and digits)'); process.exit(1); }
+// Same policy as the application (Settings → minimum length), with the administrator minimum of 12.
+const errs = checkPolicy(password, { minLength: await getSetting('security.password_min_length'), username, admin: true });
+if (errs.length) {
+  console.error('Weak password: ' + errs.join(', ') + ` (administrators: at least ${ADMIN_MIN_LENGTH} characters and at most 72 bytes, ` +
+    'letters and digits, not a common password, not containing the username)');
+  process.exit(1);
+}
 
 const email = arg('email') || null;
 // A new account gets the default language from Settings; an existing account keeps its own.
@@ -38,13 +43,17 @@ const r = await query(`INSERT INTO users(username, full_name, email, password_ha
   VALUES ($1,$2,$3,$4,'admin',$5,false)
   ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
     full_name=COALESCE(NULLIF(EXCLUDED.full_name,''), users.full_name), email=COALESCE(EXCLUDED.email, users.email),
-    failed_attempts=0, locked_until=NULL, password_changed_at=now(), updated_at=now()
+    failed_attempts=0, locked_until=NULL, last_failed_at=NULL, password_changed_at=now(), updated_at=now()
   RETURNING id, (xmax = 0) AS created`, [username, name, email, await hashPassword(password), await getSetting('app.default_language')]);
 if (process.argv.includes('--reset-2fa')) {
   await query('UPDATE users SET totp_enabled=false, totp_secret=NULL, totp_last_step=NULL WHERE id=$1', [r.rows[0].id]);
   await query('DELETE FROM user_recovery_codes WHERE user_id=$1', [r.rows[0].id]);
   console.log('Two-factor authentication removed for this account.');
 }
+// Recovery after a compromise: whoever was signed in as this account is signed out (ETS-SEC-018).
+const revoked = await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='create_admin_cli'
+  WHERE user_id=$1 AND revoked_at IS NULL`, [r.rows[0].id]);
+if (revoked.rowCount) console.log(`${revoked.rowCount} active session(s) of this account signed out.`);
 await logSystem('create_admin', `administrator ${r.rows[0].created ? 'created' : 'reset'} from CLI`, { username, reset2fa: process.argv.includes('--reset-2fa') });
 console.log(`Administrator "${username}" ${r.rows[0].created ? 'created' : 'updated'} (id ${r.rows[0].id}).`);
 await pool.end();

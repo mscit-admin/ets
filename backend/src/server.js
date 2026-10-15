@@ -7,8 +7,10 @@ import { logger, logSystem } from './services/logs.js';
 import { purgeLogs } from './services/retention.js';
 import { takeSnapshot } from './services/snapshots.js';
 import { getDummyHash } from './services/passwords.js';
+import { assertCookieConfig } from './middleware/auth.js';
 
 assertConfig();
+assertCookieConfig();
 
 // Bring the schema and catalog up to date on every start (both are idempotent).
 await migrate({ log: m => logger.info(m) });

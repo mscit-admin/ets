@@ -44,10 +44,16 @@ export const config = {
     secure: env('COOKIE_SECURE', env('NODE_ENV', '') === 'production' ? 'true' : 'false') === 'true',
   },
   security: {
+    // Failed password / 2FA / recovery-code checks on one account before sign-in is paused; each further
+    // failure doubles the pause (1, 2, 4 … minutes) up to LOCK_MINUTES. The counter restarts when the last
+    // failure is older than LOCKOUT_RESET_MINUTES and is cleared by a complete sign-in (password + 2FA).
     maxFailedLogins: int('MAX_FAILED_LOGINS', 5),
-    loginRateLimit: int('LOGIN_RATE_LIMIT', 30),   // login/2FA requests per IP per 15 minutes
     lockMinutes: int('LOCK_MINUTES', 15),
-    bcryptRounds: int('BCRYPT_ROUNDS', 12),
+    lockoutResetMinutes: int('LOCKOUT_RESET_MINUTES', 60),
+    loginRateLimit: int('LOGIN_RATE_LIMIT', 30),   // password/2FA checks per IP (and failures per account) per 15 minutes
+    apiRateLimit: int('API_RATE_LIMIT', 600),      // any /api request per IP per minute
+    // bcrypt cost, kept within 10–14 (lower values only for the automated tests); invalid → 12.
+    bcryptRounds: (n => (Number.isInteger(n) ? Math.min(14, Math.max(env('NODE_ENV', '') === 'test' ? 4 : 10, n)) : 12))(int('BCRYPT_ROUNDS', 12)),
     trustProxy: env('TRUST_PROXY', 'loopback'),
   },
   logs: {

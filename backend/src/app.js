@@ -16,6 +16,7 @@ import importRoutes from './routes/imports.js';
 import brandingRoutes from './routes/branding.js';
 import approvalRoutes from './routes/approvals.js';
 import systemRoutes, { health } from './routes/system.js';
+import { apiLimiter } from './middleware/ratelimit.js';
 
 export function createApp() {
   const app = express();
@@ -31,6 +32,7 @@ export function createApp() {
     },
   }));
   app.get('/api/health', health);
+  app.use('/api', apiLimiter);   // general per-IP request ceiling (ETS-SEC-003)
 
   const api = express.Router();
   api.use(jsonBody);       // 100 kB; file uploads are parsed inside their routes after auth (middleware/body.js)

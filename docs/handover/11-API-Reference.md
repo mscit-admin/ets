@@ -25,11 +25,11 @@ Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credent
 |---|---|---|---|
 | POST | `/login` | `{username, password}` | → `{stage: "done" \| "verify" \| "enroll"}`; sets the cookie |
 | POST | `/2fa/verify` | `{code}` or `{recovery_code}` | Partial session, stage `verify` |
-| POST | `/2fa/setup` | — | → `{secret, uri, qr}` (QR as a data URL) |
+| POST | `/2fa/setup` | `{password}` (not needed at the login enrol step) | → `{secret, uri, qr}` (QR as a data URL) |
 | POST | `/2fa/enable` | `{code}` | → `{recovery_codes:[10]}` |
-| POST | `/2fa/disable` | `{password}` | Not allowed when the policy is *required* (unless exempt) |
-| POST | `/2fa/recovery-codes` | `{password}` | New codes |
-| GET | `/me` | — | `{authenticated, stage, user{…permissions, scope}, mfa_mode, org names}` |
+| POST | `/2fa/disable` | `{password, code}` or `{password, recovery_code}` | Not allowed when the policy is *required* (unless exempt); signs out other sessions |
+| POST | `/2fa/recovery-codes` | `{password, code}` or `{password, recovery_code}` | New codes |
+| GET | `/me` | — | `{authenticated, stage, user{…permissions, scope, recovery_codes_left, recovery_codes_outdated}, mfa_mode, org names}`; before 2FA only `user{username, language}` |
 | POST | `/logout` | — | |
 | POST | `/change-password` | `{current_password, new_password}` | Signs out other sessions |
 | PUT | `/language` | `{language: "ar" \| "en"}` | |
