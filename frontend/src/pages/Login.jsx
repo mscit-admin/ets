@@ -56,13 +56,14 @@ export function RecoveryCodes({ codes, onDone }) {
 }
 
 // QR + code entry; used at login (enroll stage) and from the profile page.
-export function TotpEnroll({ onEnabled }) {
+// The profile page starts the setup itself (it needs the password) and passes the result as `preset`.
+export function TotpEnroll({ onEnabled, preset }) {
   const { t, errText } = useI18n();
-  const [setup, setSetup] = useState(null);
+  const [setup, setSetup] = useState(preset || null);
   const [code, setCode] = useState('');
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.post('/auth/2fa/setup').then(setSetup).catch(setErr); }, []);
+  useEffect(() => { if (!preset) api.post('/auth/2fa/setup').then(setSetup).catch(setErr); }, [preset]);
   const submit = async e => {
     e.preventDefault(); setBusy(true); setErr(null);
     try { onEnabled((await api.post('/auth/2fa/enable', { code })).recovery_codes); }
@@ -139,7 +140,7 @@ export default function Login() {
         <form onSubmit={verify}>
           {err && <Alert>{errText(err)}</Alert>}
           {useRecovery ? (
-            <input className="input otp" value={code} onChange={e => setCode(e.target.value)} placeholder="xxxx-xxxx" dir="ltr" autoFocus required />
+            <input className="input otp" value={code} onChange={e => setCode(e.target.value)} placeholder="xxxx-xxxx-xxxx" dir="ltr" autoFocus required />
           ) : (
             <input className="input otp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
               onChange={e => setCode(e.target.value.replace(/\D/g, ''))} dir="ltr" autoFocus required aria-label={t('mfa_code')} />

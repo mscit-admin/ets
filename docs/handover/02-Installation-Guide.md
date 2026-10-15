@@ -159,8 +159,10 @@ The wizard writes this file. Edit it by hand only if needed, then run `sudo syst
 | `PORT` | Internal application port (must match nginx; change it through the wizard) |
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | Database connection |
 | `SESSION_TTL_HOURS` (12), `SESSION_IDLE_MINUTES` (60) | Session length and idle timeout |
-| `COOKIE_SECURE` | `true` with HTTPS, `false` for plain HTTP |
-| `MAX_FAILED_LOGINS` (5), `LOCK_MINUTES` (15) | Account lockout |
+| `COOKIE_SECURE` | `true` with HTTPS. `false` is refused with `NODE_ENV=production` unless `ALLOW_INSECURE_COOKIES=true` (lab only) |
+| `MAX_FAILED_LOGINS` (5), `LOCK_MINUTES` (15), `LOCKOUT_RESET_MINUTES` (60) | Failures before sign-in to an account pauses, longest pause, quiet time after which the failure count restarts |
+| `LOGIN_RATE_LIMIT` (30), `API_RATE_LIMIT` (600) | Password / 2FA checks per IP per 15 min (and failures per account); any API request per IP per minute |
+| `BCRYPT_ROUNDS` (12) | Password hashing cost, 10–14 |
 | `LOG_DIR`, `LOG_LEVEL`, `ACCESS_LOG_DB` | Logging |
 | `ETS_BACKUP_DIR`, `ETS_BACKUP_KEEP_DAYS` | Backups |
 

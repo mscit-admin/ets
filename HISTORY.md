@@ -12,6 +12,54 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.0.0] — 2026-10-15 — Security remediation
+
+### Security
+- sec(db): migration `008_auth_lockout.sql` — `users.last_failed_at` (time of the last failed check, for the
+  lockout decay); comment on the recovery-code hash formats. No data is changed.
+- sec(backend): a correct password no longer resets the failure counter while 2FA is pending; it is cleared only
+  by a complete sign-in, so wrong 2FA codes add up across logins (ETS-SEC-001).
+- sec(backend): lockout is now a progressive pause per account (1, 2, 4 … minutes from `MAX_FAILED_LOGINS`,
+  at most `LOCK_MINUTES`) that ends by itself; the counter restarts after `LOCKOUT_RESET_MINUTES` (60) without
+  failures, so one wrong attempt after a lock no longer locks again for the full time (ETS-SEC-002).
+- sec(backend): a paused account answers exactly like a wrong password or an unknown username (`401
+  invalid_credentials`, same bcrypt cost); no more `423 account_locked` with the lock time (ETS-SEC-014).
+- sec(backend): every endpoint that checks a password, 2FA code or recovery code (login, 2FA verify / setup /
+  enable / disable, recovery codes, change password) is limited per IP and per account (`429
+  too_many_attempts` with `retry_after`); wrong answers on the profile re-authentication count towards the
+  pause and, at the limit, end the session; a general per-IP limit applies to every `/api` request
+  (`API_RATE_LIMIT`, `429 too_many_requests`). Concurrent checks on one account run one after another
+  (ETS-SEC-003, ETS-SEC-021).
+- sec(deploy): nginx login limit covers all those endpoints, in any letter case and with a trailing slash, and
+  answers 429 (ETS-SEC-003).
+- sec(backend): completing 2FA issues a new session token and revokes the pre-2FA one; signing in again revokes
+  the browser's previous session (ETS-SEC-015).
+- sec(backend,frontend): turning 2FA on from the profile needs the password; turning it off and generating new
+  recovery codes need the password and an authenticator / recovery code (ETS-SEC-016).
+- sec(backend): `/auth/me` before 2FA returns only username, language and stage (ETS-SEC-017).
+- sec(backend): sessions are revoked on admin 2FA reset, self-service 2FA disable (other sessions) and
+  `create-admin` from the command line (ETS-SEC-018).
+- sec(backend): password policy — never below 10 characters, 12 for administrators (also in `create-admin`,
+  which now uses the Settings minimum), at most 72 bytes, built-in list of common passwords; `BCRYPT_ROUNDS`
+  kept within 10–14; hashes with another cost are re-hashed at the next sign-in (ETS-SEC-019, ETS-SEC-020).
+  Settings → minimum password length now accepts 10–64.
+- sec(backend): TOTP replay check is a conditional update and a recovery code can only be used once, also
+  under parallel requests (ETS-SEC-021).
+- sec(backend): recovery codes have 12 characters (about 59 bits, no modulo bias) and are stored as
+  HMAC-SHA-256 with an HKDF key from `APP_SECRET`; older codes keep working, the profile page suggests
+  generating new ones (ETS-SEC-030).
+- sec(backend): with `COOKIE_SECURE=true` the session cookie is named `__Host-ets_sid` (everyone signs in again
+  once after the upgrade); cookies are cleared with the same options everywhere; a production server refuses
+  to start with insecure cookies unless `ALLOW_INSECURE_COOKIES=true` (ETS-SEC-053).
+- sec(backend): the forced-password-change gate is an explicit middleware on the allowed endpoints instead of a
+  URL prefix test (ETS-SEC-054).
+- sec(backend): `/2fa/verify` answers `400 mfa_not_pending` instead of 500 when 2FA was reset meanwhile
+  (ETS-SEC-055).
+- test(tests): `auth-security.test.js` (lockout, decay, enumeration, rate limits, session rotation, step-up,
+  replay races, recovery codes, CLI) and `passwords.test.js` (policy, recovery codes, cookie name, API limiter).
+
+---
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added
