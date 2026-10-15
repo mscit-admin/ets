@@ -1,0 +1,12 @@
+/var/log/ets/*.log {
+    daily
+    rotate 90
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    copytruncate
+    su ets ets
+    create 0640 ets ets
+}

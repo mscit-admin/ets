@@ -1,0 +1,33 @@
+[Unit]
+Description=ETS — ERP Tracking System API
+Documentation=file:///opt/ets/docs/handover/02-Installation-Guide.md
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ets
+Group=ets
+WorkingDirectory=/opt/ets/backend
+EnvironmentFile=/etc/ets/ets.env
+Environment=ETS_ENV_FILE=/etc/ets/ets.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+# stdout/stderr also go to the journal:  journalctl -u ets-backend
+StandardOutput=journal
+StandardError=journal
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/ets
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
