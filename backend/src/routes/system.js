@@ -10,7 +10,7 @@ const started = new Date();
 export const health = async (req, res) => {
   try {
     await query('SELECT 1');
-    res.json({ status: 'ok', version: pkg.version });
+    res.json({ status: 'ok' });   // no version: this endpoint is public (the version is in /api/system/info)
   } catch {
     res.status(503).json({ status: 'db_unavailable' });
   }
