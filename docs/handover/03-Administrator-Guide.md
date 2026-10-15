@@ -38,6 +38,49 @@ from 2FA in bulk.
 
 Roles other than the three full-scope roles **must** be given a scope, otherwise the user sees nothing.
 
+### Import users from a file (1.1.0)
+To create many accounts at once: **Users → Import users** (استيراد مستخدمين).
+
+1. **Download the template** — *Excel (.xlsx)* or *CSV*. The Excel template has a second sheet, **help**, listing
+   the columns and every valid role, department and application id with its Arabic and English name (the same
+   lists are shown in the dialog under «المعرّفات المقبولة / Accepted ids»).
+2. Fill one row per user (keep the header row; the column order does not matter, extra columns are ignored):
+
+   | Column | Required | Content |
+   |---|---|---|
+   | `username` | yes | 3–60 Latin letters, digits, `. _ -`; must not exist yet and must not repeat in the file (case-insensitive: `Ali` = `ali`) |
+   | `full_name` | yes | Full name, up to 120 characters (Arabic is fine) |
+   | `email` | no | Email address |
+   | `role` | yes | Role **id**: `admin`, `pm`, `tm`, `mgr`, `lead`, `member`, `ed`, `qa`, `obs` |
+   | `language` | no | `ar` or `en`; empty = *Settings → default language* |
+   | `departments` | see below | Department ids separated by commas, e.g. `hr,fin` |
+   | `applications` | see below | Application ids separated by commas, e.g. `per,rec` |
+
+   A user of a department-limited role (anything except System Administrator, Project Manager and Technical
+   Project Manager) **must** have at least one department or application, otherwise the row is refused («هذا
+   الدور محدود بنطاق…»): such a user would see no data. Departments / applications given for a full-scope role
+   are ignored. The import never grants permission overrides — adjust them per user afterwards if needed.
+   A CSV file must be UTF-8 (Excel: *Save as → CSV UTF-8*); commas or `;` as separator both work.
+3. **Choose the file.** It is read in your browser and every row is checked by the server **without creating
+   anything**. The preview lists each row with «سليم / OK» or its errors (username taken, duplicate in the file,
+   invalid username / email / role / language / department / application, missing scope, missing full name).
+   If any row has an error, **nothing can be created**: download the **error report** (.xlsx or .csv — the
+   file's rows with a message for each), fix the file and choose it again. At most **500 rows** per file.
+4. **Create N users.** All rows are created together in one step — if anything fails (for example another
+   administrator created one of the usernames meanwhile), **no** account is created and the errors are shown
+   again. Large files take up to about a minute (password hashing).
+5. **One-time passwords.** The system gives every new account a random temporary password (16 characters, letters
+   and digits without look-alikes such as `0/O` and `1/l/I`) and sets *Must change password at first login*.
+   The list «username / temporary password» is shown **only once**, on the result screen: **Copy** it or
+   **Download** it (.xlsx / .csv) before pressing *Done*. The passwords are not stored anywhere in clear and
+   cannot be shown again — if one is lost, use *Reset password* on that user. Hand each user their password
+   through a safe channel and delete the downloaded file afterwards. At first sign-in the user must choose their
+   own password (2FA enrolment follows if the policy requires it).
+
+Every created user is recorded in *Logs → Change history* as «إنشاء المستخدم …» with the note «ضمن استيراد
+مستخدمين من ملف», plus one summary row «استيراد N مستخدم دفعة واحدة من ملف» (action `bulk_create`). No
+password appears in any log.
+
 ### Actions on a user
 | Button | Effect | Logged as |
 |---|---|---|

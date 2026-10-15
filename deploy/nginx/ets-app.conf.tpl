@@ -36,6 +36,19 @@ location ~ ^/api/(imports|imports/preview|tracker/import|branding/[a-z_]+)$ {
     proxy_read_timeout 120s;
 }
 
+# Bulk user import (rows read from a spreadsheet in the browser): up to 1 MB, and time to hash up to 500
+# passwords. The API reads the body only after the administrator check (backend/src/middleware/body.js).
+location ~* ^/api/users/import(/preview)?/?$ {
+    client_max_body_size 1m;
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+}
+
 # Brute-force protection on every endpoint that checks a password, 2FA code or recovery code.
 # Case-insensitive and with an optional trailing slash, like the API's own routing (ETS-SEC-003).
 location ~* ^/api/auth/(login|change-password|2fa/(verify|setup|enable|disable|recovery-codes))/?$ {

@@ -7,7 +7,8 @@ Base URL: `https://<server>/api`. All responses are JSON. Authentication uses th
 **Every POST/PUT/PATCH/DELETE must send** `X-Requested-With: ets` and `Content-Type: application/json`.
 A body in another format is refused with `415 unsupported_media_type`. Bodies are limited to 100 kB and 32 levels of
 nesting (`413 payload_too_large`, `400 invalid_json`); the file uploads `POST /imports`, `POST /imports/preview`,
-`POST /tracker/import` and `PUT /branding/:key` accept up to 5 MB. Numeric ids in paths must be whole numbers in
+`POST /tracker/import` and `PUT /branding/:key` accept up to 5 MB, and `POST /users/import[/preview]` up to 1 MB
+(read only after the administrator check). Numeric ids in paths must be whole numbers in
 the int4 range (`400 invalid_id`). Bidirectional control characters are removed from text values.
 
 Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credentials` (401 — wrong or unknown
@@ -115,6 +116,8 @@ password — use `POST /auth/change-password`).
 | POST | `/:id/reset-2fa` | Remove the authenticator; signs the user out |
 | POST | `/:id/unlock` | Clears the failure count and the sign-in pause |
 | POST | `/:id/revoke-sessions` | |
+| POST | `/import/preview` | Bulk import check, writes nothing: `{rows: [{username, full_name, email?, role, language?, departments?, applications?, overrides?}]}` (1–500 rows; `role_id` is accepted for `role`; `departments` / `applications` are id lists as an array or a comma-separated string; `overrides` is API-only, same rules as `POST /`) → `{results: [{index, username, status: "ok"\|"error", errors: [codes]}], ok, errors}`. Row codes: `username_taken` (case-insensitive), `duplicate_in_file`, `invalid_username`, `full_name_required`, `full_name_too_long`, `invalid_email`, `invalid_role`, `invalid_language`, `invalid_scope`, `scope_required` (department-limited role without department/application), `usr_admin_only`, `invalid_permission`, `invalid_row`. Request errors: 400 `invalid_value` (`field: "rows"`, empty / not a list), 400 `too_many_rows` (`max: 500`, `count`), 413 `payload_too_large` (> 1 MB) |
+| POST | `/import` | Same body. Checks again and creates **every** row in one transaction (active, `must_change_password: true`, random temporary password, language default = Settings), or nothing: 400 `import_has_errors` with the same `{results, ok, errors}` when any row is refused (also when a username was taken meanwhile). → **201** `{created, users: [{id, username, temporary_password}]}` — the only place the temporary passwords ever appear (not stored in clear, not logged). Audit: one `create` / `user` row per user (`context.via = "bulk_import"`, no password) and one `bulk_create` / `user` row `{count, usernames}`, in the same transaction |
 | POST | `/bulk-2fa` | `{all: true, exempt}` or `{user_ids: [..], exempt}` → `{updated}`. With `exempt: true`, `all` leaves the caller out and a list naming the caller is refused (400 `cannot_change_own_permissions`); removing exemptions includes the caller |
 
 ## Settings — `/settings` (permission `cfg`, full scope)

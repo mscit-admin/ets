@@ -12,6 +12,43 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.1.0] — 2026-10-15 — Bulk user import
+
+### Features
+- feat(backend): bulk user import for System Administrators — `POST /api/users/import/preview` checks every row
+  (up to 500) without writing and answers per row `ok` or error codes (`username_taken` case-insensitive,
+  `duplicate_in_file`, `invalid_username`, `full_name_required`, `invalid_email`, `invalid_role`,
+  `invalid_language`, `invalid_scope`, `scope_required`, `usr_admin_only` …); `POST /api/users/import` checks
+  again and creates every row in one transaction or nothing (`400 import_has_errors`, also on a username taken
+  meanwhile); more than 500 rows → `400 too_many_rows`
+- feat(backend): each imported account gets a random temporary password (`crypto.randomBytes`, 16+ letters and
+  digits without look-alikes, passes the password policy incl. 12+ for administrators) and must change it at first
+  sign-in; the passwords are returned once in the import answer only — never stored in clear, never logged; the
+  bcrypt hashes are computed in short-lived worker threads before the transaction opens
+- feat(backend): audit — one `create` / `user` row per imported user (same values as a single create, no
+  password, `context.via = "bulk_import"`) and one `bulk_create` / `user` summary row `{count, usernames}`, all in
+  the import transaction
+- feat(backend): the two import routes accept up to 1 MB of JSON, parsed only after the administrator check
+  (`middleware/body.js`); every other request keeps the 100 kB limit
+- feat(frontend): Users → «استيراد مستخدمين / Import users»: template download (.xlsx with a «help» sheet listing
+  the columns and every role / department / application id in Arabic and English, or .csv), file read in the
+  browser (.xlsx via `read-excel-file`, .csv parsed in-house: UTF-8 BOM, quotes, commas and line breaks in quotes,
+  CRLF, `;` separator), preview with per-row status and messages, error report (.xlsx / .csv, formula-safe),
+  "Create N users" only when no row has an error, result screen with the one-time passwords (copy, download
+  .xlsx / .csv, warning before closing without saving them)
+- feat(frontend): readable change-history sentences for `bulk_create` and for users created by an import (ar + en)
+- ops(deploy): nginx accepts up to 1 MB and waits up to 300 s on `/api/users/import[/preview]` (run
+  `update.sh` to re-render the snippet)
+- ops(frontend): new dependencies `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (loaded on demand, not
+  in the main bundle); `npm audit --omit=dev`: 0 vulnerabilities
+- test(tests): `backend/test/users-import.test.js` — every row error code, size limits, admin-only, all-or-nothing
+  (also on a unique-key failure inside the transaction), passwords returned once / policy / forced change /
+  sign-in, audit rows without passwords, no password in any log
+- docs(docs): Administrator Guide §1 «Import users from a file», API Reference (two endpoints, 1 MB limit), STRUCTURE.md,
+  Logging and Audit (`bulk_create`); version 1.1.0
+
+---
+
 ## [1.0.0] — 2026-10-15 — Security remediation
 
 ### Security

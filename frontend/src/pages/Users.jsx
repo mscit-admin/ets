@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { UserImport } from './UserImport.jsx';
 
 function TfaBadge({ u }) {
   const { t } = useI18n();
@@ -16,6 +17,7 @@ export function UserList() {
   const { t, nm, errText, fmtDate } = useI18n();
   const { data, error, loading, reload } = useLoad(() => api.get('/users'), []);
   const [sel, setSel] = useState(new Set());
+  const [importing, setImporting] = useState(false);
   const nav = useNavigate();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -32,8 +34,10 @@ export function UserList() {
   return (
     <div>
       <PageHeader title={t('users_title')} icon="users">
+        <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
         <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>
       </PageHeader>
+      {importing && <UserImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); reload(); }} />}
       <Card title={t('two_fa')} actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
         <div className="row gap wrap">
           <button className="btn btn-default btn-sm" onClick={() => bulk(true, true)}>{t('bulk_2fa_off_all')}</button>

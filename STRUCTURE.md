@@ -53,7 +53,7 @@ ets/
 │   │   ├── routes/
 │   │   │   ├── auth.js            /api/auth — login, 2FA verify/setup/enable/disable, recovery codes, me, logout, password, language
 │   │   │   ├── tracker.js         /api/tracker — summary, departments, applications, functions, bulk, weights, reports, schedule, search, export/import
-│   │   │   ├── users.js           /api/users — list, create, edit, scopes, overrides, reset password/2FA, unlock, sessions, bulk 2FA
+│   │   │   ├── users.js           /api/users — list, create, edit, scopes, overrides, reset password/2FA, unlock, sessions, bulk 2FA, bulk import
 │   │   │   ├── settings.js        /api/settings — read/update system settings (2FA policy, calculation, retention…)
 │   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export
 │   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
@@ -66,7 +66,9 @@ ets/
 │   │   │   ├── totp.js            TOTP/HOTP (RFC 6238/4226), base32, otpauth URI
 │   │   │   ├── crypto.js          AES-256-GCM for 2FA secrets, SHA-256, random tokens
 │   │   │   ├── passwords.js       bcrypt hashing (cost 10–14, re-hash), password policy (10 / 12 for admins, 72 bytes,
-│   │   │   │                      common-password list), recovery codes (xxxx-xxxx-xxxx, HMAC)
+│   │   │   │                      common-password list), recovery codes (xxxx-xxxx-xxxx, HMAC), temporary passwords
+│   │   │   │                      and parallel hashing for the bulk user import
+│   │   │   ├── hash-worker.js     Worker thread: bcrypt hashing for hashManyPasswords (bulk user import)
 │   │   │   ├── lockout.js         Progressive sign-in pause per account (expires, decays), one check at a time
 │   │   │   ├── images.js          Removes metadata / trailing bytes from uploaded branding images
 │   │   │   ├── logs.js            Writes every log type to the DB and to files (pino)
@@ -98,6 +100,7 @@ ets/
 │       ├── passwords.test.js      Password policy, recovery codes, cookie, general /api limit
 │       ├── authz.test.js          usr admin-only, scope fail-closed, approvals, import two-person rule, last admin
 │       ├── input.test.js          Request limits, validation, CSV neutralisation, branding image cleaning
+│       ├── users-import.test.js   Bulk user import: row checks, limits, all-or-nothing, one-time passwords, audit
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -117,6 +120,7 @@ ets/
 │       │   ├── auth.jsx           Current user / session context
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   ├── health.js          Project health indicators and recommendations (status page)
+│       │   ├── userImport.js      Bulk user import: template, .xlsx / .csv reading, error report and password files
 │       │   └── format.js          Number and colour helpers
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
@@ -135,6 +139,7 @@ ets/
 │       │   ├── Schedule.jsx       S-curve, planned vs actual, SPI
 │       │   ├── Search.jsx         Search results
 │       │   ├── Users.jsx          Users list, bulk 2FA, user form (role, permissions, scope, actions)
+│       │   ├── UserImport.jsx     Import users dialog: template, preview with per-row errors, one-time passwords
 │       │   ├── Logs.jsx           Log viewer with tabs, filters, detail, CSV
 │       │   ├── Settings.jsx       2FA policy, general, security, retention, import/export, system info
 │       │   ├── Profile.jsx        My account: language, 2FA, password

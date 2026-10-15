@@ -489,3 +489,14 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .au-items { max-height: 45vh; overflow: auto; }
 .au-raw { margin-top: 16px; }
 .au-raw summary { cursor: pointer; }
+
+/* Users → Import users */
+.imp-table { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.imp-table thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.imp-table .row-error td { background: var(--red-bg); }
+.imp-errors { margin: 4px 0 0; padding-inline-start: 18px; font-size: 12px; color: var(--red-text); }
+.imp-help summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.imp-help-grid { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; max-height: 260px; overflow: auto; margin-top: 6px; }
+.imp-help-grid .table { font-size: 12px; }
+.modal:has(.imp-table, .imp-help) { min-width: 0; max-width: min(760px, 100%); }
+.imp-table, .imp-help-grid { max-width: 100%; }

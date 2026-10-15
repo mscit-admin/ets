@@ -135,7 +135,9 @@ export function makeAudit({ t, lang }) {
       case 'import:tracker': text = t('au_import_tracker'); break;
       case 'export:log': text = t('au_export_log', { log: t('log_' + r.entity_id), summary: r.summary || '' }); break;
       case 'create:user': text = t('au_create_user', { target: quote(r.summary || r.entity_id) });
-        lines = diff({}, r.new_value).filter(l => l.field !== 'password'); break;
+        lines = diff({}, r.new_value).filter(l => l.field !== 'password');
+        if (ctx.via === 'bulk_import') notes.push(t('au_via_bulk_import'));
+        break;
       case 'update:user':
         if (r.summary === 'language') { text = t('au_update_language', { to: fmt('language', r.new_value?.language) }); break; }
         text = t('au_update_user', { target: quote(r.summary || r.entity_id) });
@@ -153,6 +155,9 @@ export function makeAudit({ t, lang }) {
       case 'purge_acknowledge:log': text = t('au_purge_acknowledge_log', { tables: (r.new_value?.tables || []).map(x => x.table).join(', ') }); break;
       case 'restore:database': text = t('au_restore_database'); break;
       case 'bulk_update:user': text = t('au_bulk_user', { summary: r.summary || '' }); break;
+      case 'bulk_create:user': text = t('au_bulk_create_user', { n: r.new_value?.count ?? '' });
+        if (r.new_value?.usernames?.length) notes.push(short(r.new_value.usernames.join(', '), 300));
+        break;
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);
         const only = ctx.items?.length === 1 ? ctx.items[0] : null;

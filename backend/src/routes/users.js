@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
 import { requireAuth, requirePerm, requireAdmin, ADMIN_ROLE } from '../middleware/auth.js';
-import { hashPassword, checkPolicy } from '../services/passwords.js';
+import { hashPassword, checkPolicy, generateTemporaryPassword, hashManyPasswords } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
+import { userImportJson } from '../middleware/body.js';
 import { bad, notFound, str, idParam, isId } from '../utils/http.js';
 
 const r = Router();
@@ -161,6 +162,125 @@ r.post('/', async (req, res) => {
     return row.id;
   });
   res.status(201).json({ user: await loadUser(id) });
+});
+
+// ---- bulk import (rows read from an .xlsx / .csv file in the browser) ----
+// POST /import/preview checks every row and writes nothing; POST /import checks them again and creates every row
+// in one transaction, or nothing when any row is refused. Each new account gets a random temporary password that
+// must be changed at first sign-in; the passwords are returned once, in the answer to POST /import, and are never
+// stored or logged in clear.
+export const IMPORT_MAX_ROWS = 500;
+const USERNAME_RE = /^[A-Za-z0-9._-]{3,60}$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const cell = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
+// "hr, fin" / "hr;fin" / "hr،fin" (Arabic comma) or ["hr","fin"] → ['hr','fin'] (empty entries and repeats dropped)
+const idList = v => [...new Set((Array.isArray(v) ? v.map(cell) : cell(v).split(/[,;،]/)).map(x => x.trim()).filter(Boolean))];
+
+function importRows(body) {
+  const rows = body?.rows;
+  if (!Array.isArray(rows) || !rows.length) throw bad('invalid_value', { field: 'rows' });
+  if (rows.length > IMPORT_MAX_ROWS) throw bad('too_many_rows', { max: IMPORT_MAX_ROWS, count: rows.length });
+  return rows;
+}
+
+// → [{ index, username, status: 'ok'|'error', errors: [codes], user? }] — `user` (the values to insert) when ok.
+async function checkImportRows(rows) {
+  const [roles, depts, apps, defaultLang] = await Promise.all([
+    query('SELECT id, full_scope FROM roles'), query('SELECT id FROM departments'), query('SELECT id FROM applications'),
+    getSetting('app.default_language'),
+  ]);
+  const roleMap = new Map(roles.rows.map(x => [x.id, x]));
+  const deptIds = new Set(depts.rows.map(x => x.id)), appIds = new Set(apps.rows.map(x => x.id));
+  const names = rows.map(x => (x && typeof x === 'object' && !Array.isArray(x) ? cell(x.username) : ''));
+  const count = new Map();
+  for (const n of names) if (n) count.set(n.toLowerCase(), (count.get(n.toLowerCase()) || 0) + 1);
+  const valid = names.filter(n => USERNAME_RE.test(n));
+  const taken = new Set(valid.length
+    ? (await query('SELECT lower(username::text) AS u FROM users WHERE username = ANY($1::citext[])', [valid])).rows.map(x => x.u) : []);
+
+  return rows.map((row, index) => {
+    const errors = [];
+    const add = c => { if (!errors.includes(c)) errors.push(c); };
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return { index, username: '', status: 'error', errors: ['invalid_row'] };
+    const username = names[index];
+    if (!USERNAME_RE.test(username)) add('invalid_username');
+    else if (taken.has(username.toLowerCase())) add('username_taken');
+    if (username && count.get(username.toLowerCase()) > 1) add('duplicate_in_file');
+    const fullName = cell(row.full_name);
+    if (!fullName) add('full_name_required');
+    else if (fullName.length > 120) add('full_name_too_long');
+    const email = cell(row.email);
+    if (email && (email.length > 200 || !EMAIL_RE.test(email))) add('invalid_email');
+    const roleId = cell(row.role_id ?? row.role).toLowerCase();
+    const role = roleMap.get(roleId);
+    if (!role) add('invalid_role');
+    const lang = cell(row.language).toLowerCase();
+    if (lang && !['ar', 'en'].includes(lang)) add('invalid_language');
+    const dl = idList(row.departments), al = idList(row.applications);
+    if (dl.some(d => !deptIds.has(d)) || al.some(a => !appIds.has(a))) add('invalid_scope');
+    // a scoped role with no department / application would see nothing (ETS-SEC-005): refused, not created empty
+    else if (role && !role.full_scope && !dl.length && !al.length) add('scope_required');
+    // optional, API only (the template has no such column): same rules as POST /users
+    const overrides = row.overrides ?? [];
+    try {
+      if (!Array.isArray(overrides)) throw bad('invalid_permission');
+      assertShapes(undefined, overrides);
+      if (role) assertOverridesAllowed(role.id, overrides);
+    } catch (e) { add(e.code || 'invalid_permission'); }
+    if (errors.length) return { index, username, status: 'error', errors };
+    // a full-scope role sees everything: departments / applications given for it are not stored
+    const scopes = role.full_scope ? [] : [...dl.map(ref_id => ({ kind: 'department', ref_id })), ...al.map(ref_id => ({ kind: 'application', ref_id }))];
+    return { index, username, status: 'ok', errors,
+      user: { username, full_name: fullName, email: email || null, role_id: role.id, language: lang || defaultLang || 'ar', scopes,
+        overrides: overrides.map(o => ({ permission: o.permission, granted: o.granted })) } };
+  });
+}
+
+const importSummary = results => ({
+  results: results.map(({ index, username, status, errors }) => ({ index, username, status, errors })),
+  ok: results.filter(x => x.status === 'ok').length, errors: results.filter(x => x.status === 'error').length,
+});
+
+r.post('/import/preview', userImportJson, async (req, res) => {
+  res.json(importSummary(await checkImportRows(importRows(req.body))));
+});
+
+r.post('/import', userImportJson, async (req, res) => {
+  const rows = importRows(req.body);
+  const refuse = results => bad('import_has_errors', importSummary(results));
+  const results = await checkImportRows(rows);
+  if (results.some(x => x.status === 'error')) throw refuse(results);
+  const minLength = await getSetting('security.password_min_length');
+  const users = results.map(x => x.user);
+  const passwords = users.map(u => generateTemporaryPassword({ minLength, username: u.username, admin: u.role_id === ADMIN_ROLE }));
+  const hashes = await hashManyPasswords(passwords);   // before the transaction: it is slow and needs no lock
+  let created;
+  try {
+    created = await tx(async c => {
+      const out = [];
+      for (const [i, u] of users.entries()) {
+        const id = (await c.query(`INSERT INTO users(username,full_name,email,password_hash,role_id,language,is_active,must_change_password,totp_exempt,created_by)
+          VALUES ($1,$2,$3,$4,$5,$6,true,true,false,$7) RETURNING id`,
+          [u.username, u.full_name, u.email, hashes[i], u.role_id, u.language, req.user.id])).rows[0].id;
+        await writeScopes(c, id, u.scopes, u.overrides);
+        // same shape as a single create (no password: none is sent or stored in clear)
+        await logAudit(req, { db: c, action: 'create', entity: 'user', entityId: id, summary: u.username,
+          newValue: { username: u.username, full_name: u.full_name, email: u.email, role_id: u.role_id, language: u.language,
+            is_active: true, must_change_password: true, totp_exempt: false, scopes: u.scopes, overrides: u.overrides },
+          context: { via: 'bulk_import' } });
+        out.push({ id, username: u.username });
+      }
+      await logAudit(req, { db: c, action: 'bulk_create', entity: 'user', summary: `${out.length} users imported`,
+        newValue: { count: out.length, usernames: out.map(x => x.username) } });
+      return out;
+    });
+  } catch (e) {
+    // a username created by someone else meanwhile: nothing was written; the rows are checked again for the answer
+    if (e?.code === '23505') throw refuse(await checkImportRows(rows));
+    throw e;
+  }
+  res.status(201).json({ created: created.length,
+    users: created.map((x, i) => ({ id: x.id, username: x.username, temporary_password: passwords[i] })) });
 });
 
 // Prevents locking everybody out: there must always be one active admin who still holds user administration

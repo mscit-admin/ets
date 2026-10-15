@@ -1,8 +1,29 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import os from 'node:os';
+import { Worker } from 'node:worker_threads';
 import { config } from '../config.js';
 
 export const hashPassword = pw => bcrypt.hash(String(pw), config.security.bcryptRounds);
+// Many passwords at once (bulk user import): bcrypt at full cost takes ~0.3 s per password, so up to 500 of
+// them are spread over a few short-lived worker threads instead of running one after another on the main thread.
+// The passwords only travel in memory between threads; workers end as soon as the list is done.
+export async function hashManyPasswords(list) {
+  if (list.length <= 2) return Promise.all(list.map(hashPassword));
+  const n = Math.max(1, Math.min(4, (os.availableParallelism?.() ?? os.cpus().length) - 1, list.length));
+  const out = new Array(list.length);
+  let next = 0;
+  const run = () => new Promise((resolve, reject) => {
+    const w = new Worker(new URL('./hash-worker.js', import.meta.url));
+    const done = err => { w.terminate(); err ? reject(err) : resolve(); };
+    const send = () => { if (next >= list.length) return done(); const i = next++; w.postMessage({ i, pw: list[i], rounds: config.security.bcryptRounds }); };
+    w.on('message', m => { if (m.error) return done(new Error(m.error)); out[m.i] = m.hash; send(); });
+    w.on('error', done);
+    send();
+  });
+  await Promise.all(Array.from({ length: n }, run));
+  return out;
+}
 export const verifyPassword = (pw, hash) => bcrypt.compare(String(pw), hash);
 // True when a stored hash was made with another cost than BCRYPT_ROUNDS; it is re-hashed at the next
 // successful sign-in so all hashes (and the dummy below) keep the same cost and timing (ETS-SEC-019/020).
@@ -45,6 +66,23 @@ export function checkPolicy(pw, { minLength = MIN_LENGTH_FLOOR, username = '', a
   if (username && p.toLowerCase().includes(String(username).toLowerCase())) errors.push('password_contains_username');
   if (isCommon(p)) errors.push('password_too_common');
   return errors;
+}
+
+// ---- temporary passwords (bulk user import) ----
+// Letters and digits without the look-alikes 0 O o 1 l I (read aloud or copied by hand). At least 16 characters
+// (≈ 92 bits), more when Settings asks for a longer minimum; picked without modulo bias. Re-drawn until it passes
+// the same policy as a password typed by an administrator (letters + digits, no username, not common).
+const TEMP_ABC = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const TEMP_CUT = 256 - (256 % TEMP_ABC.length);
+export function generateTemporaryPassword({ minLength = MIN_LENGTH_FLOOR, username = '', admin = false } = {}) {
+  const len = Math.min(64, Math.max(16, +minLength || 0, admin ? ADMIN_MIN_LENGTH : 0));
+  for (;;) {
+    let s = '';
+    while (s.length < len) {
+      for (const x of crypto.randomBytes(len * 2)) if (x < TEMP_CUT && s.length < len) s += TEMP_ABC[x % TEMP_ABC.length];
+    }
+    if (/[a-z]/.test(s) && /[A-Z]/.test(s) && /\d/.test(s) && !checkPolicy(s, { minLength, username, admin }).length) return s;
+  }
 }
 
 // ---- 2FA recovery codes ----

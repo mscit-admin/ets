@@ -72,7 +72,7 @@ counted (*Logs → statistics: «Events not saved to the database»*) and report
 
 | Field | Example |
 |---|---|
-| `action` | `create`, `update`, `delete`, `bulk_update`, `reset`, `import`, `export`, `reset_password`, `reset_2fa`, `unlock`, `revoke_sessions`, `view`, `verify`, `purge`, `purge_skipped`, `purge_acknowledge`, `restore` |
+| `action` | `create`, `update`, `delete`, `bulk_create`, `bulk_update`, `reset`, `import`, `export`, `reset_password`, `reset_2fa`, `unlock`, `revoke_sessions`, `view`, `verify`, `purge`, `purge_skipped`, `purge_acknowledge`, `restore` |
 | `entity` / `entity_id` | `function` / `125`, `application` / `pay`, `report` / `pay`, `user` / `7`, `setting` / `mfa.mode`, `schedule` / `1`, `tracker`, `log`, `database` |
 | `summary` | `per/D0 الوظائف والدرجة الوظيفية…` |
 | `old_value` / `new_value` | `{"progress": 40}` → `{"progress": 60}` |
