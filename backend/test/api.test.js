@@ -275,6 +275,13 @@ test('imports: per-department / reports options, two approvals, apply', { skip }
   assert.equal(+(await fn('sal', 'D0')).progress, 50);
   assert.equal((await fn('sal', 'D0')).test_status, 2);
   assert.equal(+(await fn('per', 'D1')).progress, +perBefore.progress); // HR untouched
+  // the imported function has its own audit row: before → after, in the uploader's name, with both approvers
+  const d0 = await fn('sal', 'D0');
+  const imp = (await pool.query(`SELECT * FROM audit_log WHERE action='update' AND entity='function' AND entity_id=$1 ORDER BY id DESC LIMIT 1`, [String(d0.id)])).rows[0];
+  assert.deepEqual([imp.new_value.progress, imp.new_value.test_status], [50, 2]);
+  assert.ok('progress' in imp.old_value && 'test_status' in imp.old_value);
+  assert.equal(imp.username, 'commember');
+  assert.deepEqual([imp.context.via, imp.context.batch_id, imp.context.approved_by.username, imp.context.final_by.username], ['import', b2.id, 'comlead', 'pm1']);
 
   // reports option: only the member's departments; rejected → nothing changes
   const b3 = (await member.post('/imports', { content, target: 'reports' })).data.batch;
@@ -324,6 +331,17 @@ test('direct edits by data-entry users wait for the department team lead only', 
   const ap = (await lead.post(`/approvals/${r2.data.request_id}/approve`)).data;
   assert.equal(ap.applied_changes, 1);
   assert.equal(+(await fn('D3')).progress, 40);
+  // audit: the request lists the item with its before → after value; the applied change has its own row in the
+  // member's name, with the approving lead in its context
+  const aud = async (where, args) => (await pool.query(`SELECT * FROM audit_log WHERE ${where} ORDER BY id DESC LIMIT 1`, args)).rows[0];
+  const req2 = await aud(`action='edit_request' AND entity_id=$1`, [String(r2.data.request_id)]);
+  assert.deepEqual(req2.context.items.map(i => [i.code, i.field, +i.old, i.new]), [['D3', 'progress', +f.progress, 40]]);
+  const upd = await aud(`action='update' AND entity='function' AND entity_id=$1`, [String(f.id)]);
+  assert.equal(upd.username, 'commember');
+  assert.deepEqual([+upd.old_value.progress, upd.new_value.progress], [+f.progress, 40]);
+  assert.equal(upd.context.via, 'edit_request');
+  assert.equal(upd.context.approved_by.username, 'comlead');
+  assert.equal(upd.context.request_id, r2.data.request_id);
   // the application page shows pending values
   const r3 = await member.patch('/tracker/functions/' + f.id, { progress: 55 });
   const page = (await member.get('/tracker/applications/sal')).data;
@@ -332,6 +350,10 @@ test('direct edits by data-entry users wait for the department team lead only', 
   assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: '' })).data.error, 'reason_required');
   assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: 'not tested yet' })).status, 200);
   assert.equal(+(await fn('D3')).progress, 40);
+  const rej = (await pool.query(`SELECT * FROM audit_log WHERE action='edit_reject' AND entity_id=$1`, [String(r3.data.request_id)])).rows[0];
+  assert.equal(rej.context.reason, 'not tested yet');
+  assert.equal(rej.context.requested_by.username, 'commember');
+  assert.deepEqual(rej.context.items.map(i => [i.field, i.new]), [['progress', 55]]);
   // reports and bulk by the member are pending too
   assert.equal((await member.patch('/tracker/reports/sal', { progress: 25 })).status, 202);
   const bulk = await member.post('/tracker/applications/sal/bulk', { field: 'progress', value: 100 });
@@ -340,6 +362,20 @@ test('direct edits by data-entry users wait for the department team lead only', 
   const all = (await lead.post('/approvals/approve-all', {})).data;
   assert.equal(all.requests, 2);
   assert.equal(+(await pool.query(`SELECT progress FROM app_reports WHERE app_id='sal'`)).rows[0].progress, 25);
+  // each function the bulk request changed, and the report, has its own before → after row
+  const perFn = (await pool.query(`SELECT count(*)::int AS n FROM audit_log WHERE action='update' AND entity='function'
+    AND context->>'request_id'=$1 AND (new_value->>'progress')::numeric=100`, [String(bulk.data.request_id)])).rows[0].n;
+  assert.equal(perFn, all.applied_changes - 1);
+  const rep = (await pool.query(`SELECT * FROM audit_log WHERE action='update' AND entity='report' AND entity_id='sal' ORDER BY id DESC LIMIT 1`)).rows[0];
+  assert.deepEqual(rep.new_value, { progress: 25 });
+  assert.equal(rep.username, 'commember');
+  // the team lead (department scope) reads these rows, with names joined for display
+  const lg = (await lead.get('/logs/audit?limit=200')).data.rows;
+  assert.ok(lg.some(x => x.action === 'edit_request' && x.context?.app_id === 'sal'));
+  const row = lg.find(x => x.entity === 'function' && x.entity_id === String(f.id));
+  assert.equal(row.fn_code, 'D3');
+  assert.equal(row.app_id, 'sal');
+  assert.ok(row.full_name);
   // team lead and project manager edits apply directly
   assert.equal((await lead.patch('/tracker/functions/' + f.id, { progress: 60 })).status, 200);
   assert.equal((await pm.patch('/tracker/functions/' + f.id, { progress: 65 })).status, 200);

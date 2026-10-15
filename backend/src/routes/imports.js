@@ -11,6 +11,7 @@ import { requireAuth, requirePerm, hasPerm, canSeeDept } from '../middleware/aut
 import { parseLegacy } from '../services/legacy.js';
 import { diffTarget, impactSummary, applyBatch } from '../services/imports.js';
 import { logAudit, logSystem } from '../services/logs.js';
+import { namedItems, logAppliedChanges, loadUser, userRef } from '../services/audit.js';
 import { HttpError, bad, notFound, str } from '../utils/http.js';
 
 const r = Router();
@@ -47,6 +48,14 @@ async function abilities(user, b, meta) {
     approve_final: pending && !b.final_by && hasPerm(user, 'apv_final') && b.lead_by !== user.id,
     reject: pending && ((hasPerm(user, 'apv_dept') && s.all) || hasPerm(user, 'apv_final')),
   };
+}
+
+// Context of an audit row about a batch: the file, who sent and approved it, and its changes.
+async function batchContext(c, b) {
+  const changes = (await c.query('SELECT * FROM import_changes WHERE batch_id=$1 ORDER BY id', [b.id])).rows;
+  return { via: 'import', batch_id: b.id, target: b.target, department_id: b.department_id, departments: b.departments, filename: b.filename,
+    uploaded_by: userRef(await loadUser(c, b.uploaded_by)), lead_by: userRef(await loadUser(c, b.lead_by)),
+    final_by: userRef(await loadUser(c, b.final_by)), items: await namedItems(c, changes) };
 }
 
 // 1) Read a file and list the import options with the number of changes in each.
@@ -107,7 +116,9 @@ r.post('/', requirePerm('imp'), async (req, res) => {
     }
     await logAudit(req, { db: c, action: 'import_submit', entity: 'import_batch', entityId: b.id,
       summary: `${target === 'reports' ? 'reports' : deptId}: ${changes.length} changes${filename ? ' from ' + filename : ''}`,
-      newValue: { target, department: deptId, departments: touched, changes: changes.length, superseded: sup.rows.map(x => x.id) } });
+      newValue: { target, department: deptId, departments: touched, changes: changes.length, superseded: sup.rows.map(x => x.id) },
+      context: { via: 'import', batch_id: b.id, target, department_id: deptId, departments: touched, filename,
+        project: summary.project, items: await namedItems(c, changes) } });
     return b;
   });
   res.status(201).json({ batch });
@@ -170,12 +181,17 @@ r.post('/:id/approve', async (req, res) => {
     if (!(stage === 'lead' ? can.approve_lead : can.approve_final)) throw new HttpError(403, 'cannot_approve', { stage });
     const u = (await c.query(`UPDATE import_batches SET ${stage}_by=$2, ${stage}_at=now(), ${stage}_note=$3 WHERE id=$1 RETURNING *`,
       [id, req.user.id, note])).rows[0];
-    await logAudit(req, { db: c, action: `import_approve_${stage}`, entity: 'import_batch', entityId: id, summary: note });
+    const ctx = await batchContext(c, u);
+    await logAudit(req, { db: c, action: `import_approve_${stage}`, entity: 'import_batch', entityId: id, summary: note, context: { ...ctx, note } });
     if (u.lead_by && u.final_by) {
       const r2 = await applyBatch(c, id, req.user.id);
       await c.query(`UPDATE import_batches SET status='applied', applied_at=now(), apply_result=$2 WHERE id=$1`, [id, JSON.stringify(r2)]);
+      // one row per changed item, in the name of the employee who sent the file
+      const done = (await c.query('SELECT * FROM import_changes WHERE batch_id=$1 AND applied ORDER BY id', [id])).rows;
+      await logAppliedChanges(req, c, done, { actor: ctx.uploaded_by, context: { via: 'import', batch_id: id, filename: u.filename,
+        requested_by: ctx.uploaded_by, approved_by: ctx.lead_by, final_by: ctx.final_by } });
       await logAudit(req, { db: c, action: 'import_apply', entity: 'import_batch', entityId: id,
-        summary: `${r2.applied} applied, ${r2.skipped} skipped`, newValue: r2 });
+        summary: `${r2.applied} applied, ${r2.skipped} skipped`, newValue: r2, context: ctx });
       return { applied: true, applied_changes: r2.applied, skipped_changes: r2.skipped };
     }
     return { applied: false };
@@ -195,7 +211,8 @@ r.post('/:id/reject', async (req, res) => {
     if (b.status !== 'pending') throw bad('batch_not_pending', { status: b.status });
     if (!(await abilities(req.user, b, meta)).reject) throw new HttpError(403, 'cannot_approve', { stage: 'reject' });
     await c.query(`UPDATE import_batches SET status='rejected', rejected_by=$2, rejected_at=now(), reject_reason=$3 WHERE id=$1`, [id, req.user.id, reason]);
-    await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: id, summary: reason });
+    await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: id, summary: reason,
+      context: { ...await batchContext(c, b), reason } });
   });
   res.json({ ok: true });
 });

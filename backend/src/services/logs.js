@@ -32,13 +32,16 @@ export function logAuth(req, { userId = null, username = null, event, success, d
     VALUES ($1,$2,$3,$4,$5,$6,$7)`, [userId, username, event, success, m.ip, m.user_agent, detail && JSON.stringify(detail)]);
 }
 
-export function logAudit(req, { action, entity, entityId = null, summary = null, oldValue = null, newValue = null, db = null }) {
-  const u = req?.user;
+// actor: the person the change is attributed to when it is not req.user (e.g. the employee whose edit
+// request a team lead approved). context: see migration 007.
+export function logAudit(req, { action, entity, entityId = null, summary = null, oldValue = null, newValue = null, context = null, actor = null, db = null }) {
+  const u = actor || req?.user;
   logger.info({ kind: 'audit', action, entity, entityId, userId: u?.id, summary }, 'audit');
-  const sql = `INSERT INTO audit_log(user_id,username,action,entity,entity_id,summary,old_value,new_value,ip)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`;
+  const sql = `INSERT INTO audit_log(user_id,username,action,entity,entity_id,summary,old_value,new_value,context,ip)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`;
   const params = [u?.id || null, u?.username || null, action, entity, entityId == null ? null : String(entityId), summary,
-    oldValue === null ? null : JSON.stringify(oldValue), newValue === null ? null : JSON.stringify(newValue), req?.ip || null];
+    oldValue === null ? null : JSON.stringify(oldValue), newValue === null ? null : JSON.stringify(newValue),
+    context === null ? null : JSON.stringify(context), req?.ip || null];
   // Inside a transaction the audit row commits/rolls back with the change itself.
   return db ? db.query(sql, params) : dbWrite(sql, params);
 }

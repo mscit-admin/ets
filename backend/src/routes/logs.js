@@ -11,8 +11,16 @@ r.use(requireAuth, requirePerm('log'));
 const TYPES = {
   auth: { table: 'auth_log', cols: 'l.id, l.ts, l.user_id, l.username, l.event, l.success, host(l.ip) AS ip, l.user_agent, l.detail',
     search: ['l.username', 'l.event', 'host(l.ip)'], event: 'l.event' },
-  audit: { table: 'audit_log', cols: 'l.id, l.ts, l.user_id, l.username, l.action, l.entity, l.entity_id, l.summary, l.old_value, l.new_value, host(l.ip) AS ip',
-    search: ['l.username', 'l.entity', 'l.entity_id', 'l.summary', 'l.action'], event: 'l.action' },
+  // Names of the person, function and application, so each row reads as a sentence in the Logs screen.
+  audit: { table: 'audit_log',
+    cols: `l.id, l.ts, l.user_id, l.username, u.full_name, l.action, l.entity, l.entity_id, l.summary, l.old_value, l.new_value, l.context,
+      f.code AS fn_code, f.name_ar AS fn_name_ar, f.name_en AS fn_name_en, a.id AS app_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en,
+      host(l.ip) AS ip`,
+    search: ['l.username', 'u.full_name', 'l.entity', 'l.entity_id', 'l.summary', 'l.action', 'f.code', 'f.name_ar', 'f.name_en', 'a.name_ar', 'a.name_en'],
+    event: 'l.action',
+    join: `LEFT JOIN users u ON u.id=l.user_id
+      LEFT JOIN functions f ON l.entity='function' AND f.id::text=l.entity_id
+      LEFT JOIN applications a ON a.id = COALESCE(f.app_id, CASE WHEN l.entity IN ('application','report') THEN l.entity_id END, l.context->>'app_id')` },
   access: { table: 'access_log', cols: 'l.id, l.ts, l.user_id, u.username, l.method, l.path, l.status, l.duration_ms, host(l.ip) AS ip, l.user_agent',
     search: ['l.path', 'u.username', 'host(l.ip)'], event: 'l.method', join: 'LEFT JOIN users u ON u.id=l.user_id' },
   error: { table: 'error_log', cols: 'l.id, l.ts, l.user_id, u.username, l.level, l.message, l.stack, l.method, l.path, l.context',
@@ -29,7 +37,8 @@ async function scopeFilter(user, type, where, params) {
   params.push(apps);
   const p = '$' + params.length;
   where.push(`((l.entity='function' AND l.entity_id ~ '^[0-9]+$' AND l.entity_id::int IN (SELECT id FROM functions WHERE app_id = ANY(${p})))
-    OR (l.entity IN ('application','report') AND l.entity_id = ANY(${p})))`);
+    OR (l.entity IN ('application','report') AND l.entity_id = ANY(${p}))
+    OR (l.entity='edit_request' AND l.context->>'app_id' = ANY(${p})))`);
 }
 
 function buildQuery(t, qs) {

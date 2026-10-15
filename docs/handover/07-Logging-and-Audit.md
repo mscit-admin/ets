@@ -49,9 +49,27 @@ cannot exist without its audit row.
 | `entity` / `entity_id` | `function` / `125`, `application` / `pay`, `report` / `pay`, `user` / `7`, `setting` / `mfa.mode`, `schedule` / `1`, `tracker`, `log` |
 | `summary` | `per/D0 الوظائف والدرجة الوظيفية…` |
 | `old_value` / `new_value` | `{"progress": 40}` → `{"progress": 60}` |
+| `context` | how the change came in and the items involved (below) |
 | `username`, `ip`, `ts` | who, from where, when |
 
 An import stores the complete previous state in `old_value`, so an import can be reviewed or reversed.
+
+**Who a change is attributed to.** A direct edit is recorded in the name of the person who made it. An edit a
+data-entry user sent for approval (edit request) or a team results file (import) is recorded, once applied, in
+the name of the **employee who entered it**, one `update` row per function / report / application weight with
+its own before → after values; the approvers are in `context` (`via: "edit_request"` with `request_id`,
+`requested_by`, `approved_by`; or `via: "import"` with `batch_id`, `filename`, `approved_by`, `final_by`).
+The request itself (`edit_request`), its approval / rejection / withdrawal and every step of an import batch
+also carry `context.items`: each item with function code and name, field, old and new value, and whether it
+was applied. A bulk set (`bulk_update`) lists every function whose value changed with its previous value.
+
+**Reading it in the Logs screen.** Logs → «سجل التعديلات» shows each row as a plain sentence in the user's
+language, e.g. «تعديل نسبة الإنجاز للوظيفة «D0 …» في تطبيق المبيعات: من 70% إلى 75%», with the person's full
+name, a coloured action type, how the change came in («أدخله أحمد، واعتمده خالد (طلب تعديل رقم 13)») and the
+reason of a rejection or removal. Clicking a row opens a table **field — previous value — new value** and, for
+requests, bulk sets and imports, the list of items affected; the raw record is under «التفاصيل التقنية».
+Statuses, percentages, yes/no and settings are shown by name, not as codes. The search box also matches the
+person's full name and function codes / names.
 
 ## 3. File format
 

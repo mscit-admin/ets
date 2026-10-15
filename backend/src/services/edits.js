@@ -2,6 +2,7 @@
 import { hasPerm, canSeeDept } from '../middleware/auth.js';
 import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
+import { namedItems, logAppliedChanges, loadUser, userRef } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en']);
@@ -38,17 +39,31 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
     [r.id, it.kind, it.app_id, it.function_id ?? null, it.field, JSON.stringify(it.old_value), JSON.stringify(it.new_value)]);
   }
   await logAudit(req, { db: c, action: 'edit_request', entity: 'edit_request', entityId: r.id,
-    summary: `${appId}: ${summary}`, newValue: { items: items.length } });
+    summary: `${appId}: ${summary}`, newValue: { items: items.length },
+    context: { app_id: appId, department_id: deptId, kind, items: await namedItems(c, items) } });
   return r;
 }
 
-// Applies an approved request; a value changed by someone else since the request is skipped.
-export async function applyRequest(c, requestId, userId) {
-  const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [requestId])).rows;
+// Context of an audit row about a request: who asked, who decided, and the items with their before → after values.
+export async function requestContext(c, rq, req, extra = {}) {
+  const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
+  return { via: 'edit_request', request_id: rq.id, app_id: rq.app_id, department_id: rq.department_id,
+    requested_by: userRef(await loadUser(c, rq.requested_by)), decided_by: userRef(req.user), ...extra, items: await namedItems(c, items) };
+}
+
+// Applies an approved request (rq: the edit_requests row; req: the approver's request); a value changed by
+// someone else since the request is skipped. Each applied change is audited in the name of the employee who
+// made it, with the approving team lead in its context.
+export async function applyRequest(c, rq, req) {
+  const userId = rq.requested_by;
+  const actor = userRef(await loadUser(c, userId));
+  const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user) };
+  const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
+  const done = [];
   let applied = 0, skipped = 0;
   for (const it of items) {
     if (it.field === 'create' || it.field === 'removed') {
-      const r = await applyLifecycle(c, it, userId);
+      const r = await applyLifecycle(c, it, userId, req, actor, via);
       r.ok ? applied++ : skipped++;
       await c.query('UPDATE edit_request_items SET applied=$2, note=$3, function_id=COALESCE(function_id, $4) WHERE id=$1',
         [it.id, r.ok, r.ok ? null : r.note, r.functionId ?? null]);
@@ -64,22 +79,24 @@ export async function applyRequest(c, requestId, userId) {
       if (it.kind === 'function') await c.query(`UPDATE functions SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE id=$1`, [it.function_id, it.new_value, userId]);
       else await c.query(`UPDATE app_reports SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1`, [it.app_id, it.new_value, userId]);
       applied++;
+      done.push(it);
     } else skipped++;
     await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, ok ? null : 'value changed after the request']);
   }
+  await logAppliedChanges(req, c, done, { actor, context: via });
   return { applied, skipped };
 }
 
 // Approved addition / removal / restore. new_value of 'removed': { removed: true, reason } or { removed: false }.
-async function applyLifecycle(c, it, userId) {
+async function applyLifecycle(c, it, userId, req, actor, via) {
   if (it.field === 'create') {
     const f = await createFunction(c, it.app_id, it.new_value, userId);
-    await logAudit({ user: { id: userId } }, { db: c, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
+    await logAudit(req, { db: c, actor, context: via, action: 'create', entity: 'function', entityId: f.id, summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
     return { ok: true, functionId: f.id };
   }
   const f = it.new_value?.removed ? await removeFunction(c, it.function_id, it.new_value.reason, userId) : await restoreFunction(c, it.function_id, userId);
   if (!f) return { ok: false, note: 'already ' + (it.new_value?.removed ? 'removed' : 'restored') };
-  await logAudit({ user: { id: userId } }, { db: c, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
+  await logAudit(req, { db: c, actor, context: via, action: it.new_value?.removed ? 'remove' : 'restore', entity: 'function', entityId: f.id,
     summary: `${f.app_id}/${f.code} (approved request)`, newValue: it.new_value });
   return { ok: true };
 }

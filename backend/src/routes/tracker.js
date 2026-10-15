@@ -185,10 +185,15 @@ r.post('/applications/:id/bulk', async (req, res) => {
     return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: rows.length });
   }
   const n = await tx(async c => {
+    const before = (await c.query(`SELECT id, code, name_ar, name_en, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
     const q = await c.query(`UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`,
       [a.id, value, req.user.id]);
+    const changed = before.filter(x => Number(x.v) !== Number(value));
     await logAudit(req, { db: c, action: 'bulk_update', entity: 'application', entityId: a.id,
-      summary: `${field} = ${value} on ${q.rowCount} functions`, newValue: { field, value } });
+      summary: `${field} = ${value} on ${q.rowCount} functions`, newValue: { field, value },
+      context: { app_id: a.id, count: q.rowCount, changed: changed.length,
+        items: changed.slice(0, 500).map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, code: x.code, name_ar: x.name_ar, name_en: x.name_en,
+          field, old: x.v, new: value })) } });
     return q.rowCount;
   });
   res.json({ updated: n });
@@ -323,7 +328,7 @@ r.put('/weights', requirePerm('wgt'), async (req, res) => {
   await tx(async c => {
     for (const [id, w] of Object.entries(weights)) {
       const old = byId.get(id).weight;
-      if (old === w) continue;
+      if (Number(old) === Number(w)) continue;
       await c.query('UPDATE applications SET weight=$2, updated_at=now(), updated_by=$3 WHERE id=$1', [id, w, req.user.id]);
       await logAudit(req, { db: c, action: 'update', entity: 'application', entityId: id, summary: 'weight', oldValue: { weight: old }, newValue: { weight: w } });
     }

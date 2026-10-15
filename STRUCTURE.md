@@ -33,7 +33,8 @@ ets/
 │   │   │   │   ├── 003_branding.sql  Uploaded logo, favicon and login background
 │   │   │   │   ├── 004_edit_requests.sql  Data-entry edits waiting for the team lead
 │   │   │   │   ├── 005_project_timeline.sql  Project close date, daily progress snapshots
-│   │   │   │   └── 006_function_lifecycle.sql  Removed / created markers on functions; new request kinds
+│   │   │   │   ├── 006_function_lifecycle.sql  Removed / created markers on functions; new request kinds
+│   │   │   │   └── 007_audit_context.sql  Audit row context: via request / import, approvers, items before → after
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -50,6 +51,7 @@ ets/
 │   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
+│   │   │   ├── audit.js           Audit helpers: names of people / items, one before → after row per applied change
 │   │   │   ├── calc.js            Progress calculation (function → application → department → project), S-curve
 │   │   │   ├── totp.js            TOTP/HOTP (RFC 6238/4226), base32, otpauth URI
 │   │   │   ├── crypto.js          AES-256-GCM for 2FA secrets, SHA-256, random tokens
@@ -85,6 +87,7 @@ ets/
 │       │   ├── messages.js        All UI strings in Arabic and English
 │       │   └── index.jsx          Language context: t(), nm(), RTL/LTR switch, date formats
 │       ├── lib/
+│       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)

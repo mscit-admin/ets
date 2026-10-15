@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
 import { requireAuth, hasPerm, canSeeDept } from '../middleware/auth.js';
-import { isDeptApprover, applyRequest } from '../services/edits.js';
+import { isDeptApprover, applyRequest, requestContext } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
 import { HttpError, bad, notFound, str } from '../utils/http.js';
 
@@ -65,16 +65,18 @@ async function decide(req, res, action) {
     if (rq.status !== 'pending') throw bad('request_not_pending', { status: rq.status });
     if (!abilities(req.user, rq, apps)[action]) throw new HttpError(403, 'cannot_approve', { stage: action });
     if (action === 'approve') {
-      const result = await applyRequest(c, id, rq.requested_by);
+      const result = await applyRequest(c, rq, req);
       await c.query(`UPDATE edit_requests SET status='applied', decided_by=$2, decided_at=now(), reason=$3, apply_result=$4 WHERE id=$1`,
         [id, req.user.id, reason, JSON.stringify(result)]);
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: id,
-        summary: `${rq.app_id}: ${result.applied} applied, ${result.skipped} skipped`, newValue: result });
+        summary: `${rq.app_id}: ${result.applied} applied, ${result.skipped} skipped`, newValue: result,
+        context: await requestContext(c, rq, req, { reason }) });
       return { applied: true, applied_changes: result.applied, skipped_changes: result.skipped };
     }
     const status = action === 'reject' ? 'rejected' : 'withdrawn';
     await c.query(`UPDATE edit_requests SET status=$2, decided_by=$3, decided_at=now(), reason=$4 WHERE id=$1`, [id, status, req.user.id, reason]);
-    await logAudit(req, { db: c, action: `edit_${action}`, entity: 'edit_request', entityId: id, summary: reason });
+    await logAudit(req, { db: c, action: `edit_${action}`, entity: 'edit_request', entityId: id, summary: reason,
+      context: await requestContext(c, rq, req, { reason }) });
     return { ok: true };
   });
   res.json(out);
@@ -95,11 +97,12 @@ r.post('/approve-all', async (req, res) => {
     await tx(async c => {
       const cur = (await c.query('SELECT status FROM edit_requests WHERE id=$1 FOR UPDATE', [rq.id])).rows[0];
       if (cur.status !== 'pending') return;
-      const result = await applyRequest(c, rq.id, rq.requested_by);
+      const result = await applyRequest(c, rq, req);
       applied += result.applied; skipped += result.skipped;
       await c.query(`UPDATE edit_requests SET status='applied', decided_by=$2, decided_at=now(), apply_result=$3 WHERE id=$1`,
         [rq.id, req.user.id, JSON.stringify(result)]);
-      await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: rq.id, summary: `bulk approval`, newValue: result });
+      await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: rq.id, summary: `bulk approval`, newValue: result,
+        context: await requestContext(c, rq, req, { bulk: true }) });
     });
   }
   res.json({ requests: rows.length, applied_changes: applied, skipped_changes: skipped });

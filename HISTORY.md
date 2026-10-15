@@ -12,6 +12,27 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
+
+### Added
+- feat(db): migration `007_audit_context.sql` — `audit_log.context` (jsonb): how a change came in (direct, edit
+  request, import), who requested and who approved it, and the items involved with their before → after values.
+- feat(backend): an approved edit request or import now writes one `update` audit row per function / report /
+  application weight with its old and new values, in the name of the employee who entered it, with the approvers
+  in `context` (before, only "N applied" was recorded and the item history did not show the change).
+- feat(backend): edit request, approval, rejection, withdrawal and every import step record their items (code,
+  name, field, old → new, applied); a bulk set records each changed function's previous value.
+- feat(backend): `GET /api/logs/audit` returns the person's full name, function code / name and application name;
+  search also matches them. Department-scoped users also see the edit requests of their applications.
+- feat(frontend): Logs → audit trail shows each row as a plain sentence (Arabic / English), e.g.
+  «تعديل نسبة الإنجاز للوظيفة «D0 …» في تطبيق المبيعات: من 70% إلى 75%», with action type, the approver and
+  request number, and reasons; the details window has a field / previous value / new value table and the list
+  of items affected. Statuses, percentages and settings are shown by name.
+
+### Fixed
+- fix(backend): changes applied from an approved edit request were logged without a username.
+- fix(backend): saving weights no longer logs an unchanged application weight.
+
 ## [0.8.1] — 2026-10-14 — Functions catalog document
 
 ### Added
