@@ -155,9 +155,14 @@ r.patch('/functions/:id', async (req, res) => {
     return res.status(202).json({ pending: true, request_id: rq.id, function: cur });
   }
   const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
+  // A note written through the exception above is only stored if the function still has no note when the row is
+  // updated, so a note saved at the same moment by a tester cannot be overwritten (V6-N1).
+  const firstNoteOnly = 'note' in changes && !hasPerm(req.user, FIELD_PERM.note);
   const updated = await tx(async c => {
-    const u = (await c.query(`UPDATE functions SET ${sets}, updated_at=now(), updated_by=$${keys.length + 2} WHERE id=$1 RETURNING *`,
-      [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
+    const u = (await c.query(`UPDATE functions SET ${sets}, updated_at=now(), updated_by=$${keys.length + 2} WHERE id=$1
+      ${firstNoteOnly ? "AND btrim(coalesce(note, ''))=''" : ''} RETURNING *`,
+    [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
+    if (!u) throw new HttpError(409, 'note_changed');
     await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: id,
       summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`,
       oldValue: Object.fromEntries(keys.map(k => [k, cur[k]])), newValue: changes });

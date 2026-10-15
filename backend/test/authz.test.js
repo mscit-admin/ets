@@ -329,6 +329,18 @@ test('note exception only with a real status change (ETS-SEC-056, P3-AUTHZ-10)',
   assert.equal((await fn('per', 'D9')).note, 'tester note');
   await (await as('lead_a')).post(`/approvals/${rq.data.request_id}/reject`, { reason: 'cleanup' });
   await pool.query(`DELETE FROM user_permissions WHERE user_id=$1 AND permission='tst'`, [ids.member_x]);
+  // race (V6-N1): a note saved by a tester at the same moment is never overwritten through the first-note exception
+  const root = await as('root');
+  for (let i = 0; i < 10; i++) {
+    await pool.query(`UPDATE functions SET notif_status=0, note='' WHERE id=$1`, [g.id]);
+    const [t, u] = await Promise.all([
+      root.patch('/tracker/functions/' + g.id, { note: 'TESTER' }),
+      c.patch('/tracker/functions/' + g.id, { notif_status: 2, note: 'NOTEUSER' }),
+    ]);
+    assert.equal(t.status, 200);
+    assert.ok([200, 403, 409].includes(u.status), String(u.status));
+    assert.equal((await fn('att', 'D2')).note, 'TESTER', `round ${i}`);
+  }
 });
 
 test('Phase 7 leftovers: bulk-2fa self, duplicate overrides, own password reset (V2-N1, V2-N4, V2-N5)', { skip }, async () => {

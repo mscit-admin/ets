@@ -298,6 +298,8 @@ and must be mentioned here with the migration name.
   `use_change_password`, ar+en message; the button is hidden on their own account) — `/auth/change-password`
   asks for the current password (V2-N5)
 
+- sec(backend): a note written through the "with notes" exception is stored only if the function still has no note when the row is updated (409 `note_changed` otherwise), so a tester's note saved at the same moment cannot be overwritten (V6-N1, ETS-SEC-056); regression test repeats the race 10 times
+
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 
 ### Added
