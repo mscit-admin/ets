@@ -3,6 +3,8 @@ import { query } from '../db/pool.js';
 import { sha256, randomToken } from '../services/crypto.js';
 import { HttpError } from '../utils/http.js';
 
+export const ADMIN_ROLE = 'admin';
+
 const cookieOpts = () => ({
   httpOnly: true, sameSite: 'strict', secure: config.session.secure, path: '/',
   maxAge: config.session.ttlHours * 3600 * 1000,
@@ -22,7 +24,8 @@ export async function revokeSession(req, res, reason = 'logout') {
   res.clearCookie(config.session.cookieName, { ...cookieOpts(), maxAge: undefined });
 }
 
-async function loadUserContext(userId) {
+// Exported so that an approved edit request / import can re-check its author's current rights (ETS-SEC-027).
+export async function loadUserContext(userId) {
   const r = await query(`SELECT u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active,
       u.must_change_password, u.totp_enabled, u.totp_exempt, r.full_scope, r.permissions AS role_perms,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en,
@@ -33,6 +36,8 @@ async function loadUserContext(userId) {
   if (!u) return null;
   const perms = new Set(u.role_perms);
   for (const o of u.overrides) o.g ? perms.add(o.p) : perms.delete(o.p);
+  // User administration belongs to system administrators only (ETS-SEC-004): a stray override never grants it.
+  if (u.role_id !== ADMIN_ROLE) perms.delete('usr');
   const depts = u.scopes.filter(s => s.k === 'department').map(s => s.r);
   const apps = u.scopes.filter(s => s.k === 'application').map(s => s.r);
   return {
@@ -40,7 +45,8 @@ async function loadUserContext(userId) {
     role_name_ar: u.role_name_ar, role_name_en: u.role_name_en, language: u.language,
     is_active: u.is_active, must_change_password: u.must_change_password,
     totp_enabled: u.totp_enabled, totp_exempt: u.totp_exempt,
-    permissions: [...perms], fullScope: u.full_scope || (!depts.length && !apps.length),
+    // Full scope comes from the role only. A scoped role without scope rows sees nothing (ETS-SEC-005).
+    permissions: [...perms], fullScope: !!u.full_scope,
     scope: { departments: depts, applications: apps },
   };
 }
@@ -93,13 +99,26 @@ export const requirePerm = p => (req, res, next) => {
   next();
 };
 
+// System administrators only (role 'admin'), whatever the overrides say.
+export function requireAdmin(req, res, next) {
+  if (req.user?.role !== ADMIN_ROLE) throw new HttpError(403, 'forbidden', { permission: 'usr' });
+  next();
+}
+
 // ---- data scope ----
+// No scope rows → nothing is visible (fail closed); full scope comes from the role.
 export function canSeeApp(user, app) {
   if (user.fullScope) return true;
   return user.scope.applications.includes(app.id) || user.scope.departments.includes(app.department_id);
 }
+// True when the user can see at least one application of the department (enough to show the department).
+// Never use it to authorise an action on the whole department: see coversDept / canSeeApp.
 export function canSeeDept(user, deptId, apps) {
   if (user.fullScope) return true;
   return user.scope.departments.includes(deptId) ||
     apps.some(a => a.department_id === deptId && user.scope.applications.includes(a.id));
+}
+// The whole department (every application in it, present and future) is in scope.
+export function coversDept(user, deptId) {
+  return !!user.fullScope || user.scope.departments.includes(deptId);
 }

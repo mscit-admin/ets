@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import { csvCell } from '../src/utils/csv.js';
 import { jsonDepth, idParam, isDate, stripBidi, own } from '../src/utils/http.js';
 import { cleanImage } from '../src/services/images.js';
-import { parseLegacy } from '../src/services/legacy.js';
 
 const RLO = '\u202E', LRI = '\u2066', LRM = '\u200E';
 
@@ -22,7 +21,9 @@ test('csvCell neutralises formula starts, also after whitespace and in full-widt
   assert.equal(csvCell({ a: '=1' }), '"{""a"":""=1""}"');
 });
 
-test('jsonDepth counts nesting outside strings only (ETS-SEC-008)', () => {
+test('jsonDepth counts nesting outside strings only (ETS-SEC-008)', async () => {
+  // imported lazily: legacy.js loads the app config, which must not be read before the test environment is set
+  const { parseLegacy } = await import('../src/services/legacy.js');
   assert.equal(jsonDepth(Buffer.from('{"a":[1,{"b":2}]}')), 3);
   assert.equal(jsonDepth('{"a":"[[[[[[\\"[[["}'), 1);
   assert.equal(jsonDepth('[]'.repeat(5)), 1);

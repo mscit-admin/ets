@@ -39,7 +39,15 @@
   `log`, `cfg`) **and** the data scope (departments/applications) on the server. The UI only hides what the
   server would refuse anyway.
 - Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`.
-- Project-wide parameters, import, settings and full logs need a full-scope user.
+- Project-wide parameters, the project schedule (`PUT /tracker/schedule`), import, settings (read and write) and
+  full logs need a full-scope user. Full scope comes only from the role (admin, PM, TM); a user of another role
+  with no scope rows sees nothing (fail closed). The JSON export contains only the applications in the user's
+  scope (and the project schedule only for full-scope users).
+- `usr` (user management) is honoured for the System Administrator role only, and nobody can grant themselves
+  permissions, scope or a 2FA exemption.
+- Application-level scope never counts as department scope: edit approvals, import uploads, import approvals and
+  batch details are limited to the applications in scope. The import uploader signs neither approval stage.
+- An approved edit request or import is applied only if its author is still active and still allowed to make it.
 - Refused requests are logged as `access_denied` in the login & security log.
 - At least one active administrator always remains.
 

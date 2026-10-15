@@ -1,5 +1,5 @@
 // Edits made in the screens that must wait for the department team lead (see migration 004).
-import { hasPerm, canSeeDept } from '../middleware/auth.js';
+import { hasPerm, canSeeApp, loadUserContext } from '../middleware/auth.js';
 import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef } from './audit.js';
@@ -9,14 +9,41 @@ const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_
 const REP_COLS = new Set(['progress', 'status', 'note']);
 const same = (a, b) => (typeof a === 'number' || typeof b === 'number' ? Number(a) === Number(b) : a === b);
 
-// Approver of a department's edits: team lead permission + scope covering the department.
-export const isDeptApprover = (user, deptId, apps) => hasPerm(user, 'apv_dept') && canSeeDept(user, deptId, apps);
+// Approver of an application's edits: team lead permission + scope covering that application (a lead scoped to
+// one application of a department is not an approver for the department's other applications — ETS-SEC-007).
+// app: { id, department_id }
+export const isAppApprover = (user, app) => !!app && hasPerm(user, 'apv_dept') && canSeeApp(user, app);
 
-// Does this user's edit in this department have to wait for the team lead?
-export async function needsLeadApproval(user, deptId, apps) {
+// Does this user's edit of this application have to wait for the team lead?
+export async function needsLeadApproval(user, app) {
   if (!(await getSetting('approval.edits_need_lead'))) return false;
   if (hasPerm(user, 'cfg') || hasPerm(user, 'apv_final')) return false;   // administrators, project / technical managers
-  return !isDeptApprover(user, deptId, apps);                              // team leads of the department
+  return !isAppApprover(user, app);                                        // team leads of the application's department
+}
+
+// Permission an edit-request item needs (same rules as the direct edit in routes/tracker.js).
+const ITEM_PERM = {
+  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_en: 'tog', create: 'tog', removed: 'tog',
+    test_status: 'tst', review_status: 'tst', note: 'tst' },
+  report: { progress: 'rep', status: 'rep', note: 'rep' },
+};
+
+const NOTED = { test_status: 1, notif_status: 2, review_status: 3 };   // statuses "… with notes" (routes/tracker.js)
+
+// Re-checks, when a request is approved, that its author may still make every change in it: account active,
+// application in scope, field permissions held (ETS-SEC-027). Returns null when allowed, else the reason.
+export async function requesterBlocked(c, rq) {
+  const u = await loadUserContext(rq.requested_by);
+  if (!u || !u.is_active) return 'requester_inactive';
+  const app = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.app_id])).rows[0];
+  if (!app || !canSeeApp(u, app)) return 'requester_out_of_scope';
+  const items = (await c.query('SELECT kind, function_id, field, new_value FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
+  // the note that goes with a "with notes" status the author may set (see routes/tracker.js)
+  const notedStatus = it => items.some(x => x.kind === 'function' && x.function_id === it.function_id && NOTED[x.field] !== undefined &&
+    Number(x.new_value) === NOTED[x.field] && hasPerm(u, ITEM_PERM.function[x.field]));
+  const allowed = it => hasPerm(u, ITEM_PERM[it.kind]?.[it.field]) || (it.kind === 'function' && it.field === 'note' && notedStatus(it));
+  if (!items.every(allowed)) return 'requester_lacks_permission';
+  return null;
 }
 
 // Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value}]

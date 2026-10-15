@@ -3,6 +3,8 @@
 // copy with the state embedded in window.__SAVED.
 import { isDate, jsonDepth, MAX_JSON_DEPTH } from '../utils/http.js';
 
+import { canSeeApp } from '../middleware/auth.js';
+
 const KEY = 'window.__SAVED=';
 
 export function parseLegacy(text) {
@@ -68,22 +70,26 @@ export async function applyLegacy(c, p, userId) {
 }
 
 // Builds a payload in the original format (v3) so the old page can also read it.
-export async function buildLegacy(c) {
-  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows;
+// user: whose scope limits the content (ETS-SEC-006) — applications outside it are left out, and the
+// project-wide schedule is included for full-scope users only.
+export async function buildLegacy(c, { user }) {
+  const visible = new Set((await c.query('SELECT id, department_id FROM applications')).rows.filter(a => canSeeApp(user, a)).map(a => a.id));
+  const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows
+    .filter(x => visible.has(x.app_id));
   const f = {};
   for (const x of fns) {
     (f[x.app_id] ||= {})[x.code] = { w: x.weight, p: x.progress, on: x.enabled ? 1 : 0, t: x.test_status, nt: x.note, n: x.notif_status, rv: x.review_status };
   }
-  const appW = Object.fromEntries((await c.query('SELECT id, weight FROM applications')).rows.map(a => [a.id, a.weight]));
+  const appW = Object.fromEntries((await c.query('SELECT id, weight FROM applications')).rows.filter(a => visible.has(a.id)).map(a => [a.id, a.weight]));
   const rep = Object.fromEntries((await c.query('SELECT app_id, progress, status, note FROM app_reports')).rows
-    .map(r => [r.app_id, { p: r.progress, rs: r.status, nt: r.note }]));
+    .filter(r => visible.has(r.app_id)).map(r => [r.app_id, { p: r.progress, rs: r.status, nt: r.note }]));
   const s = Object.fromEntries((await c.query('SELECT key, value FROM settings')).rows.map(r => [r.key, r.value]));
   const sch = (await c.query('SELECT * FROM schedule WHERE id=1')).rows[0] || {};
   return {
     v: 3, ts: Date.now(), mode: s['calc.weight_mode'] || 'fixed', appW,
     rep, nw: s['calc.notif_share'] ?? 0.1, repW: s['calc.reports_share'] ?? 0.15,
-    sch: { start: sch.start_date ? new Date(sch.start_date).toISOString().slice(0, 10) : '', n: sch.periods || 11,
-      unit: sch.unit || 'month', plan: sch.plan, act: sch.actual || [] },
+    ...(user.fullScope ? { sch: { start: sch.start_date ? new Date(sch.start_date).toISOString().slice(0, 10) : '', n: sch.periods || 11,
+      unit: sch.unit || 'month', plan: sch.plan, act: sch.actual || [] } } : {}),
     f, source: 'ets-backend',
   };
 }

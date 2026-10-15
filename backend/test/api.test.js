@@ -30,6 +30,8 @@ before(async () => {
     ('newbie','New',$1,'obs',true), ('locky','Lock',$1,'obs',false)`, [h]);
   const hred = (await pool.query(`SELECT id FROM users WHERE username='hred'`)).rows[0].id;
   await pool.query(`INSERT INTO user_scopes(user_id,kind,ref_id) VALUES ($1,'department','hr')`, [hred]);
+  // a scoped role without scope rows sees nothing (ETS-SEC-005), so the tester gets the HR department
+  await pool.query(`INSERT INTO user_scopes(user_id,kind,ref_id) SELECT id,'department','hr' FROM users WHERE username='tester'`);
   const { createApp } = await import('../src/app.js');
   server = createApp().listen(0);
   base = `http://127.0.0.1:${server.address().port}/api`;

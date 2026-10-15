@@ -33,7 +33,7 @@ export default function Profile() {
           <div className="kv">
             <div><span>{t('username')}</span><span dir="ltr">{user.username}</span></div>
             <div><span>{t('role')}</span><span>{nm(user, 'role_name')}</span></div>
-            <div><span>{t('scope')}</span><span>{user.fullScope ? t('full_scope') : [...user.scope.departments, ...user.scope.applications].join('، ')}</span></div>
+            <div><span>{t('scope')}</span><span>{user.fullScope ? t('full_scope') : [...user.scope.departments, ...user.scope.applications].join('، ') || t('no_scope')}</span></div>
             <div><span>{t('permissions')}</span><span className="row-tags">{user.permissions.map(p => <Indicator key={p} color="blue">{t('perm_' + p)}</Indicator>)}</span></div>
           </div>
           <Field label={t('language')} className="mt">

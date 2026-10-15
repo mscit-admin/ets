@@ -28,15 +28,16 @@ const same = (a, b) => (typeof a === 'number' || typeof b === 'number' ? Number(
 // Differences between the file and the approved data.
 //   target 'department': functions + application weights of one department (reports excluded)
 //   target 'reports'   : reports of the given departments
-export async function diffTarget(c, payload, target, deptIds) {
-  if (target === 'department') return diffDepartment(c, payload, deptIds[0], { reports: false });
+// only: the application ids the uploader has in scope — others are ignored even inside the department (ETS-SEC-007).
+export async function diffTarget(c, payload, target, deptIds, only) {
+  if (target === 'department') return diffDepartment(c, payload, deptIds[0], { reports: false, only });
   const out = [];
-  for (const d of deptIds) out.push(...await diffDepartment(c, payload, d, { functions: false, weights: false }));
+  for (const d of deptIds) out.push(...await diffDepartment(c, payload, d, { functions: false, weights: false, only }));
   return out;
 }
 
-async function diffDepartment(c, payload, deptId, { functions = true, reports = true, weights = true } = {}) {
-  const apps = (await c.query('SELECT id, weight FROM applications WHERE department_id=$1', [deptId])).rows;
+async function diffDepartment(c, payload, deptId, { functions = true, reports = true, weights = true, only } = {}) {
+  const apps = (await c.query('SELECT id, weight FROM applications WHERE department_id=$1', [deptId])).rows.filter(a => only.has(a.id));
   const changes = [];
   for (const a of apps) {
     const fileFns = functions ? payload.f?.[a.id] : null;

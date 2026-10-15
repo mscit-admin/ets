@@ -43,7 +43,12 @@ export default function Approvals() {
   };
   const approveAll = async () => {
     if (!window.confirm(t('are_you_sure'))) return;
-    try { const r = await api.post('/approvals/approve-all', {}); toast(t('applied_result', { a: r.applied_changes, s: r.skipped_changes })); reload(); }
+    try {
+      const r = await api.post('/approvals/approve-all', {});
+      toast(t('applied_result', { a: r.applied_changes, s: r.skipped_changes }));
+      if (r.blocked_requests) toast(t('blocked_requests_n', { n: r.blocked_requests }), 'red');
+      reload();
+    }
     catch (e) { toast(errText(e), 'red'); }
   };
 
