@@ -310,6 +310,124 @@ test('note exception only with a real status change (ETS-SEC-056, P3-AUTHZ-10)',
   await pool.query(`UPDATE functions SET notif_status=0, note='' WHERE id=$1`, [g.id]);
   assert.equal((await c.patch('/tracker/functions/' + g.id, { notif_status: 2, note: 'why' })).status, 200);
   assert.equal((await fn('att', 'D2')).note, 'why');
+  // two steps (status away, then back with a new note) no longer overwrite the note: it is not empty (residual)
+  assert.equal((await c.patch('/tracker/functions/' + g.id, { notif_status: 0 })).status, 200);
+  const two = await c.patch('/tracker/functions/' + g.id, { notif_status: 2, note: 'OVERWRITTEN_two_step' });
+  assert.equal(two.status, 403);
+  assert.equal((await fn('att', 'D2')).note, 'why');
+  assert.equal((await c.patch('/tracker/functions/' + g.id, { notif_status: 2 })).status, 200);   // the status alone still works
+  // request path: a note written meanwhile is not overwritten when the request is approved
+  const h = await fn('per', 'D9');
+  await pool.query(`UPDATE functions SET notif_status=0, note='' WHERE id=$1`, [h.id]);
+  await pool.query(`UPDATE user_permissions SET granted=false WHERE user_id=$1 AND permission='tst'`, [ids.member_x]);
+  await pool.query(`INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,'tst',false) ON CONFLICT DO NOTHING`, [ids.member_x]);
+  const rq = await (await as('member_x')).patch('/tracker/functions/' + h.id, { notif_status: 2, note: 'from member' });
+  assert.equal(rq.status, 202);
+  await pool.query(`UPDATE functions SET note='tester note' WHERE id=$1`, [h.id]);
+  const ap = await (await as('lead_a')).post(`/approvals/${rq.data.request_id}/approve`);
+  assert.equal(ap.status, 409); assert.equal(ap.data.error, 'requester_not_allowed');
+  assert.equal((await fn('per', 'D9')).note, 'tester note');
+  await (await as('lead_a')).post(`/approvals/${rq.data.request_id}/reject`, { reason: 'cleanup' });
+  await pool.query(`DELETE FROM user_permissions WHERE user_id=$1 AND permission='tst'`, [ids.member_x]);
+  // race (V6-N1): a note saved by a tester at the same moment is never overwritten through the first-note exception
+  const root = await as('root');
+  for (let i = 0; i < 10; i++) {
+    await pool.query(`UPDATE functions SET notif_status=0, note='' WHERE id=$1`, [g.id]);
+    const [t, u] = await Promise.all([
+      root.patch('/tracker/functions/' + g.id, { note: 'TESTER' }),
+      c.patch('/tracker/functions/' + g.id, { notif_status: 2, note: 'NOTEUSER' }),
+    ]);
+    assert.equal(t.status, 200);
+    assert.ok([200, 403, 409].includes(u.status), String(u.status));
+    assert.equal((await fn('att', 'D2')).note, 'TESTER', `round ${i}`);
+  }
+});
+
+test('Phase 7 leftovers: bulk-2fa self, duplicate overrides, own password reset (V2-N1, V2-N4, V2-N5)', { skip }, async () => {
+  const root = await as('root');
+  await pool.query('UPDATE users SET totp_exempt=false');
+  // V2-N1: a list naming the caller is refused; "all" leaves the caller out; removing exemptions stays allowed
+  const self = await root.post('/users/bulk-2fa', { user_ids: [ids.member0, ids.root], exempt: true });
+  assert.equal(self.status, 400); assert.equal(self.data.error, 'cannot_change_own_permissions');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM users WHERE totp_exempt')).rows[0].n, 0);
+  const all = await root.post('/users/bulk-2fa', { all: true, exempt: true });
+  assert.equal(all.status, 200);
+  const ex = id => pool.query('SELECT totp_exempt FROM users WHERE id=$1', [id]).then(r => r.rows[0].totp_exempt);
+  assert.equal(await ex(ids.root), false);
+  assert.equal(await ex(ids.member0), true);
+  assert.equal(all.data.updated, (await pool.query('SELECT count(*)::int n FROM users')).rows[0].n - 1);
+  await pool.query('UPDATE users SET totp_exempt=true WHERE id=$1', [ids.root]);
+  assert.equal((await root.post('/users/bulk-2fa', { user_ids: [ids.root], exempt: false })).status, 200);
+  assert.equal(await ex(ids.root), false);
+  assert.equal((await root.post('/users/bulk-2fa', { all: true, exempt: false })).status, 200);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM users WHERE totp_exempt')).rows[0].n, 0);
+  // V2-N4: a duplicate permission is a 400, not a 500 (create and update)
+  const dupe = [{ permission: 'rep', granted: true }, { permission: 'rep', granted: false }];
+  let r = await root.patch('/users/' + ids.lead_a, { overrides: dupe });
+  assert.equal(r.status, 400); assert.equal(r.data.error, 'invalid_permission');
+  r = await root.post('/users', { username: 'dupe1', full_name: 'D', role_id: 'member', password: 'Dupe-User-2026', overrides: dupe });
+  assert.equal(r.status, 400); assert.equal(r.data.error, 'invalid_permission');
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM users WHERE username='dupe1'`)).rows[0].n, 0);
+  // V2-N5: an administrator's own password changes through /auth/change-password (current password asked)
+  r = await root.post(`/users/${ids.root}/reset-password`, { password: 'Self-Reset-2026x', must_change: false });
+  assert.equal(r.status, 400); assert.equal(r.data.error, 'use_change_password');
+  assert.equal((await root.get('/auth/me')).status, 200);                  // nothing changed, session still valid
+  await as('root');                                                       // old password still works
+  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'Second-Admin-2028', must_change: false })).status, 200);
+});
+
+test('partial readers: batch figures and pending counts follow the scope (V2-N2, V2-N3)', { skip }, async () => {
+  const leadX = await as('lead_x');
+  // V2-N3: a pending request on rec (not lead_x's) is not counted for lead_x
+  const rec = await fn('rec', 'D8');
+  const rq = await (await as('member_y')).patch('/tracker/functions/' + rec.id, { progress: 9 });
+  assert.equal(rq.status, 202);
+  const before = (await leadX.get('/tracker/project-status')).data.pending;
+  assert.equal((await (await as('lead_a')).get('/tracker/project-status')).data.pending.edits >= 1, true);
+  // V2-N2: a batch touching per and rec, read by the per lead
+  const file = await exportFile();
+  file.f.per.D9.p = 19; file.f.rec.D9.p = 29; file.f.rec.D10.p = 39;
+  const b = (await (await as('member_hr')).post('/imports', { payload: file, target: 'department', department_id: 'hr' })).data.batch;
+  assert.equal(b.change_count, 3);
+  const view = (await leadX.get('/imports/' + b.id)).data;
+  assert.equal(view.batch.change_count, 1);
+  assert.equal(view.batch.summary.project, null);
+  assert.deepEqual(view.batch.summary.departments, []);                    // hr is not fully in lead_x's scope
+  assert.equal(view.batch.summary.counts.total, 1);
+  assert.deepEqual(view.batch.summary.applications.map(a => a.id), ['per']);
+  const listed = (await leadX.get('/imports')).data.batches.find(x => x.id === b.id);
+  assert.equal(listed.change_count, 1); assert.equal(listed.summary.project, null);
+  // the department lead (covers hr) and full-scope users still get the whole figures
+  const full = (await (await as('lead_a')).get('/imports/' + b.id)).data.batch;
+  assert.equal(full.change_count, 3); assert.ok(full.summary.project); assert.equal(full.summary.departments.length, 1);
+  assert.ok((await (await as('pmu')).get('/imports/' + b.id)).data.batch.summary.project);
+  // pending counts: the batch counts for lead_x (one change is theirs); the rec-only request does not
+  const after = (await leadX.get('/tracker/project-status')).data.pending;
+  assert.equal(after.edits, before.edits);
+  assert.equal(after.imports, before.imports + 1);
+  const recOnly = (await (await as('member_y')).post('/imports', { payload: file, target: 'department', department_id: 'hr' })).data.batch;
+  assert.equal(recOnly.change_count, 2);
+  assert.equal((await leadX.get('/tracker/project-status')).data.pending.imports, after.imports);
+  for (const id of [b.id, recOnly.id]) await (await as('pmu')).post(`/imports/${id}/reject`, { reason: 'cleanup' });
+  await (await as('lead_a')).post(`/approvals/${rq.data.request_id}/reject`, { reason: 'cleanup' });
+});
+
+test('migration 009 is accurate and idempotent on a fresh install (V2-N6)', { skip }, async () => {
+  const sql = (await import('node:fs')).readFileSync(new URL('../src/db/migrations/009_usr_admin_only.sql', import.meta.url), 'utf8');
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    const u = (await c.query(`INSERT INTO users(username,full_name,password_hash,role_id) VALUES ('m009','m','x','lead') RETURNING id`)).rows[0].id;
+    await c.query(`INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,'usr',true),($1,'cfg',true)`, [u]);
+    await c.query(`DELETE FROM system_log WHERE event='scope_fail_closed'`);
+    await c.query(sql); await c.query(sql);
+    const a = (await c.query(`SELECT old_value, new_value FROM audit_log WHERE entity='user' AND entity_id=$1 AND username='system'`, [String(u)])).rows;
+    assert.equal(a.length, 1);
+    assert.deepEqual(a[0].new_value, { overrides: [{ permission: 'cfg', granted: true }] });
+    assert.deepEqual(a[0].old_value.overrides.map(o => o.permission), ['cfg', 'usr']);
+    assert.equal((await c.query(`SELECT count(*)::int n FROM system_log WHERE event='scope_fail_closed'`)).rows[0].n, 1);
+    assert.deepEqual((await c.query('SELECT permission FROM user_permissions WHERE user_id=$1', [u])).rows.map(x => x.permission), ['cfg']);
+  } finally { await c.query('ROLLBACK'); c.release(); }
 });
 
 test('minor scope tidy-ups (ETS-SEC-058)', { skip }, async () => {

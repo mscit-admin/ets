@@ -12,6 +12,43 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.1.0] — 2026-10-15 — Bulk user import
+
+### Features
+- feat(backend): bulk user import for System Administrators — `POST /api/users/import/preview` checks every row
+  (up to 500) without writing and answers per row `ok` or error codes (`username_taken` case-insensitive,
+  `duplicate_in_file`, `invalid_username`, `full_name_required`, `invalid_email`, `invalid_role`,
+  `invalid_language`, `invalid_scope`, `scope_required`, `usr_admin_only` …); `POST /api/users/import` checks
+  again and creates every row in one transaction or nothing (`400 import_has_errors`, also on a username taken
+  meanwhile); more than 500 rows → `400 too_many_rows`
+- feat(backend): each imported account gets a random temporary password (`crypto.randomBytes`, 16+ letters and
+  digits without look-alikes, passes the password policy incl. 12+ for administrators) and must change it at first
+  sign-in; the passwords are returned once in the import answer only — never stored in clear, never logged; the
+  bcrypt hashes are computed in short-lived worker threads before the transaction opens
+- feat(backend): audit — one `create` / `user` row per imported user (same values as a single create, no
+  password, `context.via = "bulk_import"`) and one `bulk_create` / `user` summary row `{count, usernames}`, all in
+  the import transaction
+- feat(backend): the two import routes accept up to 1 MB of JSON, parsed only after the administrator check
+  (`middleware/body.js`); every other request keeps the 100 kB limit
+- feat(frontend): Users → «استيراد مستخدمين / Import users»: template download (.xlsx with a «help» sheet listing
+  the columns and every role / department / application id in Arabic and English, or .csv), file read in the
+  browser (.xlsx via `read-excel-file`, .csv parsed in-house: UTF-8 BOM, quotes, commas and line breaks in quotes,
+  CRLF, `;` separator), preview with per-row status and messages, error report (.xlsx / .csv, formula-safe),
+  "Create N users" only when no row has an error, result screen with the one-time passwords (copy, download
+  .xlsx / .csv, warning before closing without saving them)
+- feat(frontend): readable change-history sentences for `bulk_create` and for users created by an import (ar + en)
+- ops(deploy): nginx accepts up to 1 MB and waits up to 300 s on `/api/users/import[/preview]` (run
+  `update.sh` to re-render the snippet)
+- ops(frontend): new dependencies `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (loaded on demand, not
+  in the main bundle); `npm audit --omit=dev`: 0 vulnerabilities
+- test(tests): `backend/test/users-import.test.js` — every row error code, size limits, admin-only, all-or-nothing
+  (also on a unique-key failure inside the transaction), passwords returned once / policy / forced change /
+  sign-in, audit rows without passwords, no password in any log
+- docs(docs): Administrator Guide §1 «Import users from a file», API Reference (two endpoints, 1 MB limit), STRUCTURE.md,
+  Logging and Audit (`bulk_create`); version 1.1.0
+
+---
+
 ## [1.0.0] — 2026-10-15 — Security remediation
 
 ### Security
@@ -272,6 +309,33 @@ and must be mentioned here with the migration name.
   password rules (10 / 12 characters), 2FA changes need password + code, recovery code format `xxxx-xxxx-xxxx`,
   no-scope users, uploader cannot sign (ETS-SEC-076)
 - ops(backend, frontend): version 1.0.0 in `package.json` and `package-lock.json`
+
+### Security — Phase 7 verification leftovers (R8)
+- sec(users): `POST /users/bulk-2fa` no longer exempts the caller: a list naming the caller is refused with
+  `cannot_change_own_permissions`, `all: true` leaves the caller out; removing exemptions is unchanged. UI label
+  «Exempt everyone else from 2FA» (ar+en) (ETS-SEC-004, V2-N1)
+- sec(config): the DB TLS guard also reads `DATABASE_URL` — its host (`?host=`, empty host → PGHOST, sockets) and
+  its `sslmode` / `ssl` parameters (URL wins over PGSSLMODE; `ssl=true` = verify-full); a weaker mode to another
+  machine is refused at start, and the pool gets the TLS parameters stripped from the URL and the checked `ssl`
+  options instead, so an embedded `sslmode=disable` can no longer win (ETS-SEC-010, V4-N1)
+- sec(tracker): without `tst`, a note may accompany a «with notes» status only while the function has no note;
+  the two-step overwrite (status away and back with a new note) is refused, and an approved request re-checks
+  that the note is still empty (ETS-SEC-056)
+- sec(logging): a broken audit/auth hash chain stops the retention purge — nothing is deleted, `purge_skipped`
+  (alert) is recorded in the audit trail and system log, `npm run purge-logs` exits 2; an administrator continues
+  with `npm run purge-logs -- --acknowledge-broken-chain`, recorded as `purge_acknowledge` with who and which
+  tables; docs 07 §3/§5 and 10 (ETS-SEC-013, ETS-SEC-048, V5-O1)
+- fix(users): a duplicate permission in `overrides` is a 400 `invalid_permission` instead of a 500 (V2-N4)
+- fix(migrations): 009 records the full override list before/after in its audit rows and does not repeat the
+  `scope_fail_closed` warning when re-run; already-migrated databases are unaffected (applied by file name) (V2-N6)
+- sec(imports, tracker): a reader who sees part of an import batch gets change count, counts, apply result and
+  department figures from the visible changes only and no project figure; project-status pending counts include
+  only requests / batches of applications in the reader's scope (ETS-SEC-007, V2-N2, V2-N3)
+- sec(users): an administrator cannot reset their own password with `POST /users/<self>/reset-password` (400
+  `use_change_password`, ar+en message; the button is hidden on their own account) — `/auth/change-password`
+  asks for the current password (V2-N5)
+
+- sec(backend): a note written through the "with notes" exception is stored only if the function still has no note when the row is updated (409 `note_changed` otherwise), so a tester's note saved at the same moment cannot be overwritten (V6-N1, ETS-SEC-056); regression test repeats the race 10 times
 
 ## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
 

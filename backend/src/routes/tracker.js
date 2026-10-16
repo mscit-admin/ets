@@ -129,9 +129,10 @@ r.patch('/functions/:id', async (req, res) => {
   if (cur.removed_at) throw bad('function_removed');
   const body = req.body || {};
   // A user allowed to set a "with notes" status may write the note that goes with it in the same request — only
-  // when the status really changes to it (or the function has no note yet), not to overwrite a note (ETS-SEC-056).
-  const settingNotedStatus = Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]) &&
-    (cur[k] !== v || !String(cur.note || '').trim()));
+  // while the function has no note yet. Changing or replacing an existing note needs 'tst' (ETS-SEC-056: moving
+  // the status away and back must not open a way to overwrite a note).
+  const settingNotedStatus = !String(cur.note || '').trim() &&
+    Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
   const changes = {};
   for (const [k, v] of Object.entries(body)) {
     if (!Object.hasOwn(FIELD_PERM, k)) throw bad('unknown_field', { field: k });
@@ -154,9 +155,14 @@ r.patch('/functions/:id', async (req, res) => {
     return res.status(202).json({ pending: true, request_id: rq.id, function: cur });
   }
   const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
+  // A note written through the exception above is only stored if the function still has no note when the row is
+  // updated, so a note saved at the same moment by a tester cannot be overwritten (V6-N1).
+  const firstNoteOnly = 'note' in changes && !hasPerm(req.user, FIELD_PERM.note);
   const updated = await tx(async c => {
-    const u = (await c.query(`UPDATE functions SET ${sets}, updated_at=now(), updated_by=$${keys.length + 2} WHERE id=$1 RETURNING *`,
-      [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
+    const u = (await c.query(`UPDATE functions SET ${sets}, updated_at=now(), updated_by=$${keys.length + 2} WHERE id=$1
+      ${firstNoteOnly ? "AND btrim(coalesce(note, ''))=''" : ''} RETURNING *`,
+    [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
+    if (!u) throw new HttpError(409, 'note_changed');
     await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: id,
       summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`,
       oldValue: Object.fromEntries(keys.map(k => [k, cur[k]])), newValue: changes });
@@ -506,11 +512,12 @@ r.get('/project-status', async (req, res) => {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const v = await loadVisible(req.user);
   const on = v.functions.filter(f => f.enabled);
-  const deptIds = new Set(v.departments.map(d => d.id));
   const [snaps, edits, imports] = await Promise.all([
     recentSnapshots(),
-    query(`SELECT department_id, count(*)::int AS n FROM edit_requests WHERE status='pending' GROUP BY 1`),
-    query(`SELECT department_id, count(*)::int AS n FROM import_batches WHERE status='pending' GROUP BY 1`),
+    query(`SELECT app_id, count(*)::int AS n FROM edit_requests WHERE status='pending' GROUP BY 1`),
+    // per batch: the applications it changes (a scoped reader counts a batch when one of them is theirs)
+    query(`SELECT coalesce(array_agg(DISTINCT ch.app_id) FILTER (WHERE ch.app_id IS NOT NULL), '{}') AS apps, 1 AS n
+      FROM import_batches b LEFT JOIN import_changes ch ON ch.batch_id=b.id WHERE b.status='pending' GROUP BY b.id`),
   ]);
   // Scoped users: the project line of a snapshot is the weighted average of the departments they can see.
   const depts = v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) }));
@@ -521,7 +528,10 @@ r.get('/project-status', async (req, res) => {
     return { day: x.day, pct: Math.round(p * 100) / 100 };
   });
   const deptTrend = Object.fromEntries(depts.map(d => [d.id, snaps.map(x => ({ day: x.day, pct: +x.departments?.[d.id] || 0 }))]));
-  const pend = rows => rows.filter(x => deptIds.has(x.department_id) || (x.department_id === null && req.user.fullScope)).reduce((a, x) => a + x.n, 0);
+  // pending work: full scope counts everything; a scoped reader only requests / batches of applications in scope (V2-N3)
+  const visibleApps = new Set(v.apps.map(a => a.id));
+  const mine = id => visibleApps.has(id);
+  const pend = (rows, ok) => rows.filter(x => req.user.fullScope || ok(x)).reduce((a, x) => a + x.n, 0);
   const reps = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
   res.json({
     schedule: scheduleJson(s),
@@ -542,7 +552,7 @@ r.get('/project-status', async (req, res) => {
       reports_done: reps.filter(x => +x.progress >= 100).length,
       reports_pct: reps.length ? reps.reduce((a, x) => a + +x.progress, 0) / reps.length : null,
     },
-    pending: { edits: pend(edits.rows), imports: pend(imports.rows) },
+    pending: { edits: pend(edits.rows, x => mine(x.app_id)), imports: pend(imports.rows, x => x.apps.some(mine)) },
     trend, dept_trend: deptTrend,
     can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') && !!req.user.fullScope },
   });

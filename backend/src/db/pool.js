@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { config, dbSslOptions } from '../config.js';
+import { dbPoolConfig } from '../config.js';
 
 // numeric → JS number (values here are percentages/weights, well within double precision)
 pg.types.setTypeParser(1700, v => (v === null ? null : parseFloat(v)));
@@ -8,12 +8,9 @@ pg.types.setTypeParser(1231, v => (v === null ? null : pg.types.arrayParser.crea
 // date → 'YYYY-MM-DD' as stored (a JS Date would shift by the server's time-zone offset)
 pg.types.setTypeParser(1082, v => v);
 
-const c = config.db;
-// TLS settings from PGSSLMODE / PGSSLROOTCERT (config.js); an sslmode inside DATABASE_URL still wins.
-const ssl = dbSslOptions(c);
-export const pool = new pg.Pool(c.connectionString
-  ? { connectionString: c.connectionString, max: c.max, ssl }
-  : { host: c.host, port: c.port, database: c.database, user: c.user, password: c.password, max: c.max, ssl });
+// TLS settings from PGSSLMODE / PGSSLROOTCERT or the sslmode/ssl parameters of DATABASE_URL (config.js);
+// the same effective mode that assertConfig checked, never a parameter left inside the URL.
+export const pool = new pg.Pool(dbPoolConfig());
 
 export const query = (text, params) => pool.query(text, params);
 

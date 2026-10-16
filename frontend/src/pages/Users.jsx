@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { UserImport } from './UserImport.jsx';
 
 function TfaBadge({ u }) {
   const { t } = useI18n();
@@ -16,6 +17,7 @@ export function UserList() {
   const { t, nm, errText, fmtDate } = useI18n();
   const { data, error, loading, reload } = useLoad(() => api.get('/users'), []);
   const [sel, setSel] = useState(new Set());
+  const [importing, setImporting] = useState(false);
   const nav = useNavigate();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -32,8 +34,10 @@ export function UserList() {
   return (
     <div>
       <PageHeader title={t('users_title')} icon="users">
+        <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
         <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>
       </PageHeader>
+      {importing && <UserImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); reload(); }} />}
       <Card title={t('two_fa')} actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
         <div className="row gap wrap">
           <button className="btn btn-default btn-sm" onClick={() => bulk(true, true)}>{t('bulk_2fa_off_all')}</button>
@@ -150,7 +154,7 @@ function UserFormInner({ id }) {
       <div className="breadcrumb"><Link to="/users">{t('nav_users')}</Link><Icon name="chevron" size={12} className="flip" /><span>{isNew ? t('new_user') : u.full_name}</span></div>
       <PageHeader title={isNew ? t('new_user') : u.full_name} sub={!isNew && <span dir="ltr">{u.username}</span>} icon="user">
         {!isNew && <>
-          <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>
+          {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>}
           {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => action('reset-2fa')}>{t('reset_2fa')}</button>}
           {u.locked_until && new Date(u.locked_until) > new Date() && <button className="btn btn-default btn-sm" onClick={() => action('unlock', false)}>{t('unlock')}</button>}
           {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}
