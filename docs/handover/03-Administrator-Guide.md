@@ -38,32 +38,57 @@ from 2FA in bulk.
 
 Roles other than the three full-scope roles **must** be given a scope, otherwise the user sees nothing.
 
-### Import users from a file (1.1.0)
+### Import users from a file (1.1.0, drop-down lists and names since 1.1.1)
 To create many accounts at once: **Users → Import users** (استيراد مستخدمين).
 
-1. **Download the template** — *Excel (.xlsx)* or *CSV*. The Excel template has a second sheet, **help**, listing
-   the columns and every valid role, department and application id with its Arabic and English name (the same
-   lists are shown in the dialog under «المعرّفات المقبولة / Accepted ids»).
-2. Fill one row per user (keep the header row; the column order does not matter, extra columns are ignored):
+1. **Download the template** — *Excel (.xlsx)* or *CSV*. Download it again whenever roles, departments or
+   applications change: the Excel template is built from the system's current lists.
+   - Sheet **users**: the header row shows each column as `id / readable name` (e.g. `role / الدور`) and stays
+     frozen; the sheet is right-to-left when the interface is in Arabic. The columns **role**, **language**,
+     **departments**, **department_2**, **department_3**, **applications**, **application_2** and
+     **application_3** have **drop-down lists** (rows 2–501) with the names in the interface language — e.g.
+     «عضو فريق», «العربية», «إدارة الموارد البشرية والخدمات», «شؤون العاملين» in Arabic, or *Team Member*,
+     *Arabic*, *Human Resources & Services*, *Personnel Affairs* in English. Selecting a cell shows a short hint.
+   - The lists themselves are on a **hidden sheet `lists`** (Excel: right-click a sheet tab → *Unhide*); do not
+     edit it — download a new template instead.
+   - Sheet **help**: every column, and every role, department and application with its id, Arabic and English
+     name (the same lists are shown in the dialog under «القيم المقبولة / Accepted values»).
+2. Fill one row per user (keep the header row; the column order does not matter, extra columns are ignored;
+   templates from 1.1.0 with ids only still work):
 
    | Column | Required | Content |
    |---|---|---|
    | `username` | yes | 3–60 Latin letters, digits, `. _ -`; must not exist yet and must not repeat in the file (case-insensitive: `Ali` = `ali`) |
    | `full_name` | yes | Full name, up to 120 characters (Arabic is fine) |
    | `email` | no | Email address |
-   | `role` | yes | Role **id**: `admin`, `pm`, `tm`, `mgr`, `lead`, `member`, `ed`, `qa`, `obs` |
-   | `language` | no | `ar` or `en`; empty = *Settings → default language* |
-   | `departments` | see below | Department ids separated by commas, e.g. `hr,fin` |
-   | `applications` | see below | Application ids separated by commas, e.g. `per,rec` |
+   | `role` | yes | Pick from the list. Accepted: the Arabic or English role name, or the role id (`admin`, `pm`, `tm`, `mgr`, `lead`, `member`, `ed`, `qa`, `obs`) |
+   | `language` | no | Pick from the list: العربية / الإنجليزية (also accepted: `ar`, `en`, عربي, انجليزي, إنجليزي, Arabic, English); empty = *Settings → default language* |
+   | `departments`, `department_2`, `department_3` | see below | One department per cell from the list — name (Arabic, English, or the short name such as «المالية») or id |
+   | `applications`, `application_2`, `application_3` | see below | One application per cell from the list — name or id |
+
+   **More than one department / application:** use the extra columns (`department_2`, `department_3`, …), or
+   type several values in one cell separated by a comma — `,` or the Arabic comma `،` (also `;`), e.g.
+   «الإدارة المالية، الإدارة التجارية» or `hr,fin`. Excel then warns that the value is not in the list: choose
+   **Yes / Continue** — the warning does not block, and every value is checked when the file is uploaded.
+
+   **How names are matched:** spaces before / after and double spaces, upper / lower case, the tatweel «ـ»,
+   diacritics (harakat, shadda), أ / إ / آ vs ا, ؤ / ئ (شؤون = شئون), ى vs ي and ة vs ه do not matter. An exact
+   id always wins. A name that fits two items (e.g. two applications with the same name) is refused with
+   «القيمة تطابق أكثر من عنصر» (`ambiguous_value`): write the id instead, or the drop-down text, which then shows
+   the id in brackets, e.g. «شؤون العاملين (per)».
 
    A user of a department-limited role (anything except System Administrator, Project Manager and Technical
    Project Manager) **must** have at least one department or application, otherwise the row is refused («هذا
    الدور محدود بنطاق…»): such a user would see no data. Departments / applications given for a full-scope role
    are ignored. The import never grants permission overrides — adjust them per user afterwards if needed.
-   A CSV file must be UTF-8 (Excel: *Save as → CSV UTF-8*); commas or `;` as separator both work.
+   A CSV file must be UTF-8 (Excel: *Save as → CSV UTF-8*); commas or `;` as separator both work. A CSV file
+   has no drop-down lists; names and ids are accepted the same way.
 3. **Choose the file.** It is read in your browser and every row is checked by the server **without creating
-   anything**. The preview lists each row with «سليم / OK» or its errors (username taken, duplicate in the file,
-   invalid username / email / role / language / department / application, missing scope, missing full name).
+   anything**. The preview lists each row with what will be created, **in names** (role, language, departments,
+   applications — e.g. «عضو فريق», «العربية»), and «سليم / OK» or its errors (username taken, duplicate in the
+   file, invalid username / email / role / language / department / application, ambiguous name, missing scope,
+   missing full name). An unrecognised value is quoted in the message, e.g. «الدور غير موجود: مدير قسم» or
+   «الإدارة غير موجودة: …».
    If any row has an error, **nothing can be created**: download the **error report** (.xlsx or .csv — the
    file's rows with a message for each), fix the file and choose it again. At most **500 rows** per file.
 4. **Create N users.** All rows are created together in one step — if anything fails (for example another

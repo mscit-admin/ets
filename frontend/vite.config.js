@@ -7,5 +7,6 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': 'http://127.0.0.1:3000' },
   },
-  build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 900 },
+  // exceljs (users template only, loaded on demand) is a ~930 kB chunk of its own
+  build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 1000 },
 });

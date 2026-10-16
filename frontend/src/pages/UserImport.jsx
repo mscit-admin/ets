@@ -1,11 +1,11 @@
 // Users → Import users: template → choose an .xlsx / .csv file (read in the browser) → server-side check of every
 // row → create all of them at once → the one-time temporary passwords, shown here only.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Field, Indicator, Loading, Modal, toast, useLoad } from '../components/ui.jsx';
-import { COLUMNS, MAX_ROWS, apiRow, downloadCsv, downloadTemplate, downloadXlsx, readImportFile } from '../lib/userImport.js';
+import { MAX_ROWS, TEMPLATE_COLUMNS, apiRow, downloadCsv, downloadTemplate, downloadXlsx, listText, matchers, readImportFile, resolveRow } from '../lib/userImport.js';
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 
@@ -22,6 +22,22 @@ export function UserImport({ onClose, onDone }) {
   const [err, setErr] = useState(null);
 
   const msg = code => t('err_' + code) === 'err_' + code ? code : t('err_' + code, { max: MAX_ROWS });
+  const fieldName = f => ({ role: t('role'), language: t('language'), departments: t('department'), applications: t('application') })[f] || f;
+  // the messages of one result: the value that was not recognised when the server names it, else the generic text
+  const messagesOf = x => {
+    const out = [];
+    for (const c of x?.errors || []) {
+      const ds = (x.details || []).filter(d => d.code === c);
+      if (!ds.length) { out.push(msg(c)); continue; }
+      for (const d of ds) {
+        const key = c === 'invalid_scope' ? `imp_d_invalid_scope_${d.field}` : 'imp_d_' + c;
+        out.push(t(key) === key ? `${msg(c)}: ${d.value}` : t(key, { value: d.value, field: fieldName(d.field), matches: (d.matches || []).join(', ') }));
+      }
+    }
+    return out;
+  };
+  const ix = useMemo(() => (meta.data ? matchers(meta.data) : null), [meta.data]);
+  const byId = (list, id) => list.find(o => o.id === id);
   const close = () => {
     if (busy) return;
     if (step === 'done' && !saved && !window.confirm(t('imp_close_unsaved'))) return;
@@ -59,14 +75,15 @@ export function UserImport({ onClose, onDone }) {
 
   const resultOf = i => check?.results[i];
   const errorReport = kind => {
-    const head = ['line', ...COLUMNS, 'status', 'messages'];
+    const head = ['line', ...TEMPLATE_COLUMNS, 'status', 'messages'];
     const body = rows.map((r, i) => {
       const x = resultOf(i);
-      return [r.line, ...COLUMNS.map(c => r[c]), x?.status === 'ok' ? t('imp_ok') : t('imp_error'), (x?.errors || []).map(msg).join(' | ')];
+      return [r.line, ...TEMPLATE_COLUMNS.map(c => r[c]), x?.status === 'ok' ? t('imp_ok') : t('imp_error'), messagesOf(x).join(' | ')];
     });
     const name = `ets-users-import-errors-${stamp()}`;
     return kind === 'csv' ? downloadCsv(name + '.csv', [head, ...body])
-      : downloadXlsx(name + '.xlsx', [{ name: 'errors', rows: [head, ...body], rtl: lang === 'ar', widths: [6, 18, 26, 24, 8, 8, 16, 18, 10, 60] }]);
+      : downloadXlsx(name + '.xlsx', [{ name: 'errors', rows: [head, ...body], rtl: lang === 'ar',
+        widths: [6, 18, 26, 24, 16, 12, 24, 18, 18, 24, 18, 18, 10, 70] }]);
   };
   const passwordsTable = () => [['username', 'temporary_password'], ...created.map(u => [u.username, u.temporary_password])];
   const savePasswords = async kind => {
@@ -125,19 +142,29 @@ export function UserImport({ onClose, onDone }) {
         {busy && <Alert kind="blue">{t('imp_creating_hint')}</Alert>}
         <div className="table-wrap imp-table">
           <table className="table">
-            <thead><tr><th>{t('imp_line')}</th><th>{t('username')}</th><th>{t('full_name')}</th><th>{t('role')}</th><th>{t('status')}</th></tr></thead>
+            <thead><tr><th>{t('imp_line')}</th><th>{t('username')}</th><th>{t('full_name')}</th><th>{t('role')}</th>
+              <th>{t('language')}</th><th>{t('imp_departments')}</th><th>{t('imp_applications')}</th><th>{t('status')}</th></tr></thead>
             <tbody>
               {rows.map((r, i) => {
                 const x = resultOf(i);
-                const role = meta.data?.roles.find(o => o.id === r.role.toLowerCase());
+                // what will be created, in names (same matching as the server); a value not recognised is shown as typed
+                const v = ix ? resolveRow(ix, r) : {};
+                const role = v.role && byId(meta.data.roles, v.role);
+                const fullScope = role?.full_scope;
+                const names = (list, ids, typed) => (ids?.length ? ids.map(id => nm(byId(list, id))).join('، ') : typed);
                 return (
                   <tr key={i} className={x?.status === 'error' ? 'row-error' : ''}>
                     <td className="num">{r.line}</td>
                     <td dir="ltr" className="code">{r.username}</td>
                     <td>{r.full_name}</td>
-                    <td>{role ? nm(role) : <span dir="ltr">{r.role}</span>}</td>
+                    <td>{role ? nm(role) : <span className="muted">{r.role}</span>}</td>
+                    <td>{v.language ? t('au_lang_' + v.language) : v.language === '' ? <span className="muted small">{t('imp_lang_default')}</span> : <span className="muted">{r.language}</span>}</td>
+                    {fullScope ? <td colSpan={2} className="muted small">{t('full_scope')}</td> : <>
+                      <td>{names(meta.data?.departments, v.departments, listText(r, 'departments'))}</td>
+                      <td>{names(meta.data?.applications, v.applications, listText(r, 'applications'))}</td>
+                    </>}
                     <td>{x?.status === 'ok' ? <Indicator color="green">{t('imp_ok')}</Indicator>
-                      : <>{<Indicator color="red">{t('imp_error')}</Indicator>}<ul className="imp-errors">{(x?.errors || []).map(c => <li key={c}>{msg(c)}</li>)}</ul></>}</td>
+                      : <>{<Indicator color="red">{t('imp_error')}</Indicator>}<ul className="imp-errors">{messagesOf(x).map((m, k) => <li key={k}>{m}</li>)}</ul></>}</td>
                   </tr>
                 );
               })}

@@ -82,7 +82,8 @@ ets/
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/
 │   │       ├── http.js            HttpError and input validation helpers (ids, dates, own keys, JSON depth)
-│   │       └── csv.js             CSV cells with formula neutralisation
+│   │       ├── csv.js             CSV cells with formula neutralisation
+│   │       └── importMatch.js     Bulk user import: ids or Arabic / English names → ids (shared with the frontend)
 │   ├── scripts/
 │   │   ├── create-admin.js        Create / reset an administrator from the command line
 │   │   ├── import-legacy.js       Import the original page's data from the command line
@@ -120,7 +121,8 @@ ets/
 │       │   ├── auth.jsx           Current user / session context
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   ├── health.js          Project health indicators and recommendations (status page)
-│       │   ├── userImport.js      Bulk user import: template, .xlsx / .csv reading, error report and password files
+│       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
+│       │   ├── importMatch.js     Import values (ids or names) → ids; identical copy of backend/src/utils/importMatch.js
 │       │   └── format.js          Number and colour helpers
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
