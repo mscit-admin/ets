@@ -1,8 +1,15 @@
 // Bulk user import: the template, reading an .xlsx / .csv file in the browser, and the files offered back
 // (error report, one-time passwords). The server receives JSON rows only (POST /api/users/import[/preview]).
-// .xlsx is read and written with read-excel-file / write-excel-file, loaded on demand (not in the main bundle).
+// .xlsx is read with read-excel-file; the template (drop-down lists = Excel data validation) is written with exceljs,
+// the error report and the passwords file with write-excel-file — all loaded on demand (not in the main bundle).
+import { languageIndex, matchList, matchOne, normalize, placeIndex, roleIndex } from './importMatch.js';
 
+// The columns sent to the API. The template adds department_2/3 and application_2/3 (one more drop-down each);
+// an older file with the seven columns only is read the same way.
 export const COLUMNS = ['username', 'full_name', 'email', 'role', 'language', 'departments', 'applications'];
+export const EXTRA = { departments: ['department_2', 'department_3'], applications: ['application_2', 'application_3'] };
+export const TEMPLATE_COLUMNS = ['username', 'full_name', 'email', 'role', 'language',
+  'departments', ...EXTRA.departments, 'applications', ...EXTRA.applications];
 const REQUIRED = ['username', 'full_name', 'role'];
 export const MAX_ROWS = 500;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -58,18 +65,21 @@ const cellText = v => {
   return String(v).trim();
 };
 
+// A header cell → column id: "role / الدور" → "role", "Full name" → "full_name".
+const headerId = h => cellText(h).split('/')[0].trim().toLowerCase().replace(/\s+/g, '_');
+
 // → { rows: [{ line, username, full_name, … }], missing: [column names] }. Empty lines are skipped;
 // `line` is the row number in the file (header = 1), shown next to each result.
 export function sheetToRows(table) {
   const [head = [], ...body] = table;
-  const names = head.map(h => cellText(h).toLowerCase().replace(/\s+/g, '_'));
-  const idx = Object.fromEntries(COLUMNS.map(c => [c, names.indexOf(c)]));
+  const names = head.map(headerId);
+  const idx = Object.fromEntries(TEMPLATE_COLUMNS.map(c => [c, names.indexOf(c)]));
   const missing = REQUIRED.filter(c => idx[c] < 0);
   const rows = [];
   body.forEach((r, n) => {
     const o = { line: n + 2 };
-    for (const c of COLUMNS) o[c] = idx[c] >= 0 ? cellText(r[idx[c]]) : '';
-    if (COLUMNS.some(c => o[c] !== '')) rows.push(o);
+    for (const c of TEMPLATE_COLUMNS) o[c] = idx[c] >= 0 ? cellText(r[idx[c]]) : '';
+    if (TEMPLATE_COLUMNS.some(c => o[c] !== '')) rows.push(o);
   });
   return { rows, missing };
 }
@@ -88,9 +98,26 @@ export async function readImportFile(file) {
   throw Object.assign(new Error('bad_type'), { code: 'import_bad_type' });
 }
 
-// Row as sent to the API (the file's line number stays in the browser).
+// Row as sent to the API (the file's line number stays in the browser). Departments / applications go as the list
+// of their cells (main column + the extra ones); the server matches ids and names in each cell.
+const cellsOf = (r, c) => [r[c], ...EXTRA[c].map(x => r[x])].filter(Boolean);
 export const apiRow = r => ({ username: r.username, full_name: r.full_name, email: r.email, role: r.role, language: r.language,
-  departments: r.departments, applications: r.applications });
+  departments: cellsOf(r, 'departments'), applications: cellsOf(r, 'applications') });
+// The departments / applications of a row as one text (preview, error report).
+export const listText = (r, c) => cellsOf(r, c).join('، ');
+
+// ---- names → ids, for the preview (same matching code as the server: lib/importMatch.js) ----
+export function matchers(meta) {
+  return { role: roleIndex(meta.roles), language: languageIndex(),
+    departments: placeIndex(meta.departments), applications: placeIndex(meta.applications) };
+}
+// → { role: id|null, language: 'ar'|'en'|''|null, departments: [ids], applications: [ids] } (null = not recognised)
+export function resolveRow(ix, r) {
+  const role = matchOne(ix.role, r.role).id ?? null;
+  const language = r.language ? matchOne(ix.language, r.language).id ?? null : '';
+  return { role, language, departments: matchList(ix.departments, cellsOf(r, 'departments')).ids,
+    applications: matchList(ix.applications, cellsOf(r, 'applications')).ids };
+}
 
 // ---- files offered for download ----
 export function downloadBlob(filename, blob) {
@@ -118,7 +145,7 @@ export function helpRows(meta, t) {
   const bold = [];
   const section = title => { rows.push([]); bold.push(rows.length); rows.push([title]); };
   section(t('imp_help_columns'));
-  for (const c of COLUMNS) rows.push([t('imp_help_column'), c, '', '', t('imp_col_' + c)]);
+  for (const c of TEMPLATE_COLUMNS) rows.push([t('imp_help_column'), c, '', '', t('imp_col_' + c)]);
   section(t('role'));
   for (const r of meta.roles) rows.push([t('role'), r.id, r.name_ar, r.name_en, r.full_scope ? t('full_scope') : t('imp_scope_needed')]);
   section(t('imp_departments'));
@@ -128,11 +155,91 @@ export function helpRows(meta, t) {
   return { rows, bold };
 }
 
-export function downloadTemplate(kind, meta, t, lang) {
-  if (kind === 'csv') return downloadCsv('ets-users-template.csv', [COLUMNS]);
+// ---- the .xlsx template ----
+// Sheet "users": header "id / readable name", frozen; drop-down lists (data validation, type list) on role, language,
+// the three department and the three application columns for rows 2–501. The lists hold the names in the UI
+// language and live on the hidden sheet "lists" (a range reference: an inline list is limited to 255 characters and
+// breaks on commas). The alert only WARNS, so several values typed with commas are still accepted. Sheet "help":
+// the columns and every id with its Arabic and English name.
+const LAST_ROW = MAX_ROWS + 1;
+const WIDTHS = { username: 18, full_name: 28, email: 26, role: 24, language: 14, departments: 34, department_2: 30, department_3: 30,
+  applications: 30, application_2: 26, application_3: 26 };
+const colLetter = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+
+// The drop-down texts: the name in the UI language; a name that two items share gets its id in brackets
+// ("Name (id)", also accepted on upload).
+export function listLabels(items, label) {
+  const seen = new Map();
+  for (const it of items) { const k = normalize(label(it)); seen.set(k, (seen.get(k) || 0) + 1); }
+  return items.map(it => (seen.get(normalize(label(it))) > 1 || !label(it) ? `${label(it)} (${it.id})` : label(it)));
+}
+
+// ExcelJS: the module (browser: loaded on demand; node: for checks) → ExcelJS.Workbook with the three sheets.
+export function buildTemplate(ExcelJS, meta, t, lang) {
+  const name = o => (lang === 'en' ? o.name_en || o.name_ar : o.name_ar || o.name_en);
+  const lists = {
+    role: listLabels(meta.roles, name),
+    language: [t('au_lang_ar'), t('au_lang_en')],
+    departments: listLabels(meta.departments, name),
+    applications: listLabels(meta.applications, name),
+  };
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ETS';
+  const rtl = lang === 'ar';
+  const ws = wb.addWorksheet('users', { views: [{ state: 'frozen', xSplit: 0, ySplit: 1, rightToLeft: rtl }] });
+  ws.columns = TEMPLATE_COLUMNS.map(c => ({ key: c, width: WIDTHS[c] }));
+  const head = ws.getRow(1);
+  TEMPLATE_COLUMNS.forEach((c, i) => { head.getCell(i + 1).value = `${c} / ${t('imp_h_' + c)}`; });
+  head.font = { bold: true };
+  head.alignment = { vertical: 'middle', wrapText: true };
+  head.height = 32;
+  TEMPLATE_COLUMNS.forEach((c, i) => {
+    head.getCell(i + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REQUIRED.includes(c) ? 'FFFCE4B6' : 'FFE8EEF5' } };
+  });
+  for (const c of ['username', 'email']) ws.getColumn(TEMPLATE_COLUMNS.indexOf(c) + 1).numFmt = '@';   // text, never a number / date
+
+  const ls = wb.addWorksheet('lists', { state: 'hidden', views: [{ rightToLeft: rtl }] });
+  const listCols = [['role', t('role')], ['language', t('language')], ['departments', t('imp_departments')], ['applications', t('imp_applications')]];
+  const ranges = {};
+  listCols.forEach(([key, title], i) => {
+    const col = colLetter(i);
+    ls.getColumn(i + 1).width = 40;
+    ls.getCell(`${col}1`).value = title;
+    ls.getCell(`${col}1`).font = { bold: true };
+    lists[key].forEach((v, n) => { ls.getCell(`${col}${n + 2}`).value = v; });
+    if (lists[key].length) ranges[key] = `lists!$${col}$2:$${col}$${lists[key].length + 1}`;
+  });
+
+  const validation = (list, prompt) => ({ type: 'list', allowBlank: true, formulae: [ranges[list]],
+    showInputMessage: true, promptTitle: t('imp_dv_title'), prompt,
+    showErrorMessage: true, errorStyle: 'warning', errorTitle: t('imp_dv_error_title'), error: t('imp_dv_error') });
+  const dv = (col, list, prompt) => {
+    if (!ranges[list]) return;
+    const L = colLetter(TEMPLATE_COLUMNS.indexOf(col));
+    ws.dataValidations.add(`${L}2:${L}${LAST_ROW}`, validation(list, prompt));
+  };
+  dv('role', 'role', t('imp_dv_role'));
+  dv('language', 'language', t('imp_dv_language'));
+  for (const k of ['departments', 'applications']) {
+    dv(k, k, t('imp_dv_' + k));
+    for (const x of EXTRA[k]) dv(x, k, t('imp_dv_extra'));
+  }
+
   const help = helpRows(meta, t);
-  return downloadXlsx('ets-users-template.xlsx', [
-    { name: 'users', rows: [COLUMNS], widths: [18, 28, 26, 10, 10, 18, 22] },
-    { name: 'help', rows: help.rows, bold: help.bold, widths: [16, 10, 34, 34, 40], rtl: lang === 'ar' },
-  ]);
+  const hs = wb.addWorksheet('help', { views: [{ rightToLeft: rtl }] });
+  [16, 16, 38, 38, 48].forEach((w, i) => { hs.getColumn(i + 1).width = w; });
+  help.rows.forEach((r, i) => {
+    const row = hs.getRow(i + 1);
+    r.forEach((v, j) => { row.getCell(j + 1).value = v == null ? '' : String(v); });
+    if (i === 0 || help.bold.includes(i)) row.font = { bold: true };
+  });
+  return wb;
+}
+
+export async function downloadTemplate(kind, meta, t, lang) {
+  if (kind === 'csv') return downloadCsv('ets-users-template.csv', [TEMPLATE_COLUMNS]);
+  const mod = await import('exceljs');
+  const wb = buildTemplate(mod.default || mod, meta, t, lang);
+  const buf = await wb.xlsx.writeBuffer();
+  downloadBlob('ets-users-template.xlsx', new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
 }

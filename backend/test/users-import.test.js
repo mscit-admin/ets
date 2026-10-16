@@ -252,3 +252,123 @@ test('a username taken while the import runs (unique key) rolls everything back'
   assert.equal(await countUsers(), before);
   assert.equal((await pool.query('SELECT count(*)::int n FROM audit_log')).rows[0].n, auditBefore);
 });
+
+// ---- names as well as ids (1.1.1): the template's drop-down lists hold names ----
+
+test('names: roles, languages, departments and applications by Arabic / English name, spelling variants, separators', { skip }, async () => {
+  const root = await as('root');
+  const rows = [
+    // Arabic names exactly as in the drop-down lists
+    { username: 'nm.ar', full_name: 'عربي', role: 'عضو فريق', language: 'العربية', departments: 'إدارة الموارد البشرية والخدمات', applications: 'شؤون العاملين' },
+    // tatweel, hamza and taa-marbuta variants, Arabic comma, extra spaces, diacritics missing / added
+    { username: 'nm.var', full_name: 'متغيرات', role: '  عضـــو   فريق ', language: 'عربي',
+      departments: 'ادارة الموارد البشريه والخدمات، الماليـة', applications: 'شُئون العاملين ، التوظيف' },
+    // English names (any case), semicolon, a name that itself contains a comma
+    { username: 'nm.en', full_name: 'English', role: 'team member', language: 'ENGLISH',
+      departments: 'Setup, Infrastructure & Requirements; finance', applications: 'Payroll & Advances, leave' },
+    // shadda / kasra in the stored name (مطّلع, مختبِر) typed without them; إ → ا in a role name; the template's extra columns (array)
+    { username: 'nm.obs', full_name: 'Obs', role: 'مطلع', language: 'الانجليزية', departments: ['الموارد البشرية', 'Commercial'] },
+    { username: 'nm.qa', full_name: 'QA', role: 'مختبر', language: 'انجليزي', applications: ['per', 'Recruitment', 'الحضور والانصراف'] },
+    { username: 'nm.lead', full_name: 'Lead', role: 'رئيس فريق ادارة', language: 'إنجليزي', departments: 'hr' },
+    { username: 'nm.lang', full_name: 'Lang', role: 'Department Team Lead', language: 'Arabic', departments: ['fin', '', 'fin'] },
+    // full-scope role by Arabic name: no department needed
+    { username: 'nm.pm', full_name: 'PM', role: 'مدير المشروع', language: 'English' },
+  ];
+  const pv = await root.post('/users/import/preview', { rows });
+  assert.equal(pv.status, 200, JSON.stringify(pv.data));
+  assert.deepEqual(errorsOf(pv), rows.map(() => []), JSON.stringify(pv.data.results));
+  const r = await root.post('/users/import', { rows });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const db = (await pool.query(`SELECT u.username, u.role_id, u.language,
+      (SELECT json_agg(s.kind||':'||s.ref_id ORDER BY s.kind, s.ref_id) FROM user_scopes s WHERE s.user_id=u.id) AS sc
+    FROM users u WHERE username LIKE 'nm.%'`)).rows;
+  const by = Object.fromEntries(db.map(u => [u.username, u]));
+  assert.deepEqual(by['nm.ar'], { username: 'nm.ar', role_id: 'member', language: 'ar', sc: ['application:per', 'department:hr'] });
+  assert.deepEqual(by['nm.var'], { username: 'nm.var', role_id: 'member', language: 'ar',
+    sc: ['application:per', 'application:rec', 'department:fin', 'department:hr'] });
+  assert.deepEqual(by['nm.en'], { username: 'nm.en', role_id: 'member', language: 'en',
+    sc: ['application:lev', 'application:pay', 'department:fin', 'department:inf'] });
+  assert.deepEqual(by['nm.obs'], { username: 'nm.obs', role_id: 'obs', language: 'en', sc: ['department:com', 'department:hr'] });
+  assert.deepEqual(by['nm.qa'], { username: 'nm.qa', role_id: 'qa', language: 'en', sc: ['application:att', 'application:per', 'application:rec'] });
+  assert.deepEqual(by['nm.lead'], { username: 'nm.lead', role_id: 'lead', language: 'en', sc: ['department:hr'] });
+  assert.deepEqual(by['nm.lang'], { username: 'nm.lang', role_id: 'lead', language: 'ar', sc: ['department:fin'] });
+  assert.deepEqual(by['nm.pm'], { username: 'nm.pm', role_id: 'pm', language: 'en', sc: null });
+  // the audit row stores the resolved ids, as for a single create
+  const a = (await pool.query(`SELECT new_value FROM audit_log WHERE action='create' AND entity='user' AND summary='nm.ar'`)).rows[0].new_value;
+  assert.equal(a.role_id, 'member');
+  assert.deepEqual(a.scopes, [{ kind: 'department', ref_id: 'hr' }, { kind: 'application', ref_id: 'per' }]);
+});
+
+test('names: unknown values are named in the answer; ids still work; all-or-nothing kept', { skip }, async () => {
+  const root = await as('root');
+  const before = await countUsers();
+  const rows = [
+    { username: 'un.role', full_name: 'x', role: 'مدير قسم', departments: 'hr' },
+    { username: 'un.lang', full_name: 'x', role: 'member', language: 'فرنسي', departments: 'hr' },
+    { username: 'un.dept', full_name: 'x', role: 'عضو فريق', departments: 'الموارد البشرية، إدارة غير موجودة', applications: 'per; تطبيق مجهول' },
+    { username: 'un.ids', full_name: 'x', role: 'MEMBER', language: 'EN', departments: 'HR', applications: 'per,rec' },
+  ];
+  const r = await root.post('/users/import/preview', { rows });
+  assert.equal(r.status, 200);
+  const [a, b, c, d] = r.data.results;
+  assert.deepEqual(a.errors, ['invalid_role']);
+  assert.deepEqual(a.details, [{ code: 'invalid_role', field: 'role', value: 'مدير قسم' }]);
+  assert.deepEqual(b.errors, ['invalid_language']);
+  assert.deepEqual(b.details, [{ code: 'invalid_language', field: 'language', value: 'فرنسي' }]);
+  assert.deepEqual(c.errors, ['invalid_scope']);
+  assert.deepEqual(c.details, [{ code: 'invalid_scope', field: 'departments', value: 'إدارة غير موجودة' },
+    { code: 'invalid_scope', field: 'applications', value: 'تطبيق مجهول' }]);
+  assert.deepEqual(d, { index: 3, username: 'un.ids', status: 'ok', errors: [] });
+  // nothing sensitive in the answer: the typed values and catalog ids only
+  assert.ok(!JSON.stringify(r.data).includes('password'));
+  const x = await root.post('/users/import', { rows });
+  assert.equal(x.data.error, 'import_has_errors');
+  assert.equal(x.data.results[0].details[0].value, 'مدير قسم');
+  assert.equal(await countUsers(), before);
+});
+
+test('names: a name shared by two items → ambiguous_value; the id or "name (id)" settles it', { skip }, async () => {
+  const root = await as('root');
+  // a second application with the same Arabic name in another department
+  await pool.query(`INSERT INTO applications(id, department_id, name_ar, name_en, sort) VALUES ('per2','fin','شؤون العاملين','Personnel Affairs (Finance)',999)`);
+  try {
+    const rows = [
+      { username: 'amb.one', full_name: 'x', role: 'member', applications: 'شؤون العامِلين' },
+      { username: 'amb.two', full_name: 'x', role: 'member', applications: 'per2' },
+      { username: 'amb.three', full_name: 'x', role: 'member', applications: 'شؤون العاملين (per)' },
+      { username: 'amb.four', full_name: 'x', role: 'member', applications: 'Personnel Affairs (Finance)' },
+    ];
+    const r = await root.post('/users/import/preview', { rows });
+    const [a, b, c, d] = r.data.results;
+    assert.deepEqual(a.errors, ['ambiguous_value']);
+    assert.deepEqual(a.details, [{ code: 'ambiguous_value', field: 'applications', value: 'شؤون العامِلين', matches: ['per', 'per2'] }]);
+    assert.deepEqual(b.errors, []);
+    assert.deepEqual(c.errors, []);
+    assert.deepEqual(d.errors, []);
+    // a role name equal to another role's name is ambiguous too
+    await pool.query(`UPDATE roles SET name_en='Team Member' WHERE id='obs'`);
+    const rr = await root.post('/users/import/preview', { rows: [{ username: 'amb.role', full_name: 'x', role: 'team member', departments: 'hr' },
+      { username: 'amb.rid', full_name: 'x', role: 'member', departments: 'hr' }] });
+    assert.deepEqual(rr.data.results[0].details, [{ code: 'ambiguous_value', field: 'role', value: 'team member', matches: ['member', 'obs'] }]);
+    assert.deepEqual(rr.data.results[1].errors, []);
+    assert.equal((await root.post('/users/import', { rows: rows.slice(0, 1) })).data.error, 'import_has_errors');
+  } finally {
+    await pool.query(`UPDATE roles SET name_en='Observer' WHERE id='obs'`);
+    await pool.query(`DELETE FROM app_reports WHERE app_id='per2'`);
+    await pool.query(`DELETE FROM applications WHERE id='per2'`);
+  }
+});
+
+test('the name matching code is the same file on the server and in the browser', { skip: false }, async () => {
+  const server = fs.readFileSync(new URL('../src/utils/importMatch.js', import.meta.url), 'utf8');
+  const browser = fs.readFileSync(new URL('../../frontend/src/lib/importMatch.js', import.meta.url), 'utf8');
+  assert.equal(browser, server);
+  const m = await import('../src/utils/importMatch.js');
+  assert.equal(m.normalize('  إدارةُ   الماليـــة ،  آمنة '), 'اداره الماليه,امنه');
+  assert.equal(m.normalize('مستشفى'), m.normalize('مستشفي'));
+  assert.equal(m.normalize('شئون'), m.normalize('شؤون'));
+  const ix = m.languageIndex();
+  for (const v of ['ar', 'AR', 'العربية', 'عربي', 'Arabic', ' arabic ']) assert.equal(m.matchOne(ix, v).id, 'ar', v);
+  for (const v of ['en', 'الإنجليزية', 'الانجليزية', 'انجليزي', 'إنجليزي', 'English', 'ENGLISH']) assert.equal(m.matchOne(ix, v).id, 'en', v);
+  assert.deepEqual(m.matchOne(ix, 'fr'), { error: 'unknown' });
+});

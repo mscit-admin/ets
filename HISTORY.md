@@ -12,6 +12,47 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.1.1] — 2026-10-16 — Bulk import: dropdown lists and names
+
+### Fixes
+- fix(backend): the bulk user import accepts **names as well as ids** — reported on the live server: a template
+  filled in Arabic («عضو فريق», «عربي», Arabic department / application names) failed on every row with
+  «الدور غير موجود», «لغة غير مدعومة», «نطاق غير صالح». Roles by id, `name_ar` or `name_en`; languages by
+  `ar`/`en`, العربية, عربي, Arabic, الإنجليزية, انجليزي, إنجليزي, English; departments by id, name or short name;
+  applications by id or name. Matching ignores case, extra spaces, tatweel, diacritics, أ/إ/آ vs ا, ؤ/ئ, ى/ي and
+  ة/ه; `,` `،` `;` separate several values, and a name that itself contains a comma is still recognised. An exact
+  id wins; a name fitting several items is refused with the new row code `ambiguous_value` (ar + en messages).
+  The server stays authoritative; all existing error codes and the all-or-nothing behaviour are unchanged
+  (`backend/src/utils/importMatch.js`, same file as `frontend/src/lib/importMatch.js`)
+- feat(backend): `POST /api/users/import[/preview]` answers per error row `details: [{code, field, value, matches?}]`
+  — the value that was not recognised (the administrator's own text, shortened, and catalog ids only)
+
+### Features
+- feat(frontend): the Excel template has **drop-down lists** built from the live roles, departments and
+  applications (GET /users/meta): Excel data validation of type *list* on `role`, `language`, `departments`,
+  `department_2`, `department_3`, `applications`, `application_2`, `application_3` for rows 2–501, pointing to
+  ranges on a hidden `lists` sheet (no 255-character inline-list limit, safe with Arabic and commas); names in the
+  interface language («عضو فريق», «العربية», «إدارة الموارد البشرية والخدمات», «شؤون العاملين» / English); an
+  input message on every list column and a *warning* (not stop) alert, so several comma-separated values can still
+  be typed; frozen header `id / readable name` (e.g. `role / الدور`), column widths, right-to-left sheet in
+  Arabic; the `help` sheet is kept. New optional columns `department_2/3`, `application_2/3`; files from 1.1.0
+  (ids, seven columns) are read as before
+- feat(frontend): the import preview shows what will be created in names (role, language, departments,
+  applications) and quotes the unrecognised value in each message, e.g. «الدور غير موجود: مدير قسم»,
+  «الإدارة غير موجودة: …»; the error report carries the same messages and the new columns
+- ops(frontend): new dependency `exceljs` 4.4.0, used only to write the template and loaded on demand (own chunk,
+  not in the main bundle; works under the production CSP — no `eval` / `new Function` on the paths used);
+  `overrides.uuid ^11.1.1` for exceljs' `uuid` (GHSA-w5hq-g745-h8pq); `npm audit --omit=dev`: 0 vulnerabilities.
+  `read-excel-file` (reading) and `write-excel-file` (error report, passwords file) stay
+- test(tests): `users-import.test.js` — roles / languages / departments / applications by Arabic and English
+  name with tatweel, hamza, taa-marbuta, diacritic and ؤ/ئ variants, `,` `،` `;` separators and the extra columns;
+  unknown values named in `details`; `ambiguous_value` (and its resolution by id or «name (id)»); ids still work;
+  the browser and server matching files are identical
+- docs(docs): Administrator Guide §1 (drop-down lists, names accepted, several values, matching rules), API
+  Reference (`details`, `ambiguous_value`, names), STRUCTURE.md; version 1.1.1
+
+---
+
 ## [1.1.0] — 2026-10-15 — Bulk user import
 
 ### Features
