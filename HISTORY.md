@@ -39,7 +39,7 @@ and must be mentioned here with the migration name.
   functions table scrolls: the equation card is `position: sticky` just under the top bar (`--navbar-h`), on a
   page-coloured band so rows never show through; once stuck it gets a shadow and a compact layout (smaller rings,
   legend and formula line hidden, pills kept). The page title, breadcrumb and the «تعيين جماعي» / «إضافة وظيفة»
-  buttons scroll away with the page (back at the top). Only on screens ≥ 900 px wide **and** ≥ 700 px high —
+  buttons scroll away with the page (back at the top). Only on screens ≥ 900 px wide **and** ≥ 500 px high —
   on phones and short windows the page scrolls normally. The compact look switches on only when the page is long
   enough to stay scrolled after shrinking (no flicker on short lists)
 - feat(frontend): the **functions table is paginated** — 10 rows per page by default, «صفوف في الصفحة» 5 / 10 / 15
@@ -56,6 +56,9 @@ and must be mentioned here with the migration name.
   `frontend/src/components/Icon.jsx`)
 - feat(frontend): new messages `rows_per_page`, `showing_range`, `first_page`, `last_page`, `previous_page`,
   `next_page`, `fn_no_matches` (ar + en)
+- fix(frontend): the sticky header now also sticks on short desktop windows (≥ 900 px wide, ≥ 500 px high, was
+  700 px — e.g. 1646 × 566), and its stuck look is one line (equation | pills, ~116 px visible) so the table keeps room;
+  the weight chips hide in that line below 1200 px wide (`STICKY_MQ` and the `.app-sticky` media rule kept in sync)
 - docs(docs): User Guide (AR) §5 describes the new header, STRUCTURE.md; version 1.2.0
 
 ---

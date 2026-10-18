@@ -565,21 +565,33 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
    query is STICKY_MQ in pages/Application.jsx). The wrapper paints the page background around the card so
    rows never show through; once stuck (.stuck, set from JS) the card gets a shadow and a compact layout. */
 .sticky-sentinel { height: 0; }
-@media (min-width: 900px) and (min-height: 700px) {
+@media (min-width: 900px) and (min-height: 500px) {
   .app-sticky { position: sticky; top: calc(var(--navbar-h) - 8px); z-index: 20; background: var(--bg);
     margin: -8px 0 8px; padding-top: 8px; }
   .app-sticky > .eq-card { margin-bottom: 0; transition: box-shadow .2s; }
   .app-sticky.stuck { padding-bottom: 8px; margin-bottom: 0; }
-  .app-sticky.stuck > .eq-card { box-shadow: 0 0 0 1px var(--border), 0 8px 18px -8px rgba(0, 0, 0, .22); padding: 8px 18px; }
+  /* compact = one line: equation | stats, about 110px tall, so short windows (~560px) keep room for the table */
+  .app-sticky.stuck > .eq-card { box-shadow: 0 0 0 1px var(--border), 0 8px 18px -8px rgba(0, 0, 0, .22); padding: 6px 18px;
+    display: flex; align-items: center; gap: 16px; }
   .app-sticky.stuck .eq-legend, .app-sticky.stuck .eq-note { display: none; }
-  .app-sticky.stuck .eqb-row { height: 56px; }
-  .app-sticky.stuck .eqb-row .eq-ring { width: 56px; height: 56px; }
-  .app-sticky.stuck .eqb-plus { height: 18px; padding-inline-start: 19px; }
-  .app-sticky.stuck .eqb-plus span { width: 18px; height: 18px; font-size: 12px; }
-  .app-sticky.stuck .eqb-inputs.two + .eqb-join::before { top: 28px; bottom: 28px; }
+  .app-sticky.stuck .eqb-main { flex: 1; min-width: 0; }
+  .app-sticky.stuck .eqb-row { height: 44px; }
+  .app-sticky.stuck .eqb-row .eq-ring { width: 44px; height: 44px; }
+  .app-sticky.stuck .eqb-plus { height: 8px; padding-inline-start: 13px; }
+  .app-sticky.stuck .eqb-plus span { width: 18px; height: 18px; font-size: 12px; position: relative; z-index: 1; }
+  .app-sticky.stuck .eqb-inputs.two + .eqb-join::before { top: 22px; bottom: 22px; }
+  .app-sticky.stuck .eqb-join { width: 56px; }
+  .app-sticky.stuck .eqb-join .eq-sign { width: 28px; height: 28px; font-size: 17px; }
   .app-sticky.stuck .eqb-result { flex-direction: row; gap: 10px; }
-  .app-sticky.stuck .eqb-result .eq-ring { width: 92px; height: 92px; }
-  .app-sticky.stuck .eqb-foot { margin-top: 6px; padding-top: 6px; justify-content: center; }
+  .app-sticky.stuck .eqb-result .eq-ring { width: 76px; height: 76px; }
+  .app-sticky.stuck .eqb-foot { flex: none; max-width: 240px; margin: 0; padding: 4px 0; padding-inline-start: 16px; border-top: 0;
+    border-inline-start: 1px solid var(--border); align-self: stretch; justify-content: center; }
+  .app-sticky.stuck .eq-stats { justify-content: center; }
+  .app-sticky.stuck .eqb-conn { min-width: 24px; }
+}
+/* narrow sticky screens: the one-line compact card drops the weight chips (the full card above still shows them) */
+@media (min-width: 900px) and (max-width: 1199px) and (min-height: 500px) {
+  .app-sticky.stuck .eqb-chip { display: none; }
 }
 .fn-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
   margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
