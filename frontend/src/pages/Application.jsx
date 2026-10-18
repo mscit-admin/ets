@@ -26,7 +26,7 @@ const savePageSize = n => { try { localStorage.setItem(PAGE_SIZE_KEY, String(n))
 
 // The progress header stays visible (CSS position: sticky) only on screens wide and tall enough —
 // keep in sync with the @media rule of .app-sticky in app.css.
-const STICKY_MQ = '(min-width: 900px) and (min-height: 700px)';
+const STICKY_MQ = '(min-width: 900px) and (min-height: 500px)';
 const navbarHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navbar-h')) || 52;
 
 // Is the sticky header currently stuck under the top bar? (→ compact look + shadow)
