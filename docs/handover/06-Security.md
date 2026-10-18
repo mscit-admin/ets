@@ -44,6 +44,16 @@
 - Sessions are revoked on logout, password change (other sessions), admin password reset, admin 2FA reset,
   self-service 2FA disable (other sessions), `create-admin` from the command line (all sessions of that account),
   deactivation, admin *End sessions*, and after too many wrong answers to a re-authentication (that session).
+- **Live updates (1.4.0, `GET /api/events`, Server-Sent Events):** signed-in users only (`requireAuth`); the
+  events carry no data values — only "something changed" with department / application ids, sent only to users
+  whose scope includes them — and every screen reloads through its usual scoped endpoint, so the scope rules
+  and the export policy are unchanged. Each stream's session is re-checked on every heartbeat (25 s) and at once
+  on sign-out, password change / reset, 2FA reset or disable, *End sessions*, deactivation and scope / role
+  changes (PostgreSQL `NOTIFY` to every API process); an ended, expired or idle session closes the stream
+  (`session_ended`). Neither the stream nor the reloads it triggers (`X-ETS-Live: 1`) count as activity, so an
+  open dashboard does not defeat the idle timeout. At most 5 open streams per user (`LIVE_MAX_STREAMS_PER_USER`,
+  per API process); opening a stream counts as one request for the general rate limit and is written to the
+  access log once (heartbeats are not). The CSP `connect-src 'self'` already allows the same-origin stream.
 
 ## 4. Authorisation
 

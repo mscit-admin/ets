@@ -59,6 +59,7 @@ ets/
 │   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
 │   │   │   ├── approvals.js       /api/approvals — data-entry edit requests: list, approve, reject, withdraw
 │   │   │   ├── export.js          /api/export/<report>.xlsx — Excel exports of the screens (exp, scope, strict audit)
+│   │   │   ├── events.js          /api/events — live updates (Server-Sent Events): auth, per-user cap, heartbeat
 │   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
@@ -82,6 +83,8 @@ ets/
 │   │   │   ├── export-labels.js   Arabic / English labels of the Excel exports
 │   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
 │   │   │   ├── functions.js       Add / remove (soft) / restore functions
+│   │   │   ├── live.js            Live updates hub: pg_notify after commit, one LISTEN connection per process (reconnects),
+│   │   │   │                      scope-filtered "tracker_changed" events, session re-check on heartbeat / sign-out
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/
 │   │       ├── http.js            HttpError and input validation helpers (ids, dates, own keys, JSON depth)
@@ -106,6 +109,8 @@ ets/
 │       ├── input.test.js          Request limits, validation, CSV neutralisation, branding image cleaning
 │       ├── users-import.test.js   Bulk user import: row checks, limits, all-or-nothing, one-time passwords, audit
 │       ├── export.test.js         Excel exports: exp required, scope, users admin-only, audit, valid xlsx, no formulas
+│       ├── live.test.js           /api/events: auth, tracker_changed after commit without values, scope, sign-out /
+│       │                          expiry close the stream, per-user cap, access log (needs TEST_DATABASE_URL)
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -123,6 +128,8 @@ ets/
 │       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
+│       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback
+│       │   ├── erpModules.js      ERP module wheel: standard modules and the department → module mapping (edit here)
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   ├── health.js          Project health indicators and recommendations (status page)
 │       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
@@ -132,6 +139,8 @@ ets/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
 │       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
 │       │   ├── ExportButton.jsx   «Export to Excel» button (exp only) with the screen's filters
+│       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG) and its legend
+│       │   ├── LiveBadge.jsx      «تحديث مباشر» / "Live" status badge
 │       │   ├── Icon.jsx           SVG icon set
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve model, chart and KPI cards (dashboard + curve page)
@@ -139,7 +148,7 @@ ets/
 │       ├── pages/
 │       │   ├── Login.jsx          Login, 2FA verify/enrol, recovery codes, password forms
 │       │   ├── ProjectStatus.jsx  Project health: schedule variance, delay, pace, forecast, departments, recommendations
-│       │   ├── Dashboard.jsx      Workspace: totals, S-curve card, departments, lowest apps, test distribution
+│       │   ├── Dashboard.jsx      Workspace: ERP module wheel, totals, S-curve card, departments, lowest apps, test distribution
 │       │   ├── Department.jsx     Applications of one department
 │       │   ├── Application.jsx    Functions list with inline editing, bulk set, add requirement
 │       │   ├── Weights.jsx        Application weights and calculation parameters
