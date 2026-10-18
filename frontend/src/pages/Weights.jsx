@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 export default function Weights() {
   const { t, nm, errText } = useI18n();
@@ -43,6 +44,7 @@ export default function Weights() {
   return (
     <div>
       <PageHeader title={t('weights_title')} icon="scale">
+        <ExportButton report="weights" />
         {global && <button className="btn btn-default btn-sm" onClick={reset}>{t('reset_defaults')}</button>}
         {editable && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
       </PageHeader>

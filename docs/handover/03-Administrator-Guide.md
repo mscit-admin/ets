@@ -273,7 +273,8 @@ Branding images are public (the login screen shows them), so on upload the syste
 Tabs: **Login & security**, **Audit trail**, **Request log**, **Errors**, **System**.
 Filter by text, date range, event and result. Click a row to see all of its details (for audit rows this
 includes the old and new values). **Export CSV** downloads the current filter (opens in Excel; Arabic is
-kept). Every export, and an administrator opening a security log, is itself recorded in the audit trail.
+kept); **Export to Excel** downloads the same rows as an `.xlsx` file. Both need the `exp` permission as well
+(1.3.0). Every export, and an administrator opening a security log, is itself recorded in the audit trail.
 
 **Security logs are for System Administrators only.** The *Login & security*, *Request log*, *Errors* and
 *System* tabs, the statistics cards, IP addresses and user agents are shown to the System Administrator role

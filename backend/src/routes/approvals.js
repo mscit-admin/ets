@@ -38,18 +38,21 @@ async function items(ids) {
     LEFT JOIN functions f ON f.id=i.function_id WHERE i.request_id = ANY($1) ORDER BY i.id`, [ids])).rows;
 }
 
-r.get('/', async (req, res) => {
+// The requests a user may see, with their items: the Approvals screen and its Excel export (routes/export.js).
+export async function listRequests(user, qs = {}, { limit = 300 } = {}) {
   const params = [], where = [];
-  if (req.query.status) { params.push(str(req.query.status, 20)); where.push(`r.status=$${params.length}`); }
-  if (req.query.mine === '1') { params.push(req.user.id); where.push(`r.requested_by=$${params.length}`); }
+  if (qs.status) { params.push(str(qs.status, 20)); where.push(`r.status=$${params.length}`); }
+  if (qs.mine === '1') { params.push(user.id); where.push(`r.requested_by=$${params.length}`); }
   const rows = (await query(`SELECT ${COLS} FROM edit_requests r ${JOINS}
-    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY r.requested_at DESC LIMIT 300`, params)).rows;
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY r.requested_at DESC LIMIT ${limit | 0}`, params)).rows;
   const apps = await allApps();
-  const list = rows.filter(x => visible(req.user, x, apps));
+  const list = rows.filter(x => visible(user, x, apps));
   const its = await items(list.map(x => x.id));
-  for (const x of list) { x.can = abilities(req.user, x, apps); x.items = its.filter(i => i.request_id === x.id); }
-  res.json({ requests: list });
-});
+  for (const x of list) { x.can = abilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id); }
+  return list;
+}
+
+r.get('/', async (req, res) => res.json({ requests: await listRequests(req.user, req.query) }));
 
 r.get('/pending-count', async (req, res) => {
   const rows = (await query(`SELECT id, department_id, app_id, requested_by FROM edit_requests WHERE status='pending'`)).rows;

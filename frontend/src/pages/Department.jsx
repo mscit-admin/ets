@@ -4,6 +4,7 @@ import { api, path, notFoundError } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 export default function Department() {
   const { id } = useParams();
@@ -17,6 +18,7 @@ export default function Department() {
     <div>
       <div className="breadcrumb"><Link to="/">{t('nav_home')}</Link><Icon name="chevron" size={12} className="flip" /><span>{nm(d, 'short')}</span></div>
       <PageHeader title={nm(d)} sub={`${t('apps_count', { n: applications.length })} · ${t('weight')} ${pc(d.weight)}`} icon={d.emblem}>
+        <ExportButton report="department" params={{ id: d.id }} />
         <div className="head-pct"><Pct value={d.pct} /></div>
       </PageHeader>
       <Card>

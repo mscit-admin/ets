@@ -132,11 +132,18 @@ password — use `POST /auth/change-password`).
 | GET | `/stats` | 24 h counters and `log_write_failures` (administrators) |
 | GET | `/integrity` | Hash-chain verification of `audit_log` and `auth_log` → `{ok, tables:[{table, rows, first_seq, last_seq, head, purges, breaks}]}` (administrators) |
 | GET | `/:type` | `type` = auth, audit, access, error, system. Query: `q, from, to (YYYY-MM-DD), user_id, event, success, status, page, limit (≤500)` → `{rows, total, page, limit, events}` |
-| GET | `/:type/export` | CSV with the same filters |
+| GET | `/:type/export` | CSV with the same filters (also needs `exp` since 1.3.0) |
 
 `auth`, `access`, `error` and `system` are for administrators only (`403 admin_only` otherwise). Other users read
 `audit` only — non-full-scope users limited to their applications — with IP addresses and user agents removed
 (also inside `context`, and in the CSV).
+
+## Excel exports — `/export` (permission `exp`, 1.3.0)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/:report.xlsx` | One-sheet Excel file of a screen. `report` = `summary`, `project_status`, `department` (`id`), `functions` (`id`, `q`, `source`, `test`, `show_off`, `show_removed`), `weights`, `reports` (`dept`), `schedule`, `approvals` (`status`, `mine`), `imports` (`status`), `import_detail` (`id`), `users` (also `usr` + administrator role), `log` (`type`, and the `/logs/:type` filters; also `log`). `lang=ar\|en` (default: the user's language). Same scope as the screen; strict audit row (`action=export`, `entity=<report>`); `Content-Disposition` with an ASCII `filename` and a UTF-8 `filename*`; up to 100,000 rows |
+
+See *06-Security.md → 4a. Export policy* for the permission × scope matrix.
 
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |

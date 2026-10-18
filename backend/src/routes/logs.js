@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db/pool.js';
-import { requireAuth, requirePerm, canSeeApp, ADMIN_ROLE } from '../middleware/auth.js';
+import { requireAuth, requirePerm, hasPerm, canSeeApp, ADMIN_ROLE } from '../middleware/auth.js';
 import { logAudit, logWriteFailures } from '../services/logs.js';
 import { verifyAll } from '../services/logchain.js';
 import { HttpError, bad, str, own, isDate, isId } from '../utils/http.js';
@@ -84,6 +84,10 @@ function buildQuery(t, qs) {
   return { where, params };
 }
 
+// The filters a log export was made with, for its audit row.
+const LOG_FILTERS = ['q', 'from', 'to', 'user_id', 'event', 'success', 'status'];
+export const logFilters = qs => Object.fromEntries(LOG_FILTERS.filter(k => typeof qs[k] === 'string' && qs[k] !== '').map(k => [k, qs[k].slice(0, 200)]));
+
 const validDate = d => d === undefined || d === '' || isDate(d);
 // Deepest page offered; larger values would only make PostgreSQL skip rows for nothing (ETS-SEC-029).
 const MAX_PAGE = 100000;
@@ -141,18 +145,29 @@ r.get('/:type', async (req, res) => {
   res.json({ rows: forReader(req.user, rows.rows), total: count.rows[0].n, page, limit, events });
 });
 
-r.get('/:type/export', async (req, res) => {
-  const t = own(TYPES, req.params.type);
+// Rows of a log export (CSV here, Excel in routes/export.js), with the same rules as the screen: 'log', the
+// security logs for administrators only, the reader's scope, no IP / device for non-administrators.
+export const EXPORT_CAP = 100000;
+export async function exportRows(req, type) {
+  if (!hasPerm(req.user, 'log')) throw new HttpError(403, 'forbidden', { permission: 'log' });
+  const t = own(TYPES, type);
   if (!t) throw bad('unknown_log');
   if (!validDate(req.query.from) || !validDate(req.query.to)) throw bad('invalid_date');
-  requireAdminLog(req, req.params.type);
+  requireAdminLog(req, type);
   const { where, params } = buildQuery(t, req.query);
-  await scopeFilter(req.user, req.params.type, where, params);
+  await scopeFilter(req.user, type, where, params);
   const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  const rows = forReader(req.user, (await query(`SELECT ${t.cols} FROM ${t.table} l ${t.join || ''} ${w} ORDER BY l.ts DESC LIMIT 100000`, params)).rows);
+  const q = await query(`SELECT ${t.cols} FROM ${t.table} l ${t.join || ''} ${w} ORDER BY l.ts DESC LIMIT ${EXPORT_CAP}`, params);
+  const fields = q.fields.map(f => f.name).filter(n => isAdmin(req.user) || !PRIVATE_KEY.test(n));
+  return { rows: forReader(req.user, q.rows), fields };
+}
+
+// Every export needs 'exp' as well (export policy, docs/handover/06-Security.md 4a).
+r.get('/:type/export', requirePerm('exp'), async (req, res) => {
+  const { rows, fields: cols } = await exportRows(req, req.params.type);
   // strict: the export is refused when its audit row cannot be written (ETS-SEC-049)
-  await logAudit(req, { action: 'export', entity: 'log', entityId: req.params.type, summary: `${rows.length} rows` });
-  const cols = rows.length ? Object.keys(rows[0]) : [];
+  await logAudit(req, { action: 'export', entity: 'log', entityId: req.params.type, summary: `${rows.length} rows`,
+    newValue: { format: 'csv', rows: rows.length, filters: logFilters(req.query) } });
   const csv = '﻿' + [cols.join(','), ...rows.map(x => cols.map(c => csvCell(x[c] instanceof Date ? x[c].toISOString() : x[c])).join(','))].join('\r\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="ets-${req.params.type}-log-${new Date().toISOString().slice(0, 10)}.csv"`);

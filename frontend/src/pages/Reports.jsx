@@ -5,6 +5,7 @@ import { api, path } from '../lib/api.js';
 import { REPORT_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 export default function Reports() {
   const { t, nm, errText } = useI18n();
@@ -37,7 +38,9 @@ export default function Reports() {
         <div className="breadcrumb"><Link to={'/department/' + dept}>{nm(departments[0], 'short')}</Link><Icon name="chevron" size={12} className="flip" /><span>{t('reports_title')}</span></div>
       )}
       <PageHeader title={dept && departments[0] ? `${t('reports_title')} — ${nm(departments[0], 'short')}` : t('reports_title')}
-        sub={t('reports_sub')} icon="report" />
+        sub={t('reports_sub')} icon="report">
+        <ExportButton report="reports" params={{ dept: dept || '' }} />
+      </PageHeader>
       <div className="grid-cards">
         <NumberCard label={t('report_progress')} value={<Pct value={sw ? sp / sw : 0} />} sub={<>{t('reports_share')}: <span className="num">{Math.round(settings.reports_share * 100)}%</span></>} />
         {[1, 2, 3].map(i => <NumberCard key={i} label={t('rs_' + i)} value={counts[i]} color={REPORT_COLORS[i]} />)}

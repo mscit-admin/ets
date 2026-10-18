@@ -8,6 +8,7 @@ import { projectHealth, STATUS_COLOR } from '../lib/health.js';
 import { Icon } from '../components/Icon.jsx';
 import { SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 const iso = x => '⁦' + x + '⁩';
 const STATUS_ICON = { done: 'check', on_track: 'check', at_risk: 'alert', delayed: 'alert', overdue: 'flag', not_started: 'clock', no_dates: 'info' };
@@ -55,6 +56,7 @@ export default function ProjectStatus() {
     <div>
       <PageHeader title={t('status_title')} sub={t('status_sub')} icon="pulse">
         {st.can.timeline && <Link to="/settings#timeline" className="btn btn-default btn-sm"><Icon name="calendar" size={14} /> {t('project_timeline')}</Link>}
+        <ExportButton report="project_status" />
       </PageHeader>
 
       <Card className="status-hero">

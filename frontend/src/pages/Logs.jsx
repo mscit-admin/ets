@@ -5,6 +5,7 @@ import { api, path, qs } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, Empty, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { makeAudit } from '../lib/audit.js';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 const TYPES = ['auth', 'audit', 'access', 'error', 'system'];
 
@@ -106,7 +107,7 @@ function columns(type, t, fmtDate, describe) {
 export default function Logs() {
   const { t, fmtDate, lang } = useI18n();
   const describe = useMemo(() => makeAudit({ t, lang }), [t, lang]);
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   // sign-in, request, error and system logs (and every IP address) are for system administrators only (ETS-SEC-047)
   const admin = user.role === 'admin';
   const types = admin ? TYPES : ['audit'];
@@ -136,7 +137,9 @@ export default function Logs() {
             <Icon name="check" size={14} /> {t('verify_integrity')}
           </button>
         )}
-        <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>
+        {/* every export needs 'exp' as well as 'log' (export policy); the server checks both */}
+        {can('exp') && <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>}
+        <ExportButton report="log" params={{ type, ...applied }} />
       </PageHeader>
       {integrity && !integrity.busy && (integrity.error ? <ErrorBox error={integrity.error} /> : (
         <Card>

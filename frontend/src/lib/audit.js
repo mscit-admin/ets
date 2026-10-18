@@ -12,6 +12,9 @@ const SETTING_LABEL = {
   'logs.access_retention_days': 'access_retention_days', 'calc.weight_mode': 'weight_mode',
   'calc.notif_share': 'notif_share', 'calc.reports_share': 'reports_share',
 };
+// Reports that can be exported to Excel (backend routes/export.js); the audit entity of an export is the report key.
+const EXPORT_REPORTS = new Set(['summary', 'project_status', 'department', 'functions', 'weights', 'reports', 'schedule', 'approvals',
+  'imports', 'import_detail', 'users']);
 const MAX_INLINE = 3;      // change lines shown under the sentence in the list; the rest are in the details
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -86,6 +89,22 @@ export function makeAudit({ t, lang }) {
     return t(many, { ...vars, n: ch.length });
   }
 
+  // Filters an export was made with, as a reader would say them.
+  function filterValue(report, k, v) {
+    if (k === 'test') return tx('ts_' + v) || v;
+    if (k === 'source') return tx('src_' + v) || v;
+    if (k === 'status') return tx((report === 'approvals' ? 'rq_' : 'st_') + v) || v;
+    if (k === 'type') return tx('log_' + v) || v;
+    if (k === 'success') return v === 'true' ? t('yes') : t('no');
+    if (k === 'show_off' || k === 'show_removed' || k === 'mine') return t('yes');
+    return quote(short(String(v), 60));
+  }
+  const exportNotes = (notes, nv, report) => {
+    const f = Object.entries(nv.filters || {}).filter(([k]) => !(report === 'log' && k === 'type'));
+    if (f.length) notes.push(t('au_export_filters', { filters: f.map(([k, v]) => `${tx('xf_' + k) || k}: ${filterValue(report, k, v)}`).join(lang === 'ar' ? '، ' : ', ') }));
+    if (nv.truncated) notes.push(t('au_export_truncated'));
+  };
+
   // { text, lines: [{label, from, to}], items: [...], notes: [string], type }
   return function describe(r) {
     const ctx = r.context || {};
@@ -133,7 +152,13 @@ export function makeAudit({ t, lang }) {
       case 'update:schedule': text = t('au_update_schedule'); lines = diff(r.old_value, r.new_value); break;
       case 'export:tracker': text = t('au_export_tracker'); break;
       case 'import:tracker': text = t('au_import_tracker'); break;
-      case 'export:log': text = t('au_export_log', { log: t('log_' + r.entity_id), summary: r.summary || '' }); break;
+      case 'export:log': {
+        const nv = r.new_value || {};
+        const n = nv.rows ?? parseInt(r.summary, 10);
+        text = t('au_export_log', { log: t('log_' + r.entity_id), format: nv.format === 'xlsx' ? (lang === 'ar' ? 'إكسل' : 'Excel') : 'CSV', n: Number.isFinite(n) ? n : '—' });
+        exportNotes(notes, nv, 'log');
+        break;
+      }
       case 'create:user': text = t('au_create_user', { target: quote(r.summary || r.entity_id) });
         lines = diff({}, r.new_value).filter(l => l.field !== 'password');
         if (ctx.via === 'bulk_import') notes.push(t('au_via_bulk_import'));
@@ -193,7 +218,17 @@ export function makeAudit({ t, lang }) {
       }
       case 'update:branding': text = t('au_branding_update', { key: tx('brand_' + r.entity_id) || r.entity_id }); break;
       case 'reset:branding': text = t('au_branding_reset', { key: tx('brand_' + r.entity_id) || r.entity_id }); break;
-      default: break;
+      default:
+        if (r.action === 'export' && EXPORT_REPORTS.has(r.entity)) {
+          const nv = r.new_value || {};
+          const tg = nv.target;
+          const target = r.entity === 'functions' && app ? quote(app)
+            : tg?.name_ar || tg?.name_en ? quote((lang === 'en' && tg.name_en) || tg.name_ar || tg.name_en)
+              : r.entity_id ? '#' + r.entity_id : '';
+          text = t(target ? 'au_export_report_of' : 'au_export_report', { report: t('xr_' + r.entity), target, n: nv.rows ?? '—' });
+          exportNotes(notes, nv, r.entity);
+        }
+        break;
     }
 
     if (!text) {        // anything not covered above (or an older row without context)

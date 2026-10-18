@@ -7,6 +7,7 @@ import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx'
 import { projectHealth } from '../lib/health.js';
 import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, Ring, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 export default function Dashboard() {
   const { t, nm, fmtDay } = useI18n();
@@ -24,7 +25,9 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home" />
+      <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home">
+        <ExportButton report="summary" />
+      </PageHeader>
 
       {pending?.pending > 0 && (
         <Link to="/imports?status=pending" className="alert orange block-link">

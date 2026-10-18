@@ -52,10 +52,12 @@ async function pendingFor(appId) {
 
 const calcSettings = s => ({ weight_mode: s['calc.weight_mode'], notif_share: s['calc.notif_share'], reports_share: s['calc.reports_share'] });
 
-r.get('/summary', async (req, res) => {
-  const v = await loadVisible(req.user);
+// The data behind each screen, as functions of the reader: the screen's route and its Excel export
+// (routes/export.js) use the same ones, so an export never shows more than the screen (export policy).
+export async function summaryData(user) {
+  const v = await loadVisible(user);
   const notes = v.functions.filter(f => f.enabled && f.has_note).length;
-  res.json({
+  return {
     total: v.calc.total,
     departments: v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) })),
     applications: v.apps.map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
@@ -66,26 +68,29 @@ r.get('/summary', async (req, res) => {
       experienceOff: v.functions.filter(f => !f.enabled && f.source === 'experience').length,
     },
     settings: calcSettings(v.settings),
-  });
-});
+  };
+}
+r.get('/summary', async (req, res) => res.json(await summaryData(req.user)));
 
-r.get('/departments/:id', async (req, res) => {
-  const v = await loadVisible(req.user);
-  const d = v.departments.find(x => x.id === req.params.id);
+export async function departmentData(user, id) {
+  const v = await loadVisible(user);
+  const d = v.departments.find(x => x.id === id);
   if (!d) {
-    const exists = (await query('SELECT 1 FROM departments WHERE id=$1', [req.params.id])).rowCount;
-    throw exists ? new HttpError(403, 'out_of_scope', { department: req.params.id }) : notFound();
+    const exists = typeof id === 'string' && (await query('SELECT 1 FROM departments WHERE id=$1', [id])).rowCount;
+    throw exists ? new HttpError(403, 'out_of_scope', { department: id }) : notFound();
   }
-  res.json({
+  return {
     department: { ...d, ...v.calc.departments.find(x => x.id === d.id) },
     applications: v.apps.filter(a => a.department_id === d.id).map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
     settings: calcSettings(v.settings),
-  });
-});
+  };
+}
+r.get('/departments/:id', async (req, res) => res.json(await departmentData(req.user, req.params.id)));
 
-r.get('/applications/:id', async (req, res) => {
-  const a = await getApp(req.user, req.params.id);
-  const v = await loadVisible(req.user);
+export async function applicationData(user, id) {
+  if (typeof id !== 'string') throw notFound();
+  const a = await getApp(user, id);
+  const v = await loadVisible(user);
   const [fns, rep, dept] = await Promise.all([
     query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name FROM functions f
       LEFT JOIN users u ON u.id=f.updated_by LEFT JOIN users rb ON rb.id=f.removed_by
@@ -93,8 +98,8 @@ r.get('/applications/:id', async (req, res) => {
     query('SELECT * FROM app_reports WHERE app_id=$1', [a.id]),
     query('SELECT * FROM departments WHERE id=$1', [a.department_id]),
   ]);
-  const u = req.user;
-  res.json({
+  const u = user;
+  return {
     application: { ...a, calc: v.calc.applications.find(x => x.id === a.id) },
     department: dept.rows[0],
     functions: fns.rows,
@@ -103,8 +108,9 @@ r.get('/applications/:id', async (req, res) => {
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
     can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), rep: hasPerm(u, 'rep') },
-  });
-});
+  };
+}
+r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
 
 // Field → permission needed to change it.
 const FIELD_PERM = {
@@ -310,15 +316,16 @@ r.post('/functions/:id/restore', requirePerm('tog'), async (req, res) => {
 });
 
 // ---- weights & calculation parameters ----
-r.get('/weights', async (req, res) => {
-  const v = await loadVisible(req.user);
-  res.json({
+export async function weightsData(user) {
+  const v = await loadVisible(user);
+  return {
     departments: v.departments,
     applications: v.apps.map(a => ({ id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en,
       weight: a.weight, default_weight: a.default_weight, fnWeight: v.calc.applications.find(x => x.id === a.id).fnWeight })),
     settings: calcSettings(v.settings),
-  });
-});
+  };
+}
+r.get('/weights', async (req, res) => res.json(await weightsData(req.user)));
 
 r.put('/weights', requirePerm('wgt'), async (req, res) => {
   const { weights = {}, weight_mode, notif_share, reports_share } = req.body || {};
@@ -366,24 +373,25 @@ r.post('/weights/reset', requirePerm('wgt'), async (req, res) => {
 });
 
 // ---- reports track ----
-r.get('/reports', async (req, res) => {
-  const v = await loadVisible(req.user);
+export async function reportsData(user) {
+  const v = await loadVisible(user);
   const reports = await query(`SELECT r.*, u.full_name AS updated_by_name FROM app_reports r LEFT JOIN users u ON u.id=r.updated_by`);
   const byApp = new Map(reports.rows.map(x => [x.app_id, x]));
   const base = new Set(v.departments.filter(d => d.is_base).map(d => d.id));
   const pend = (await query(`SELECT i.app_id, i.field, i.new_value, u.full_name AS requested_by_name
     FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
     WHERE r.status='pending' AND i.kind='report'`)).rows;
-  res.json({
+  return {
     departments: v.departments.filter(d => !d.is_base),
     applications: v.apps.filter(a => !base.has(a.department_id)).map(a => ({
       id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en, icon: a.icon,
       weight: v.calc.applications.find(x => x.id === a.id).weight, report: byApp.get(a.id) || null,
       pending: pend.filter(p => p.app_id === a.id) })),
     settings: calcSettings(v.settings),
-    can: { rep: hasPerm(req.user, 'rep') },
-  });
-});
+    can: { rep: hasPerm(user, 'rep') },
+  };
+}
+r.get('/reports', async (req, res) => res.json(await reportsData(req.user)));
 
 r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   const a = await getApp(req.user, req.params.appId);
@@ -418,7 +426,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = v => ISO.test(v) && !Number.isNaN(new Date(v + 'T00:00:00Z').getTime()) && new Date(v + 'T00:00:00Z').toISOString().startsWith(v);
 
 // Start + k periods (months keep the day of month, clamped to the month's length), as 'YYYY-MM-DD'.
-function addPeriods(start, unit, k) {
+export function addPeriods(start, unit, k) {
   const d = new Date(start + 'T00:00:00Z');
   if (unit === 'month') {
     const day = d.getUTCDate();
@@ -444,12 +452,13 @@ function scheduleJson(s) {
   };
 }
 
-r.get('/schedule', async (req, res) => {
+export async function scheduleData(user) {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  const v = await loadVisible(req.user);
-  res.json({ ...scheduleJson(s), current_pct: v.calc.total.pct,
-    can: { sch: hasPerm(req.user, 'sch') && !!req.user.fullScope, timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope } });
-});
+  const v = await loadVisible(user);
+  return { ...scheduleJson(s), current_pct: v.calc.total.pct,
+    can: { sch: hasPerm(user, 'sch') && !!user.fullScope, timeline: hasPerm(user, 'cfg') && !!user.fullScope } };
+}
+r.get('/schedule', async (req, res) => res.json(await scheduleData(req.user)));
 
 // Periods follow the close date when one is set; arrays are cut to fit, the plan returns to the S-curve
 // when the number of periods changes.
@@ -508,9 +517,9 @@ r.put('/timeline', requirePerm('cfg'), async (req, res) => {
 });
 
 // Everything the project status page needs, for the user's scope.
-r.get('/project-status', async (req, res) => {
+export async function projectStatusData(user) {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  const v = await loadVisible(req.user);
+  const v = await loadVisible(user);
   const on = v.functions.filter(f => f.enabled);
   const [snaps, edits, imports] = await Promise.all([
     recentSnapshots(),
@@ -523,7 +532,7 @@ r.get('/project-status', async (req, res) => {
   const depts = v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) }));
   const tw = depts.reduce((a, d) => a + d.weight, 0);
   const trend = snaps.map(x => {
-    if (req.user.fullScope) return { day: x.day, pct: x.pct };
+    if (user.fullScope) return { day: x.day, pct: x.pct };
     const p = tw ? depts.reduce((a, d) => a + d.weight * (+x.departments?.[d.id] || 0), 0) / tw : 0;
     return { day: x.day, pct: Math.round(p * 100) / 100 };
   });
@@ -531,9 +540,9 @@ r.get('/project-status', async (req, res) => {
   // pending work: full scope counts everything; a scoped reader only requests / batches of applications in scope (V2-N3)
   const visibleApps = new Set(v.apps.map(a => a.id));
   const mine = id => visibleApps.has(id);
-  const pend = (rows, ok) => rows.filter(x => req.user.fullScope || ok(x)).reduce((a, x) => a + x.n, 0);
+  const pend = (rows, ok) => rows.filter(x => user.fullScope || ok(x)).reduce((a, x) => a + x.n, 0);
   const reps = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
-  res.json({
+  return {
     schedule: scheduleJson(s),
     today: new Date().toISOString().slice(0, 10),
     total: v.calc.total,
@@ -554,9 +563,10 @@ r.get('/project-status', async (req, res) => {
     },
     pending: { edits: pend(edits.rows, x => mine(x.app_id)), imports: pend(imports.rows, x => x.apps.some(mine)) },
     trend, dept_trend: deptTrend,
-    can: { timeline: hasPerm(req.user, 'cfg') && !!req.user.fullScope, sch: hasPerm(req.user, 'sch') && !!req.user.fullScope },
-  });
-});
+    can: { timeline: hasPerm(user, 'cfg') && !!user.fullScope, sch: hasPerm(user, 'sch') && !!user.fullScope },
+  };
+}
+r.get('/project-status', async (req, res) => res.json(await projectStatusData(req.user)));
 
 // ---- search ----
 r.get('/search', async (req, res) => {
