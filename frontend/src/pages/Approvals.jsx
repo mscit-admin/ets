@@ -5,6 +5,7 @@ import { api, path, qs } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
@@ -59,6 +60,7 @@ export default function Approvals() {
   return (
     <div>
       <PageHeader title={t('approvals_title')} sub={t('approvals_sub')} icon="check">
+        <ExportButton report="approvals" params={{ status, mine: mine ? 1 : '' }} />
         {status === 'pending' && canApproveAny && <button className="btn btn-primary btn-sm" onClick={approveAll}>{t('approve_all')}</button>}
       </PageHeader>
       <div className="filter-bar">

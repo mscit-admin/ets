@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { CurveKpis, SCurveChart, addPeriods, scheduleModel } from '../components/SCurve.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 function periodLabel(s, i, t, fmtDay) {
   return s.start_date ? fmtDay(addPeriods(s.start_date, s.unit, i + 1)) : t('period_n', { n: i + 1 });
@@ -46,6 +47,7 @@ export default function Schedule() {
   return (
     <div>
       <PageHeader title={t('schedule_title')} icon="curve">
+        <ExportButton report="schedule" />
         {can && <button className="btn btn-primary btn-sm" onClick={save}>{t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}

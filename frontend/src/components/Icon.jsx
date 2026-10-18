@@ -53,6 +53,7 @@ const UI = {
   chevrons_back: "<path d=\"m18 6-6 6 6 6M12 6l-6 6 6 6\"/>",
   plus: "<path d=\"M12 5v14M5 12h14\"/>",
   download: "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M4 20h16\"/>",
+  sheet: "<rect x=\"4\" y=\"3.5\" width=\"16\" height=\"17\" rx=\"2\"/><path d=\"M4 9h16M4 14.5h16M10 9v11.5\"/>",
   upload: "<path d=\"M12 15V4M7.5 8.5 12 4l4.5 4.5M4 20h16\"/>",
   check: "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>",
   x: "<path d=\"M6 6l12 12M18 6 6 18\"/>",

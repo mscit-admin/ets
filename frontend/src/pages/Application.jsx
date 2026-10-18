@@ -6,6 +6,7 @@ import { pc, VENDOR_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { PctEquation } from '../components/PctEquation.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -215,6 +216,8 @@ export default function Application() {
       <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
         {(can.pct || can.tst) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
+        <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test,
+          show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
       </PageHeader>
 
       <div ref={sentinelRef} className="sticky-sentinel" aria-hidden="true" />

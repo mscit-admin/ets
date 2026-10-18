@@ -5,6 +5,7 @@ import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { ExportButton } from '../components/ExportButton.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', no_changes: 'gray' };
 
@@ -46,6 +47,7 @@ export function ImportList() {
   return (
     <div>
       <PageHeader title={t('imports_title')} sub={t('imports_sub')} icon="upload">
+        <ExportButton report="imports" params={{ status }} />
         {data.can_import && <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}><Icon name="upload" size={14} /> {t('import_file')}</button>}
       </PageHeader>
       <Alert kind="blue">{t('two_approvals_hint')}</Alert>
@@ -202,6 +204,7 @@ export function ImportDetail() {
       <PageHeader title={`${t('batch')} #${b.id} — ${targetLabel(b, t, nm)}`}
         sub={<>{t('uploaded_by')}: {b.uploaded_by_name} · {fmtDate(b.uploaded_at)}{b.filename && <> · <span dir="ltr">{b.filename}</span></>}</>} icon="upload">
         <Indicator color={STATUS_COLOR[b.status]}>{t('st_' + b.status)}</Indicator>
+        <ExportButton report="import_detail" params={{ id: b.id }} />
         {b.can.approve_lead && <button className="btn btn-primary btn-sm" onClick={() => setDlg({ mode: 'lead' })}>{t('approve')} — {t('approval_lead')}</button>}
         {b.can.approve_final && <button className="btn btn-primary btn-sm" onClick={() => setDlg({ mode: 'final' })}>{t('approve')} — {t('approval_final')}</button>}
         {b.can.reject && <button className="btn btn-default btn-sm" onClick={() => setDlg({ mode: 'reject' })}>{t('reject')}</button>}
