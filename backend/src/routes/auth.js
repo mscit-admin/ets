@@ -10,6 +10,7 @@ import { encrypt, decrypt } from '../services/crypto.js';
 import { generateSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import { getSetting, allSettings } from '../services/settings.js';
 import { logAuth, logAudit, maskUsername } from '../services/logs.js';
+import { publishSessionCheck } from '../services/live.js';
 import { HttpError, bad, str } from '../utils/http.js';
 import { brandingVersions } from './branding.js';
 
@@ -138,6 +139,7 @@ async function reauthFailure(req, u, event) {
   const f = await registerFailure(req, u, event);
   if (f.delayed) {
     await query(`UPDATE sessions SET revoked_at=now(), revoke_reason='reauth_failures' WHERE id=$1 AND revoked_at IS NULL`, [req.session.id]);
+    publishSessionCheck(req.user.id);
     throw tooManyAttempts(f);
   }
 }
@@ -223,6 +225,7 @@ r.post('/2fa/disable', authLimiter, requireAuth, async (req, res) => {
       WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`, [req.user.id, req.session.id]);
     await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event: 'mfa_disabled_by_user', success: true });
   });
+  publishSessionCheck(req.user.id);
   res.json({ ok: true });
 });
 
@@ -289,6 +292,7 @@ r.post('/change-password', authLimiter, requireAuthDuringPasswordChange, async (
       WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL`, [req.user.id, req.session.id]);
     await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event: 'password_changed', success: true });
   });
+  publishSessionCheck(req.user.id);
   res.json({ ok: true });
 });
 

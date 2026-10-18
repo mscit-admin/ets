@@ -3,9 +3,11 @@ import { tx } from '../db/pool.js';
 import { requireAuth, requirePerm } from '../middleware/auth.js';
 import { allSettings, invalidateSettings, SETTING_RULES } from '../services/settings.js';
 import { logAudit, logAuth, logger } from '../services/logs.js';
+import { publishChange } from '../services/live.js';
 import { HttpError, bad, own } from '../utils/http.js';
 
 const r = Router();
+const LIVE_KEYS = new Set(['calc.weight_mode', 'calc.notif_share', 'calc.reports_share', 'approval.edits_need_lead']);
 const RETENTION_KEYS = ['logs.retention_days', 'logs.audit_retention_days', 'logs.access_retention_days'];
 r.use(requireAuth, requirePerm('cfg'));
 
@@ -44,6 +46,8 @@ r.put('/', async (req, res) => {
     }
   }
   invalidateSettings();
+  // settings that change the percentages or who needs approval: every screen reloads (after COMMIT)
+  if (Object.keys(body).some(k => LIVE_KEYS.has(k) && JSON.stringify(current[k]) !== JSON.stringify(body[k]))) publishChange();
   res.json({ ok: true });
 });
 

@@ -8,6 +8,7 @@ import { purgeLogs } from './services/retention.js';
 import { takeSnapshot } from './services/snapshots.js';
 import { getDummyHash } from './services/passwords.js';
 import { assertCookieConfig } from './middleware/auth.js';
+import { closeAllStreams } from './services/live.js';
 
 assertConfig();
 assertCookieConfig();
@@ -44,6 +45,7 @@ async function shutdown(sig) {
   stopping = true;
   logger.info(`${sig} received, shutting down`);
   await logSystem('shutdown', `ETS API stopping (${sig})`);
+  await closeAllStreams();            // live-updates streams would otherwise hold server.close() open
   server.close(async () => { await pool.end(); process.exit(0); });
   setTimeout(() => process.exit(0), 10_000).unref();
 }

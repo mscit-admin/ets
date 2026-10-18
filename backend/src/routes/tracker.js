@@ -9,6 +9,7 @@ import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
 import { largeJson } from '../middleware/body.js';
+import { publishChange, publishApps } from '../services/live.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 
 const r = Router();
@@ -158,6 +159,7 @@ r.patch('/functions/:id', async (req, res) => {
     const rq = await tx(c => createRequest(c, req, { deptId: app.department_id, appId: cur.app_id, kind: 'function',
       summary: `${cur.code} ${cur.name_ar.slice(0, 80)}`,
       items: keys.map(k => ({ kind: 'function', app_id: cur.app_id, function_id: id, field: k, old_value: cur[k], new_value: changes[k] })) }));
+    publishChange({ dept_id: app.department_id, app_id: cur.app_id });     // "awaiting approval" badges
     return res.status(202).json({ pending: true, request_id: rq.id, function: cur });
   }
   const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
@@ -174,6 +176,8 @@ r.patch('/functions/:id', async (req, res) => {
       oldValue: Object.fromEntries(keys.map(k => [k, cur[k]])), newValue: changes });
     return u;
   });
+  // live updates: after COMMIT (tx resolved), ids only (services/live.js)
+  publishChange({ dept_id: app.department_id, app_id: cur.app_id });
   res.json({ function: updated });
 });
 
@@ -195,6 +199,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
       summary: `${field} = ${value} (${rows.length})`,
       items: rows.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field, old_value: x.v, new_value: value })) }));
+    publishChange({ dept_id: a.department_id, app_id: a.id });
     return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: rows.length });
   }
   const n = await tx(async c => {
@@ -209,6 +214,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
           field, old: x.v, new: value })) } });
     return q.rowCount;
   });
+  publishChange({ dept_id: a.department_id, app_id: a.id });
   res.json({ updated: n });
 });
 
@@ -240,9 +246,11 @@ async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
 async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
   if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind, summary, items: [{ kind: 'function', app_id: a.id, ...item }] }));
+    publishChange({ dept_id: a.department_id, app_id: a.id });
     return res.status(202).json({ pending: true, request_id: rq.id, impact });
   }
   const f = await tx(direct);
+  publishChange({ dept_id: a.department_id, app_id: a.id });
   res.status(kind === 'add_function' ? 201 : 200).json({ function: f, impact });
 }
 
@@ -360,6 +368,9 @@ r.put('/weights', requirePerm('wgt'), async (req, res) => {
     }
   });
   invalidateSettings();
+  // project-wide parameters concern every screen; application weights only their departments
+  if (globalChanges.length) publishChange();
+  else publishApps(Object.keys(weights).filter(id => Number(byId.get(id).weight) !== Number(weights[id])).map(id => byId.get(id)));
   res.json({ ok: true });
 });
 
@@ -369,6 +380,7 @@ r.post('/weights/reset', requirePerm('wgt'), async (req, res) => {
     await c.query('UPDATE applications SET weight=default_weight, updated_at=now(), updated_by=$1', [req.user.id]);
     await logAudit(req, { db: c, action: 'reset', entity: 'application', summary: 'all weights reset to defaults' });
   });
+  publishChange();
   res.json({ ok: true });
 });
 
@@ -409,6 +421,7 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
   if (await needsLeadApproval(req.user, a)) {
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'report', summary: keys.join(', '),
       items: keys.map(k => ({ kind: 'report', app_id: a.id, field: k, old_value: cur[k], new_value: changes[k] })) }));
+    publishChange({ dept_id: a.department_id, app_id: a.id });
     return res.status(202).json({ pending: true, request_id: rq.id, report: cur });
   }
   const row = await tx(async c => {
@@ -418,6 +431,7 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
       oldValue: Object.fromEntries(keys.map(k => [k, cur[k]])), newValue: changes });
     return u;
   });
+  publishChange({ dept_id: a.department_id, app_id: a.id });
   res.json({ report: row });
 });
 
@@ -482,6 +496,7 @@ async function saveSchedule(req, next) {
       oldValue: { start_date: DATE(old.start_date), end_date: DATE(old.end_date), periods: old.periods, unit: old.unit, plan: old.plan, actual: old.actual },
       newValue: next });
   });
+  publishChange();          // schedule / timeline: dashboard curve, project status
 }
 
 r.put('/schedule', requirePerm('sch'), async (req, res) => {
@@ -607,6 +622,7 @@ r.post('/import', requirePerm('imp'), requirePerm('cfg'), largeJson, async (req,
     return n;
   });
   invalidateSettings();
+  publishChange();
   logSystem('import', 'legacy tracker data imported', { by: req.user.username, ...counts });
   res.json({ ok: true, counts });
 });
