@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009, 012 and 013).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -238,6 +238,7 @@ CREATE TABLE public.edit_request_items (
     new_value jsonb,
     applied boolean,
     note text,
+    meta jsonb,
     CONSTRAINT edit_request_items_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'report'::text])))
 );
 -- Name: edit_request_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -297,6 +298,12 @@ CREATE SEQUENCE public.error_log_id_seq
     CACHE 1;
 -- Name: error_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.error_log_id_seq OWNED BY public.error_log.id;
+-- Name: function_duplicates; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.function_duplicates (
+    function_id integer NOT NULL,
+    duplicate_of_id integer NOT NULL,
+    CONSTRAINT function_duplicates_check CHECK ((function_id <> duplicate_of_id))
+);
 -- Name: functions; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.functions (
     id integer NOT NULL,
@@ -322,6 +329,12 @@ CREATE TABLE public.functions (
     removed_reason text,
     created_at timestamp with time zone,
     created_by integer,
+    disabled_reason text,
+    disabled_note text,
+    disabled_by integer,
+    disabled_at timestamp with time zone,
+    CONSTRAINT functions_disabled_note_check CHECK (((disabled_note IS NULL) OR (char_length(disabled_note) <= 500))),
+    CONSTRAINT functions_disabled_reason_check CHECK (((disabled_reason IS NULL) OR (disabled_reason = ANY (ARRAY['duplicate'::text, 'out_of_scope'::text, 'not_required'::text, 'other'::text, 'import'::text])))),
     CONSTRAINT functions_notif_status_check CHECK (((notif_status >= 0) AND (notif_status <= 3))),
     CONSTRAINT functions_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric))),
     CONSTRAINT functions_review_status_check CHECK (((review_status >= 0) AND (review_status <= 3))),
@@ -634,6 +647,9 @@ ALTER TABLE ONLY public.edit_requests
 -- Name: error_log error_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_pkey PRIMARY KEY (id);
+-- Name: function_duplicates function_duplicates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_pkey PRIMARY KEY (function_id, duplicate_of_id);
 -- Name: functions functions_app_id_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_code_key UNIQUE (app_id, code);
@@ -722,6 +738,8 @@ CREATE INDEX edit_requests_requested_by_status_idx ON public.edit_requests USING
 CREATE INDEX edit_requests_status_department_id_idx ON public.edit_requests USING btree (status, department_id);
 -- Name: error_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX error_log_ts_idx ON public.error_log USING btree (ts DESC);
+-- Name: function_duplicates_target; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX function_duplicates_target ON public.function_duplicates USING btree (duplicate_of_id);
 -- Name: functions_app_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX functions_app_id_idx ON public.functions USING btree (app_id);
 -- Name: import_batches_status_target_department_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -804,12 +822,21 @@ ALTER TABLE ONLY public.edit_requests
 -- Name: error_log error_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: function_duplicates function_duplicates_duplicate_of_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_duplicate_of_id_fkey FOREIGN KEY (duplicate_of_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: function_duplicates function_duplicates_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
 -- Name: functions functions_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
 -- Name: functions functions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: functions functions_disabled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.functions
+    ADD CONSTRAINT functions_disabled_by_fkey FOREIGN KEY (disabled_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: functions functions_removed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_removed_by_fkey FOREIGN KEY (removed_by) REFERENCES public.users(id) ON DELETE SET NULL;

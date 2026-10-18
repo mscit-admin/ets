@@ -12,6 +12,71 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.5.0] — 2026-10-18 — Required reason when a function is excluded (duplicates)
+
+### Features
+- feat(db): migration `013_disable_reason.sql` — `functions.disabled_reason` (`duplicate`, `out_of_scope`,
+  `not_required`, `other`; `import` set by imports), `disabled_note` (≤ 500), `disabled_by`, `disabled_at`; table
+  `function_duplicates(function_id, duplicate_of_id)` (FKs ON DELETE CASCADE — functions are only soft-removed —,
+  no self link, index on the target); `edit_request_items.meta` (the reason of a pending exclusion). Safe on an
+  existing database: functions excluded before 1.5.0 keep an empty reason («بدون سبب مسجّل» / "No reason recorded");
+  `audit_log` / `auth_log` and their hash chains are untouched
+- feat(backend): **excluding a function needs a reason** on every path that turns one off
+  (`backend/src/services/disable.js`): `PATCH /api/tracker/functions/:id` with `enabled: false` takes
+  `disabled_reason`, `disabled_note` (required for `other`) and, for `duplicate`, `duplicate_of` (function ids in the
+  user's scope, not the function itself, not removed) — otherwise 400 `disable_reason_required`,
+  `disable_note_required`, `duplicate_of_required`, `invalid_duplicate` (`self` / `unavailable` / `removed`) or
+  `invalid_value`. Including again needs no reason and clears it; the audit row keeps the previous reason as its old value
+- feat(backend): bulk exclusion — `POST /api/tracker/applications/:id/bulk` with `{field: 'enabled', value: false,
+  function_ids, disabled_reason, …}` (permission `tog`): one reason for the chosen functions of the application (the
+  duplicated functions may not be among them), one audit row per function; `value: true` includes them again
+- feat(backend): approval flow — a data-entry user's exclusion (single or bulk) carries its reason and links in the
+  request item (`meta`); the approver sees them (`GET /api/approvals`, Excel export of the approvals) and approval
+  applies them in the requester's name. The requester's scope is checked again for the duplicated functions
+  (409 `requester_not_allowed`); an exclusion whose duplicated function was removed meanwhile is skipped
+- feat(backend): imports — a team-result file has no reason column, so a function an approved batch turns off gets
+  the reason `import` with the note `#<batch id> <file name>`; the full legacy import marks the functions it turns
+  off `import` too; functions turned on by an import lose their reason. Restoring a removed function clears it
+- feat(backend): `GET /api/tracker/function-options` (`app_id`, `all=1`, `q`, `exclude`) — the counted functions a
+  duplicate can point at, within scope; the application data lists `duplicate_of` (codes, application, names only in
+  scope) and `disabled_by_name`
+- feat(backend): functions Excel export — columns «سبب الإلغاء», «مكررة مع», «ملاحظة الإلغاء» (after the existing
+  columns, whose positions do not change) and the `reason` filter; the approvals export adds the reason to an exclusion
+- feat(frontend): unticking a function opens the exclusion dialog — reason category (radio cards), note with a
+  counter, and for «مكررة» a **searchable multi-select** of the functions it duplicates (code + name + application;
+  this application by default, «البحث في كل التطبيقات» for every application in scope; the function itself, excluded
+  and removed ones are not offered); chips with ×; keyboard: arrows, Home/End, Enter, Esc (closes the list, a second
+  Esc the dialog), Backspace removes the last chip; combobox / listbox roles, `aria-activedescendant`,
+  `aria-selected`, a live result count; RTL and LTR (`frontend/src/components/MultiSelect.jsx`,
+  `frontend/src/components/DisableReason.jsx`). Cancel leaves the box ticked
+- feat(frontend): «تعيين جماعي» gains «إلغاء احتساب وظائف محددة»: pick the functions, then one reason
+- feat(frontend): an excluded row shows its reason as a badge — «مكررة مع: D3، D5» (each code opens and highlights that
+  function, also in another application, `#fn-<id>`), «خارج النطاق», «استيراد», «بدون سبب مسجّل» …; a click shows the
+  note, who excluded it and when. New filter «سبب الإلغاء» (also sent to the export)
+- feat(frontend): the approvals screen and the "awaiting approval" chips show the reason of a pending exclusion
+- feat(frontend): audit sentences — «ألغى أحمد سالم احتساب الوظيفة «D7 …» في تطبيق شؤون العاملين (مكررة مع D3، D5):
+  «…»» / "… excluded function … from the calculation (duplicate of D3, D5): …" with the reason, duplicates and note as
+  before → after lines; «أعاد … احتساب الوظيفة …» with the previous reason; requests list the reason (ar + en,
+  messages `dr_*`, `ms_*`, `au_disable_*`, `au_enable_*`, `err_disable_*`, `err_duplicate_of_required`,
+  `err_invalid_duplicate`)
+
+### Notes
+- Removal («إزالة») already required its own reason since 0.8.0, so it is unchanged. Adding a function with
+  «تضمينها في حساب النسب» unticked records no exclusion reason (it is shown as «بدون سبب مسجّل»)
+
+### Tests
+- test(tests): `backend/test/disable-reason.test.js` — 400 without / with an invalid reason, `other` without a note,
+  duplicate without ids, pointing at itself, out of scope, unknown or removed; valid exclusion stores reason, note and
+  links and writes them in the audit row; including again clears them (history kept); restore clears; bulk exclusion
+  and inclusion; approval carries the reason (single and bulk) and skips a removed duplicate; picker options; export
+  columns and reason filter; import batch and legacy import set `import` (124 tests in total)
+
+### Documentation
+- docs(docs): user guide (exclusion dialog, badge, filter, approvals), API reference (PATCH / bulk / function-options /
+  approvals / imports / export), database design and `deploy/db/schema-reference.sql` (migration 013)
+
+---
+
 ## [1.4.0] — 2026-10-18 — ERP module wheel and live updates
 
 ### Features

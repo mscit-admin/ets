@@ -50,12 +50,13 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 |---|---|---|---|
 | GET | `/summary` | — | Totals, departments, applications with computed %, counters |
 | GET | `/departments/:id` | scope | Department + its applications |
-| GET | `/applications/:id` | scope | Application, functions, report, `can` flags |
-| PATCH | `/functions/:id` | per field | `progress` (pct), `notif_status` (pct), `weight` (wgt), `enabled` (tog), `test_status`/`review_status`/`note` (tst), `name_en` (tog). Without `tst`, a note may only accompany a «with notes» status the user may set while the function has no note yet |
-| POST | `/applications/:id/bulk` | pct / tst | `{field: "progress" \| "test_status", value}` |
+| GET | `/applications/:id` | scope | Application, functions, report, `can` flags. Each function carries `disabled_reason`, `disabled_note`, `disabled_by`, `disabled_by_name`, `disabled_at` and `duplicate_of: [{id, app_id, code, removed, visible, name_ar?, name_en?}]` (names only for functions in the reader's scope); `pending` items carry `meta` (the reason of a pending exclusion) |
+| PATCH | `/functions/:id` | per field | `progress` (pct), `notif_status` (pct), `weight` (wgt), `enabled` (tog), `test_status`/`review_status`/`note` (tst), `name_en` (tog). Without `tst`, a note may only accompany a «with notes» status the user may set while the function has no note yet. **Exclusion (1.5.0):** `enabled: false` needs `disabled_reason` (`duplicate` \| `out_of_scope` \| `not_required` \| `other`), optional `disabled_note` (trimmed, ≤ 500 characters, required for `other`) and, for `duplicate`, `duplicate_of: [function ids]` (1–50; in the user's scope, not the function itself, not removed). Errors 400 `disable_reason_required`, `disable_note_required`, `duplicate_of_required`, `invalid_duplicate` (`problem`: `self` \| `unavailable` \| `removed`), `invalid_value` (`field`). The reason fields are refused without `enabled: false`. `enabled: true` needs no reason and clears the stored one (the audit row keeps it as the old value) |
+| POST | `/applications/:id/bulk` | pct / tst / tog | `{field: "progress" \| "test_status", value}` (every counted function), or **(1.5.0)** `{field: "enabled", value: false, function_ids: [..], disabled_reason, disabled_note?, duplicate_of?}` — exclude the chosen functions of the application (1–500, not removed) with one reason (the duplicated functions may not be among the chosen ones); `value: true` includes them again. One audit row per function (`context.bulk`). 200 `{updated}` or 202 `{pending, request_id, requested}` |
+| GET | `/function-options?app_id=&all=1&q=&exclude=` | scope | **(1.5.0)** Functions a duplicate can point at: counted (not excluded, not removed), in the user's scope, not in `exclude` (comma-separated ids). Default: the application `app_id` (403 out of scope); `all=1`: every application in scope. `q` searches code, names and application. → `{options: [{id, app_id, code, name_ar, name_en, app_name_ar, app_name_en}], more}` (up to 200) |
 | POST | `/applications/:id/functions` | tog | `{name_ar, name_en?, reference?, weight?, progress?, enabled?}` — add a function (code `C<n>`, never reused). 201 `{function, impact}`, or 202 `{pending, request_id, impact}` for a data-entry user |
 | POST | `/functions/:id/remove` | tog | `{reason}` (required) — soft removal of any function (scope or added); 200 / 202 as above. `function_removed` if already removed |
-| POST | `/functions/:id/restore` | tog | Restore a removed function (included again); 200 / 202 |
+| POST | `/functions/:id/restore` | tog | Restore a removed function (included again, any exclusion reason cleared); 200 / 202 |
 | POST | `/applications/:id/impact` | tog | Preview `{add}` / `{set: [{function_id, enabled}]}` / `{drop: [id]}` → `{app, dept, total: {before, after}, included, count, app_weight}` |
 | GET | `/weights` | — | Application weights, function-weight sums, calculation settings |
 | PUT | `/weights` | wgt | `{weights:{appId:number}, weight_mode?, notif_share?, reports_share?}` |
@@ -68,7 +69,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | GET | `/project-status` | — | Schedule, total and department progress, function/test/quality counts, pending approvals (scoped users: only requests / batches of applications in scope) and daily progress trend, for the user's scope |
 | GET | `/search?q=` | — | Up to 200 functions within scope |
 | GET | `/export` | exp | Data in the original tracker's JSON format (v3), limited to the applications in the user's scope; `sch` only for full-scope users |
-| POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}` |
+| POST | `/import` | imp + full scope | `{content: "<html or json text>"}` or `{payload: {...}}`. Functions the file turns off get the exclusion reason `import`; functions it turns on lose their reason |
 
 ## Imports & approvals — `/imports` (signed in)
 | Method | Path | Permission | Description |
@@ -78,7 +79,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | GET | `/?status=` | — | Batches within scope, with `can` flags |
 | GET | `/pending-count` | — | `{awaiting_me, pending}` |
 | GET | `/:id` | scope | Batch, changes (before/after) of the applications in the reader's scope, signatures. A reader who sees only part of the batch gets `change_count`, `summary.counts`, `apply_result` of the visible changes, department figures only for departments fully in scope and `summary.project: null` (same in the list) |
-| POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; every changed application in scope; never the uploader; both signed → applied → `{applied, applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the uploader is no longer active / allowed |
+| POST | `/:id/approve` | apv_dept / apv_final | `{stage: 'lead' \| 'final', note}`; every changed application in scope; never the uploader; both signed → applied → `{applied, applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the uploader is no longer active / allowed. A file has no reason column: functions it turns off get the reason `import` with the note `#<batch id> <file name>` (1.5.0) |
 | POST | `/:id/reject` | apv_dept / apv_final | `{reason}`; every changed application in scope |
 
 ## Edit approvals — `/approvals` (signed in)
@@ -86,9 +87,9 @@ Function, bulk and report edits by data-entry users answer **202** `{pending: tr
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/?status=&mine=1` | Requests visible to the user, with items (before/after) and `can` flags |
+| GET | `/?status=&mine=1` | Requests visible to the user, with items (before/after) and `can` flags. An exclusion item (`field: "enabled"`, `new_value: false`) carries `meta: {disabled_reason, disabled_note, duplicate_of: [{id, app_id, code}]}` (1.5.0) |
 | GET | `/pending-count` | `{awaiting_me, mine}` |
-| POST | `/:id/approve` | Team lead with the request's application in scope → applied `{applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the author is no longer active / in scope / permitted |
+| POST | `/:id/approve` | Team lead with the request's application in scope → applied `{applied_changes, skipped_changes}`. 409 `requester_not_allowed` when the author is no longer active / in scope / permitted (also when a function named as duplicated is no longer in the author's scope). An exclusion is applied with its reason and links in the author's name; it is skipped when a duplicated function has been removed since the request |
 | POST | `/:id/reject` | `{reason}` (required) |
 | POST | `/:id/withdraw` | Requester only |
 | POST | `/approve-all` | All pending requests the user can approve (or `{ids:[…]}`) → `{requests, applied_changes, skipped_changes, blocked_requests}` (blocked = author no longer allowed, left pending) |
@@ -141,7 +142,7 @@ password — use `POST /auth/change-password`).
 ## Excel exports — `/export` (permission `exp`, 1.3.0)
 | Method | Path | Description |
 |---|---|---|
-| GET | `/:report.xlsx` | One-sheet Excel file of a screen. `report` = `summary`, `project_status`, `department` (`id`), `functions` (`id`, `q`, `source`, `test`, `show_off`, `show_removed`), `weights`, `reports` (`dept`), `schedule`, `approvals` (`status`, `mine`), `imports` (`status`), `import_detail` (`id`), `users` (also `usr` + administrator role), `log` (`type`, and the `/logs/:type` filters; also `log`). `lang=ar\|en` (default: the user's language). Same scope as the screen; strict audit row (`action=export`, `entity=<report>`); `Content-Disposition` with an ASCII `filename` and a UTF-8 `filename*`; up to 100,000 rows |
+| GET | `/:report.xlsx` | One-sheet Excel file of a screen. `report` = `summary`, `project_status`, `department` (`id`), `functions` (`id`, `q`, `source`, `test`, `show_off`, `show_removed`, `reason` — 1.5.0: `duplicate`, `out_of_scope`, `not_required`, `other`, `import` or `none`; the sheet ends with the columns «سبب الإلغاء» / «مكررة مع» / «ملاحظة الإلغاء»), `weights`, `reports` (`dept`), `schedule`, `approvals` (`status`, `mine`), `imports` (`status`), `import_detail` (`id`), `users` (also `usr` + administrator role), `log` (`type`, and the `/logs/:type` filters; also `log`). `lang=ar\|en` (default: the user's language). Same scope as the screen; strict audit row (`action=export`, `entity=<report>`); `Content-Disposition` with an ASCII `filename` and a UTF-8 `filename*`; up to 100,000 rows |
 
 See *06-Security.md → 4a. Export policy* for the permission × scope matrix.
 
