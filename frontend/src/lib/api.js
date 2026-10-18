@@ -6,14 +6,17 @@ class ApiError extends Error {
 
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = fn => { onUnauthorized = fn; };
+// The live-updates stream ended with the session (lib/live.js): same handling as a 401 answer.
+export const notifyUnauthorized = () => onUnauthorized('session_ended');
 
-async function request(method, url, body) {
+async function request(method, url, body, { live = false } = {}) {
   let res;
   try {
     res = await fetch('/api' + url, {
       method,
       credentials: 'same-origin',
-      headers: { 'X-Requested-With': 'ets', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      // X-ETS-Live: a reload triggered by live updates, not by the user (not activity for the idle timeout)
+      headers: { 'X-Requested-With': 'ets', ...(live ? { 'X-ETS-Live': '1' } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -30,7 +33,7 @@ async function request(method, url, body) {
 }
 
 export const api = {
-  get: url => request('GET', url),
+  get: (url, opts) => request('GET', url, undefined, opts),
   post: (url, body = {}) => request('POST', url, body),
   put: (url, body = {}) => request('PUT', url, body),
   patch: (url, body = {}) => request('PATCH', url, body),

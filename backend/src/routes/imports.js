@@ -12,6 +12,7 @@ import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept, coversDept, l
 import { parseLegacy } from '../services/legacy.js';
 import { diffTarget, impactSummary, applyBatch } from '../services/imports.js';
 import { logAudit, logSystem } from '../services/logs.js';
+import { publishChange } from '../services/live.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from '../services/audit.js';
 import { largeJson } from '../middleware/body.js';
 import { HttpError, bad, notFound, str, idParam } from '../utils/http.js';
@@ -119,6 +120,13 @@ async function batchContext(c, b) {
     final_by: userRef(await loadUser(c, b.final_by)), items: await namedItems(c, changes) };
 }
 
+// Live updates after a batch changed (COMMIT done): one event per department it concerns, ids only.
+function publishBatch(b) {
+  const ds = b?.departments?.length ? b.departments : b?.department_id ? [b.department_id] : [];
+  if (!ds.length) return publishChange();
+  for (const d of ds) publishChange({ dept_id: d });
+}
+
 // 1) Read a file and list the import options with the number of changes in each.
 r.post('/preview', requirePerm('imp'), largeJson, async (req, res) => {
   const p = parseContent(req.body);
@@ -192,6 +200,7 @@ r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
         project: summary.project, items: await namedItems(c, changes) } });
     return b;
   });
+  if (batch.status === 'pending') publishBatch(batch);       // "pending import" notices
   res.status(201).json({ batch });
 });
 
@@ -280,11 +289,13 @@ r.post('/:id/approve', async (req, res) => {
           final_by: ctx.final_by, approver_ip: req.ip || null } });
       await logAudit(req, { db: c, action: 'import_apply', entity: 'import_batch', entityId: id,
         summary: `${r2.applied} applied, ${r2.skipped} skipped`, newValue: r2, context: ctx });
-      return { applied: true, applied_changes: r2.applied, skipped_changes: r2.skipped };
+      return { applied: true, applied_changes: r2.applied, skipped_changes: r2.skipped, batch: u };
     }
-    return { applied: false };
+    return { applied: false, batch: u };
   });
   if (result.applied) logSystem('import_applied', `import batch ${id} applied`, result);
+  publishBatch(result.batch);
+  delete result.batch;
   res.json(result);
 });
 
@@ -293,7 +304,7 @@ r.post('/:id/reject', async (req, res) => {
   const reason = str(req.body?.reason, 1000);
   if (!reason) throw bad('reason_required');
   const meta = await loadMeta();
-  await tx(async c => {
+  const rejected = await tx(async c => {
     const b = (await c.query('SELECT * FROM import_batches WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!b) throw notFound();
     if (b.status !== 'pending') throw bad('batch_not_pending', { status: b.status });
@@ -301,7 +312,9 @@ r.post('/:id/reject', async (req, res) => {
     await c.query(`UPDATE import_batches SET status='rejected', rejected_by=$2, rejected_at=now(), reject_reason=$3 WHERE id=$1`, [id, req.user.id, reason]);
     await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: id, summary: reason,
       context: { ...await batchContext(c, b), reason } });
+    return b;
   });
+  publishBatch(rejected);
   res.json({ ok: true });
 });
 

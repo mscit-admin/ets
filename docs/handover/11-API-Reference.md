@@ -145,6 +145,13 @@ password — use `POST /auth/change-password`).
 
 See *06-Security.md → 4a. Export policy* for the permission × scope matrix.
 
+## Live updates — `/events` (signed in, 1.4.0)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/events` | `text/event-stream` (Server-Sent Events). Events: `ready` (stream open), `tracker_changed` (`{"type":"tracker_changed","dept_id"?,"app_id"?}` — ids only, never values; sent after the change is committed, only to users whose scope includes that department / application, without ids for project-wide changes), `session_ended` (signed out, expired, idle, revoked or disabled — the stream then closes). Heartbeat comment every `LIVE_HEARTBEAT_SECONDS` (25 s), on which the session is re-checked. At most `LIVE_MAX_STREAMS_PER_USER` (5) streams per user per API process → `429 too_many_streams`; `503 live_unavailable` when the database listener cannot start. Opening the stream is written to the access log once; neither the stream nor reloads marked `X-ETS-Live: 1` count as activity for the idle timeout |
+
+Changes that send `tracker_changed`: function edits (%, weight, test / notification / review status, note, include / exclude), bulk set, add / remove / restore, edit requests sent / approved / rejected / withdrawn, application weights and calculation parameters, weights reset, reports track, schedule / timeline, team-result imports (submitted, signed, applied, rejected), the full tracker import, and settings that change the calculation or the approval rule. Between API processes the event travels through PostgreSQL `LISTEN/NOTIFY` (channel `ets_live`, `pg_notify` after `COMMIT`).
+
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |
 |---|---|---|

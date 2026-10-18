@@ -16,6 +16,7 @@ import importRoutes from './routes/imports.js';
 import brandingRoutes from './routes/branding.js';
 import approvalRoutes from './routes/approvals.js';
 import exportRoutes from './routes/export.js';
+import eventRoutes from './routes/events.js';
 import systemRoutes, { health } from './routes/system.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
@@ -52,6 +53,7 @@ export function createApp() {
   api.use('/approvals', approvalRoutes);
   api.use('/export', exportRoutes);
   api.use('/system', systemRoutes);
+  api.use('/events', eventRoutes);   // live updates (Server-Sent Events)
   api.use(notFoundHandler);
   app.use('/api', api);
 

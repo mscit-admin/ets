@@ -7,6 +7,7 @@ import { Icon } from '../components/Icon.jsx';
 import { PctEquation } from '../components/PctEquation.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -88,17 +89,21 @@ function Pager({ page, pages, total, size, onPage, onSize }) {
 }
 
 // Number input that only commits on blur / Enter (one request per edit, not per keystroke).
+// A new value from the server (save, or a live update by another user) replaces the shown one, except while the
+// user is typing in this cell: the typed value is kept until it is committed or abandoned (blur).
 function NumCell({ value, min, max, step = 1, disabled, onCommit, label }) {
   const [v, setV] = useState(String(value));
-  useEffect(() => { setV(String(value)); }, [value]);
+  const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setV(String(value)); }, [value]);
   const commit = () => {
+    editing.current = false;
     const n = Math.min(max, Math.max(min, parseFloat(v)));
     if (!Number.isFinite(n)) { setV(String(value)); return; }
     if (n !== +value) onCommit(n); else setV(String(value));
   };
   return (
     <input className="input input-sm num-input" type="number" min={min} max={max} step={step} value={v} disabled={disabled}
-      aria-label={label} onChange={e => setV(e.target.value)} onBlur={commit}
+      aria-label={label} onChange={e => { editing.current = true; setV(e.target.value); }} onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
   );
 }
@@ -116,9 +121,13 @@ function StatusSelect({ value, prefix, disabled, onChange, label }) {
 export default function Application() {
   const { id } = useParams();
   const { t, nm, errText, fmtDate } = useI18n();
-  const { data, error, loading, reload } = useLoad(() => api.get(path`/tracker/applications/${id}`)
+  const { data, error, loading, reload, refresh } = useLoad(o => api.get(path`/tracker/applications/${id}`, o)
     .then(d => (d?.application && Array.isArray(d.functions) ? d : Promise.reject(notFoundError()))), [id]);
   const [fns, setFns] = useState([]);
+  // changes to this application by other users (or project-wide ones) reload the table without losing edits
+  useLiveUpdates(refresh, { filter: m => (m.app_id ? m.app_id === id : !m.dept_id || m.dept_id === data?.department?.id) });
+  // rows saved by this user whose answer has not come back yet: a reload must not put the old value back
+  const inflight = useRef(new Map());
   const [filter, setFilterState] = useState({ q: '', source: '', test: '', showOff: false, showRemoved: false });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(readPageSize);
@@ -131,7 +140,10 @@ export default function Application() {
   const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState(null);   // {f, mode: 'remove' | 'restore' | 'toggle', enabled?}
 
-  useEffect(() => { if (data) setFns(data.functions); }, [data]);
+  useEffect(() => {
+    if (!data) return;
+    setFns(cur => data.functions.map(f => (inflight.current.has(f.id) ? cur.find(x => x.id === f.id) || f : f)));
+  }, [data]);
 
   const shown = useMemo(() => fns.filter(f =>
     (f.removed_at ? filter.showRemoved : (filter.showOff || f.enabled || f.source !== 'experience')) &&
@@ -174,12 +186,17 @@ export default function Application() {
   const totalW = calc.fnWeight || 0;
 
   const patch = async (f, body) => {
+    const n = (inflight.current.get(f.id) || 0) + 1;
+    inflight.current.set(f.id, n);
     setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body } : x)));
+    const done = () => { const k = inflight.current.get(f.id) - 1; if (k > 0) inflight.current.set(f.id, k); else inflight.current.delete(f.id); };
     try {
       const r = await api.patch(path`/tracker/functions/${f.id}`, body);
       if (r?.pending) toast(t('sent_for_approval'), 'blue');
+      done();
       reload();
     } catch (e) {
+      done();
       toast(errText(e), 'red');
       setFns(list => list.map(x => (x.id === f.id ? f : x)));
     }

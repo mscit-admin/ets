@@ -5,12 +5,15 @@ import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 
 export default function Department() {
   const { id } = useParams();
   const { t, nm } = useI18n();
-  const { data, error, loading } = useLoad(() => api.get(path`/tracker/departments/${id}`)
+  const { data, error, loading, refresh } = useLoad(o => api.get(path`/tracker/departments/${id}`, o)
     .then(d => (d?.department && Array.isArray(d.applications) ? d : Promise.reject(notFoundError()))), [id]);
+  // changes in this department (or project-wide ones) reload the page's data
+  useLiveUpdates(refresh, { filter: m => !m.dept_id || m.dept_id === id });
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { department: d, applications } = data;

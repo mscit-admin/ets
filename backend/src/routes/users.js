@@ -4,6 +4,7 @@ import { requireAuth, requirePerm, requireAdmin, ADMIN_ROLE } from '../middlewar
 import { hashPassword, checkPolicy, generateTemporaryPassword, hashManyPasswords } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
+import { publishSessionCheck } from '../services/live.js';
 import { userImportJson } from '../middleware/body.js';
 import { bad, notFound, str, idParam, isId } from '../utils/http.js';
 import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../utils/importMatch.js';
@@ -358,6 +359,8 @@ r.patch('/:id', async (req, res) => {
         success: true, detail: { by: req.user.username } });
     }
   });
+  // open live-updates streams of this user: closed when deactivated, new scope / permissions otherwise
+  publishSessionCheck(id);
   res.json({ user: await loadUser(id) });
 });
 
@@ -375,6 +378,7 @@ r.post('/:id/reset-password', async (req, res) => {
     await logAudit(req, { db: c, action: 'reset_password', entity: 'user', entityId: id, summary: u.username });
     await logAuth(req, { db: c, userId: id, username: u.username, event: 'password_reset_by_admin', success: true, detail: { by: req.user.username } });
   });
+  publishSessionCheck(id);
   res.json({ ok: true });
 });
 
@@ -391,6 +395,7 @@ r.post('/:id/reset-2fa', async (req, res) => {
     await logAudit(req, { db: c, action: 'reset_2fa', entity: 'user', entityId: id, summary: u.username });
     await logAuth(req, { db: c, userId: id, username: u.username, event: 'mfa_reset_by_admin', success: true, detail: { by: req.user.username } });
   });
+  publishSessionCheck(id);
   res.json({ ok: true });
 });
 
@@ -416,6 +421,7 @@ r.post('/:id/revoke-sessions', async (req, res) => {
       detail: { by: req.user.username, count: q.rowCount } });
     return q;
   });
+  publishSessionCheck(id);
   res.json({ revoked: q.rowCount });
 });
 

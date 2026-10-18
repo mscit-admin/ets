@@ -64,6 +64,12 @@ const UI = {
   flag: "<path d=\"M5 21V4\"/><path d=\"M5 4h12l-2.5 4.5L17 13H5\"/>",
   note: "<path d=\"M5 4h14v11l-5 5H5z\"/><path d=\"M14 20v-5h5M8.5 9h7M8.5 12.5h4\"/>",
   filter: "<path d=\"M4 5h16l-6 7.5V19l-4 1.5v-8z\"/>",
+  // ERP module wheel (dashboard): standard modules that have no department of their own
+  factory: "<path d=\"M3 20.5V10l5 3V10l5 3V10l5 3V4h3v16.5z\"/><path d=\"M3 20.5h18M7 17h2M11.5 17h2M16 17h2\"/>",
+  planning: "<rect x=\"3.4\" y=\"4.6\" width=\"17.2\" height=\"15.8\" rx=\"2.2\"/><path d=\"M3.4 9.2h17.2M7 12.8h6M9.5 16.4h7.5\"/>",
+  chart: "<path d=\"M4 20h16\"/><rect x=\"5.5\" y=\"12\" width=\"3\" height=\"6\" rx=\".8\"/><rect x=\"10.5\" y=\"8\" width=\"3\" height=\"10\" rx=\".8\"/><rect x=\"15.5\" y=\"4.5\" width=\"3\" height=\"13.5\" rx=\".8\"/>",
+  crm: "<circle cx=\"12\" cy=\"8\" r=\"3\"/><path d=\"M6.5 19.5c0-3.1 2.5-5 5.5-5s5.5 1.9 5.5 5\"/><circle cx=\"5\" cy=\"10\" r=\"2\"/><circle cx=\"19\" cy=\"10\" r=\"2\"/><path d=\"M2 17c.2-1.6 1.3-2.7 3-2.9M22 17c-.2-1.6-1.3-2.7-3-2.9\"/>",
+  megaphone: "<path d=\"M3.5 10v4a1 1 0 0 0 1 1H7l7 4.5v-15L7 9H4.5a1 1 0 0 0-1 1z\"/><path d=\"M17.5 9a4 4 0 0 1 0 6M7.5 15.2l1.2 4.6h2.6l-1-4\"/>",
 };
 
 const ALL = { ...APP, ...UI };

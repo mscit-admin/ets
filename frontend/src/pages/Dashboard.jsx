@@ -1,24 +1,37 @@
 import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
-import { pc, TEST_COLORS } from '../lib/format.js';
+import { pc, pctTone, TEST_COLORS } from '../lib/format.js';
+import { useAuth } from '../lib/auth.jsx';
+import { useLiveUpdates } from '../lib/live.js';
+import { STANDARD_MODULES, wheelSegments } from '../lib/erpModules.js';
+import { ErpLegend, ErpWheel } from '../components/ErpWheel.jsx';
+import { LiveBadge } from '../components/LiveBadge.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { projectHealth } from '../lib/health.js';
 import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
-import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, Ring, useLoad } from '../components/ui.jsx';
+import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 
 export default function Dashboard() {
   const { t, nm, fmtDay } = useI18n();
-  const { data, error, loading } = useLoad(() => api.get('/tracker/summary'), []);
-  const pending = useLoad(() => api.get('/imports/pending-count'), []).data;
-  const edits = useLoad(() => api.get('/approvals/pending-count'), []).data;
-  const ps = useLoad(() => api.get('/tracker/project-status'), []).data;
+  const { user } = useAuth();
+  const sum = useLoad(o => api.get('/tracker/summary', o), []);
+  const pendingL = useLoad(o => api.get('/imports/pending-count', o), []);
+  const editsL = useLoad(o => api.get('/approvals/pending-count', o), []);
+  const psL = useLoad(o => api.get('/tracker/project-status', o), []);
+  // another user changed data → reload the wheel, the cards and the notices (scoped endpoints, no page reload)
+  useLiveUpdates(() => { sum.refresh(); pendingL.refresh(); editsL.refresh(); psL.refresh(); });
+  const { data, error, loading } = sum;
+  const pending = pendingL.data, edits = editsL.data, ps = psL.data;
   const insightText = useInsightText();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { total, departments, applications, counts, settings } = data;
+  const segments = wheelSegments(departments, { fullScope: !!user?.fullScope });
+  const activeSegs = segments.filter(x => x.state === 'active');
+  const activeStd = segments.filter(x => x.state === 'active' && STANDARD_MODULES.some(m => m.key === x.key)).length;
   const lowest = [...applications].sort((a, b) => a.calc.pct - b.calc.pct).slice(0, 5);
   const tests = total.tests;
   const testedTotal = tests.reduce((a, b) => a + b, 0) || 1;
@@ -38,14 +51,41 @@ export default function Dashboard() {
       {edits?.awaiting_me > 0 && (
         <Link to="/approvals" className="alert orange block-link"><b>{t('edits_awaiting_you', { n: edits.awaiting_me })}</b></Link>
       )}
-      <div className="grid-cards">
-        <div className="number-card hero">
-          <Ring value={total.pct} size={104} />
-          <div>
-            <div className="nc-label">{t('overall_progress')}</div>
-            <div className="nc-sub">{pc(total.fnPct)}% {t('functions_only')}</div>
+      <section className="card erp-card" aria-labelledby="erp-title">
+        <div className="card-head">
+          <h3 id="erp-title">{t('erp_wheel_title')}</h3>
+          <div className="card-actions"><LiveBadge /></div>
+        </div>
+        <div className="card-body erp-body">
+          <div className="erp-figure"><ErpWheel segments={segments} total={total.pct} /></div>
+          <div className="erp-side">
+            <div className="erp-overall">
+              <span className="nc-label">{t('overall_progress')}</span>
+              <b className="num" style={{ color: pctTone(total.pct).text }}>{pc(total.pct)}%</b>
+              <span className="nc-sub">{pc(total.fnPct)}% {t('functions_only')}</span>
+            </div>
+            <p className="muted small erp-count">{t('erp_active_count', { n: activeStd, of: STANDARD_MODULES.length })}</p>
+            <ul className="erp-list">
+              {activeSegs.map(m => {
+                const tone = pctTone(m.pct);
+                return (
+                  <li key={m.key}>
+                    <Link to={'/department/' + m.dept.id} className="erp-row">
+                      <span className="erp-row-icon"><Icon name={m.icon} size={16} /></span>
+                      <span className="erp-row-name"><b>{nm(m)}</b><span className="muted small">{nm(m.dept)}</span></span>
+                      <span className="erp-row-bar" aria-hidden="true"><i style={{ width: Math.min(100, m.pct) + '%', background: tone.stroke }} /></span>
+                      <b className="num erp-row-pct" style={{ color: tone.text }}>{pc(m.pct)}%</b>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            <ErpLegend segments={segments} />
           </div>
         </div>
+      </section>
+
+      <div className="grid-cards">
         <NumberCard label={t('functions_counted')} value={counts.functions} />
         <NumberCard label={t('completed_functions')} value={counts.done} color="green" />
         <NumberCard label={t('tested_ok')} value={tests[2]} sub={`${tests[1]} ${t('ts_1')} · ${tests[3]} ${t('ts_3')}`} color="blue" />

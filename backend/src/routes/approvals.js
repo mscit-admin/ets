@@ -4,6 +4,7 @@ import { query, tx } from '../db/pool.js';
 import { requireAuth, hasPerm, canSeeApp } from '../middleware/auth.js';
 import { isAppApprover, applyRequest, requestContext, requesterBlocked } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
+import { publishChange } from '../services/live.js';
 import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 
 const r = Router();
@@ -83,14 +84,18 @@ async function decide(req, res, action) {
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: id,
         summary: `${rq.app_id}: ${result.applied} applied, ${result.skipped} skipped`, newValue: result,
         context: await requestContext(c, rq, req, { reason }) });
-      return { applied: true, applied_changes: result.applied, skipped_changes: result.skipped };
+      return { applied: true, applied_changes: result.applied, skipped_changes: result.skipped, app_id: rq.app_id };
     }
     const status = action === 'reject' ? 'rejected' : 'withdrawn';
     await c.query(`UPDATE edit_requests SET status=$2, decided_by=$3, decided_at=now(), reason=$4 WHERE id=$1`, [id, status, req.user.id, reason]);
     await logAudit(req, { db: c, action: `edit_${action}`, entity: 'edit_request', entityId: id, summary: reason,
       context: await requestContext(c, rq, req, { reason }) });
-    return { ok: true };
+    return { ok: true, app_id: rq.app_id };
   });
+  // after COMMIT: applied changes, or the end of an "awaiting approval" badge
+  const app = apps.find(a => a.id === out.app_id);
+  publishChange(app ? { dept_id: app.department_id, app_id: app.id } : {});
+  delete out.app_id;
   res.json(out);
 }
 
@@ -117,6 +122,7 @@ r.post('/approve-all', async (req, res) => {
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: rq.id, summary: `bulk approval`, newValue: result,
         context: await requestContext(c, rq, req, { bulk: true }) });
     });
+    publishChange({ dept_id: rq.department_id, app_id: rq.app_id });   // this request's transaction has committed
   }
   res.json({ requests: rows.length - blocked, applied_changes: applied, skipped_changes: skipped, blocked_requests: blocked });
 });

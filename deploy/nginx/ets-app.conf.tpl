@@ -23,6 +23,25 @@ location /api/ {
     proxy_read_timeout 120s;
 }
 
+# Live updates (Server-Sent Events, backend/src/routes/events.js): one long-lived response per open tab.
+# No buffering, caching or compression (each event must reach the browser at once); the API sends a heartbeat
+# every 25 s, so a 1 h read timeout only ends a stream whose API process stopped answering (the browser then
+# reconnects). Exact match: no other path takes these settings.
+location = /api/events {
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+
 # File uploads (team result imports, full tracker import, branding images): larger bodies.
 # The API itself only reads them after authentication (backend/src/middleware/body.js).
 location ~ ^/api/(imports|imports/preview|tracker/import|branding/[a-z_]+)$ {

@@ -3,6 +3,7 @@ import { query } from '../db/pool.js';
 import { sha256, randomToken } from '../services/crypto.js';
 import { HttpError } from '../utils/http.js';
 import { logAuth } from '../services/logs.js';
+import { publishSessionCheck } from '../services/live.js';
 
 export const ADMIN_ROLE = 'admin';
 
@@ -28,7 +29,10 @@ export function assertCookieConfig() {
 // before sign-in or before 2FA never becomes a full session (ETS-SEC-015).
 export async function createSession(res, req, userId, { mfaPassed, mfaStage = null, replaces = 'replaced' }) {
   const old = req.cookies?.[cookieName()];
-  if (old) await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL', [sha256(old), replaces]);
+  if (old) {
+    const q = await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL RETURNING user_id', [sha256(old), replaces]);
+    if (q.rows[0]) publishSessionCheck(q.rows[0].user_id);
+  }
   const token = randomToken();
   await query(`INSERT INTO sessions(id,user_id,mfa_passed,mfa_stage,ip,user_agent,expires_at)
     VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' hours')::interval)`,
@@ -38,7 +42,11 @@ export async function createSession(res, req, userId, { mfaPassed, mfaStage = nu
 
 export async function revokeSession(req, res, reason = 'logout') {
   const t = req.cookies?.[cookieName()];
-  if (t) await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL', [sha256(t), reason]);
+  if (t) {
+    const q = await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL RETURNING user_id', [sha256(t), reason]);
+    // its live-updates streams close now, not at the next heartbeat (services/live.js)
+    if (q.rows[0]) publishSessionCheck(q.rows[0].user_id);
+  }
   clearCookie(res);
 }
 
@@ -99,7 +107,10 @@ export async function sessionMiddleware(req, res, next) {
   if (!user || !user.is_active) return next();
   req.session = s;
   req.user = user;
-  if (Date.now() - new Date(s.last_seen_at).getTime() > 60_000) {
+  // Automatic requests do not count as activity for the idle timeout: the live-updates stream itself and the
+  // reloads it triggers (header X-ETS-Live: 1, frontend lib/live.js) — an open screen alone never keeps a session alive.
+  const automatic = req.path === '/events' || req.get('x-ets-live') === '1';
+  if (!automatic && Date.now() - new Date(s.last_seen_at).getTime() > 60_000) {
     query('UPDATE sessions SET last_seen_at=now() WHERE id=$1', [id]).catch(() => {});
   }
   next();

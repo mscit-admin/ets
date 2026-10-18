@@ -1,10 +1,12 @@
 import { HttpError } from '../utils/http.js';
 import { logAccess, logError, logAuth } from '../services/logs.js';
 
-// Records every API request (file + access_log table) once the response is sent.
+// Records every API request (file + access_log table) once the response is sent. A live-updates stream
+// (routes/events.js) records itself when it opens and sets res.locals.accessLogged.
 export function accessLog(req, res, next) {
   const t0 = process.hrtime.bigint();
   res.on('finish', () => {
+    if (res.locals.accessLogged) return;
     const ms = Number((process.hrtime.bigint() - t0) / 1_000_000n);
     logAccess(req, res, ms);
   });

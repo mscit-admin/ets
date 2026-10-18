@@ -88,7 +88,7 @@ Nothing is changed before you answer `y`. The installation then runs 12 steps:
 | 6 | Writes `/etc/ets/ets.env` (mode 640) with a new random `APP_SECRET` (an existing one is kept) |
 | 7 | Creates the tables (local database: migrations as the PostgreSQL superuser through `ets-log-protect`, then the **audit-trail protection**: the change history and sign-in log become read / append-only for the application role — 07 §3), the catalog, the administrator, the 2FA policy and system names, and imports the tracker file if given |
 | 8 | Creates or obtains the certificate |
-| 9 | Configures nginx on your ports (TLS 1.2/1.3, security headers) |
+| 9 | Configures nginx on your ports (TLS 1.2/1.3, security headers; `location = /api/events` streams the live updates of the screens unbuffered, read timeout 1 h) |
 | 10 | Installs the `ets-backend` service (sandboxed), log rotation, the daily **encrypted** backup with its key `/etc/ets/backup.key`, and the `ets-backup` / `ets-restore` / `ets-log-protect` commands |
 | 11 | Configures the firewall: SSH (its real port is detected) and your web ports |
 | 12 | Checks the service and the web server, and takes the first backup |

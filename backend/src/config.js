@@ -70,6 +70,12 @@ export const config = {
     level: env('LOG_LEVEL', 'info'),
     accessToDb: env('ACCESS_LOG_DB', 'true') === 'true',
   },
+  // Live updates (GET /api/events, Server-Sent Events): heartbeat interval (the session is re-checked on
+  // every beat) and how many open streams one user may hold (several tabs).
+  live: {
+    heartbeatMs: Math.max(1000, int('LIVE_HEARTBEAT_SECONDS', 25) * 1000),
+    maxStreamsPerUser: Math.max(1, int('LIVE_MAX_STREAMS_PER_USER', 5)),
+  },
   staticDir: env('STATIC_DIR', ''), // serve the built frontend from here (optional; nginx usually does it)
 };
 

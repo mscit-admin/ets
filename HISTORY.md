@@ -12,6 +12,77 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.4.0] — 2026-10-18 — ERP module wheel and live updates
+
+### Features
+- feat(frontend): **ERP module wheel** at the top of the dashboard — a circle of the 8 standard ERP modules
+  (Production, Human Resources, Planning, Inventory Management, Reporting, CRM, Sales & Marketing, Finance &
+  Accounting) around a hub with the overall progress «إجمالي الإنجاز» / "Overall progress". A module fed by a
+  department of the system is **active**: navy / blue segment with its line icon, name and the department % on a
+  white chip, plus a thin progress arc on the outer rim; the number and the arc take the continuous tone of
+  `pctTone` (critical → good). Click / Tab + Enter opens the department page. Modules without a department are
+  **faded** («غير مفعّل» / "Not activated", not clickable); for a scoped reader a department outside the scope is
+  faded «خارج نطاقك» / "Outside your scope" with no % (only `/api/tracker/summary` data is used). Mapping by
+  department id: `hr` → Human Resources, `fin` → Finance & Accounting, `com` → Sales & Marketing; `inf`
+  (Infrastructure) keeps a segment of its own after the standard ones, and any other department gets one too.
+  Pure inline SVG, constant-width white gaps, mirrored in Arabic, values glide to the new level (number + arc,
+  none with `prefers-reduced-motion`), responsive (≈520 px on desktop, full card width on phones, no horizontal
+  scroll). Beside it: the active modules with their %, a legend (active / not activated / outside scope) and the
+  tone scale. The hero ring card is replaced by the hub; the other cards stay below
+  (`frontend/src/components/ErpWheel.jsx`, `frontend/src/lib/erpModules.js` — the editable module list and
+  mapping, new icons `factory`, `planning`, `chart`, `crm`, `megaphone`, messages `erp_*`, `live_*`)
+- feat(backend): **live updates** — `GET /api/events` (signed in), Server-Sent Events: `ready`, `tracker_changed`
+  (`{type, dept_id?, app_id?}` — ids only, never values), `session_ended`; heartbeat comment every 25 s
+  (`LIVE_HEARTBEAT_SECONDS`), at most 5 streams per user (`LIVE_MAX_STREAMS_PER_USER`, `429 too_many_streams`),
+  `X-Accel-Buffering: no`. Every change is announced **after its transaction committed** with `pg_notify` on
+  channel `ets_live`; each API process keeps one dedicated `LISTEN` connection (opened with the first stream,
+  reconnects with backoff and then tells its streams to reload once), so it also works with several processes
+  (the systemd unit runs one). Events go only to streams whose user has that department / application in scope
+  (`backend/src/services/live.js`, `backend/src/routes/events.js`)
+- feat(backend): announced changes — function edits (%, weight, statuses, note, include / exclude), bulk set,
+  add / remove / restore (direct or sent for approval), edit requests approved / rejected / withdrawn / approved in
+  bulk, application weights and calculation parameters, weights reset, reports track, schedule and timeline,
+  team-result imports (submitted, signed, applied, rejected), the full tracker import, and settings that change
+  the calculation or the approval rule
+- feat(frontend): **screens update without reloading the page** — dashboard (wheel, cards, notices, curve),
+  department, application, project status, reports and weights reload through their usual scoped endpoints
+  (`useLiveUpdates`, `frontend/src/lib/live.js`): one `EventSource` per tab, reloads debounced 400 ms, filtered by
+  department / application hints, reconnection with backoff, paused while the tab is hidden and reloaded when it
+  is shown again, polling every 30 s after repeated failures; badge «تحديث مباشر» / "Live" (or "Every 30 s").
+  `useLoad()` gained a silent `refresh()` that keeps the screen while loading and drops out-of-order answers
+- feat(frontend): a live reload never overwrites what the user is typing — the application table keeps a number
+  cell being edited and rows whose save is still in flight; the weights page keeps unsaved weights / parameters;
+  open edit windows keep their own values
+
+### Security
+- sec(backend): the stream's session is re-checked on every heartbeat (revoked, expired, idle, user disabled,
+  password change required) and at once on sign-out, re-sign-in, password change / admin reset, 2FA reset /
+  disable, *End sessions*, deactivation and scope / role / permission changes (`session_check` notification to
+  every process); the stream then closes with `session_ended` and the app shows the sign-in page. A scope change
+  applies to the next events at once
+- sec(backend): the stream and the reloads it triggers (header `X-ETS-Live: 1`) are not counted as activity for the
+  idle timeout, so an open dashboard does not keep a session alive; opening a stream counts as one request for the
+  general rate limit; the access log records the stream opening once, not its heartbeats. CSP unchanged
+  (`connect-src 'self'` covers the stream)
+
+### Deployment
+- ops(deploy): nginx `location = /api/events` — `proxy_buffering off`, `proxy_cache off`, `gzip off`,
+  `proxy_read_timeout` / `proxy_send_timeout` 1 h, HTTP/1.1 keep-alive to the API (`deploy/nginx/ets-app.conf.tpl`);
+  graceful shutdown closes the open streams first (`backend/src/server.js`)
+- ops(deploy): new optional settings `LIVE_HEARTBEAT_SECONDS`, `LIVE_MAX_STREAMS_PER_USER` (`backend/.env.example`)
+
+### Tests
+- test(tests): `backend/test/live.test.js` — `/api/events` requires a session; a function % update sends
+  `tracker_changed` after commit with ids only and no values; a scoped user hears only about their scope;
+  sign-out and an expired session close the stream; the stream is not activity; the per-user cap; the stream
+  opening is logged once (116 tests in total)
+
+### Documentation
+- docs(docs): user guide (dashboard wheel, live updates), API reference (`/events`), security (sessions and
+  live updates), installation guide (nginx step), operations runbook (live updates not arriving)
+
+---
+
 ## [1.3.0] — 2026-10-18 — Excel exports and the export policy
 
 ### Features
