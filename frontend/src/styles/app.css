@@ -558,3 +558,37 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   .eqb-result .eq-ring { width: 136px; height: 136px; }
   .eq-legend { max-width: none; }
 }
+
+/* ---------- application page: sticky progress header + paginated functions table ----------
+   The equation card stays under the top bar while the functions table scrolls (wide and tall screens only —
+   on phones / short windows it would cover the screen, so the page scrolls normally there; the same media
+   query is STICKY_MQ in pages/Application.jsx). The wrapper paints the page background around the card so
+   rows never show through; once stuck (.stuck, set from JS) the card gets a shadow and a compact layout. */
+.sticky-sentinel { height: 0; }
+@media (min-width: 900px) and (min-height: 700px) {
+  .app-sticky { position: sticky; top: calc(var(--navbar-h) - 8px); z-index: 20; background: var(--bg);
+    margin: -8px 0 8px; padding-top: 8px; }
+  .app-sticky > .eq-card { margin-bottom: 0; transition: box-shadow .2s; }
+  .app-sticky.stuck { padding-bottom: 8px; margin-bottom: 0; }
+  .app-sticky.stuck > .eq-card { box-shadow: 0 0 0 1px var(--border), 0 8px 18px -8px rgba(0, 0, 0, .22); padding: 8px 18px; }
+  .app-sticky.stuck .eq-legend, .app-sticky.stuck .eq-note { display: none; }
+  .app-sticky.stuck .eqb-row { height: 56px; }
+  .app-sticky.stuck .eqb-row .eq-ring { width: 56px; height: 56px; }
+  .app-sticky.stuck .eqb-plus { height: 18px; padding-inline-start: 19px; }
+  .app-sticky.stuck .eqb-plus span { width: 18px; height: 18px; font-size: 12px; }
+  .app-sticky.stuck .eqb-inputs.two + .eqb-join::before { top: 28px; bottom: 28px; }
+  .app-sticky.stuck .eqb-result { flex-direction: row; gap: 10px; }
+  .app-sticky.stuck .eqb-result .eq-ring { width: 92px; height: 92px; }
+  .app-sticky.stuck .eqb-foot { margin-top: 6px; padding-top: 6px; justify-content: center; }
+}
+.fn-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fn-pager-size { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.fn-pager-size select { width: auto; min-width: 64px; }
+.fn-pager-nav { display: inline-flex; align-items: center; gap: 4px; }
+.fn-pager-nav .pager-arrow { width: 30px; padding: 0; }
+.fn-pager-page { padding: 0 8px; white-space: nowrap; font-weight: 600; }
+@media (max-width: 560px) {
+  .fn-pager { justify-content: center; }
+  .fn-pager-nav { order: -1; width: 100%; justify-content: center; }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api, path, notFoundError } from '../lib/api.js';
@@ -15,6 +15,73 @@ const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled'
   notif_status: 'notif_status', review_status: 'review_status', note: 'note' };
 
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
+
+// Functions table pagination: rows per page (remembered per browser, default 10).
+const PAGE_SIZES = [5, 10, 15, 20, 25];
+const PAGE_SIZE_KEY = 'ets.fnPageSize';
+const readPageSize = () => {
+  try { const n = parseInt(localStorage.getItem(PAGE_SIZE_KEY), 10); return PAGE_SIZES.includes(n) ? n : 10; } catch { return 10; }
+};
+const savePageSize = n => { try { localStorage.setItem(PAGE_SIZE_KEY, String(n)); } catch { /* storage unavailable */ } };
+
+// The progress header stays visible (CSS position: sticky) only on screens wide and tall enough —
+// keep in sync with the @media rule of .app-sticky in app.css.
+const STICKY_MQ = '(min-width: 900px) and (min-height: 700px)';
+const navbarHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--navbar-h')) || 52;
+
+// Is the sticky header currently stuck under the top bar? (→ compact look + shadow)
+// It only switches to the compact look when the page is long enough to stay scrolled after shrinking,
+// so the header never flickers between the two sizes at the end of a short page.
+function useStuck(sentinelRef, boxRef, layoutKey) {
+  const [stuck, setStuck] = useState(false);
+  const check = useCallback(() => {
+    const s = sentinelRef.current, box = boxRef.current;
+    if (!s || !box || !window.matchMedia(STICKY_MQ).matches) { setStuck(false); return; }
+    const top = s.getBoundingClientRect().top - navbarHeight();     // < 0 once the header has reached the top bar
+    if (top >= 0) { setStuck(false); return; }
+    setStuck(was => {
+      if (was) return true;
+      const room = document.documentElement.scrollHeight - window.innerHeight - (window.scrollY + top);
+      return room > box.offsetHeight;
+    });
+  }, [sentinelRef, boxRef]);
+  useEffect(() => {
+    let raf = 0;
+    const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(check); };
+    window.addEventListener('scroll', on, { passive: true });
+    window.addEventListener('resize', on);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', on); window.removeEventListener('resize', on); };
+  }, [check]);
+  useLayoutEffect(() => { check(); }, [check, layoutKey]);   // re-check when the rows below change
+  return stuck;
+}
+
+function Pager({ page, pages, total, size, onPage, onSize }) {
+  const { t } = useI18n();
+  const from = (page - 1) * size + 1, to = Math.min(total, page * size);
+  const arrow = (icon, label, target, disabled) => (
+    <button type="button" className="btn btn-default btn-sm pager-arrow" disabled={disabled} onClick={() => onPage(target)}
+      aria-label={label} title={label}><Icon name={icon} size={15} className="flip" /></button>
+  );
+  return (
+    <nav className="fn-pager" aria-label={t('page_of', { page, pages })}>
+      <label className="fn-pager-size">
+        <span>{t('rows_per_page')}</span>
+        <select className="input input-sm" value={size} onChange={e => onSize(parseInt(e.target.value, 10))}>
+          {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+      <span className="fn-pager-range muted small">{t('showing_range', { range: '\u2066' + from + '–' + to + '\u2069', n: total })}</span>
+      <div className="fn-pager-nav">
+        {arrow('chevrons_back', t('first_page'), 1, page <= 1)}
+        {arrow('chevron_back', t('previous_page'), page - 1, page <= 1)}
+        <span className="fn-pager-page small" aria-live="polite">{t('page_of', { page, pages })}</span>
+        {arrow('chevron', t('next_page'), page + 1, page >= pages)}
+        {arrow('chevrons', t('last_page'), pages, page >= pages)}
+      </div>
+    </nav>
+  );
+}
 
 // Number input that only commits on blur / Enter (one request per edit, not per keystroke).
 function NumCell({ value, min, max, step = 1, disabled, onCommit, label }) {
@@ -48,7 +115,13 @@ export default function Application() {
   const { data, error, loading, reload } = useLoad(() => api.get(path`/tracker/applications/${id}`)
     .then(d => (d?.application && Array.isArray(d.functions) ? d : Promise.reject(notFoundError()))), [id]);
   const [fns, setFns] = useState([]);
-  const [filter, setFilter] = useState({ q: '', source: '', test: '', showOff: false, showRemoved: false });
+  const [filter, setFilterState] = useState({ q: '', source: '', test: '', showOff: false, showRemoved: false });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState(readPageSize);
+  // any filter change starts again at page 1 (saving a cell reloads the data but keeps the page)
+  const setFilter = f => { setFilterState(f); setPage(1); };
+  useEffect(() => { setPage(1); }, [id]);
+  const sentinelRef = useRef(null), stickyRef = useRef(null), tableRef = useRef(null);
   const [noteFor, setNoteFor] = useState(null);
   const [bulk, setBulk] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -62,6 +135,27 @@ export default function Application() {
     (filter.test === '' || f.test_status === +filter.test) &&
     (!filter.q || (f.name_ar + ' ' + (f.reference || '') + ' ' + f.note).toLowerCase().includes(filter.q.toLowerCase()))
   ), [fns, filter]);
+
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize));
+  const cur = Math.min(page, pages);      // the list may have shrunk after a reload or a removal
+  const stuck = useStuck(sentinelRef, stickyRef, [cur, pageSize, shown.length, !!data].join());
+
+  // Page change from the pager at the bottom: bring the top of the table back just under the sticky header.
+  const goPage = n => {
+    setPage(Math.min(Math.max(1, n), pages));
+    const card = tableRef.current, box = stickyRef.current, sentinel = sentinelRef.current;
+    if (!card || !box || !sentinel) return;
+    const sticky = window.matchMedia(STICKY_MQ).matches;
+    const under = sticky ? box.getBoundingClientRect().bottom : navbarHeight() + 8;
+    const top = card.getBoundingClientRect().top;
+    if (top >= under) return;
+    let y = window.scrollY + top - under;
+    // stay (just) past the point where the header sticks, so it keeps its compact size
+    if (sticky) y = Math.max(y, window.scrollY + sentinel.getBoundingClientRect().top - navbarHeight() + 1);
+    window.scrollTo(0, y);
+  };
+  // keep the first visible row on screen when the page size changes
+  const setPageSize = n => { setPage(Math.floor(((cur - 1) * pageSize) / n) + 1); setPageSizeState(n); savePageSize(n); };
 
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
@@ -120,7 +214,10 @@ export default function Application() {
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
       </PageHeader>
 
-      <PctEquation calc={calc} settings={settings} />
+      <div ref={sentinelRef} className="sticky-sentinel" aria-hidden="true" />
+      <div ref={stickyRef} className={'app-sticky' + (stuck ? ' stuck' : '')}>
+        <PctEquation calc={calc} settings={settings} />
+      </div>
 
       {(a.note_ar || a.addendum || a.scope_cut || a.extra_module) && (
         <Alert kind={a.scope_cut ? 'orange' : 'blue'}>
@@ -146,6 +243,7 @@ export default function Application() {
         </Alert>
       )}
 
+      <div ref={tableRef} className="fn-table-card">
       <Card>
         <div className="filter-bar">
           <input className="input input-sm" placeholder={t('filter') + '…'} value={filter.q} onChange={e => setFilter({ ...filter, q: e.target.value })} />
@@ -177,7 +275,8 @@ export default function Application() {
               </tr>
             </thead>
             <tbody>
-              {shown.map(f => (
+              {shown.length === 0 && <tr><td colSpan={8} className="empty">{t('fn_no_matches')}</td></tr>}
+              {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => (
                 <tr key={f.id} className={f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off'}>
                   <td className="w-check">
                     <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at} aria-label={t('enabled')}
@@ -223,7 +322,9 @@ export default function Application() {
             </tbody>
           </table>
         </div>
+        {shown.length > 0 && <Pager page={cur} pages={pages} total={shown.length} size={pageSize} onPage={goPage} onSize={setPageSize} />}
       </Card>
+      </div>
 
       {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={can.tst || !!noteFor.pending}
         onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor.f, { ...(noteFor.pending || {}), note }); setNoteFor(null); }} />}

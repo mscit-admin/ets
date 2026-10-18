@@ -35,6 +35,27 @@ and must be mentioned here with the migration name.
   equation (0 % «حرج / Critical» … «متوسط / Fair» … «جيد / Good» 100 %), right-to-left in Arabic. The discrete
   `pctColor()` used elsewhere is unchanged
 - feat(frontend): new messages `app_progress`, `eq_no_reports`, `eq_critical`, `eq_fair`, `eq_good` (ar + en)
+- feat(frontend): owner request for the application page — the **progress header stays visible** while the
+  functions table scrolls: the equation card is `position: sticky` just under the top bar (`--navbar-h`), on a
+  page-coloured band so rows never show through; once stuck it gets a shadow and a compact layout (smaller rings,
+  legend and formula line hidden, pills kept). The page title, breadcrumb and the «تعيين جماعي» / «إضافة وظيفة»
+  buttons scroll away with the page (back at the top). Only on screens ≥ 900 px wide **and** ≥ 700 px high —
+  on phones and short windows the page scrolls normally. The compact look switches on only when the page is long
+  enough to stay scrolled after shrinking (no flicker on short lists)
+- feat(frontend): the **functions table is paginated** — 10 rows per page by default, «صفوف في الصفحة» 5 / 10 / 15
+  / 20 / 25 (remembered per browser in `localStorage` `ets.fnPageSize`), first / previous / next / last arrow
+  buttons (mirrored in Arabic: «التالي» points left), «صفحة X من Y» and «عرض a–b من N». Pagination applies after
+  the filters (search, source, test status, disabled / removed items); any filter change goes back to page 1, the
+  «33 / 40» counter is unchanged. Saving a cell, a note or a toggle reloads the data but **keeps the current page**
+  (clamped if the list got shorter); changing the page size keeps the first visible row on screen; a page change
+  from the bottom pager brings the top of the table back under the sticky header. An empty filter result shows
+  «لا توجد وظائف تطابق التصفية». The table has no row-selection / select-all column (the ✓ column is the
+  per-function «included in the calculation» toggle with its confirmation) and no column sorting, so nothing else
+  changes. Only the application page uses this table (`frontend/src/pages/Application.jsx`,
+  `frontend/src/styles/app.css`, new icons `chevron_back`, `chevrons`, `chevrons_back` in
+  `frontend/src/components/Icon.jsx`)
+- feat(frontend): new messages `rows_per_page`, `showing_range`, `first_page`, `last_page`, `previous_page`,
+  `next_page`, `fn_no_matches` (ar + en)
 - docs(docs): User Guide (AR) §5 describes the new header, STRUCTURE.md; version 1.2.0
 
 ---
