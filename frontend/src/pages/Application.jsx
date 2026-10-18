@@ -4,10 +4,8 @@ import { useI18n } from '../i18n/index.jsx';
 import { api, path, notFoundError } from '../lib/api.js';
 import { pc, VENDOR_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
-import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
-
-// Unicode isolate so "85%" keeps its order inside Arabic sentences
-const iso = s => '\u2066' + s + '\u2069';
+import { PctEquation } from '../components/PctEquation.jsx';
+import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -67,7 +65,7 @@ export default function Application() {
 
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
-  const { application: a, department: d, report, can, settings } = data;
+  const { application: a, department: d, can, settings } = data;
   // values waiting for the team lead, per function: { [function_id]: [{field, new_value, requested_by_name}] }
   // (add/remove/restore requests are listed in the lifecycle box above the table instead)
   const pendingByFn = {};
@@ -109,7 +107,6 @@ export default function Application() {
   const removedCount = fns.filter(f => f.removed_at).length;
   const pendingLife = (data.pending || []).filter(p => p.field === 'create' || p.field === 'removed');
 
-  const hasReports = !d.is_base;
   return (
     <div>
       <div className="breadcrumb">
@@ -123,23 +120,7 @@ export default function Application() {
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
       </PageHeader>
 
-      <div className="app-head card">
-        <div className="ah-main">
-          <div className="ah-pct"><Pct value={calc.pct} /></div>
-          <ProgressBar value={calc.pct} />
-          {hasReports && settings.reports_share > 0 && (
-            <div className="muted small mt-s">{t('app_pct_note', { fw: iso(Math.round((1 - settings.reports_share) * 100) + '%'), rw: iso(Math.round(settings.reports_share * 100) + '%') })}</div>
-          )}
-        </div>
-        <div className="ah-stats">
-          <div><span>{t('fn_progress')}</span><b><Pct value={calc.fnPct} /></b></div>
-          {hasReports && <div><span>{t('report_progress')}</span><b><Pct value={report?.progress || 0} /></b></div>}
-          <div><span>{t('weight')}</span><b className="num">{pc(calc.weight)}</b></div>
-          <div><span>{t('functions')}</span><b className="num">{calc.count}</b></div>
-          <div><span>{t('ts_2')}</span><b className="num green-text">{calc.tests[2]}</b></div>
-          <div><span>{t('ts_3')}</span><b className="num red-text">{calc.tests[3]}</b></div>
-        </div>
-      </div>
+      <PctEquation calc={calc} settings={settings} />
 
       {(a.note_ar || a.addendum || a.scope_cut || a.extra_module) && (
         <Alert kind={a.scope_cut ? 'orange' : 'blue'}>
