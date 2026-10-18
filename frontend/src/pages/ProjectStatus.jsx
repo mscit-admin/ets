@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon.jsx';
 import { SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 
 const iso = x => '⁦' + x + '⁩';
 const STATUS_ICON = { done: 'check', on_track: 'check', at_risk: 'alert', delayed: 'alert', overdue: 'flag', not_started: 'clock', no_dates: 'info' };
@@ -40,7 +41,8 @@ export function useInsightText() {
 
 export default function ProjectStatus() {
   const { t, nm, fmtDay, dir } = useI18n();
-  const { data, error, loading } = useLoad(() => api.get('/tracker/project-status'), []);
+  const { data, error, loading, refresh } = useLoad(o => api.get('/tracker/project-status', o), []);
+  useLiveUpdates(refresh);
   const text = useInsightText();
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;

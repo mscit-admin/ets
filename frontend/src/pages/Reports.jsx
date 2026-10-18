@@ -6,11 +6,14 @@ import { REPORT_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, ErrorBox, Indicator, Loading, Modal, NumberCard, PageHeader, Pct, ProgressBar, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 
 export default function Reports() {
   const { t, nm, errText } = useI18n();
   const { dept } = useParams();
-  const { data, error, loading, reload } = useLoad(() => api.get('/tracker/reports'), []);
+  const { data, error, loading, reload, refresh } = useLoad(o => api.get('/tracker/reports', o), []);
+  // an open edit window keeps its own values (ReportModal state); the table behind it is refreshed
+  useLiveUpdates(refresh, { filter: m => !dept || !m.dept_id || m.dept_id === dept });
   const [edit, setEdit] = useState(null);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;

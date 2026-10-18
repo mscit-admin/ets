@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { Icon } from './Icon.jsx';
 import { pc, pctColor } from '../lib/format.js';
@@ -144,17 +144,31 @@ export function ToastHost() {
   return <div className="toasts">{items.map(i => <div key={i.id} className={'toast ' + i.kind}>{i.msg}</div>)}</div>;
 }
 
-// Data loader hook: const { data, error, loading, reload } = useLoad(() => api.get(...), [deps])
+// Data loader hook: const { data, error, loading, reload, refresh } = useLoad(o => api.get(url, o), [deps])
+//   reload()  — loads again (loading flag on, an error replaces the data);
+//   refresh() — silent reload for live updates (lib/live.js): passes { live: true } to the loader, keeps the
+//               data on screen while loading and when it fails; an answer older than a newer request is dropped.
 export function useLoad(fn, deps) {
   const [state, setState] = useState({ data: null, error: null, loading: true });
   const [n, setN] = useState(0);
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  const seq = useRef(0);
   useEffect(() => {
     let alive = true;
+    const my = ++seq.current;
     setState(s => ({ ...s, loading: true }));
-    fn().then(data => alive && setState({ data, error: null, loading: false }))
-      .catch(error => alive && setState({ data: null, error, loading: false }));
+    fn({}).then(data => alive && my === seq.current && setState({ data, error: null, loading: false }))
+      .catch(error => alive && my === seq.current && setState({ data: null, error, loading: false }));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, n]);
-  return { ...state, reload: () => setN(x => x + 1) };
+  const refresh = useCallback(() => {
+    const my = ++seq.current;
+    return fnRef.current({ live: true })
+      .then(data => { if (my === seq.current) setState({ data, error: null, loading: false }); })
+      .catch(() => { /* keep what is on screen; the next event or poll tries again */ });
+  }, []);
+  const reload = useCallback(() => setN(x => x + 1), []);
+  return { ...state, reload, refresh };
 }

@@ -1,24 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 
 export default function Weights() {
   const { t, nm, errText } = useI18n();
   const { can, user } = useAuth();
-  const { data, error, loading, reload } = useLoad(() => api.get('/tracker/weights'), []);
+  const { data, error, loading, reload, refresh } = useLoad(o => api.get('/tracker/weights', o), []);
   const [w, setW] = useState({});
   const [s, setS] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  useLiveUpdates(refresh);
 
+  // New data from the server (first load, save, or a live update by another user): a field the user has changed
+  // and not saved yet keeps the typed value; every other field takes the server's value.
+  const server = useRef(null);
   useEffect(() => {
     if (!data) return;
-    setW(Object.fromEntries(data.applications.map(a => [a.id, a.weight])));
-    setS(data.settings);
+    const prev = server.current;
+    const nextW = Object.fromEntries(data.applications.map(a => [a.id, a.weight]));
+    setW(cur => (prev ? Object.fromEntries(Object.entries(nextW).map(([id, v]) =>
+      [id, id in cur && String(cur[id]) !== String(prev.w[id]) ? cur[id] : v])) : nextW));
+    setS(cur => (prev && cur ? Object.fromEntries(Object.entries(data.settings).map(([k, v]) =>
+      [k, cur[k] !== prev.s[k] ? cur[k] : v])) : data.settings));
+    server.current = { w: nextW, s: data.settings };
   }, [data]);
 
   if (loading && !data) return <Loading />;
