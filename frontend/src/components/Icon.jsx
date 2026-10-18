@@ -47,7 +47,7 @@ const UI = {
   globe: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z\"/>",
   chevron: "<path d=\"m9 6 6 6-6 6\"/>",
   // the start-pointing chevron and the double chevrons (pager); like "chevron" they point to the LTR
-  // direction — add className="flip" to mirror them in Arabic (next ← / previous → in RTL)
+  // direction — add className="flip" to mirror them in Arabic, or pick the opposite icon by direction
   chevron_back: "<path d=\"m15 6-6 6 6 6\"/>",
   chevrons: "<path d=\"m6 6 6 6-6 6M12 6l6 6-6 6\"/>",
   chevrons_back: "<path d=\"m18 6-6 6 6 6M12 6l-6 6 6 6\"/>",

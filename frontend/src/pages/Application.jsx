@@ -57,12 +57,15 @@ function useStuck(sentinelRef, boxRef, layoutKey) {
 }
 
 function Pager({ page, pages, total, size, onPage, onSize }) {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
   const from = (page - 1) * size + 1, to = Math.min(total, page * size);
+  // icons picked by direction (not mirrored with CSS): in Arabic "next" points left, "previous" points right
+  const rtl = dir === 'rtl';
   const arrow = (icon, label, target, disabled) => (
     <button type="button" className="btn btn-default btn-sm pager-arrow" disabled={disabled} onClick={() => onPage(target)}
-      aria-label={label} title={label}><Icon name={icon} size={15} className="flip" /></button>
+      aria-label={label} title={label}><Icon name={icon} size={15} /></button>
   );
+  const [before, after] = t('showing_range', { n: total }).split('{range}');
   return (
     <nav className="fn-pager" aria-label={t('page_of', { page, pages })}>
       <label className="fn-pager-size">
@@ -71,13 +74,13 @@ function Pager({ page, pages, total, size, onPage, onSize }) {
           {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
-      <span className="fn-pager-range muted small">{t('showing_range', { range: '\u2066' + from + '–' + to + '\u2069', n: total })}</span>
+      <span className="fn-pager-range muted small">{before}<bdi dir="ltr">{from}–{to}</bdi>{after}</span>
       <div className="fn-pager-nav">
-        {arrow('chevrons_back', t('first_page'), 1, page <= 1)}
-        {arrow('chevron_back', t('previous_page'), page - 1, page <= 1)}
+        {arrow(rtl ? 'chevrons' : 'chevrons_back', t('first_page'), 1, page <= 1)}
+        {arrow(rtl ? 'chevron' : 'chevron_back', t('previous_page'), page - 1, page <= 1)}
         <span className="fn-pager-page small" aria-live="polite">{t('page_of', { page, pages })}</span>
-        {arrow('chevron', t('next_page'), page + 1, page >= pages)}
-        {arrow('chevrons', t('last_page'), pages, page >= pages)}
+        {arrow(rtl ? 'chevron_back' : 'chevron', t('next_page'), page + 1, page >= pages)}
+        {arrow(rtl ? 'chevrons_back' : 'chevrons', t('last_page'), pages, page >= pages)}
       </div>
     </nav>
   );
