@@ -27,6 +27,15 @@ export function makeAudit({ t, lang }) {
   const settingLabel = k => (SETTING_LABEL[k] && tx(SETTING_LABEL[k])) || k;
   const person = u => (u ? u.full_name || u.username || '—' : '—');
   const quote = s => (lang === 'ar' ? `«${s}»` : `“${s}”`);
+  const listSep = lang === 'ar' ? '، ' : ', ';
+  // codes of the functions a duplicate points at: "D3" in the same application, "att/D3" in another one
+  const codes = (list, appId) => (Array.isArray(list) ? list : []).map(d => (d.app_id && appId && d.app_id !== appId ? `${d.app_id}/${d.code}` : d.code)).join(listSep);
+  // why a function is excluded: «مكررة مع D3، D5», «خارج النطاق», … (migration 013)
+  const reasonPhrase = (m, appId) => {
+    const dup = codes(m?.duplicate_of, appId);
+    if (m?.disabled_reason === 'duplicate' && dup) return t('dr_duplicate_of_list', { codes: dup });
+    return m?.disabled_reason ? tx('dr_' + m.disabled_reason) || m.disabled_reason : t('dr_none');
+  };
 
   // A value as a reader would say it, for the given field.
   function fmt(field, v) {
@@ -36,6 +45,8 @@ export function makeAudit({ t, lang }) {
     if (field === 'calc.notif_share' || field === 'calc.reports_share') return num(+v * 100) + '%';
     if (field === 'calc.weight_mode') return tx('weight_mode_' + v) || String(v);
     if (field === 'enabled') return v ? t('au_on') : t('au_off');
+    if (field === 'disabled_reason') return tx('dr_' + v) || String(v);
+    if (field === 'duplicate_of') return codes(v) || t('au_empty');
     if (field === 'removed') return v ? t('au_removed') : t('au_present');
     if (field === 'language' || field === 'app.default_language') return tx('au_lang_' + v) || String(v);
     if (field === 'mfa.mode') return tx('mfa_' + v) || String(v);
@@ -66,6 +77,10 @@ export function makeAudit({ t, lang }) {
   };
   // context items → readable lines
   const itemLines = items => (items || []).map(i => {
+    if (i.field === 'enabled' && i.new === false && i.meta) {
+      return { item: i.kind === 'function' && (i.code || i.name_ar) ? fnName(i) : i.app_id || '', label: fieldLabel('enabled'), from: fmt('enabled', i.old),
+        to: fmt('enabled', false) + ' — ' + reasonPhrase(i.meta, i.app_id) + (i.meta.disabled_note ? ': ' + quote(short(i.meta.disabled_note)) : ''), applied: i.applied };
+    }
     const what = i.kind === 'function' && (i.code || i.name_ar) ? fnName(i) : i.app_id || '';
     if (i.field === 'create') return { item: fnName(i.new || {}), label: fieldLabel('create'), from: '', to: '', applied: i.applied };
     if (i.field === 'removed') {
@@ -97,6 +112,7 @@ export function makeAudit({ t, lang }) {
     if (k === 'type') return tx('log_' + v) || v;
     if (k === 'success') return v === 'true' ? t('yes') : t('no');
     if (k === 'show_off' || k === 'show_removed' || k === 'mine') return t('yes');
+    if (k === 'reason') return tx('dr_' + v) || v;
     return quote(short(String(v), 60));
   }
   const exportNotes = (notes, nv, report) => {
@@ -117,10 +133,25 @@ export function makeAudit({ t, lang }) {
     const key = `${r.action}:${r.entity}`;
 
     switch (key) {
-      case 'update:function':
+      case 'update:function': {
         lines = diff(r.old_value, r.new_value);
-        text = lines.length ? changeSentence(r, lines, { one: 'au_update_function_one', many: 'au_update_function', vars }) : null;
+        const o = r.old_value || {}, n = r.new_value || {};
+        const appId = ctx.app_id || r.app_id;
+        const who = person({ full_name: r.full_name, username: r.username });
+        if (o.enabled === true && n.enabled === false && 'disabled_reason' in n) {
+          // «ألغى أحمد احتساب الوظيفة D7 (مكررة مع D3، D5): ملاحظة…»
+          const reason = reasonPhrase(n, appId);
+          text = n.disabled_note ? t('au_disable_function_note', { ...vars, who, reason, note: quote(short(n.disabled_note, 200)) })
+            : t('au_disable_function', { ...vars, who, reason });
+          lines = lines.length > 1 ? lines : [];
+          if (ctx.bulk) notes.push(t('au_disable_bulk', { n: ctx.count ?? '' }));
+        } else if (o.enabled === false && n.enabled === true) {
+          text = t('au_enable_function', { ...vars, who });
+          if ('disabled_reason' in o) notes.push(t('au_enable_was', { reason: reasonPhrase(o, appId) + (o.disabled_note ? ': ' + quote(short(o.disabled_note)) : '') }));
+          if (ctx.bulk) notes.push(t('au_disable_bulk', { n: ctx.count ?? '' }));
+        } else text = lines.length ? changeSentence(r, lines, { one: 'au_update_function_one', many: 'au_update_function', vars }) : null;
         break;
+      }
       case 'create:function': text = t('au_create_function', { ...vars, fn: r.fn_code ? fn : fnName(r.new_value || {}) });
         lines = ['weight', 'progress', 'enabled', 'reference', 'name_en'].filter(k => r.new_value?.[k] != null && r.new_value[k] !== '')
           .map(k => ({ field: k, label: fieldLabel(k), from: '', to: fmt(k, r.new_value[k]) }));
@@ -190,6 +221,9 @@ export function makeAudit({ t, lang }) {
         else if (only?.field === 'removed') text = t(only.new?.removed ? 'au_edit_request_remove' : 'au_edit_request_restore', { ...vars, fn: items[0].item });
         else if (only) text = t(only.kind === 'report' ? 'au_edit_request_report_one' : 'au_edit_request_one',
           { ...vars, fn: items[0].item, field: items[0].label, from: items[0].from, to: items[0].to });
+        else if (ctx.items?.length && ctx.items.every(i => i.field === 'enabled' && i.new === false && i.meta)) {
+          notes.push(t('au_reason', { reason: reasonPhrase(ctx.items[0].meta, ctx.app_id) + (ctx.items[0].meta.disabled_note ? ': ' + ctx.items[0].meta.disabled_note : '') }));
+        }
         else if (ctx.items) text = t('au_edit_request', { ...vars, n: ctx.items.length });
         if (only) items = null;          // already said in the sentence
         break;

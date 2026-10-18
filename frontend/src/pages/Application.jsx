@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api, path, notFoundError } from '../lib/api.js';
+import { api, path, qs, notFoundError } from '../lib/api.js';
 import { pc, VENDOR_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { PctEquation } from '../components/PctEquation.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { useLiveUpdates } from '../lib/live.js';
+import { MultiSelect } from '../components/MultiSelect.jsx';
+import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -17,6 +19,9 @@ const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled'
   notif_status: 'notif_status', review_status: 'review_status', note: 'note' };
 
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
+// "reason" filter values: the reasons a user picks, 'import', and 'none' (excluded before 1.5.0, no reason recorded)
+const REASON_FILTER = [...DISABLE_REASONS, 'import', 'none'];
+const DEFAULT_FILTER = { q: '', source: '', test: '', reason: '', showOff: false, showRemoved: false };
 
 // Functions table pagination: rows per page (remembered per browser, default 10).
 const PAGE_SIZES = [5, 10, 15, 20, 25];
@@ -120,7 +125,8 @@ function StatusSelect({ value, prefix, disabled, onChange, label }) {
 
 export default function Application() {
   const { id } = useParams();
-  const { t, nm, errText, fmtDate } = useI18n();
+  const { t, nm, errText, fmtDate, lang } = useI18n();
+  const location = useLocation();
   const { data, error, loading, reload, refresh } = useLoad(o => api.get(path`/tracker/applications/${id}`, o)
     .then(d => (d?.application && Array.isArray(d.functions) ? d : Promise.reject(notFoundError()))), [id]);
   const [fns, setFns] = useState([]);
@@ -128,7 +134,7 @@ export default function Application() {
   useLiveUpdates(refresh, { filter: m => (m.app_id ? m.app_id === id : !m.dept_id || m.dept_id === data?.department?.id) });
   // rows saved by this user whose answer has not come back yet: a reload must not put the old value back
   const inflight = useRef(new Map());
-  const [filter, setFilterState] = useState({ q: '', source: '', test: '', showOff: false, showRemoved: false });
+  const [filter, setFilterState] = useState(DEFAULT_FILTER);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(readPageSize);
   // any filter change starts again at page 1 (saving a cell reloads the data but keeps the page)
@@ -146,7 +152,8 @@ export default function Application() {
   }, [data]);
 
   const shown = useMemo(() => fns.filter(f =>
-    (f.removed_at ? filter.showRemoved : (filter.showOff || f.enabled || f.source !== 'experience')) &&
+    (f.removed_at ? filter.showRemoved : (filter.showOff || !!filter.reason || f.enabled || f.source !== 'experience')) &&
+    (!filter.reason || (!f.enabled && !f.removed_at && (f.disabled_reason || 'none') === filter.reason)) &&
     (!filter.source || f.source === filter.source) &&
     (filter.test === '' || f.test_status === +filter.test) &&
     (!filter.q || (f.name_ar + ' ' + (f.reference || '') + ' ' + f.note).toLowerCase().includes(filter.q.toLowerCase()))
@@ -170,6 +177,33 @@ export default function Application() {
     if (sticky) y = Math.max(y, window.scrollY + sentinel.getBoundingClientRect().top - navbarHeight() + 1);
     window.scrollTo(0, y);
   };
+  // A link to one function (#fn-<id>, e.g. the chips of a duplicate): show it — filters reset when they hide it —,
+  // open its page of the table, scroll to it and highlight it for a moment.
+  const [focusId, setFocusId] = useState(null);
+  const hashId = /^#fn-(\d+)$/.exec(location.hash)?.[1];
+  useEffect(() => {
+    if (!hashId || !data) return;
+    const id = +hashId, f = fns.find(x => x.id === id);
+    if (!f) return;
+    let list = shown;
+    if (!shown.some(x => x.id === id)) {
+      const next = { ...DEFAULT_FILTER, showOff: true, showRemoved: !!f.removed_at };
+      setFilterState(next);
+      list = fns.filter(x => (x.removed_at ? next.showRemoved : true));
+    }
+    const i = list.findIndex(x => x.id === id);
+    setPage(Math.floor(Math.max(0, i) / pageSize) + 1);
+    setFocusId(id);
+  }, [hashId, location.key, !!data]);     // only when the link is followed, not on every reload of the table
+  useEffect(() => {
+    if (!focusId) return;
+    const el = document.getElementById('fn-' + focusId);
+    el?.scrollIntoView({ block: 'center' });
+    el?.querySelector('input, button, a')?.focus({ preventScroll: true });
+    const h = setTimeout(() => setFocusId(null), 2400);
+    return () => clearTimeout(h);
+  }, [focusId, cur]);
+
   // keep the first visible row on screen when the page size changes
   const setPageSize = n => { setPage(Math.floor(((cur - 1) * pageSize) / n) + 1); setPageSizeState(n); savePageSize(n); };
 
@@ -202,11 +236,11 @@ export default function Application() {
     }
   };
 
-  const fmtPending = (field, v) => {
+  const fmtPending = (field, v, meta) => {
     const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
     if (P[field]) return t(P[field] + v);
     if (field === 'progress') return '\u2066' + pc(v) + '%\u2069';   // keep "80.0%" in Arabic text
-    if (field === 'enabled') return v ? '✓' : '✗';
+    if (field === 'enabled') return v ? '✓' : '✗' + (meta ? ' (' + reasonText(t, lang, meta, id) + ')' : '');
     if (field === 'note') return '✎';
     return String(v);
   };
@@ -231,9 +265,9 @@ export default function Application() {
       </div>
       {data.needs_approval && <Alert kind="blue">{t('edits_need_lead_notice')}</Alert>}
       <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
-        {(can.pct || can.tst) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
+        {(can.pct || can.tst || can.tog) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
-        <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test,
+        <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test, reason: filter.reason,
           show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
       </PageHeader>
 
@@ -278,6 +312,10 @@ export default function Application() {
             <option value="">{t('test_status')}: {t('all')}</option>
             {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
           </select>
+          <select className="input input-sm" value={filter.reason} onChange={e => setFilter({ ...filter, reason: e.target.value })} aria-label={t('dr_filter')}>
+            <option value="">{t('dr_filter')}: {t('all')}</option>
+            {REASON_FILTER.map(r => <option key={r} value={r}>{t('dr_' + r)}</option>)}
+          </select>
           <label className="check"><input type="checkbox" checked={filter.showOff} onChange={e => setFilter({ ...filter, showOff: e.target.checked })} /> {t('show_disabled')}</label>
           {removedCount > 0 && <label className="check"><input type="checkbox" checked={filter.showRemoved} onChange={e => setFilter({ ...filter, showRemoved: e.target.checked })} /> {t('show_removed', { n: removedCount })}</label>}
           <span className="muted small push">{shown.length} / {fns.length}</span>
@@ -300,7 +338,7 @@ export default function Application() {
             <tbody>
               {shown.length === 0 && <tr><td colSpan={8} className="empty">{t('fn_no_matches')}</td></tr>}
               {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => (
-                <tr key={f.id} className={f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off'}>
+                <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')}>
                   <td className="w-check">
                     <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at} aria-label={t('enabled')}
                       title={f.enabled ? t('exclude_hint') : t('include_hint')}
@@ -316,10 +354,11 @@ export default function Application() {
                       {f.enabled && totalW > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / totalW) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
                       {pendingByFn[f.id] && (
-                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value)} — ${p.requested_by_name}`).join('\n')}>
-                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value)}`).join(' · ')}
+                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)} — ${p.requested_by_name}`).join('\n')}>
+                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`).join(' · ')}
                         </Link>
                       )}
+                      {!f.enabled && !f.removed_at && <DisabledReason f={f} appId={a.id} />}
                       {f.removed_at && <Indicator color="red" title={f.removed_reason}>{t('removed_by_on', { name: f.removed_by_name || '—', date: fmtDate(f.removed_at) })}</Indicator>}
                       {f.removed_at && <span className="muted">{t('reason')}: {f.removed_reason}</span>}
                       {can.tog && !f.removed_at && <button className="btn-link small red-text" onClick={() => setConfirm({ f, mode: 'remove' })}>{t('fn_remove')}</button>}
@@ -355,7 +394,8 @@ export default function Application() {
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {
-          if (confirm.mode === 'toggle') { setConfirm(null); await patch(confirm.f, { enabled: confirm.enabled }); return; }
+          // including again needs no reason: saved like the other cells; an exclusion is saved by the dialog itself
+          if (confirm.mode === 'toggle' && confirm.enabled) { setConfirm(null); await patch(confirm.f, { enabled: true }); return; }
           setConfirm(null); reload();
         }} />}
     </div>
@@ -386,30 +426,55 @@ function NoteModal({ f, pending, canEdit, onClose, onSave }) {
   );
 }
 
+// Bulk set: progress / test status of every counted function, or exclude chosen functions with one reason.
 function BulkModal({ app, can, onClose, onDone }) {
   const { t, errText } = useI18n();
-  const [field, setField] = useState(can.pct ? 'progress' : 'test_status');
+  const [field, setField] = useState(can.pct ? 'progress' : can.tst ? 'test_status' : 'exclude');
   const [value, setValue] = useState(field === 'progress' ? 100 : 2);
+  const [chosen, setChosen] = useState([]);              // functions to exclude
+  const [why, setWhy] = useState(emptyReason);
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const exclude = field === 'exclude';
   const run = async () => {
+    let body = { field, value: +value };
+    if (exclude) {
+      setTried(true);
+      if (!chosen.length || reasonProblem(why)) return;
+      body = { field: 'enabled', value: false, function_ids: chosen.map(x => x.id), ...reasonBody(why) };
+    }
+    setBusy(true); setErr(null);
     try {
-      const r = await api.post(path`/tracker/applications/${app.id}/bulk`, { field, value: +value });
+      const r = await api.post(path`/tracker/applications/${app.id}/bulk`, body);
       toast(r.pending ? t('sent_for_approval') : t('done_n', { n: r.updated }), r.pending ? 'blue' : 'green'); onDone();
-    } catch (e) { setErr(e); }
+    } catch (e) { setErr(e); setBusy(false); }
   };
+  const loadOwn = q => api.get('/tracker/function-options' + qs({ app_id: app.id, q })).then(r => r.options);
   return (
-    <Modal title={t('bulk_set')} onClose={onClose}
-      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button><button className="btn btn-primary" onClick={run}>{t('apply')}</button></>}>
+    <Modal title={t('bulk_set')} onClose={onClose} wide={exclude}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy} onClick={run}>{exclude ? t('confirm_exclude_n', { n: chosen.length }) : t('apply')}</button></>}>
       {err && <Alert>{errText(err)}</Alert>}
       <Field label={t('bulk_set')}>
         <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); }}>
           {can.pct && <option value="progress">{t('bulk_progress')}</option>}
           {can.tst && <option value="test_status">{t('bulk_test')}</option>}
+          {can.tog && <option value="exclude">{t('bulk_exclude')}</option>}
         </select>
       </Field>
-      {field === 'progress'
-        ? <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>
-        : <Field label={t('test_status')}><select className="input" value={value} onChange={e => setValue(e.target.value)}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+      {field === 'progress' && <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>}
+      {field === 'test_status' && <Field label={t('test_status')}><select className="input" value={value} onChange={e => setValue(e.target.value)}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+      {exclude && <>
+        <Alert kind="blue">{t('exclude_msg')}</Alert>
+        <div className="field">
+          <MultiSelect value={chosen} onChange={setChosen} load={loadOwn} label={t('bulk_exclude_pick') + ' *'} placeholder={t('dr_duplicates_placeholder')}
+            invalid={tried && !chosen.length} chipLabel={o => o.code}
+            renderOption={o => <><span className="code">{o.code}</span> <span lang="ar" dir="rtl">{o.name_ar}</span></>} />
+          {tried && !chosen.length && <span className="field-hint red-text">{t('bulk_exclude_none')}</span>}
+        </div>
+        <DisableReasonForm appId={app.id} excludeIds={chosen.map(x => x.id)} value={why} onChange={setWhy} showErrors={tried} />
+      </>}
     </Modal>
   );
 }
@@ -489,16 +554,30 @@ function AddModal({ app, onClose, onDone }) {
   );
 }
 
-// Confirmation with impact for: remove (reason required), restore, include / exclude.
+// Confirmation with impact for: remove (reason required), restore, include / exclude (exclusion: reason required).
 function ConfirmModal({ app, f, mode, enabled, onClose, onDone }) {
   const { t, errText } = useI18n();
   const [reason, setReason] = useState('');
+  const [why, setWhy] = useState(emptyReason);          // why it is excluded (unticked)
+  const [tried, setTried] = useState(false);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const excluding = mode === 'toggle' && !enabled;
   const body = mode === 'remove' ? { drop: [f.id] } : { set: [{ function_id: f.id, enabled: mode === 'restore' ? true : enabled }] };
   const impact = useImpact(app.id, body, mode + f.id + enabled);
   const title = { remove: t('fn_remove_title'), restore: t('fn_restore_title'), toggle: enabled ? t('include_title') : t('exclude_title') }[mode];
   const run = async () => {
+    if (excluding) {
+      setTried(true);
+      if (reasonProblem(why)) return;
+      setBusy(true); setErr(null);
+      try {
+        const r = await api.patch(path`/tracker/functions/${f.id}`, { enabled: false, ...reasonBody(why) });
+        toast(r?.pending ? t('sent_for_approval') : t('fn_excluded'), r?.pending ? 'blue' : 'green');
+        onDone();
+      } catch (e) { setErr(e); setBusy(false); }
+      return;
+    }
     if (mode === 'toggle') return onDone();
     setBusy(true); setErr(null);
     try {
@@ -517,6 +596,7 @@ function ConfirmModal({ app, f, mode, enabled, onClose, onDone }) {
       <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
       {mode === 'remove' && <Alert kind="orange">{f.source === 'custom' ? t('fn_remove_msg_custom') : t('fn_remove_msg_scope')}</Alert>}
       {mode === 'toggle' && <Alert kind="blue">{enabled ? t('include_msg') : t('exclude_msg')}</Alert>}
+      {excluding && <DisableReasonForm appId={app.id} excludeIds={[f.id]} value={why} onChange={setWhy} showErrors={tried} />}
       {mode === 'remove' && <Field label={t('remove_reason') + ' *'}><textarea className="input" rows={3} maxLength={1000} value={reason} autoFocus onChange={e => setReason(e.target.value)} /></Field>}
       <ImpactTable impact={impact} />
     </Modal>

@@ -47,7 +47,7 @@ async function getApp(user, id) {
 
 // Pending (not yet approved) edits of an application, for the "awaiting approval" badges.
 async function pendingFor(appId) {
-  return (await query(`SELECT i.kind, i.function_id, i.field, i.new_value, r.id AS request_id, r.requested_at,
+  return (await query(`SELECT i.kind, i.function_id, i.field, i.new_value, i.meta, r.id AS request_id, r.requested_at,
       u.full_name AS requested_by_name
     FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
     WHERE r.status='pending' AND i.app_id=$1 ORDER BY r.requested_at`, [appId])).rows;
