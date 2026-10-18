@@ -123,11 +123,12 @@ ets/
 │       │   ├── health.js          Project health indicators and recommendations (status page)
 │       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
 │       │   ├── importMatch.js     Import values (ids or names) → ids; identical copy of backend/src/utils/importMatch.js
-│       │   └── format.js          Number and colour helpers
+│       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient)
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
 │       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
 │       │   ├── Icon.jsx           SVG icon set
+│       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve model, chart and KPI cards (dashboard + curve page)
 │       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/

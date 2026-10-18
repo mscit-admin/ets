@@ -12,6 +12,33 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.2.0] — 2026-10-18 — Application progress as an equation of rings
+
+### Features
+- feat(frontend): the application page header shows the application % as a **visible weighted equation**
+  (owner-approved design "B"): two small input rings — functions % and reports % — whose connectors carry
+  «× share = contribution» (e.g. «× 85% = 14.7%», «× 15% = 0.0%»), then «=» and one large result ring with the
+  application %. Every number comes from the API (`application.calc` and `settings.reports_share`): reports count
+  only when `calc.reportPct != null` and `reports_share > 0` (same rule as `services/calc.js`), the functions
+  share is `1 − reports_share`, the result ring shows `calc.pct`. Base (requirements) departments / no reports:
+  one connector «× 100%» from the functions ring and the note «قسم متطلبات: التقارير لا تدخل في نسبة التطبيق».
+  The formula line (`app_pct_note`) stays, small and muted, beside the pills row (weight, functions, passed in
+  green, failed in red). The old horizontal progress bar and stats grid of this header are removed. Phone: the
+  equation stacks (inputs, «=», result ring) with no horizontal scroll at 390 px; RTL and LTR
+  (`frontend/src/components/PctEquation.jsx`, `frontend/src/pages/Application.jsx`, `frontend/src/styles/app.css`)
+- feat(frontend): **continuous criticality colour** for the three rings — `pctTone(v) → {stroke, text, bg}` in
+  `frontend/src/lib/format.js`: OKLCH hue interpolated without steps from 25° (red, ≤ 20 %) via 55° (orange, 40 %)
+  and 85° (amber, 60 %) to 145° (green, ≥ 80 %), fixed lightness per role (stroke L 0.635, text L 0.47,
+  bg L 0.955) and chroma reduced to fit sRGB. Ring strokes ≥ 3:1 on white (non-text contrast), the result number
+  uses the darkened `text` tone (≥ 6.4:1 on white, WCAG AA), the input numbers stay in the normal text colour, the
+  track uses the pale `bg` tint. `pctHue()` and `pctGradient()` helpers; a small gradient legend under the
+  equation (0 % «حرج / Critical» … «متوسط / Fair» … «جيد / Good» 100 %), right-to-left in Arabic. The discrete
+  `pctColor()` used elsewhere is unchanged
+- feat(frontend): new messages `app_progress`, `eq_no_reports`, `eq_critical`, `eq_fair`, `eq_good` (ar + en)
+- docs(docs): User Guide (AR) §5 describes the new header, STRUCTURE.md; version 1.2.0
+
+---
+
 ## [1.1.1] — 2026-10-16 — Bulk import: dropdown lists and names
 
 ### Fixes
