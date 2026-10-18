@@ -201,18 +201,20 @@ const LIST_JOINS = `LEFT JOIN departments d ON d.id=b.department_id
   LEFT JOIN users uu ON uu.id=b.uploaded_by LEFT JOIN users ul ON ul.id=b.lead_by
   LEFT JOIN users uf ON uf.id=b.final_by LEFT JOIN users ur ON ur.id=b.rejected_by`;
 
-r.get('/', async (req, res) => {
+// The batches a user may see (figures limited to their scope): the Imports screen and its Excel export.
+export async function listBatches(user, qs = {}, { limit = 300 } = {}) {
   const params = [], where = [];
-  if (req.query.status) { params.push(str(req.query.status, 20)); where.push(`b.status=$${params.length}`); }
+  if (qs.status) { params.push(str(qs.status, 20)); where.push(`b.status=$${params.length}`); }
   const rows = (await query(`SELECT ${LIST_COLS} FROM import_batches b ${LIST_JOINS}
-    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.uploaded_at DESC LIMIT 300`, params)).rows;
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.uploaded_at DESC LIMIT ${limit | 0}`, params)).rows;
   const meta = await loadMeta();
   const appsOf = await batchApps({ query }, rows.map(b => b.id));
-  const seen = rows.filter(b => sees(req.user, b, meta, appsOf.get(b.id)).any);
-  const vis = await visibleChanges(req.user, meta, seen, appsOf);
-  const visible = seen.map(b => ({ ...forReader(req.user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: abilities(req.user, b, meta, appsOf.get(b.id)) }));
-  res.json({ batches: visible, can_import: hasPerm(req.user, 'imp') });
-});
+  const seen = rows.filter(b => sees(user, b, meta, appsOf.get(b.id)).any);
+  const vis = await visibleChanges(user, meta, seen, appsOf);
+  return seen.map(b => ({ ...forReader(user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: abilities(user, b, meta, appsOf.get(b.id)) }));
+}
+
+r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, req.query), can_import: hasPerm(req.user, 'imp') }));
 
 // Batches waiting for this user's signature (sidebar badge, dashboard notice).
 r.get('/pending-count', async (req, res) => {
@@ -229,19 +231,22 @@ r.get('/pending-count', async (req, res) => {
   res.json({ awaiting_me: mine, pending: visible });
 });
 
-r.get('/:id', async (req, res) => {
-  const id = idParam(req.params.id);
+// One batch and the changes the user may see: the batch screen and its Excel export.
+export async function batchDetail(user, rawId) {
+  const id = idParam(rawId);
   const b = (await query(`SELECT ${LIST_COLS} FROM import_batches b ${LIST_JOINS} WHERE b.id=$1`, [id])).rows[0];
   if (!b) throw notFound();
   const meta = await loadMeta();
   const apps = (await batchApps({ query }, [id])).get(id);
-  if (!sees(req.user, b, meta, apps).any) throw new HttpError(403, 'out_of_scope');
+  if (!sees(user, b, meta, apps).any) throw new HttpError(403, 'out_of_scope');
   // only the changes of applications in the reader's scope (ETS-SEC-007)
   const changes = (await query(`SELECT ch.*, a.name_ar AS app_name_ar, a.name_en AS app_name_en, a.icon, a.department_id, f.name_ar AS fn_name_ar, f.source
     FROM import_changes ch JOIN applications a ON a.id=ch.app_id LEFT JOIN functions f ON f.id=ch.function_id
-    WHERE ch.batch_id=$1 ORDER BY a.sort, ch.kind, f.sort, ch.id`, [id])).rows.filter(ch => canSeeApp(req.user, { id: ch.app_id, department_id: ch.department_id }));
-  res.json({ batch: { ...forReader(req.user, b, meta, apps, changes), can: abilities(req.user, b, meta, apps) }, changes, departments: meta.depts });
-});
+    WHERE ch.batch_id=$1 ORDER BY a.sort, ch.kind, f.sort, ch.id`, [id])).rows.filter(ch => canSeeApp(user, { id: ch.app_id, department_id: ch.department_id }));
+  return { batch: { ...forReader(user, b, meta, apps, changes), can: abilities(user, b, meta, apps) }, changes, departments: meta.depts };
+}
+
+r.get('/:id', async (req, res) => res.json(await batchDetail(req.user, req.params.id)));
 
 r.post('/:id/approve', async (req, res) => {
   const id = idParam(req.params.id);

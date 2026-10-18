@@ -29,14 +29,17 @@ r.get('/meta', async (req, res) => {
     mfa_mode: await getSetting('mfa.mode') });
 });
 
-r.get('/', async (req, res) => {
-  const rows = (await query(`SELECT ${USER_COLS},
+// The user list of the Users screen and its Excel export (administrators only, see the router guard above and
+// routes/export.js).
+export async function listUsers() {
+  return (await query(`SELECT ${USER_COLS},
       (SELECT count(*)::int FROM sessions s WHERE s.user_id=u.id AND s.revoked_at IS NULL AND s.expires_at>now()) AS active_sessions,
       (SELECT count(*)::int FROM user_scopes s WHERE s.user_id=u.id) AS scope_count,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en, r.full_scope AS role_full_scope
     FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.username`)).rows;
-  res.json({ users: rows, mfa_mode: await getSetting('mfa.mode') });
-});
+}
+
+r.get('/', async (req, res) => res.json({ users: await listUsers(), mfa_mode: await getSetting('mfa.mode') }));
 
 async function loadUser(id) {
   const u = (await query(`SELECT ${USER_COLS} FROM users u WHERE u.id=$1`, [id])).rows[0];
