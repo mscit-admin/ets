@@ -12,6 +12,65 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.3.0] — 2026-10-18 — Excel exports and the export policy
+
+### Features
+- feat(backend): **Excel (xlsx) exports generated on the server** — `GET /api/export/<report>.xlsx` for the
+  dashboard summary (`summary`), project status (`project_status`), department page (`department?id=`),
+  application functions (`functions?id=` with the screen's `q, source, test, show_off, show_removed`), weights,
+  reports (`dept`), the schedule table (period, period end, planned, actual, deviation), edit requests with their
+  items (`approvals`: `status, mine`), import batches (`imports`: `status`) and one batch's changes
+  (`import_detail?id=`), users (`users`) and logs (`log?type=` with the Logs filters, beside the CSV).
+  One sheet per file: title row (report name), exporter / UTC time / filters, bold frozen header with an
+  autofilter, sensible column widths, numbers as numbers, percentages as numbers with a `0.0%` format, dates as
+  dates, right-to-left sheet in Arabic; headers and values translated (`lang=ar|en`, default: the user's
+  language). `Content-Disposition` with an ASCII `filename` and the translated name as RFC 5987 `filename*`.
+  At most 100,000 rows (`backend/src/routes/export.js`, `backend/src/services/xlsx.js`,
+  `backend/src/services/export-labels.js`)
+- feat(backend): dependency `exceljs ^4.4.0` (with the `uuid ^11.1.1` override, as in the frontend; `npm audit`: 0)
+- feat(frontend): «تصدير إلى إكسل» / "Export to Excel" button in the page actions of the dashboard, project
+  status, department, application, weights, reports, curve, approvals, imports (list and batch), users and logs
+  pages, sending the filters currently applied and the UI language; shown only with `exp` (users: administrator
+  with `usr` too). The file is fetched with the session cookie and the app's `X-Requested-With` header; an
+  error is shown as a message instead of a JSON page (`frontend/src/components/ExportButton.jsx`,
+  `downloadFile()` in `frontend/src/lib/api.js`, new `sheet` icon). New messages `export_xlsx`, `exporting`,
+  `au_export_report`, `au_export_report_of`, `au_export_filters`, `au_export_truncated`, `xr_*`, `xf_*` (ar + en)
+- feat(frontend): export rows read as sentences in the audit trail — «تصدير تقرير «وظائف التطبيق» — «…» إلى ملف
+  إكسل (33 صف)» with the filters on a second line; the log export sentence now names the format (CSV / Excel)
+  and the row count (`frontend/src/lib/audit.js`)
+
+### Security
+- sec(backend): **export policy** — every export needs `exp`: the Excel exports and now also the CSV log export
+  (`log` **and** `exp`; the Logs screen itself still needs `log` only). Each Excel export reads its rows through the
+  same function as its screen (`summaryData`, `departmentData`, `applicationData`, `weightsData`, `reportsData`,
+  `scheduleData`, `projectStatusData` in `routes/tracker.js`; `listRequests`, `listBatches`, `batchDetail`,
+  `listUsers`, `exportRows`), so it never holds more than the reader's scope; the users export needs `usr` + the
+  administrator role + `exp` and contains only full name, username, role, status, 2FA on/off, scope summary, last
+  login and email (never password hashes, recovery codes, sessions, IPs, user agents, failed attempts or lock
+  times); log exports keep the admin-only security logs, the scope filter and the IP / device removal
+- sec(backend): every export writes a strict audit row (`action=export`, `entity=<report key>`, `entity_id`,
+  `new_value={format, rows, truncated, filters, lang, target}`) before the file is sent; no row, no file
+  (ETS-SEC-049). Strings in the sheets are plain values (never formulas), neutralised with the CSV rule
+  (ETS-SEC-059, `neutralise()` from `utils/csv.js`); characters XML cannot carry are dropped
+
+### Refactoring
+- refactor(backend): the tracker, approvals, imports and users list handlers call exported data functions shared
+  with the exports; `exportRows()` in `routes/logs.js` serves the CSV and the Excel log export (the CSV header
+  line is now written also when no row matches)
+
+### Tests
+- test(tests): `backend/test/export.test.js` — 403 without `exp` for every report and for the CSV log export
+  (also when `exp` is removed by an override), scope (another department / application → 403, summary / weights /
+  approvals limited to the scope, security logs and IP column for administrators only), users export
+  administrators only with exactly the listed columns and nothing sensitive, xlsx parsed back with exceljs
+  (headers, rows, RTL, frozen header, autofilter, `0.0%` format, filename headers), audit row contents, refusal
+  when the audit row cannot be written, formula neutralisation and no formula cells
+
+### Docs
+- docs(docs): *06-Security.md → 4a. Export policy / سياسة التصدير* with the report × permission × scope ×
+  sensitivity × audit matrix; API reference (`/export`), Logging and Audit, Administrator Guide and the Arabic
+  user guide updated
+
 ## [1.2.0] — 2026-10-18 — Application progress as an equation of rings
 
 ### Features

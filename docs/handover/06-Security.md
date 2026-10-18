@@ -74,6 +74,42 @@
   (missing CSRF header) and `password_change_required`.
 - At least one active administrator always remains.
 
+## 4a. Export policy / سياسة التصدير (1.3.0)
+
+Every file that leaves the system through the screens follows one policy, enforced **on the server**
+(`backend/src/routes/export.js`, `routes/logs.js`, `routes/tracker.js`); the buttons are only hidden in the UI.
+
+1. **Permission `exp` for every export** — the Excel exports, the CSV log export (now `log` **and** `exp`) and the
+   JSON tracker export. Roles holding `exp` by default: System Administrator, PM, TM, Department Manager, Team
+   Lead; a per-user override can add or remove it.
+2. **Same scope as the screen.** Each Excel export reads its rows through the same function as the screen it
+   mirrors (`summaryData`, `departmentData`, `applicationData`, `listRequests`, `listBatches`, `batchDetail`,
+   `listUsers`, `exportRows`), with the screen's filters, so it never contains more than the reader can see.
+3. **Strict audit row.** Every export writes `action = export`, `entity = <report key>` (`log` for logs),
+   `entity_id` = the department / application / batch / log type, and `new_value = {format, rows, truncated,
+   filters, lang, target}` *before* the file is sent; if that row cannot be written the export is refused
+   (500, no file — ETS-SEC-049). The Logs screen shows it as a sentence, e.g. «تصدير تقرير «وظائف التطبيق» —
+   «…» إلى ملف إكسل (42 صف)» with the filters underneath.
+4. **Safe files.** Strings are written as plain values, never as formulas, after the formula neutralisation of
+   the CSV exports (a leading `'` before `= + - @ |` and their full-width forms — ETS-SEC-059); characters XML
+   cannot carry are dropped. At most 100,000 rows per file. Arabic sheets are right-to-left.
+
+| Report (key) | Screen | Permission | Scope | Sensitivity | Audit (`entity` / `entity_id`) |
+|---|---|---|---|---|---|
+| Dashboard summary (`summary`) | Dashboard | `exp` | departments in the reader's scope | internal | `summary` / — |
+| Project status (`project_status`) | Project status | `exp` | reader's scope (project line = their departments) | internal | `project_status` / — |
+| Department (`department`) | Department page | `exp` | department must be visible (else 403 `out_of_scope`) | internal | `department` / department id |
+| Application functions (`functions`) | Application page | `exp` | application in scope (else 403); filters `q, source, test, show_off, show_removed` | internal | `functions` / application id |
+| Weights (`weights`) | Weight distribution | `exp` | applications in scope | internal | `weights` / — |
+| Reports (`reports`) | Reports | `exp` | applications in scope; filter `dept` | internal | `reports` / — |
+| Schedule table (`schedule`) | Progress curve | `exp` | the project-wide table the screen shows to every reader | internal | `schedule` / — |
+| Edit requests with items (`approvals`) | Approvals | `exp` | same visibility as `GET /approvals`; filters `status, mine` | internal, names of people | `approvals` / — |
+| Import batches (`imports`) | Imports | `exp` | same visibility and partial figures as `GET /imports`; filter `status` | internal, names of people | `imports` / — |
+| Import batch details (`import_detail`) | Batch page | `exp` | only changes of applications in scope (else 403) | internal | `import_detail` / batch id |
+| Users (`users`) | Users | `usr` + System Administrator role + `exp` | all users | **personal data** — only full name, username, role, status, 2FA on/off, scope summary, last login, email; never passwords / hashes, recovery codes, sessions, IPs, user agents, failed attempts or lock times | `users` / — |
+| Logs, Excel (`log`) and CSV | Logs | `log` + `exp` | security logs (auth, access, error, system) for administrators only; others the audit trail of their applications, without IP / device | **security-sensitive** | `log` / log type |
+| Tracker data, JSON | Settings | `exp` | applications in scope; schedule for full scope only | internal | `tracker` / — |
+
 ## 5. Web protections
 
 | Threat | Control |

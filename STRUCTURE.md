@@ -55,9 +55,10 @@ ets/
 │   │   │   ├── tracker.js         /api/tracker — summary, departments, applications, functions, bulk, weights, reports, schedule, search, export/import
 │   │   │   ├── users.js           /api/users — list, create, edit, scopes, overrides, reset password/2FA, unlock, sessions, bulk 2FA, bulk import
 │   │   │   ├── settings.js        /api/settings — read/update system settings (2FA policy, calculation, retention…)
-│   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export
+│   │   │   ├── logs.js            /api/logs — auth/audit/access/error/system logs, filters, stats, CSV export (log + exp)
 │   │   │   ├── imports.js         /api/imports — team result files: preview, submit (department or reports), approve, reject
 │   │   │   ├── approvals.js       /api/approvals — data-entry edit requests: list, approve, reject, withdraw
+│   │   │   ├── export.js          /api/export/<report>.xlsx — Excel exports of the screens (exp, scope, strict audit)
 │   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
@@ -77,6 +78,8 @@ ets/
 │   │   │   ├── logchain.js        Verification of the audit_log / auth_log hash chains
 │   │   │   ├── legacy.js          Import/export in the original page's format
 │   │   │   ├── edits.js           Who needs approval, create / apply edit requests
+│   │   │   ├── xlsx.js            One-sheet Excel workbooks (title, frozen header, %, RTL, no formulas)
+│   │   │   ├── export-labels.js   Arabic / English labels of the Excel exports
 │   │   │   ├── snapshots.js       Daily progress snapshots (hourly) for trend, pace and forecast
 │   │   │   ├── functions.js       Add / remove (soft) / restore functions
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
@@ -102,6 +105,7 @@ ets/
 │       ├── authz.test.js          usr admin-only, scope fail-closed, approvals, import two-person rule, last admin
 │       ├── input.test.js          Request limits, validation, CSV neutralisation, branding image cleaning
 │       ├── users-import.test.js   Bulk user import: row checks, limits, all-or-nothing, one-time passwords, audit
+│       ├── export.test.js         Excel exports: exp required, scope, users admin-only, audit, valid xlsx, no formulas
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -127,6 +131,7 @@ ets/
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
 │       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
+│       │   ├── ExportButton.jsx   «Export to Excel» button (exp only) with the screen's filters
 │       │   ├── Icon.jsx           SVG icon set
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve model, chart and KPI cards (dashboard + curve page)

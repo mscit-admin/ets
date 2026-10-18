@@ -244,3 +244,6 @@ audit rows keep the old username as recorded (they are append-only).
 *Logs → Export CSV* exports the current tab and filter, up to 100,000 rows. The file is UTF-8 with a BOM, so
 Arabic opens correctly in Excel. Each export is itself recorded in the audit trail **before** the file is sent
 (no row, no file). Non-administrators can export only the audit trail, without IP addresses.
+Since 1.3.0 every export also needs the `exp` permission, and *Logs → Export to Excel* gives the same rows as an
+`.xlsx` file (`GET /api/export/log.xlsx?type=…`). The Excel exports of the other screens are recorded the same way
+(`action = export`, `entity` = the report key); see *06-Security.md → 4a. Export policy*.
