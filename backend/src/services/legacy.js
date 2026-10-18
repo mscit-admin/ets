@@ -33,14 +33,21 @@ export async function applyLegacy(c, p, userId) {
     if (!items || typeof items !== 'object') continue;
     for (const [code, v] of Object.entries(items)) {
       if (!v || typeof v !== 'object') continue;
+      // a function the file turns off gets the reason 'import'; one it turns on loses its reason (migration 013)
       const r = await c.query(`UPDATE functions SET weight=$3, progress=$4, enabled=$5, test_status=$6, note=$7,
-          notif_status=$8, review_status=$9, updated_at=now(), updated_by=$10
+          notif_status=$8, review_status=$9, updated_at=now(), updated_by=$10,
+          disabled_reason = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN 'import' ELSE disabled_reason END,
+          disabled_note   = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN NULL ELSE disabled_note END,
+          disabled_by     = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN $10 ELSE disabled_by END,
+          disabled_at     = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN now() ELSE disabled_at END
         WHERE app_id=$1 AND code=$2 AND removed_at IS NULL`,
         [appId, code, clamp(v.w, 0, 1000), clamp(v.p, 0, 100), !!v.on, clamp(v.t, 0, 3) | 0,
           typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', clamp(v.n, 0, 3) | 0, clamp(v.rv, 0, 3) | 0, userId]);
       counts.functions += r.rowCount;
     }
   }
+  // duplicate links belong to excluded functions only
+  await c.query('DELETE FROM function_duplicates d USING functions f WHERE f.id=d.function_id AND f.enabled');
   if (p.appW && typeof p.appW === 'object') for (const [id, w] of Object.entries(p.appW)) {
     counts.weights += (await c.query('UPDATE applications SET weight=$2, updated_at=now(), updated_by=$3 WHERE id=$1',
       [id, clamp(w, 0, 1000), userId])).rowCount;

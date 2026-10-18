@@ -4,6 +4,7 @@ import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
+import { setDisabled, clearDisabled, currentReasons, hadReason } from './disable.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en']);
 const REP_COLS = new Set(['progress', 'status', 'note']);
@@ -37,7 +38,7 @@ export async function requesterBlocked(c, rq) {
   if (!u || !u.is_active) return 'requester_inactive';
   const app = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.app_id])).rows[0];
   if (!app || !canSeeApp(u, app)) return 'requester_out_of_scope';
-  const items = (await c.query('SELECT kind, function_id, field, new_value FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
+  const items = (await c.query('SELECT kind, function_id, field, new_value, meta FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
   // the note that goes with a "with notes" status the author may set, and only while the function still has no
   // note — checked again now, as a note may have been written since the request (see routes/tracker.js, ETS-SEC-056)
   const fids = [...new Set(items.filter(it => it.kind === 'function' && it.field === 'note' && it.function_id).map(it => it.function_id))];
@@ -47,10 +48,17 @@ export async function requesterBlocked(c, rq) {
     NOTED[x.field] !== undefined && Number(x.new_value) === NOTED[x.field] && hasPerm(u, ITEM_PERM.function[x.field]));
   const allowed = it => hasPerm(u, ITEM_PERM[it.kind]?.[it.field]) || (it.kind === 'function' && it.field === 'note' && notedStatus(it));
   if (!items.every(allowed)) return 'requester_lacks_permission';
+  // the functions an exclusion names as duplicated must still be in the author's scope
+  const dupIds = [...new Set(items.flatMap(it => (it.meta?.duplicate_of || []).map(d => d.id)))];
+  if (dupIds.length) {
+    const apps = (await c.query('SELECT a.id, a.department_id FROM functions f JOIN applications a ON a.id=f.app_id WHERE f.id = ANY($1)', [dupIds])).rows;
+    if (apps.some(a => !canSeeApp(u, a))) return 'requester_out_of_scope';
+  }
   return null;
 }
 
-// Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value}]
+// Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value, meta?}] — meta: the reason of an
+// exclusion ({disabled_reason, disabled_note, duplicate_of: [{id, app_id, code}]}), applied with it on approval.
 export async function createRequest(c, req, { deptId, appId, kind, summary, items }) {
   // The same user editing the same value again replaces the earlier pending value.
   for (const it of items) {
@@ -65,9 +73,10 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
   const r = (await c.query(`INSERT INTO edit_requests(department_id, app_id, kind, summary, requested_by)
     VALUES ($1,$2,$3,$4,$5) RETURNING *`, [deptId, appId, kind, summary, req.user.id])).rows[0];
   for (const it of items) {
-    await c.query(`INSERT INTO edit_request_items(request_id, kind, app_id, function_id, field, old_value, new_value)
-      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [r.id, it.kind, it.app_id, it.function_id ?? null, it.field, JSON.stringify(it.old_value), JSON.stringify(it.new_value)]);
+    await c.query(`INSERT INTO edit_request_items(request_id, kind, app_id, function_id, field, old_value, new_value, meta)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [r.id, it.kind, it.app_id, it.function_id ?? null, it.field, JSON.stringify(it.old_value), JSON.stringify(it.new_value),
+      it.meta ? JSON.stringify(it.meta) : null]);
   }
   await logAudit(req, { db: c, action: 'edit_request', entity: 'edit_request', entityId: r.id,
     summary: `${appId}: ${summary}`, newValue: { items: items.length },
@@ -107,17 +116,52 @@ export async function applyRequest(c, rq, req) {
     const cur = it.kind === 'function'
       ? (await c.query(`SELECT ${it.field} AS v FROM functions WHERE id=$1 AND removed_at IS NULL FOR UPDATE`, [it.function_id])).rows[0]
       : (await c.query(`SELECT ${it.field} AS v FROM app_reports WHERE app_id=$1 FOR UPDATE`, [it.app_id])).rows[0];
-    const ok = !!cur && same(cur.v, it.old_value);
+    let ok = !!cur && same(cur.v, it.old_value);
+    let why = ok ? null : 'value changed after the request';
+    const toggle = it.kind === 'function' && it.field === 'enabled';
+    // an exclusion carries its reason; the functions it names as duplicated must still be there
+    const reason = toggle && it.new_value === false ? await requestReason(c, it) : null;
+    if (ok && reason?.invalid) { ok = false; why = reason.invalid; }
     if (ok) {
+      const before = toggle && it.new_value === true ? (await currentReasons(c, [it.function_id])).get(it.function_id) : null;
       if (it.kind === 'function') await c.query(`UPDATE functions SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE id=$1`, [it.function_id, it.new_value, userId]);
       else await c.query(`UPDATE app_reports SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1`, [it.app_id, it.new_value, userId]);
       applied++;
       done.push(it);
+      if (reason) {
+        await setDisabled(c, [it.function_id], reason, userId);
+        done.push(...reasonItems(it, null, reason));
+      } else if (before) {
+        await clearDisabled(c, [it.function_id]);
+        if (hadReason(before)) done.push(...reasonItems(it, before, null));
+      }
     } else skipped++;
-    await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, ok ? null : 'value changed after the request']);
+    await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, why]);
   }
   await logAppliedChanges(req, c, done, { actor, actorIp, context: via });
   return { applied, skipped };
+}
+
+// Reason of an approved exclusion (item meta); invalid when a function it names as duplicated is gone or removed
+// since the request. A request made before 1.5.0 has no meta: the exclusion is applied without a reason.
+async function requestReason(c, it) {
+  const m = it.meta || {};
+  const ids = (m.duplicate_of || []).map(d => d.id).filter(Number.isInteger);
+  const d = { reason: m.disabled_reason ?? null, note: m.disabled_note ?? null, duplicate_of: ids };
+  if (d.reason === 'duplicate') {
+    const ok = new Set((await c.query('SELECT id FROM functions WHERE id = ANY($1) AND removed_at IS NULL AND id <> $2', [ids, it.function_id])).rows.map(x => x.id));
+    if (!ids.length || ids.some(id => !ok.has(id))) return { invalid: 'duplicated function no longer available' };
+  }
+  return d;
+}
+
+// Extra before → after values of an applied exclusion / inclusion for its audit row (see logAppliedChanges).
+function reasonItems(it, before, after) {
+  const meta = it.meta || {};
+  const v = (src, k) => (src ? src[k] ?? null : null);
+  const nv = after ? { disabled_reason: after.reason, disabled_note: after.note, duplicate_of: meta.duplicate_of || [] } : null;
+  return ['disabled_reason', 'disabled_note', 'duplicate_of'].map(field => ({ kind: 'function', app_id: it.app_id, function_id: it.function_id,
+    field, old_value: v(before, field) ?? (field === 'duplicate_of' ? [] : null), new_value: v(nv, field) ?? (field === 'duplicate_of' ? [] : null) }));
 }
 
 // Approved addition / removal / restore. new_value of 'removed': { removed: true, reason } or { removed: false }.
