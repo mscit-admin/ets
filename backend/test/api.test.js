@@ -154,6 +154,7 @@ test('2FA: admin exemption and global off', { skip }, async () => {
 test('permissions: tester may set test status but not progress', { skip }, async () => {
   const c = client(); await c.login('tester');
   const f = (await pool.query(`SELECT id FROM functions WHERE app_id='per' AND code='D0'`)).rows[0];
+  await pool.query('UPDATE functions SET progress=100 WHERE id=$1', [f.id]);   // «نجح» needs 100 % (1.8.1)
   assert.equal((await c.patch('/tracker/functions/' + f.id, { progress: 50 })).status, 403);
   const ok = await c.patch('/tracker/functions/' + f.id, { test_status: 2, note: 'checked' });
   assert.equal(ok.status, 202);                                   // data-entry edit → waits for the team lead
@@ -166,6 +167,7 @@ test('permissions: tester may set test status but not progress', { skip }, async
 test('a "with notes" status requires a note', { skip }, async () => {
   const c = client(); await c.login('root');
   const f = (await pool.query(`SELECT id FROM functions WHERE app_id='att' AND code='D0'`)).rows[0];
+  await pool.query('UPDATE functions SET progress=100 WHERE id=$1', [f.id]);   // «نجح» below needs 100 % (1.8.1)
   const p = body => c.patch('/tracker/functions/' + f.id, body);
   for (const body of [{ test_status: 1 }, { notif_status: 2 }, { review_status: 3 }, { test_status: 1, note: '   ' }]) {
     const r = await p(body);
@@ -267,7 +269,7 @@ test('imports: per-department / reports options, two approvals, apply', { skip }
   const file = (await root.get('/tracker/export')).data;               // a file shaped like the teams' exports
   const fn = async (app, code) => (await pool.query('SELECT * FROM functions WHERE app_id=$1 AND code=$2', [app, code])).rows[0];
   const salBefore = await fn('sal', 'D0'), perBefore = await fn('per', 'D1');
-  file.f.sal.D0.p = 50; file.f.sal.D0.t = 2;                            // commercial change
+  file.f.sal.D0.p = 50; file.f.sal.D0.t = 3;                            // commercial change («نجح» at 50 % is refused since 1.8.1)
   file.f.per.D1.p = 90;                                                 // HR change in the same file → must be ignored
   file.rep.sal = { p: 40, rs: 1, nt: '' };                              // commercial reports
   file.rep.per = { p: 70, rs: 1, nt: '' };                              // HR reports → outside the member's scope
@@ -298,12 +300,12 @@ test('imports: per-department / reports options, two approvals, apply', { skip }
   assert.equal(fin.applied_changes, 2);
   assert.equal(fin.skipped_changes, 0);
   assert.equal(+(await fn('sal', 'D0')).progress, 50);
-  assert.equal((await fn('sal', 'D0')).test_status, 2);
+  assert.equal((await fn('sal', 'D0')).test_status, 3);
   assert.equal(+(await fn('per', 'D1')).progress, +perBefore.progress); // HR untouched
   // the imported function has its own audit row: before → after, in the uploader's name, with both approvers
   const d0 = await fn('sal', 'D0');
   const imp = (await pool.query(`SELECT * FROM audit_log WHERE action='update' AND entity='function' AND entity_id=$1 ORDER BY id DESC LIMIT 1`, [String(d0.id)])).rows[0];
-  assert.deepEqual([imp.new_value.progress, imp.new_value.test_status], [50, 2]);
+  assert.deepEqual([imp.new_value.progress, imp.new_value.test_status], [50, 3]);
   assert.ok('progress' in imp.old_value && 'test_status' in imp.old_value);
   assert.equal(imp.username, 'commember');
   assert.deepEqual([imp.context.via, imp.context.batch_id, imp.context.approved_by.username, imp.context.final_by.username], ['import', b2.id, 'comlead', 'pm1']);

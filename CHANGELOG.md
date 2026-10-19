@@ -30,6 +30,54 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.8.1] — 2026-10-19 — «نجح» requires 100% progress
+
+### Changed
+- **Backend:** the test status «نجح» (plain pass, `test_status = 2`) is accepted only with progress 100, and the
+  progress of a passed item cannot go below 100. «نجح مع ملاحظة» (pass with note, `1`) has no progress rule. Only a
+  change of `test_status` or `progress` is checked (`backend/src/services/passRule.js`). Applies to function and
+  report items alike, on every path:
+  - `PATCH /api/tracker/functions/:id` → 400 `pass_requires_100` (unless the same request sets `progress: 100`) or
+    400 `progress_below_100_while_passed` (unless the same request moves the status away from «نجح»); the saved row
+    is checked again (409, rolled back) against a change made at the same moment;
+  - bulk `POST /api/tracker/applications/:id/bulk` (`progress` / `test_status`): all or nothing, 400 with `count`,
+    `items` (each blocking item with its progress) and `list`;
+  - edit requests: refused at submit with the same 400; checked again on approval against the current values →
+    409 with the same code, nothing applied, the request stays pending; `approve-all` counts it in
+    `blocked_requests`;
+  - team result imports: `POST /api/imports/preview` options carry `errors` (row errors); `POST /api/imports` refuses
+    a part with errors (400 `import_has_row_errors`, no batch); when a batch is applied, a change that would now
+    break the rule is put back and listed as skipped with the rule's code;
+  - legacy tracker import `POST /api/tracker/import` and `npm run import-legacy`: refused as a whole with
+    `import_has_row_errors` and the rows.
+  - Add-function takes no test status (a new item is «لم تُختبر»): nothing to check there.
+- **Frontend:** functions page — choosing «نجح» below 100 % is not saved: the list goes back to its value and a red
+  alert explains why («… النسبة الحالية: 80%. أدخل نسبة الإنجاز 100% أولاً ثم اختر «نجح».»); typing a progress
+  below 100 on a passed row is not saved either («الحالة «نجح» تتطلب 100%. غيّر حالة الاختبار أولاً.»). Nothing is
+  filled in automatically. Server refusals (bulk, approvals, imports, legacy import) show the same ar / en messages.
+- **Tests:** three `api.test.js` fixtures that set «نجح» below 100 % now set 100 % first (or «فشل» in the import file).
+
+### Added
+- **Frontend:** a warning icon ⚠ «نجح والنسبة أقل من 100%» beside the test status of items passed below 100 %
+  before 1.8.1; a chip «تعارض الحالة والنسبة: N» and a test-status filter option of the same name that list them;
+  the bulk dialog lists the blocking items one by one; the import preview shows the row errors of each part and
+  does not let it be chosen; a batch's skipped changes give the rule's message.
+- **Backend:** Excel functions export filter `test=conflict` («تعارض الحالة والنسبة»).
+- **Tests:** `backend/test/pass-rule.test.js` — single edit both ways, «نجح مع ملاحظة» at 80 %, report items, bulk,
+  approval submit and re-check, import preview row errors and apply-time re-check, legacy import, legacy items fixed
+  either way, the export filter.
+- **Docs:** handover 04 (Arabic user guide: the rule, the alerts, the flagged items and the filter) and 11 (API:
+  `pass_requires_100`, `progress_below_100_while_passed`, `import_has_row_errors`, preview `errors`, `test=conflict`).
+
+### Upgrade notes
+- No migration. **Existing data is not changed:** items already «نجح» with progress below 100 % stay as they are and
+  are flagged on the functions page (icon, «تعارض الحالة والنسبة» count and filter); every other edit of them still
+  works, and each is fixed by setting progress 100 or changing the test status.
+- Pending edit requests and import batches made before the upgrade are checked by the rule when approved.
+- A team result file or legacy tracker file that sets «نجح» below 100 % is now refused: fix the file first.
+
+---
+
 ## [1.8.0] — 2026-10-19 — Mark each item as a function or a report
 
 ### Added
@@ -1336,7 +1384,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/4d4a7f0...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/261ea0b...HEAD
+[1.8.1]: https://github.com/mscit-admin/ets/compare/4d4a7f0...261ea0b
 [1.8.0]: https://github.com/mscit-admin/ets/compare/f7544d0...4d4a7f0
 [1.7.0]: https://github.com/mscit-admin/ets/compare/abd37eb...f7544d0
 [1.6.0]: https://github.com/mscit-admin/ets/compare/4e2c8c6...abd37eb

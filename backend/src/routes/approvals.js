@@ -5,6 +5,7 @@ import { requireAuth, hasPerm, canSeeApp } from '../middleware/auth.js';
 import { isAppApprover, applyRequest, requestContext, requesterBlocked } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
 import { publishChange } from '../services/live.js';
+import { PASS_RULE_CODES } from '../services/passRule.js';
 import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 
 const r = Router();
@@ -111,7 +112,8 @@ r.post('/approve-all', async (req, res) => {
     .filter(x => abilities(req.user, x, apps).approve);
   let applied = 0, skipped = 0, blocked = 0;
   for (const rq of rows) {
-    await tx(async c => {
+    // a request the «نجح» = 100 % rule now refuses (1.8.1) is left pending, like a blocked one
+    const refused = await tx(async c => {
       const cur = (await c.query('SELECT status FROM edit_requests WHERE id=$1 FOR UPDATE', [rq.id])).rows[0];
       if (cur.status !== 'pending') return;
       if (await requesterBlocked(c, rq)) { blocked++; return; }     // left pending for a decision one by one
@@ -121,7 +123,8 @@ r.post('/approve-all', async (req, res) => {
         [rq.id, req.user.id, JSON.stringify(result)]);
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: rq.id, summary: `bulk approval`, newValue: result,
         context: await requestContext(c, rq, req, { bulk: true }) });
-    });
+    }).then(() => false, e => { if (PASS_RULE_CODES.includes(e.code)) return true; throw e; });
+    if (refused) { blocked++; continue; }
     publishChange({ dept_id: rq.department_id, app_id: rq.app_id });   // this request's transaction has committed
   }
   res.json({ requests: rows.length - blocked, applied_changes: applied, skipped_changes: skipped, blocked_requests: blocked });

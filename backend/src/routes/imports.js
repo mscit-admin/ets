@@ -10,7 +10,8 @@ import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
 import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept, coversDept, loadUserContext } from '../middleware/auth.js';
 import { parseLegacy } from '../services/legacy.js';
-import { diffTarget, impactSummary, applyBatch } from '../services/imports.js';
+import { diffTarget, impactSummary, applyBatch, passErrors } from '../services/imports.js';
+import { itemList } from '../services/passRule.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { publishChange } from '../services/live.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from '../services/audit.js';
@@ -138,13 +139,13 @@ r.post('/preview', requirePerm('imp'), largeJson, async (req, res) => {
       if (!canSeeDept(req.user, d.id, meta.apps)) continue;
       const ch = await diffTarget(c, p, 'department', [d.id], only);
       options.push({ target: 'department', department_id: d.id, name_ar: d.name_ar, name_en: d.name_en,
-        changes: ch.length, summary: ch.length ? await impactSummary(c, ch) : null });
+        changes: ch.length, summary: ch.length ? await impactSummary(c, ch) : null, errors: await passErrors(c, ch) });
     }
     const rd = reportDepts(req.user, meta);
     if (rd.length) {
       const ch = await diffTarget(c, p, 'reports', rd, only);
       options.push({ target: 'reports', department_id: null, departments: rd, changes: ch.length,
-        summary: ch.length ? await impactSummary(c, ch) : null });
+        summary: ch.length ? await impactSummary(c, ch) : null, errors: [] });
     }
   });
   res.json({ file_ts: fileTs(p), options });
@@ -169,6 +170,9 @@ r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
 
   const batch = await tx(async c => {
     const changes = await diffTarget(c, p, target, deptIds, scopeApps(req.user, meta));
+    // rows breaking «نجح» needs 100 % (1.8.1): the part of the file is refused, with the list (as in the preview)
+    const errors = await passErrors(c, changes);
+    if (errors.length) throw bad('import_has_row_errors', { count: errors.length, errors: errors.slice(0, 200), list: itemList(errors) });
     const summary = await impactSummary(c, changes);
     const touched = target === 'department' ? deptIds : summary.departments.map(d => d.id);
     // A newer file for the same option replaces the one still waiting — never when it has no changes, and only a

@@ -3,6 +3,7 @@
 import { summarize, CALC_FUNCTIONS_SQL } from './calc.js';
 import { allSettings } from './settings.js';
 import { setDisabled, clearDisabled, currentReasons, hadReason, importReason } from './disable.js';
+import { passConflict, passRuleErrors } from './passRule.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 const int03 = v => clamp(v, 0, 3) | 0;
@@ -72,6 +73,25 @@ async function diffDepartment(c, payload, deptId, { functions = true, reports = 
     }
   }
   return changes;
+}
+
+// Items whose changes in a file break «نجح» needs 100 % (1.8.1): [{ app_id, function_id, code, name_ar, error,
+// progress, test_status }] — the import's row errors, shown in the preview; a part of the file with any is refused.
+export async function passErrors(c, changes) {
+  const byFn = new Map();
+  for (const ch of changes) {
+    if (ch.kind !== 'function' || !['test_status', 'progress'].includes(ch.field)) continue;
+    const x = byFn.get(ch.function_id) || { app_id: ch.app_id, function_id: ch.function_id, code: ch.code, changes: {} };
+    x.changes[ch.field] = ch.new_value;
+    byFn.set(ch.function_id, x);
+  }
+  if (!byFn.size) return [];
+  const rows = (await c.query('SELECT id, name_ar, name_en, item_type, progress, test_status FROM functions WHERE id = ANY($1)', [[...byFn.keys()]])).rows;
+  const cur = new Map(rows.map(r => [r.id, r]));
+  return passRuleErrors([...byFn.values()].filter(x => cur.has(x.function_id)).map(x => {
+    const r = cur.get(x.function_id);
+    return { cur: r, changes: x.changes, app_id: x.app_id, function_id: x.function_id, code: x.code, name_ar: r.name_ar, name_en: r.name_en, item_type: r.item_type };
+  }));
 }
 
 // Approved data with a list of changes laid over it (for "before → after" figures).
@@ -163,6 +183,25 @@ export async function applyBatch(c, batchId, userId) {
     } else skipped++;
     await c.query('UPDATE import_changes SET applied=$2, note=$3 WHERE id=$1',
       [ch.id, ok, ok ? null : 'value changed after the file was imported']);
+  }
+  // «نجح» needs 100 % (1.8.1), checked again with the values as they are now: an item the batch would leave «نجح»
+  // below 100 % (something changed since the file was imported) keeps its values — its test status / progress
+  // changes are put back and reported as skipped.
+  const ruled = changes.filter(ch => ch.kind === 'function' && ['test_status', 'progress'].includes(ch.field));
+  const ids = [...new Set(ruled.map(ch => ch.function_id))];
+  if (ids.length) {
+    const now = (await c.query('SELECT id, progress, test_status FROM functions WHERE id = ANY($1)', [ids])).rows.filter(passConflict);
+    for (const f of now) {
+      const back = (await c.query(`SELECT * FROM import_changes WHERE batch_id=$1 AND function_id=$2 AND applied AND field IN ('test_status', 'progress')`,
+        [batchId, f.id])).rows;
+      if (!back.length) continue;                     // already passed below 100 % before, not changed by this batch
+      for (const ch of back) {
+        await c.query(`UPDATE functions SET ${ch.field}=$2 WHERE id=$1`, [f.id, ch.old_value]);
+        await c.query('UPDATE import_changes SET applied=false, note=$2 WHERE id=$1',
+          [ch.id, back.some(x => x.field === 'test_status') ? 'pass_requires_100' : 'progress_below_100_while_passed']);
+        applied--; skipped++;
+      }
+    }
   }
   return { applied, skipped, reasons };
 }

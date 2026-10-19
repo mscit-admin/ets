@@ -5,6 +5,8 @@ import { logAudit } from './logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
 import { setDisabled, clearDisabled, currentReasons, hadReason } from './disable.js';
+import { passConflict } from './passRule.js';
+import { HttpError } from '../utils/http.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en', 'item_type']);
 const REP_COLS = new Set(['progress', 'status', 'note']);
@@ -138,8 +140,27 @@ export async function applyRequest(c, rq, req) {
     } else skipped++;
     await c.query('UPDATE edit_request_items SET applied=$2, note=$3 WHERE id=$1', [it.id, ok, why]);
   }
+  await recheckPass(c, done);
   await logAppliedChanges(req, c, done, { actor, actorIp, context: via });
   return { applied, skipped };
+}
+
+// «نجح» needs 100 % (1.8.1), checked again on approval against the values as they are now: a request that would
+// leave an item «نجح» below 100 % (e.g. its progress was lowered, or the status set to «نجح», since the request) is
+// refused with 409 and the code of the rule; the transaction is rolled back, the request stays pending.
+async function recheckPass(c, done) {
+  const touched = new Map();      // function id → did the request set its test status?
+  for (const it of done) {
+    if (it.kind !== 'function' || !['test_status', 'progress'].includes(it.field)) continue;
+    touched.set(it.function_id, touched.get(it.function_id) || it.field === 'test_status');
+  }
+  if (!touched.size) return;
+  const rows = (await c.query('SELECT id, code, progress, test_status FROM functions WHERE id = ANY($1)', [[...touched.keys()]])).rows;
+  const bad = rows.find(passConflict);
+  if (bad) {
+    throw new HttpError(409, touched.get(bad.id) ? 'pass_requires_100' : 'progress_below_100_while_passed',
+      { function_id: bad.id, code: bad.code, progress: Number(bad.progress), test_status: bad.test_status });
+  }
 }
 
 // Reason of an approved exclusion (item meta); invalid when a function it names as duplicated is gone or removed
