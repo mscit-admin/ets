@@ -51,7 +51,7 @@ const lang = await getSetting('app.default_language');
 const { r, revoked } = await tx(async c => {
   const r = await c.query(`INSERT INTO users(username, full_name, email, password_hash, role_id, language, must_change_password)
     VALUES ($1,$2,$3,$4,'admin',$5,false)
-    ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
+    ON CONFLICT (username) WHERE deleted_at IS NULL DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
       full_name=COALESCE(NULLIF(EXCLUDED.full_name,''), users.full_name), email=COALESCE(EXCLUDED.email, users.email),
       failed_attempts=0, locked_until=NULL, last_failed_at=NULL, password_changed_at=now(), updated_at=now()
     RETURNING id, (xmax = 0) AS created`, [username, name, email, pwHash, lang]);

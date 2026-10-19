@@ -739,3 +739,17 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .row-off td.fn-name { opacity: .75; }
 .row-focus td { background: #fff7d3 !important; transition: background .3s; }
 .req-reason { margin-top: 4px; display: grid; gap: 2px; justify-items: start; }
+
+/* Deleting users (1.7.0): danger icon button, confirmation dialog, deleted-users view */
+.btn-icon.danger { color: var(--red-text); }
+.btn-icon.danger:hover:not(:disabled) { background: var(--red-bg); color: var(--red-text); }
+.btn-icon:disabled { opacity: .35; cursor: not-allowed; }
+.table tr.row-selected td { background: var(--red-bg); }
+.del-warning { display: flex; gap: 8px; align-items: flex-start; }
+.del-warning svg { flex: none; margin-top: 2px; }
+p.strong { font-weight: 700; margin: 12px 0 6px; }
+.del-names { margin: 0 0 12px; padding-inline-start: 20px; max-height: 180px; overflow-y: auto; }
+.del-names li { margin: 2px 0; }
+.del-errors { margin: 6px 0 0; padding-inline-start: 20px; }
+.del-reason-cell { max-width: 320px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.temp-pw { font-size: 15px; padding: 6px 10px; background: var(--gray-100); border-radius: 6px; user-select: all; }

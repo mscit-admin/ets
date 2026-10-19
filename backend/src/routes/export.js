@@ -19,7 +19,7 @@ import { summaryData, projectStatusData, departmentData, applicationData, weight
   from './tracker.js';
 import { listRequests } from './approvals.js';
 import { listBatches, batchDetail } from './imports.js';
-import { listUsers } from './users.js';
+import { listUsers, listDeletedUsers } from './users.js';
 import { exportRows, logFilters, EXPORT_CAP } from './logs.js';
 
 const r = Router();
@@ -239,11 +239,18 @@ const REPORTS = {
   },
 
   // Administrators only. Never: passwords / hashes, recovery codes, sessions, IP addresses, user agents,
-  // failed attempts, lock times — the columns below are the whole list.
+  // failed attempts, lock times — the columns below are the whole list. Deleted users (1.7.0) are left out; with
+  // ?deleted=1 the file lists only them, with who deleted each one, when and why.
   users: {
     guard: [requirePerm('usr'), requireAdmin],
     async build(req, L) {
       const { t } = L;
+      if (req.query.deleted === '1') {
+        const rows = (await listDeletedUsers()).map(u => ({ full_name: u.full_name, username: u.username, role: L.nm(u, 'role_name'),
+          deleted_at: u.deleted_at, deleted_by: u.deleted_by_name || u.deleted_by_username || '', delete_reason: u.delete_reason, email: u.email }));
+        return { rows, filters: { deleted: t('yes') }, columns: [['full_name', 'full_name'], ['username', 'username'], ['role', 'role'],
+          ['deleted_at', 'deleted_at', 'datetime'], ['deleted_by', 'deleted_by'], ['delete_reason', 'delete_reason'], ['email', 'email']] };
+      }
       const [users, scopes] = await Promise.all([listUsers(), query(`SELECT s.user_id, s.kind,
           coalesce(d.name_ar, a.name_ar, s.ref_id) AS name_ar, coalesce(d.name_en, a.name_en, s.ref_id) AS name_en
         FROM user_scopes s LEFT JOIN departments d ON s.kind='department' AND d.id=s.ref_id

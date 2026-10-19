@@ -57,6 +57,8 @@ const UI = {
   upload: "<path d=\"M12 15V4M7.5 8.5 12 4l4.5 4.5M4 20h16\"/>",
   check: "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>",
   x: "<path d=\"M6 6l12 12M18 6 6 18\"/>",
+  trash: "<path d=\"M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6\"/>",
+  restore: "<path d=\"M4.5 12a7.5 7.5 0 1 0 2.2-5.3\"/><path d=\"M4.5 4v4h4\"/>",
   menu: "<path d=\"M4 7h16M4 12h16M4 17h16\"/>",
   pulse: "<path d=\"M3 12h4l3-7 4 14 3-7h4\"/>",
   alert: "<path d=\"M12 4 2.8 19.5h18.4z\"/><path d=\"M12 10v4.5M12 17h.01\"/>",

@@ -53,7 +53,7 @@ export async function revokeSession(req, res, reason = 'logout') {
 // Exported so that an approved edit request / import can re-check its author's current rights (ETS-SEC-027).
 export async function loadUserContext(userId) {
   const r = await query(`SELECT u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active,
-      u.must_change_password, u.totp_enabled, u.totp_exempt, r.full_scope, r.permissions AS role_perms,
+      u.must_change_password, u.totp_enabled, u.totp_exempt, u.deleted_at, r.full_scope, r.permissions AS role_perms,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en,
       COALESCE((SELECT json_agg(json_build_object('p',permission,'g',granted)) FROM user_permissions WHERE user_id=u.id),'[]') AS overrides,
       COALESCE((SELECT json_agg(json_build_object('k',kind,'r',ref_id)) FROM user_scopes WHERE user_id=u.id),'[]') AS scopes
@@ -69,7 +69,8 @@ export async function loadUserContext(userId) {
   return {
     id: u.id, username: u.username, full_name: u.full_name, email: u.email, role: u.role_id,
     role_name_ar: u.role_name_ar, role_name_en: u.role_name_en, language: u.language,
-    is_active: u.is_active, must_change_password: u.must_change_password,
+    // a deleted account (1.7.0, migration 015) counts as inactive everywhere: no session, no live stream, no approval
+    is_active: u.is_active && !u.deleted_at, must_change_password: u.must_change_password,
     totp_enabled: u.totp_enabled, totp_exempt: u.totp_exempt,
     // Full scope comes from the role only. A scoped role without scope rows sees nothing (ETS-SEC-005).
     permissions: [...perms], fullScope: !!u.full_scope,

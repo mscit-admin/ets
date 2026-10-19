@@ -26,6 +26,8 @@ export function makeAudit({ t, lang }) {
   const fieldLabel = f => tx('au_f_' + f) || tx(f) || f;
   const settingLabel = k => (SETTING_LABEL[k] && tx(SETTING_LABEL[k])) || k;
   const person = u => (u ? u.full_name || u.username || '—' : '—');
+  // the author of a row, with «(محذوف)» when that account was deleted since (logs.js: user_deleted)
+  const actorName = r => (r.full_name || r.username || '—') + (r.user_deleted ? ' ' + t('deleted_marker') : '');
   const quote = s => (lang === 'ar' ? `«${s}»` : `“${s}”`);
   const listSep = lang === 'ar' ? '، ' : ', ';
   // codes of the functions a duplicate points at: "D3" in the same application, "att/D3" in another one
@@ -111,7 +113,7 @@ export function makeAudit({ t, lang }) {
     if (k === 'status') return tx((report === 'approvals' ? 'rq_' : 'st_') + v) || v;
     if (k === 'type') return tx('log_' + v) || v;
     if (k === 'success') return v === 'true' ? t('yes') : t('no');
-    if (k === 'show_off' || k === 'show_removed' || k === 'mine') return t('yes');
+    if (k === 'show_off' || k === 'show_removed' || k === 'mine' || k === 'deleted') return t('yes');
     if (k === 'reason') return tx('dr_' + v) || v;
     return quote(short(String(v), 60));
   }
@@ -214,6 +216,26 @@ export function makeAudit({ t, lang }) {
       case 'bulk_create:user': text = t('au_bulk_create_user', { n: r.new_value?.count ?? '' });
         if (r.new_value?.usernames?.length) notes.push(short(r.new_value.usernames.join(', '), 300));
         break;
+      // deleting / restoring users (1.7.0): «حذف المدير أحمد المستخدم «سالم» — السبب: …»
+      case 'delete:user': {
+        const reason = ctx.reason ?? r.new_value?.reason ?? '';
+        text = t('au_delete_user', { who: actorName(r), target: quote(person(ctx.target) !== '—' ? person(ctx.target) : r.summary || r.entity_id), reason: quote(short(reason, 200)) });
+        if (ctx.bulk) notes.push(t('au_delete_bulk', { n: ctx.count ?? '' }));
+        if (ctx.sessions_revoked) notes.push(t('au_delete_sessions', { n: ctx.sessions_revoked }));
+        const closed = (ctx.requests_withdrawn?.length || 0) + (ctx.imports_rejected?.length || 0);
+        if (closed) notes.push(t('au_delete_closed', { n: closed }));
+        break;
+      }
+      case 'bulk_delete:user': {
+        const names = (ctx.users || []).map(person);
+        text = t('au_bulk_delete_user', { who: actorName(r), n: r.new_value?.count ?? names.length,
+          names: short(names.map(quote).join(listSep), 300), reason: quote(short(ctx.reason ?? r.new_value?.reason ?? '', 200)) });
+        break;
+      }
+      case 'restore:user': text = t('au_restore_user', { who: actorName(r), target: quote(person(ctx.target) !== '—' ? person(ctx.target) : r.summary || r.entity_id),
+        reason: quote(short(ctx.reason ?? r.new_value?.reason ?? '', 200)) });
+        notes.push(t('au_restore_temp_password'));
+        break;
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);
         const only = ctx.items?.length === 1 ? ctx.items[0] : null;
@@ -233,7 +255,8 @@ export function makeAudit({ t, lang }) {
         const res = r.new_value || {};
         text = t('au_' + r.action, { ...vars, req: person(ctx.requested_by), applied: res.applied ?? '' });
         if (res.skipped) notes.push(t('au_skipped', { n: res.skipped }));
-        if (ctx.reason) notes.push(t(r.action === 'edit_approve' ? 'au_approval_note' : 'au_reason', { reason: ctx.reason, note: ctx.reason }));
+        if (ctx.user_deleted) notes.push(t('au_closed_user_deleted'));
+        else if (ctx.reason) notes.push(t(r.action === 'edit_approve' ? 'au_approval_note' : 'au_reason', { reason: ctx.reason, note: ctx.reason }));
         items = itemLines(ctx.items);
         break;
       }
@@ -245,7 +268,8 @@ export function makeAudit({ t, lang }) {
         const res = r.new_value || {};
         text = t('au_' + r.action, { id: r.entity_id, file, target, n: ctx.items?.length ?? res.changes ?? '', applied: res.applied ?? '' });
         if (res.skipped) notes.push(t('au_skipped', { n: res.skipped }));
-        if (ctx.reason) notes.push(t('au_reason', { reason: ctx.reason }));
+        if (ctx.user_deleted) notes.push(t('au_closed_user_deleted'));
+        else if (ctx.reason) notes.push(t('au_reason', { reason: ctx.reason }));
         if (ctx.note) notes.push(t('au_approval_note', { note: ctx.note }));
         items = itemLines(ctx.items);
         break;
@@ -277,6 +301,6 @@ export function makeAudit({ t, lang }) {
       notes.unshift(t('au_via_import', { file: ctx.filename ? quote(ctx.filename) : '', req: person(ctx.requested_by),
         approver: person(ctx.approved_by), final: person(ctx.final_by), id: ctx.batch_id }));
     }
-    return { text, type, lines, items: items?.length ? items : null, notes, who: r.full_name || r.username || '—', maxInline: MAX_INLINE };
+    return { text, type, lines, items: items?.length ? items : null, notes, who: actorName(r), maxInline: MAX_INLINE };
   };
 }

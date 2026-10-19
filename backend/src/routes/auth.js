@@ -63,7 +63,8 @@ r.post('/login', authLimiter, async (req, res) => {
   if (!username || !password) throw bad('missing_credentials');
 
   const stage = await serialize(accountKey(username), async () => {
-    const u = (await query('SELECT * FROM users WHERE username=$1', [username])).rows[0];
+    // a deleted account (migration 015) is unknown here: its username may already belong to a new account
+    const u = (await query('SELECT * FROM users WHERE username=$1 AND deleted_at IS NULL', [username])).rows[0];
     // Unknown user, paused account, wrong password and disabled account all get the same answer (ETS-SEC-014);
     // the first two still run a bcrypt check of the same cost, so the timing matches too.
     if (!u) {
