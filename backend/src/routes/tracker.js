@@ -11,6 +11,7 @@ import { createFunction, newFunctionData, removeFunction, restoreFunction } from
 import { PASS, passConflict, passRuleError, itemList } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
+import { functionsExcluded } from '../services/notify-events.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
   duplicatesOf } from '../services/disable.js';
@@ -213,6 +214,7 @@ r.patch('/functions/:id', async (req, res) => {
   });
   // live updates: after COMMIT (tx resolved), ids only (services/live.js)
   publishChange({ dept_id: app.department_id, app_id: cur.app_id });
+  if (changes.enabled === false) await functionsExcluded(cur.app_id, 1, [req.user.id]);     // T7
   res.json({ function: updated });
 });
 
@@ -322,6 +324,7 @@ async function bulkEnabled(req, res, a) {
     return changed.length;
   });
   publishChange({ dept_id: a.department_id, app_id: a.id });
+  if (!value) await functionsExcluded(a.id, n, [req.user.id]);                             // T7
   res.json({ updated: n });
 }
 
@@ -416,6 +419,7 @@ async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
   }
   const f = await tx(direct);
   publishChange({ dept_id: a.department_id, app_id: a.id });
+  if (kind === 'remove_function' && f) await functionsExcluded(a.id, 1, [req.user.id]);    // T7
   res.status(kind === 'add_function' ? 201 : 200).json({ function: f, impact });
 }
 
@@ -747,6 +751,8 @@ export async function projectStatusData(user) {
     },
     pending: { edits: pend(edits.rows, x => mine(x.app_id)), imports: pend(imports.rows, x => x.apps.some(mine)) },
     trend, dept_trend: deptTrend,
+    // department status thresholds (Settings → Notifications), used by the status page and the plan alerts alike
+    health_gaps: { riskGap: +v.settings['notify.dept_risk_gap'] || 5, delayGap: +v.settings['notify.dept_delay_gap'] || 15 },
     can: { timeline: hasPerm(user, 'cfg') && !!user.fullScope, sch: hasPerm(user, 'sch') && !!user.fullScope },
   };
 }

@@ -9,6 +9,8 @@ import { takeSnapshot } from './services/snapshots.js';
 import { getDummyHash } from './services/passwords.js';
 import { assertCookieConfig } from './middleware/auth.js';
 import { closeAllStreams } from './services/live.js';
+import { startScheduler } from './services/notify-scan.js';
+import { setAfterCommitErrorHandler } from './db/pool.js';
 
 assertConfig();
 assertCookieConfig();
@@ -34,6 +36,9 @@ setInterval(purge, day).unref();
 const snap = () => takeSnapshot().catch(e => logger.error({ err: e.message }, 'progress snapshot failed'));
 setTimeout(snap, 15_000).unref();
 setInterval(snap, 3600_000).unref();
+// Notifications (1.9.0): periodic checks every 15 minutes, one API process at a time (advisory lock).
+startScheduler();
+setAfterCommitErrorHandler(e => logger.warn({ err: e?.message }, 'after-commit task failed'));
 // Remove expired sessions hourly.
 setInterval(() => pool.query(`DELETE FROM sessions WHERE expires_at < now() - interval '30 days'`).catch(() => {}), 3600_000).unref();
 

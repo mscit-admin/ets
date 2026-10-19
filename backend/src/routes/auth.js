@@ -175,7 +175,7 @@ async function reauthFailure(req, u, event) {
 // Re-authentication for sensitive changes from a signed-in session: the current password and, with
 // secondFactor while 2FA is on, a current authenticator code or an unused recovery code (ETS-SEC-016).
 // Failures count towards the account's sign-in pause like failed logins (ETS-SEC-003).
-function reauth(req, { password, secondFactor = false, events }) {
+export function reauth(req, { password, secondFactor = false, events }) {
   return serialize(userKey(req.user.id), async () => {
     const u = (await query('SELECT id, username, password_hash, totp_enabled, totp_secret, locked_until FROM users WHERE id=$1',
       [req.user.id])).rows[0];

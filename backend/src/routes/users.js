@@ -10,6 +10,10 @@ import { userRef, namedItems, loadUser as loadAuditUser } from '../services/audi
 import { userImportJson } from '../middleware/body.js';
 import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../utils/importMatch.js';
+import { revokeDevices } from '../services/devices.js';
+import { requestsSettled } from '../services/notify-events.js';
+import { publishNotif } from '../services/live.js';
+import { TYPES, isLockedCell } from '../services/notify-catalog.js';
 
 const r = Router();
 // User administration = system administrators only (owner decision, ETS-SEC-004): 'usr' AND the admin role.
@@ -55,6 +59,11 @@ async function loadUser(id) {
   u.sessions = (await query(`SELECT left(id,8) AS ref, host(ip) AS ip, user_agent, created_at, last_seen_at, expires_at, mfa_passed
     FROM sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY last_seen_at DESC`, [id])).rows;
   u.recovery_codes_left = +(await query('SELECT count(*) FROM user_recovery_codes WHERE user_id=$1 AND used_at IS NULL', [id])).rows[0].count;
+  // phones paired with the account (1.9.0): active ones, and the ones revoked in the last 30 days
+  u.devices = (await query(`SELECT id, name, platform, app_version, created_at, last_seen_at, host(last_ip) AS last_ip, revoked_at, revoke_reason
+    FROM mobile_devices WHERE user_id=$1 AND (revoked_at IS NULL OR revoked_at > now() - interval '30 days')
+    ORDER BY revoked_at IS NOT NULL, created_at DESC`, [id])).rows;
+  u.notify_blocks = (await query('SELECT type, channel FROM notification_user_blocks WHERE user_id=$1 ORDER BY type, channel', [id])).rows;
   return u;
 }
 
@@ -396,6 +405,8 @@ r.patch('/:id', async (req, res) => {
     await logAudit(req, { db: c, action: 'update', entity: 'user', entityId: id, summary: before.username,
       oldValue: { ...Object.fromEntries(keys.map(k => [k, before[k]])), ...(b.scopes ? { scopes: before.scopes } : {}), ...(b.overrides ? { overrides: before.overrides } : {}) },
       newValue: { ...v, ...(b.scopes ? { scopes: b.scopes } : {}), ...(b.overrides ? { overrides: b.overrides } : {}) } });
+    // a deactivated account's phones are revoked in the same transaction (1.9.0)
+    if (v.is_active === false) await revokeDevices(c, req, { userIds: [id], reason: 'user_disabled', by: req.user });
     // audit row first, then the auth row: every transaction takes the two log chains in the same order
     if (v.totp_exempt !== undefined && v.totp_exempt !== before.totp_exempt) {
       await logAuth(req, { db: c, userId: id, username: before.username, event: v.totp_exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed',
@@ -404,6 +415,8 @@ r.patch('/:id', async (req, res) => {
   }));
   // open live-updates streams of this user: closed when deactivated, new scope / permissions otherwise
   publishSessionCheck(id);
+  publishNotif(id, []);                         // the bell recounts with the new permissions / scope
+  if (v.is_active === false) for (const a of (await query(`SELECT DISTINCT app_id FROM edit_requests WHERE requested_by=$1 AND status='withdrawn'`, [id])).rows) await requestsSettled(a.app_id);
   res.json({ user: await loadUser(id) });
 });
 
@@ -419,6 +432,7 @@ r.post('/:id/reset-password', async (req, res) => {
       last_failed_at=NULL, password_changed_at=now(), updated_at=now() WHERE id=$1`, [id, await hashPassword(req.body.password), req.body?.must_change !== false]);
     await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='password_reset' WHERE user_id=$1 AND revoked_at IS NULL`, [id]);
     await logAudit(req, { db: c, action: 'reset_password', entity: 'user', entityId: id, summary: u.username });
+    await revokeDevices(c, req, { userIds: [id], reason: 'password_reset', by: req.user });     // phones too (1.9.0)
     await logAuth(req, { db: c, userId: id, username: u.username, event: 'password_reset_by_admin', success: true, detail: { by: req.user.username } });
   });
   publishSessionCheck(id);
@@ -490,6 +504,50 @@ r.post('/bulk-2fa', async (req, res) => {
     return q;
   });
   res.json({ updated: q.rowCount });
+});
+
+// ---- phones and notification restrictions of a user (1.9.0) ----
+// DELETE /users/:id/devices/:deviceId — an administrator revokes a phone of this user.
+r.delete('/:id/devices/:deviceId', async (req, res) => {
+  const id = idParam(req.params.id), deviceId = idParam(req.params.deviceId, 'deviceId');
+  await loadUser(id);
+  const rows = await tx(async c => {
+    const d = (await c.query('SELECT id FROM mobile_devices WHERE id=$1 AND user_id=$2', [deviceId, id])).rows[0];
+    if (!d) throw notFound();
+    return revokeDevices(c, req, { ids: [deviceId], reason: 'admin', by: req.user });
+  });
+  res.json({ revoked: rows.length });
+});
+
+// PUT /users/:id/notify-blocks { blocks: [{ type: <type> | '*', channel: 'all' | 'mobile' }] } — replaces the user's
+// restrictions. Block only (never a grant); not on one's own account; a type mandatory in code for the user's role
+// cannot be blocked on every channel (the phone may still be blocked).
+r.put('/:id/notify-blocks', async (req, res) => {
+  const id = idParam(req.params.id);
+  if (id === req.user.id) throw bad('cannot_change_own_permissions');
+  const u = await loadUser(id);
+  const list = req.body?.blocks;
+  if (!Array.isArray(list) || list.length > 200) throw bad('invalid_value', { field: 'blocks' });
+  const seen = new Set(), blocks = [];
+  for (const x of list) {
+    const type = x?.type, channel = x?.channel;
+    if (typeof type !== 'string' || !(type === '*' || Object.hasOwn(TYPES, type)) || !['all', 'mobile'].includes(channel)) throw bad('invalid_value', { field: 'blocks' });
+    if (channel === 'all' && type !== '*' && isLockedCell(type, u.role_id)) throw bad('mandatory_type', { type });
+    const k = type + '|' + channel;
+    if (!seen.has(k)) { seen.add(k); blocks.push({ type, channel }); }
+  }
+  blocks.sort((a, b) => (a.type + a.channel).localeCompare(b.type + b.channel));
+  const old = u.notify_blocks;
+  if (JSON.stringify(old) !== JSON.stringify(blocks)) {
+    await tx(async c => {
+      await c.query('DELETE FROM notification_user_blocks WHERE user_id=$1', [id]);
+      for (const x of blocks) await c.query('INSERT INTO notification_user_blocks(user_id, type, channel, created_by) VALUES ($1,$2,$3,$4)', [id, x.type, x.channel, req.user.id]);
+      await logAudit(req, { db: c, action: 'update', entity: 'user', entityId: id, summary: u.username,
+        oldValue: { notify_blocks: old }, newValue: { notify_blocks: blocks }, context: { target: userRef(u), field: 'notify_blocks' } });
+    });
+    publishNotif(id, []);
+  }
+  res.json({ blocks });
 });
 
 // ---- delete (archive) and restore — 1.7.0, migration 015 ----
@@ -599,12 +657,14 @@ async function deleteUsers(req, ids, reason, { bulk }) {
       await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: b.id, summary: note,
         context: await closedContext(c, req, 'import_batch', b, note) });
     }
+    // their phones are revoked in the same transaction (1.9.0): audit rows, then auth rows, like the rest
+    const devices = await revokeDevices(c, req, { userIds: ids, reason: 'user_deleted', by: req.user });
     // audit rows first, then the auth rows: every transaction takes the two log chains in the same order
     for (const u of users) {
       await logAuth(req, { db: c, userId: u.id, username: u.username, event: 'user_deleted_by_admin', success: true,
         detail: { by: req.user.username, reason, ...(bulk ? { bulk: true } : {}) } });
     }
-    return { users, reqs, batches };
+    return { users, reqs, batches, devices };
   });
   // after COMMIT: open streams of these users close; "awaiting approval" badges and pending lists refresh
   for (const id of ids) publishSessionCheck(id);
@@ -612,8 +672,9 @@ async function deleteUsers(req, ids, reason, { bulk }) {
     publishApps((await query('SELECT id, department_id FROM applications WHERE id = ANY($1)', [out.reqs.map(x => x.app_id)])).rows);
   }
   for (const b of out.batches) for (const d of (b.departments?.length ? b.departments : [b.department_id]).filter(Boolean)) publishChange({ dept_id: d });
+  for (const appId of new Set(out.reqs.map(x => x.app_id))) await requestsSettled(appId);
   return { deleted: out.users.map(u => ({ id: u.id, username: u.username })), requests_withdrawn: out.reqs.length,
-    imports_rejected: out.batches.length };
+    imports_rejected: out.batches.length, devices_revoked: out.devices.length };
 }
 
 // DELETE /users/:id  { reason }

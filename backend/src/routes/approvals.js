@@ -5,6 +5,7 @@ import { requireAuth, hasPerm, canSeeApp } from '../middleware/auth.js';
 import { isAppApprover, applyRequest, requestContext, requesterBlocked } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
 import { publishChange } from '../services/live.js';
+import { requestDecided, requestsSettled } from '../services/notify-events.js';
 import { PASS_RULE_CODES } from '../services/passRule.js';
 import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 
@@ -85,14 +86,18 @@ async function decide(req, res, action) {
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: id,
         summary: `${rq.app_id}: ${result.applied} applied, ${result.skipped} skipped`, newValue: result,
         context: await requestContext(c, rq, req, { reason }) });
-      return { applied: true, applied_changes: result.applied, skipped_changes: result.skipped, app_id: rq.app_id };
+      return { applied: true, applied_changes: result.applied, skipped_changes: result.skipped, app_id: rq.app_id, rq, result };
     }
     const status = action === 'reject' ? 'rejected' : 'withdrawn';
     await c.query(`UPDATE edit_requests SET status=$2, decided_by=$3, decided_at=now(), reason=$4 WHERE id=$1`, [id, status, req.user.id, reason]);
     await logAudit(req, { db: c, action: `edit_${action}`, entity: 'edit_request', entityId: id, summary: reason,
       context: await requestContext(c, rq, req, { reason }) });
-    return { ok: true, app_id: rq.app_id };
+    return { ok: true, app_id: rq.app_id, rq, status };
   });
+  // alerts (after COMMIT): the author hears the decision; the approvers' «waiting» alert closes when nothing is left
+  await requestDecided(out.rq, { status: out.applied ? 'applied' : out.status, reason, result: out.result });
+  await requestsSettled(out.rq.app_id);
+  delete out.rq; delete out.result; delete out.status;
   // after COMMIT: applied changes, or the end of an "awaiting approval" badge
   const app = apps.find(a => a.id === out.app_id);
   publishChange(app ? { dept_id: app.department_id, app_id: app.id } : {});
@@ -126,7 +131,12 @@ r.post('/approve-all', async (req, res) => {
     }).then(() => false, e => { if (PASS_RULE_CODES.includes(e.code)) return true; throw e; });
     if (refused) { blocked++; continue; }
     publishChange({ dept_id: rq.department_id, app_id: rq.app_id });   // this request's transaction has committed
+    if ((await query('SELECT status FROM edit_requests WHERE id=$1', [rq.id])).rows[0]?.status === 'applied') {
+      const res2 = (await query('SELECT apply_result FROM edit_requests WHERE id=$1', [rq.id])).rows[0]?.apply_result;
+      await requestDecided(rq, { status: 'applied', result: res2 });
+    }
   }
+  for (const appId of new Set(rows.map(x => x.app_id))) await requestsSettled(appId);
   res.json({ requests: rows.length - blocked, applied_changes: applied, skipped_changes: skipped, blocked_requests: blocked });
 });
 

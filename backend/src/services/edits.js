@@ -7,6 +7,8 @@ import { createFunction, removeFunction, restoreFunction } from './functions.js'
 import { setDisabled, clearDisabled, currentReasons, hadReason } from './disable.js';
 import { passConflict } from './passRule.js';
 import { HttpError } from '../utils/http.js';
+import { onCommit } from '../db/pool.js';
+import { requestCreated, functionsExcluded } from './notify-events.js';
 
 const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en', 'item_type']);
 const REP_COLS = new Set(['progress', 'status', 'note']);
@@ -83,6 +85,7 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
   await logAudit(req, { db: c, action: 'edit_request', entity: 'edit_request', entityId: r.id,
     summary: `${appId}: ${summary}`, newValue: { items: items.length },
     context: { app_id: appId, department_id: deptId, kind, items: await namedItems(c, items) } });
+  onCommit(c, () => requestCreated(r));          // A1: the application's approvers (after COMMIT)
   return r;
 }
 
@@ -104,11 +107,12 @@ export async function applyRequest(c, rq, req) {
   const via = { via: 'edit_request', request_id: rq.id, requested_by: actor, approved_by: userRef(req.user), approver_ip: req.ip || null };
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
   const done = [];
-  let applied = 0, skipped = 0;
+  let applied = 0, skipped = 0, removed = 0;
   for (const it of items) {
     if (it.field === 'create' || it.field === 'removed') {
       const r = await applyLifecycle(c, it, userId, req, actor, actorIp, via);
       r.ok ? applied++ : skipped++;
+      if (r.ok && it.field === 'removed' && it.new_value?.removed) removed++;
       await c.query('UPDATE edit_request_items SET applied=$2, note=$3, function_id=COALESCE(function_id, $4) WHERE id=$1',
         [it.id, r.ok, r.ok ? null : r.note, r.functionId ?? null]);
       continue;
@@ -142,6 +146,9 @@ export async function applyRequest(c, rq, req) {
   }
   await recheckPass(c, done);
   await logAppliedChanges(req, c, done, { actor, actorIp, context: via });
+  // T7: functions excluded / removed by this request — told to the application's users (not its author or approver)
+  const excluded = removed + done.filter(it => it.kind === 'function' && it.field === 'enabled' && it.new_value === false).length;
+  if (excluded) onCommit(c, () => functionsExcluded(rq.app_id, excluded, [rq.requested_by, req.user.id]));
   return { applied, skipped };
 }
 

@@ -16,6 +16,13 @@
 // Sessions: every heartbeat re-checks each stream's session (revoked, expired, idle, user disabled, password
 // change required) without touching its last activity; a sign-out / revocation also asks every process to
 // re-check that user's streams at once ('session_check').
+//
+// Notifications (1.9.0): 'notif' { uid, ids } after a user's alerts changed. Web streams of that user get
+// "event: notif_changed" with { unread, top_severity } only (no content: the bell reloads through the API, which
+// applies every rule). Phone streams (GET /api/m/events, Bearer device token, one per device) get
+// "event: notification" { id } for each new alert the phone may show, then "event: unread" { unread }. A phone
+// stream is re-checked on every heartbeat (device revoked, account inactive / deleted / paused) and at once on
+// 'device_check' { uid } (device revoked) or 'session_check' { uid }; it closes when its device may no longer be used.
 import pg from 'pg';
 import { config, dbPoolConfig } from '../config.js';
 import { query } from '../db/pool.js';
@@ -51,13 +58,28 @@ export function publishSessionCheck(userId) {
   if (!Number.isInteger(userId)) return Promise.resolve();
   return notify({ t: 'session_check', uid: userId });
 }
+/** A user's alerts changed (new / updated ids, or [] after a read). Call after COMMIT. */
+export function publishNotif(userId, ids = []) {
+  if (!Number.isInteger(userId)) return Promise.resolve();
+  return notify({ t: 'notif', uid: userId, ids: ids.filter(Number.isInteger).slice(0, 50) });
+}
+/** A device of this user was revoked: its phone stream closes. */
+export function publishDeviceCheck(userId) {
+  if (!Number.isInteger(userId)) return Promise.resolve();
+  return notify({ t: 'device_check', uid: userId });
+}
+
+// The notification service registers how to compute what a stream may be told (avoids an import cycle).
+let notifSource = null;
+export const registerNotifSource = src => { notifSource = src; };
 
 // ---- streams of this process ----
-const streams = new Map();          // id → { res, sessionId, user, opened }
+const streams = new Map();          // id → { res, kind: 'web' | 'mobile', sessionId | deviceId, user, opened }
 let seq = 0;
 const appDept = new Map();          // application id → department id (scope check of hints)
 
-export const streamCount = userId => [...streams.values()].filter(s => s.user.id === userId).length;
+export const streamCount = userId => [...streams.values()].filter(s => s.kind === 'web' && s.user.id === userId).length;
+const webStreams = () => [...streams.values()].filter(s => s.kind === 'web');
 
 function send(s, event, data) {
   try { s.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* closed */ }
@@ -73,29 +95,52 @@ function inScope(user, msg) {
 
 function dispatch(msg) {
   if (msg?.t === 'tracker_changed') {
-    for (const s of streams.values()) {
+    for (const s of webStreams()) {
       if (!inScope(s.user, msg)) continue;
       const out = { type: 'tracker_changed' };
       if (msg.dept_id) out.dept_id = msg.dept_id;
       if (msg.app_id) out.app_id = msg.app_id;
       send(s, 'tracker_changed', out);
     }
-  } else if (msg?.t === 'session_check' && Number.isInteger(msg.uid)) {
+  } else if ((msg?.t === 'session_check' || msg?.t === 'device_check') && Number.isInteger(msg.uid)) {
     const mine = [...streams.values()].filter(s => s.user.id === msg.uid);
     if (mine.length) checkStreams(mine, { tellChanged: true }).catch(e => logger.warn({ err: e.message }, 'live: session check failed'));
+  } else if (msg?.t === 'notif' && Number.isInteger(msg.uid)) {
+    tellNotif(msg.uid, Array.isArray(msg.ids) ? msg.ids.filter(Number.isInteger) : []).catch(e => logger.warn({ err: e.message }, 'live: notification event failed'));
+  }
+}
+
+async function tellNotif(uid, ids) {
+  const mine = [...streams.values()].filter(s => s.user.id === uid);
+  if (!mine.length || !notifSource) return;
+  const web = mine.filter(s => s.kind === 'web'), phones = mine.filter(s => s.kind === 'mobile');
+  if (web.length) {
+    const sum = await notifSource.webSummary(web[0].user);
+    for (const s of web) send(s, 'notif_changed', { unread: sum.unread, top_severity: sum.top_severity });
+  }
+  if (phones.length) {
+    const user = phones[0].user;
+    const ok = ids.length ? await notifSource.mobileIds(user, ids) : [];
+    const unread = await notifSource.mobileUnread(user);
+    for (const s of phones) {
+      for (const id of ok) send(s, 'notification', { id });
+      send(s, 'unread', { unread });
+    }
   }
 }
 
 function close(s, reason) {
   if (!streams.has(s.id)) return;
   streams.delete(s.id);
-  if (reason) send(s, 'session_ended', { type: 'session_ended' });
+  if (reason && s.kind === 'web') send(s, 'session_ended', { type: 'session_ended' });
   try { s.res.end(); } catch { /* already closed */ }
   maybeStop();
 }
 
 // Is each stream's session still valid? Does not update last_seen_at: an open screen is not user activity.
-async function checkStreams(list, { tellChanged = false } = {}) {
+async function checkStreams(all, { tellChanged = false } = {}) {
+  await checkPhones(all.filter(s => s.kind === 'mobile'));
+  const list = all.filter(s => s.kind === 'web');
   if (!list.length) return;
   const ids = [...new Set(list.map(s => s.sessionId))];
   const rows = (await query(`SELECT id, user_id, mfa_passed, revoked_at, expires_at,
@@ -113,6 +158,24 @@ async function checkStreams(list, { tellChanged = false } = {}) {
     const changed = JSON.stringify([u.fullScope, u.scope, u.permissions]) !== JSON.stringify([s.user.fullScope, s.user.scope, s.user.permissions]);
     s.user = u;                                     // scope / permission changes apply to later hints
     if (changed && tellChanged) send(s, 'tracker_changed', { type: 'tracker_changed' });
+  }
+}
+
+// Phone streams: the device must not be revoked and its account must be active, not deleted, not paused and without
+// a forced password change (same rule as the Bearer check, routes/mobile.js).
+async function checkPhones(list) {
+  if (!list.length) return;
+  const rows = (await query(`SELECT d.id, d.user_id, d.revoked_at, u.is_active, u.deleted_at, u.must_change_password,
+      (u.locked_until IS NOT NULL AND u.locked_until > now()) AS locked
+    FROM mobile_devices d JOIN users u ON u.id=d.user_id WHERE d.id = ANY($1)`, [[...new Set(list.map(s => s.deviceId))]])).rows;
+  const ok = new Map(rows.filter(r => !r.revoked_at && r.is_active && !r.deleted_at && !r.must_change_password && !r.locked).map(r => [r.id, r]));
+  for (const s of list) {
+    if (!streams.has(s.id)) continue;
+    const r = ok.get(s.deviceId);
+    if (!r || r.user_id !== s.user.id) { close(s, 'device'); continue; }
+    const u = await loadUserContext(s.user.id);
+    if (!u || !u.is_active) { close(s, 'device'); continue; }
+    s.user = u;
   }
 }
 
@@ -155,7 +218,7 @@ function connect() {
       const wait = Math.min(30_000, 1000 * 2 ** retry++);
       retryTimer = setTimeout(() => { retryTimer = null; if (wanted) connect().then(() => {
         // events may have been missed while disconnected: every stream reloads once
-        for (const s of streams.values()) send(s, 'tracker_changed', { type: 'tracker_changed' });
+        for (const s of webStreams()) send(s, 'tracker_changed', { type: 'tracker_changed' });
       }, () => {}); }, wait);
       retryTimer.unref();
     };
@@ -197,9 +260,21 @@ export function stopListening() {
 
 /** Registers an open stream; returns its close function. */
 export function addStream(res, { sessionId, user }) {
-  const s = { id: ++seq, res, sessionId, user, opened: Date.now() };
+  const s = { id: ++seq, res, kind: 'web', sessionId, user, opened: Date.now() };
   streams.set(s.id, s);
   return () => close(s);
+}
+
+/** Registers a phone stream (one per device: an older stream of the same device is closed). */
+export function addMobileStream(res, { deviceId, user }) {
+  for (const o of [...streams.values()]) if (o.kind === 'mobile' && o.deviceId === deviceId) close(o, 'replaced');
+  const s = { id: ++seq, res, kind: 'mobile', deviceId, user, opened: Date.now() };
+  streams.set(s.id, s);
+  return () => close(s);
+}
+/** Ends the phone streams of these devices now (revoked in this process). */
+export function closeDeviceStreams(deviceIds) {
+  for (const o of [...streams.values()]) if (o.kind === 'mobile' && deviceIds.includes(o.deviceId)) close(o, 'device');
 }
 
 /** Ends every stream of this process (graceful shutdown). */

@@ -15,13 +15,14 @@ import { itemList } from '../services/passRule.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { publishChange } from '../services/live.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from '../services/audit.js';
+import { importWaiting, importClosed, functionsExcluded } from '../services/notify-events.js';
 import { largeJson } from '../middleware/body.js';
 import { HttpError, bad, notFound, str, idParam } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
 
-const loadMeta = async () => ({
+export const loadImportMeta = async () => ({
   apps: (await query('SELECT id, department_id FROM applications')).rows,
   depts: (await query('SELECT id, name_ar, name_en, short_ar, short_en, is_base FROM departments ORDER BY sort')).rows,
 });
@@ -41,7 +42,7 @@ const reportDepts = (user, meta) => meta.depts.filter(d => !d.is_base && canSeeD
 const scopeApps = (user, meta) => new Set(meta.apps.filter(a => canSeeApp(user, a)).map(a => a.id));
 
 // Applications each batch changes: Map batch id → [app ids].
-async function batchApps(c, ids) {
+export async function batchApps(c, ids) {
   if (!ids.length) return new Map();
   const rows = (await c.query('SELECT batch_id, array_agg(DISTINCT app_id) AS apps FROM import_changes WHERE batch_id = ANY($1) GROUP BY 1', [ids])).rows;
   return new Map(rows.map(x => [x.batch_id, x.apps]));
@@ -92,7 +93,7 @@ async function visibleChanges(user, meta, rows, appsOf) {
   return out;
 }
 
-function abilities(user, b, meta, appIds) {
+export function importAbilities(user, b, meta, appIds) {
   const pending = b.status === 'pending';
   const s = sees(user, b, meta, appIds);
   const notUploader = b.uploaded_by !== user.id;
@@ -131,7 +132,7 @@ function publishBatch(b) {
 // 1) Read a file and list the import options with the number of changes in each.
 r.post('/preview', requirePerm('imp'), largeJson, async (req, res) => {
   const p = parseContent(req.body);
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const options = [];
   const only = scopeApps(req.user, meta);
   await tx(async c => {
@@ -155,7 +156,7 @@ r.post('/preview', requirePerm('imp'), largeJson, async (req, res) => {
 r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
   const p = parseContent(req.body);
   const target = req.body?.target === 'reports' ? 'reports' : 'department';
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   let deptIds, deptId = null;
   if (target === 'department') {
     deptId = str(req.body?.department_id, 20);
@@ -168,6 +169,7 @@ r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
   }
   const filename = str(req.body?.filename, 200) || null;
 
+  let superseded = [];
   const batch = await tx(async c => {
     const changes = await diffTarget(c, p, target, deptIds, scopeApps(req.user, meta));
     // rows breaking «نجح» needs 100 % (1.8.1): the part of the file is refused, with the list (as in the preview)
@@ -186,7 +188,7 @@ r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
       const appsOf = await batchApps(c, waiting.map(x => x.id));
       const ids = waiting.filter(x => !x.lead_by && !x.final_by &&
         (x.uploaded_by === req.user.id || sees(req.user, x, meta, appsOf.get(x.id) || []).all)).map(x => x.id);
-      if (ids.length) sup.rows = (await c.query(`UPDATE import_batches SET status='superseded' WHERE id = ANY($1) RETURNING id`, [ids])).rows;
+      if (ids.length) sup.rows = (await c.query(`UPDATE import_batches SET status='superseded' WHERE id = ANY($1) RETURNING *`, [ids])).rows;
     }
     const b = (await c.query(`INSERT INTO import_batches(target, department_id, departments, filename, file_ts, status, change_count, summary, uploaded_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
@@ -202,11 +204,20 @@ r.post('/', requirePerm('imp'), largeJson, async (req, res) => {
       newValue: { target, department: deptId, departments: touched, changes: changes.length, superseded: sup.rows.map(x => x.id) },
       context: { via: 'import', batch_id: b.id, target, department_id: deptId, departments: touched, filename,
         project: summary.project, items: await namedItems(c, changes) } });
-    return b;
-  });
+    return { b, superseded: sup.rows };
+  }).then(x => { superseded = x.superseded; return x.b; });
   if (batch.status === 'pending') publishBatch(batch);       // "pending import" notices
+  // alerts (after COMMIT): who can sign it; the uploaders of the files it replaced
+  if (batch.status === 'pending') await notifyWaiting(batch, meta);
+  for (const old of superseded) await importClosed(old, { status: 'superseded', actorId: req.user.id });
   res.status(201).json({ batch });
 });
+
+// A4: the people who can sign a stage of this pending batch now (same rule as the Imports screen).
+async function notifyWaiting(b, meta) {
+  const apps = (await batchApps({ query }, [b.id])).get(b.id) || [];
+  await importWaiting(b, u => { const a = importAbilities(u, b, meta, apps); return a.approve_lead || a.approve_final; });
+}
 
 const LIST_COLS = `b.*, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en,
   uu.full_name AS uploaded_by_name, ul.full_name AS lead_by_name, uf.full_name AS final_by_name, ur.full_name AS rejected_by_name`;
@@ -220,11 +231,11 @@ export async function listBatches(user, qs = {}, { limit = 300 } = {}) {
   if (qs.status) { params.push(str(qs.status, 20)); where.push(`b.status=$${params.length}`); }
   const rows = (await query(`SELECT ${LIST_COLS} FROM import_batches b ${LIST_JOINS}
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.uploaded_at DESC LIMIT ${limit | 0}`, params)).rows;
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const appsOf = await batchApps({ query }, rows.map(b => b.id));
   const seen = rows.filter(b => sees(user, b, meta, appsOf.get(b.id)).any);
   const vis = await visibleChanges(user, meta, seen, appsOf);
-  return seen.map(b => ({ ...forReader(user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: abilities(user, b, meta, appsOf.get(b.id)) }));
+  return seen.map(b => ({ ...forReader(user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: importAbilities(user, b, meta, appsOf.get(b.id)) }));
 }
 
 r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, req.query), can_import: hasPerm(req.user, 'imp') }));
@@ -232,13 +243,13 @@ r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, r
 // Batches waiting for this user's signature (sidebar badge, dashboard notice).
 r.get('/pending-count', async (req, res) => {
   const rows = (await query(`SELECT * FROM import_batches WHERE status='pending'`)).rows;
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const appsOf = await batchApps({ query }, rows.map(b => b.id));
   let mine = 0, visible = 0;
   for (const b of rows) {
     if (!sees(req.user, b, meta, appsOf.get(b.id)).any) continue;
     visible++;
-    const a = abilities(req.user, b, meta, appsOf.get(b.id));
+    const a = importAbilities(req.user, b, meta, appsOf.get(b.id));
     if (a.approve_lead || a.approve_final) mine++;
   }
   res.json({ awaiting_me: mine, pending: visible });
@@ -249,14 +260,14 @@ export async function batchDetail(user, rawId) {
   const id = idParam(rawId);
   const b = (await query(`SELECT ${LIST_COLS} FROM import_batches b ${LIST_JOINS} WHERE b.id=$1`, [id])).rows[0];
   if (!b) throw notFound();
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const apps = (await batchApps({ query }, [id])).get(id);
   if (!sees(user, b, meta, apps).any) throw new HttpError(403, 'out_of_scope');
   // only the changes of applications in the reader's scope (ETS-SEC-007)
   const changes = (await query(`SELECT ch.*, a.name_ar AS app_name_ar, a.name_en AS app_name_en, a.icon, a.department_id, f.name_ar AS fn_name_ar, f.source
     FROM import_changes ch JOIN applications a ON a.id=ch.app_id LEFT JOIN functions f ON f.id=ch.function_id
     WHERE ch.batch_id=$1 ORDER BY a.sort, ch.kind, f.sort, ch.id`, [id])).rows.filter(ch => canSeeApp(user, { id: ch.app_id, department_id: ch.department_id }));
-  return { batch: { ...forReader(user, b, meta, apps, changes), can: abilities(user, b, meta, apps) }, changes, departments: meta.depts };
+  return { batch: { ...forReader(user, b, meta, apps, changes), can: importAbilities(user, b, meta, apps) }, changes, departments: meta.depts };
 }
 
 r.get('/:id', async (req, res) => res.json(await batchDetail(req.user, req.params.id)));
@@ -266,13 +277,13 @@ r.post('/:id/approve', async (req, res) => {
   const stage = req.body?.stage;
   if (!['lead', 'final'].includes(stage)) throw bad('invalid_value', { field: 'stage' });
   const note = str(req.body?.note, 1000) || null;
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const result = await tx(async c => {
     const b = (await c.query('SELECT * FROM import_batches WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!b) throw notFound();
     if (b.status !== 'pending') throw bad('batch_not_pending', { status: b.status });
     const apps = (await batchApps(c, [id])).get(id);
-    const can = abilities(req.user, b, meta, apps);
+    const can = importAbilities(req.user, b, meta, apps);
     if (!(stage === 'lead' ? can.approve_lead : can.approve_final)) throw new HttpError(403, 'cannot_approve', { stage });
     if (b.lead_by || b.final_by) {                 // this signature completes the batch → it will be applied
       const blocked = await uploaderBlocked(b, meta, apps);
@@ -293,13 +304,20 @@ r.post('/:id/approve', async (req, res) => {
           final_by: ctx.final_by, approver_ip: req.ip || null } });
       await logAudit(req, { db: c, action: 'import_apply', entity: 'import_batch', entityId: id,
         summary: `${r2.applied} applied, ${r2.skipped} skipped`, newValue: r2, context: ctx });
-      return { applied: true, applied_changes: r2.applied, skipped_changes: r2.skipped, batch: u };
+      // T7 (after COMMIT): functions this file excluded, per application
+      const off = new Map();
+      for (const ch of done) if (ch.kind === 'function' && ch.field === 'enabled' && ch.new_value === false) off.set(ch.app_id, (off.get(ch.app_id) || 0) + 1);
+      return { applied: true, applied_changes: r2.applied, skipped_changes: r2.skipped, batch: u, r2, off };
     }
     return { applied: false, batch: u };
   });
-  if (result.applied) logSystem('import_applied', `import batch ${id} applied`, result);
+  if (result.applied) logSystem('import_applied', `import batch ${id} applied`, { applied: true, applied_changes: result.applied_changes, skipped_changes: result.skipped_changes });
   publishBatch(result.batch);
-  delete result.batch;
+  if (result.applied) {
+    await importClosed(result.batch, { status: 'applied', actorId: req.user.id, result: result.r2 });
+    for (const [appId, n] of result.off) await functionsExcluded(appId, n, [result.batch.uploaded_by, req.user.id]);
+  } else await notifyWaiting(result.batch, meta);
+  delete result.batch; delete result.r2; delete result.off;
   res.json(result);
 });
 
@@ -307,18 +325,19 @@ r.post('/:id/reject', async (req, res) => {
   const id = idParam(req.params.id);
   const reason = str(req.body?.reason, 1000);
   if (!reason) throw bad('reason_required');
-  const meta = await loadMeta();
+  const meta = await loadImportMeta();
   const rejected = await tx(async c => {
     const b = (await c.query('SELECT * FROM import_batches WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!b) throw notFound();
     if (b.status !== 'pending') throw bad('batch_not_pending', { status: b.status });
-    if (!abilities(req.user, b, meta, (await batchApps(c, [id])).get(id)).reject) throw new HttpError(403, 'cannot_approve', { stage: 'reject' });
+    if (!importAbilities(req.user, b, meta, (await batchApps(c, [id])).get(id)).reject) throw new HttpError(403, 'cannot_approve', { stage: 'reject' });
     await c.query(`UPDATE import_batches SET status='rejected', rejected_by=$2, rejected_at=now(), reject_reason=$3 WHERE id=$1`, [id, req.user.id, reason]);
     await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: id, summary: reason,
       context: { ...await batchContext(c, b), reason } });
     return b;
   });
   publishBatch(rejected);
+  await importClosed(rejected, { status: 'rejected', actorId: req.user.id, reason });
   res.json({ ok: true });
 });
 
