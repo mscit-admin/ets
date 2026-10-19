@@ -48,6 +48,7 @@ export function makeAudit({ t, lang }) {
     if (field === 'calc.weight_mode') return tx('weight_mode_' + v) || String(v);
     if (field === 'enabled') return v ? t('au_on') : t('au_off');
     if (field === 'disabled_reason') return tx('dr_' + v) || String(v);
+    if (field === 'item_type') return tx('it_' + v) || String(v);
     if (field === 'duplicate_of') return codes(v) || t('au_empty');
     if (field === 'removed') return v ? t('au_removed') : t('au_present');
     if (field === 'language' || field === 'app.default_language') return tx('au_lang_' + v) || String(v);
@@ -115,6 +116,7 @@ export function makeAudit({ t, lang }) {
     if (k === 'success') return v === 'true' ? t('yes') : t('no');
     if (k === 'show_off' || k === 'show_removed' || k === 'mine' || k === 'deleted') return t('yes');
     if (k === 'reason') return tx('dr_' + v) || v;
+    if (k === 'item_type') return tx('it_' + v) || v;
     return quote(short(String(v), 60));
   }
   const exportNotes = (notes, nv, report) => {
@@ -151,11 +153,16 @@ export function makeAudit({ t, lang }) {
           text = t('au_enable_function', { ...vars, who });
           if ('disabled_reason' in o) notes.push(t('au_enable_was', { reason: reasonPhrase(o, appId) + (o.disabled_note ? ': ' + quote(short(o.disabled_note)) : '') }));
           if (ctx.bulk) notes.push(t('au_disable_bulk', { n: ctx.count ?? '' }));
+        } else if (lines.length === 1 && lines[0].field === 'item_type') {
+          // «غيّر أحمد نوع البند D7 من وظيفة إلى تقرير» (1.8.0)
+          text = t('au_item_type', { ...vars, who, from: lines[0].from, to: lines[0].to });
+          lines = [];
+          if (ctx.bulk) notes.push(t('au_type_bulk', { n: ctx.count ?? '' }));
         } else text = lines.length ? changeSentence(r, lines, { one: 'au_update_function_one', many: 'au_update_function', vars }) : null;
         break;
       }
       case 'create:function': text = t('au_create_function', { ...vars, fn: r.fn_code ? fn : fnName(r.new_value || {}) });
-        lines = ['weight', 'progress', 'enabled', 'reference', 'name_en'].filter(k => r.new_value?.[k] != null && r.new_value[k] !== '')
+        lines = ['item_type', 'weight', 'progress', 'enabled', 'reference', 'name_en'].filter(k => r.new_value?.[k] != null && r.new_value[k] !== '')
           .map(k => ({ field: k, label: fieldLabel(k), from: '', to: fmt(k, r.new_value[k]) }));
         break;
       case 'remove:function': text = t('au_remove_function', vars);

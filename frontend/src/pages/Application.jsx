@@ -10,18 +10,20 @@ import { ExportButton } from '../components/ExportButton.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 import { MultiSelect } from '../components/MultiSelect.jsx';
 import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
+import { ITEM_TYPES, ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note' };
+  notif_status: 'notif_status', review_status: 'review_status', note: 'note', item_type: 'item_type' };
 
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
 // "reason" filter values: the reasons a user picks, 'import', and 'none' (excluded before 1.5.0, no reason recorded)
 const REASON_FILTER = [...DISABLE_REASONS, 'import', 'none'];
-const DEFAULT_FILTER = { q: '', source: '', test: '', reason: '', showOff: false, showRemoved: false };
+const DEFAULT_FILTER = { q: '', source: '', test: '', reason: '', type: '', showOff: false, showRemoved: false };
+const typeOf = f => (f.item_type === 'report' ? 'report' : 'function');
 
 // Functions table pagination: rows per page (remembered per browser, default 10).
 const PAGE_SIZES = [5, 10, 15, 20, 25];
@@ -155,6 +157,7 @@ export default function Application() {
     (f.removed_at ? filter.showRemoved : (filter.showOff || !!filter.reason || f.enabled || f.source !== 'experience')) &&
     (!filter.reason || (!f.enabled && !f.removed_at && (f.disabled_reason || 'none') === filter.reason)) &&
     (!filter.source || f.source === filter.source) &&
+    (!filter.type || typeOf(f) === filter.type) &&
     (filter.test === '' || f.test_status === +filter.test) &&
     (!filter.q || (f.name_ar + ' ' + (f.reference || '') + ' ' + f.note).toLowerCase().includes(filter.q.toLowerCase()))
   ), [fns, filter]);
@@ -217,7 +220,9 @@ export default function Application() {
     if (p.function_id && p.field !== 'removed' && p.field !== 'create') (pendingByFn[p.function_id] ||= []).push(p);
   }
   const calc = a.calc;
-  const totalW = calc.fnWeight || 0;
+  // share of an item in its part of the application %: a function among the functions, a report among the reports
+  // (the reports track counts as one more item of weight 1) — same as the Excel export
+  const partW = f => (typeOf(f) === 'report' ? calc.reportWeight || 0 : calc.typeWeight?.function || 0);
 
   const patch = async (f, body) => {
     const n = (inflight.current.get(f.id) || 0) + 1;
@@ -241,6 +246,7 @@ export default function Application() {
     if (P[field]) return t(P[field] + v);
     if (field === 'progress') return '\u2066' + pc(v) + '%\u2069';   // keep "80.0%" in Arabic text
     if (field === 'enabled') return v ? '✓' : '✗' + (meta ? ' (' + reasonText(t, lang, meta, id) + ')' : '');
+    if (field === 'item_type') return t('it_' + v);
     if (field === 'note') return '✎';
     return String(v);
   };
@@ -268,7 +274,7 @@ export default function Application() {
         {(can.pct || can.tst || can.tog) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
         <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test, reason: filter.reason,
-          show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
+          item_type: filter.type, show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
       </PageHeader>
 
       <div ref={sentinelRef} className="sticky-sentinel" aria-hidden="true" />
@@ -308,6 +314,11 @@ export default function Application() {
             <option value="">{t('source')}: {t('all')}</option>
             {['design', 'vendor_list', 'experience', 'custom'].map(s => <option key={s} value={s}>{t('src_' + s)}</option>)}
           </select>
+          <select className={'input input-sm it-filter' + (filter.type ? ' it-filter-' + filter.type : '')} value={filter.type}
+            onChange={e => setFilter({ ...filter, type: e.target.value })} aria-label={t('item_type')}>
+            <option value="">{t('it_filter_all')}</option>
+            {ITEM_TYPES.map(v => <option key={v} value={v}>{t('it_' + v + 's')}</option>)}
+          </select>
           <select className="input input-sm" value={filter.test} onChange={e => setFilter({ ...filter, test: e.target.value })} aria-label={t('test_status')}>
             <option value="">{t('test_status')}: {t('all')}</option>
             {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
@@ -320,6 +331,7 @@ export default function Application() {
           {removedCount > 0 && <label className="check"><input type="checkbox" checked={filter.showRemoved} onChange={e => setFilter({ ...filter, showRemoved: e.target.checked })} /> {t('show_removed', { n: removedCount })}</label>}
           <span className="muted small push">{shown.length} / {fns.length}</span>
         </div>
+        <ItemTypeLegend reportsShare={settings.reports_share} />
 
         <div className="table-wrap">
           <table className="table fn-table">
@@ -338,20 +350,24 @@ export default function Application() {
             <tbody>
               {shown.length === 0 && <tr><td colSpan={8} className="empty">{t('fn_no_matches')}</td></tr>}
               {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => (
-                <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')}>
+                <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')
+                  + (typeOf(f) === 'report' ? ' row-report' : '')}>
                   <td className="w-check">
                     <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at} aria-label={t('enabled')}
                       title={f.enabled ? t('exclude_hint') : t('include_hint')}
                       onChange={e => setConfirm({ f, mode: 'toggle', enabled: e.target.checked })} />
                   </td>
                   <td className="fn-name">
-                    <div lang="ar" dir="rtl">{f.name_ar}</div>
+                    <div className="fn-title">
+                      <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at} onChange={v => patch(f, { item_type: v })} />
+                      <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
+                    </div>
                     <div className="fn-meta">
                       <span className="code">{f.code}</span>
                       <Indicator color={SRC_COLOR[f.source]}>{t('src_' + f.source)}</Indicator>
                       {f.vendor_status > 0 && <Indicator color={VENDOR_COLORS[f.vendor_status]} title={t('vendor_status')}>{t('vs_' + f.vendor_status)}</Indicator>}
                       {f.reference && <span className="muted" lang="ar">{f.reference}</span>}
-                      {f.enabled && totalW > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / totalW) * 100)}%</span></span>}
+                      {f.enabled && partW(f) > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / partW(f)) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
                       {pendingByFn[f.id] && (
                         <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)} — ${p.requested_by_name}`).join('\n')}>
@@ -426,23 +442,30 @@ function NoteModal({ f, pending, canEdit, onClose, onSave }) {
   );
 }
 
-// Bulk set: progress / test status of every counted function, or exclude chosen functions with one reason.
+// Bulk set: progress / test status of every counted function, exclude chosen functions with one reason, or set the
+// type (function / report) of chosen items.
 function BulkModal({ app, can, onClose, onDone }) {
   const { t, errText } = useI18n();
   const [field, setField] = useState(can.pct ? 'progress' : can.tst ? 'test_status' : 'exclude');
   const [value, setValue] = useState(field === 'progress' ? 100 : 2);
-  const [chosen, setChosen] = useState([]);              // functions to exclude
+  const [chosen, setChosen] = useState([]);              // functions to exclude / items to retype
+  const [toType, setToType] = useState('report');
   const [why, setWhy] = useState(emptyReason);
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const exclude = field === 'exclude';
+  const exclude = field === 'exclude', retype = field === 'item_type';
   const run = async () => {
     let body = { field, value: +value };
     if (exclude) {
       setTried(true);
       if (!chosen.length || reasonProblem(why)) return;
       body = { field: 'enabled', value: false, function_ids: chosen.map(x => x.id), ...reasonBody(why) };
+    }
+    if (retype) {
+      setTried(true);
+      if (!chosen.length) return;
+      body = { field: 'item_type', value: toType, function_ids: chosen.map(x => x.id) };
     }
     setBusy(true); setErr(null);
     try {
@@ -452,15 +475,17 @@ function BulkModal({ app, can, onClose, onDone }) {
   };
   const loadOwn = q => api.get('/tracker/function-options' + qs({ app_id: app.id, q })).then(r => r.options);
   return (
-    <Modal title={t('bulk_set')} onClose={onClose} wide={exclude}
+    <Modal title={t('bulk_set')} onClose={onClose} wide={exclude || retype}
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy || (exclude && !!noteProblem(why))} onClick={run}>{exclude ? t('confirm_exclude_n', { n: chosen.length }) : t('apply')}</button></>}>
+        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy || (exclude && !!noteProblem(why))} onClick={run}>
+          {exclude ? t('confirm_exclude_n', { n: chosen.length }) : retype ? t('confirm_type_n', { n: chosen.length }) : t('apply')}</button></>}>
       {err && <Alert>{errText(err)}</Alert>}
       <Field label={t('bulk_set')}>
-        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); }}>
+        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); setTried(false); }}>
           {can.pct && <option value="progress">{t('bulk_progress')}</option>}
           {can.tst && <option value="test_status">{t('bulk_test')}</option>}
           {can.tog && <option value="exclude">{t('bulk_exclude')}</option>}
+          {can.tog && <option value="item_type">{t('bulk_type')}</option>}
         </select>
       </Field>
       {field === 'progress' && <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>}
@@ -475,7 +500,36 @@ function BulkModal({ app, can, onClose, onDone }) {
         </div>
         <DisableReasonForm appId={app.id} excludeIds={chosen.map(x => x.id)} value={why} onChange={setWhy} showErrors={tried} />
       </>}
+      {retype && <>
+        <Alert kind="blue">{t('bulk_type_msg')}</Alert>
+        <TypeChoice value={toType} onChange={setToType} label={t('bulk_type_to')} />
+        <div className="field">
+          <MultiSelect value={chosen} onChange={setChosen} load={loadOwn} label={t('bulk_type_pick') + ' *'} placeholder={t('dr_duplicates_placeholder')}
+            invalid={tried && !chosen.length} chipLabel={o => o.code}
+            renderOption={o => <><span className="code">{o.code}</span> <span lang="ar" dir="rtl">{o.name_ar}</span></>} />
+          {tried && !chosen.length && <span className="field-hint red-text">{t('bulk_type_none')}</span>}
+        </div>
+      </>}
     </Modal>
+  );
+}
+
+// Function / report choice (add-function, bulk set): two radio cards with the type's icon and colour.
+function TypeChoice({ value, onChange, label }) {
+  const { t } = useI18n();
+  return (
+    <fieldset className="field it-choice">
+      <legend className="field-label">{label}</legend>
+      <div className="it-choice-row">
+        {ITEM_TYPES.map(v => (
+          <label key={v} className={'it-choice-opt it-' + v + (value === v ? ' on' : '')}>
+            <input type="radio" name="item_type" value={v} checked={value === v} onChange={() => onChange(v)} />
+            <TypeBadge type={v} />
+            <span className="muted small">{t(v === 'report' ? 'it_legend_report_none' : 'it_legend_function')}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -523,10 +577,10 @@ function ImpactTable({ impact }) {
 
 function AddModal({ app, onClose, onDone }) {
   const { t, errText } = useI18n();
-  const [f, setF] = useState({ name_ar: '', name_en: '', reference: '', weight: 1, progress: 0, enabled: true });
+  const [f, setF] = useState({ name_ar: '', name_en: '', reference: '', weight: 1, progress: 0, enabled: true, item_type: 'function' });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
-  const preview = { weight: +f.weight || 0, progress: +f.progress || 0, enabled: f.enabled };
+  const preview = { weight: +f.weight || 0, progress: +f.progress || 0, enabled: f.enabled, item_type: f.item_type };
   const impact = useImpact(app.id, { add: preview }, JSON.stringify(preview));
   const run = async () => {
     setBusy(true); setErr(null);
@@ -548,6 +602,7 @@ function AddModal({ app, onClose, onDone }) {
         <Field label={t('weight')}><input className="input" type="number" min={0} max={1000} step={0.5} value={f.weight} onChange={e => setF({ ...f, weight: e.target.value })} /></Field>
         <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} step={5} value={f.progress} onChange={e => setF({ ...f, progress: e.target.value })} /></Field>
       </div>
+      <TypeChoice value={f.item_type} onChange={v => setF({ ...f, item_type: v })} label={t('item_type')} />
       <label className="check mb"><input type="checkbox" checked={f.enabled} onChange={e => setF({ ...f, enabled: e.target.checked })} /> <b>{t('include_in_calc')}</b></label>
       <ImpactTable impact={impact} />
     </Modal>

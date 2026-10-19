@@ -86,7 +86,8 @@ export default function Dashboard() {
       </section>
 
       <div className="grid-cards">
-        <NumberCard label={t('functions_counted')} value={counts.functions} />
+        <NumberCard label={t('functions_counted')} value={counts.functions}
+          sub={counts.report_items > 0 ? t('plus_report_items', { n: counts.report_items }) : undefined} />
         <NumberCard label={t('completed_functions')} value={counts.done} color="green" />
         <NumberCard label={t('tested_ok')} value={tests[2]} sub={`${tests[1]} ${t('ts_1')} · ${tests[3]} ${t('ts_3')}`} color="blue" />
         <NumberCard label={t('with_notes')} value={counts.notes} color="orange" />

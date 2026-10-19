@@ -22,8 +22,10 @@ export default function Reports() {
   const departments = dept ? data.departments.filter(d => d.id === dept) : data.departments;
   const applications = dept ? data.applications.filter(a => a.department_id === dept) : data.applications;
 
+  // the applications' reports % as counted in their progress: the track with their report items (1.8.0)
+  const repPct = a => a.report_pct ?? a.report?.progress ?? 0;
   let sw = 0, sp = 0;
-  applications.forEach(a => { sw += a.weight; sp += a.weight * (a.report?.progress || 0); });
+  applications.forEach(a => { sw += a.weight; sp += a.weight * repPct(a); });
   const counts = [0, 0, 0, 0];
   applications.forEach(a => { counts[a.report?.status || 0]++; });
 
@@ -51,7 +53,9 @@ export default function Reports() {
       {departments.map(d => (
         <Card key={d.id} title={nm(d)}>
           <table className="table">
-            <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30">{t('progress')}</th><th className="num-col">%</th><th>{t('note')}</th>{can.rep && <th />}</tr></thead>
+            <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30">{t('progress')}</th><th className="num-col">%</th>
+              <th className="num-col hide-mobile">{t('report_items')}</th><th className="num-col" title={t('reports_combined_hint')}>{t('reports_combined')}</th>
+              <th>{t('note')}</th>{can.rep && <th />}</tr></thead>
             <tbody>
               {applications.filter(a => a.department_id === d.id).map(a => {
                 const r = a.report || { progress: 0, status: 0, note: '' };
@@ -62,6 +66,8 @@ export default function Reports() {
                       {a.pending?.length > 0 && <Link to="/approvals" className="pending-chip" title={a.pending.map(p => p.requested_by_name).join(', ')}>⏳ {t('awaiting_approval')}</Link>}</td>
                     <td><ProgressBar value={r.progress} /></td>
                     <td className="num-col"><Pct value={r.progress} /></td>
+                    <td className="num-col num hide-mobile">{a.report_items > 0 ? <span className="it-count-rep"><Icon name="item_report" size={12} /> {a.report_items}</span> : '—'}</td>
+                    <td className="num-col"><Pct value={repPct(a)} /></td>
                     <td className="muted small ellipsis" title={r.note}>{r.note}</td>
                     {can.rep && <td className="end"><button className="btn btn-default btn-xs" onClick={() => setEdit(a)}>{t('edit')}</button></td>}
                   </tr>

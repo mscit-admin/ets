@@ -1,0 +1,1365 @@
+# Changelog — سجل التغييرات
+
+This file records every notable change to ETS (ERP Tracking System): new features, changes, fixes, security work,
+dependency upgrades and the steps an operator must take when updating. Newest version first. It is the single
+place for release notes; the handover documents point here.
+
+> يسجّل هذا الملف كل الإضافات والتعديلات والإصلاحات والتحديثات والترقيات في نظام ETS، الأحدث أولاً.
+
+The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+
+### How to update this file
+
+- **Every change** (code, database, deployment, dependencies, documentation that changes behaviour) adds a line
+  under `## [Unreleased]`, in the right category: **Added**, **Changed**, **Deprecated**, **Removed**, **Fixed**,
+  **Security**, plus **Upgrade notes** for anything an operator must do or check (migrations, `update.sh`, nginx,
+  new settings, one-time actions). Use only the categories that apply.
+- Start an entry with its area in bold when it helps: **Backend**, **Frontend**, **Database**, **Deployment**,
+  **Docs**, **Tests**. Keep it to one or two lines; name files, endpoints, error codes and security IDs
+  (`ETS-SEC-xxx`) exactly.
+- A database change always comes with a new numbered migration in `backend/src/db/migrations/`, named in
+  **Upgrade notes**.
+- **On release:** rename `[Unreleased]` to `[x.y.z] — YYYY-MM-DD — short title`, set the version in both
+  `package.json` files and lockfiles, add a new empty `[Unreleased]` above it, and update the compare links at the
+  bottom of this file.
+
+---
+
+## [Unreleased]
+
+---
+
+## [1.8.0] — 2026-10-19 — Mark each item as a function or a report
+
+### Added
+- **Database:** `functions.item_type` — `function` (default) or `report` (migration 016).
+- **Backend:** the type of an item can be changed by whoever can add and remove items (permission `tog`):
+  - `PATCH /api/tracker/functions/:id` `{item_type}` (400 `invalid_value` for anything but `function` / `report`);
+  - bulk `POST /api/tracker/applications/:id/bulk` `{field: 'item_type', value, function_ids}` (1–500 items of the
+    application, not removed; excluded ones allowed), one audit row per item with `context.bulk`;
+  - add-function `POST /api/tracker/applications/:id/functions` `{…, item_type}`, also in the impact preview.
+  - With `approval.edits_need_lead` on, a data-entry user's change waits for the team lead
+    (`edit_request_items.field = 'item_type'`) and is applied in their name. Every change has its `update` /
+    `function` audit row `{item_type}` old → new; live updates fire after COMMIT.
+- **Backend:** `summary`, `departments/:id`, `applications/:id` → `calc.fnShare`, `reportShare`,
+  `items {function, report}`, `typeWeight`, `reportItems`, `reportTrack`, `reportWeight`; `summary.counts.report_items`;
+  `reports` → `report_pct`, `report_items`; `project-status` → `report_items`, `report_tracks`; `search` →
+  `item_type`.
+- **Backend:** Excel — functions export: column «النوع» / “Type” and the filter `item_type=function|report`;
+  department export: «بنود التقارير» and «إنجاز التقارير»; reports export: the application's report items and
+  reports %; project status: «بنود مصنّفة تقارير».
+- **Frontend:** functions page — every row shows its type beside the name:
+  - a navy cog chip «وظيفة» or a teal document-chart chip «تقرير», plus a teal line on the start edge of report rows
+    (colours outside the red → green progress scale and the pass / fail test colours);
+  - for users with `tog` the chip is a menu button (`aria-haspopup="menu"`, `menuitemradio` options; Enter / Space /
+    ↓ open, ↑ ↓ Home End move, Esc closes); read-only otherwise;
+  - a type filter «النوع: الكل / وظائف / تقارير» (also passed to the Excel export) and a legend «دليل الأنواع».
+- **Frontend:** «تعيين جماعي» → «تعيين النوع لبنود محددة»; a type choice in «إضافة وظيفة»; the header counts
+  «وظائف 31 · تقارير 2»; the reports ring shows what it is made of («2 بند تقرير + متابعة التقارير»); pending chips
+  and the approvals screen show the type old → new.
+- **Frontend:** audit sentence «غيّر أحمد نوع البند «D7 …» من وظيفة إلى تقرير» (bulk: «ضمن تعيين جماعي (n بند)»).
+- **Frontend:** the dashboard card «وظيفة داخلة في الحساب» adds «+ n بند تقرير»; the department table shows the
+  report items next to the functions; the reports screen adds «بنود التقارير» and «نسبة التقارير المحتسبة» (its
+  top card uses the latter); search results show the type icon.
+- **Tests:** `backend/test/item-type.test.js` (default type and constraint, exact figures before / after on a
+  fixture, excluded / removed report items, base department and all-report application, PATCH audit, approval flow
+  and the approvals export, bulk, add-function and its impact preview, scope, Excel column and filter, project status
+  and reports agree); `calc.test.js` (5 tests: the move between parts, 1.7.0 figures without report items, base
+  department, notification blending, counts); `live.test.js` (type change → `tracker_changed` after commit).
+
+### Changed
+- **Backend:** the calculation (`backend/src/services/calc.js`, the only copy of the formula — screens, Excel,
+  snapshots, schedule current %, import impact all use it; the function columns it reads are one constant,
+  `CALC_FUNCTIONS_SQL`):
+  - **functions %** = weighted average of the enabled items of type `function`;
+  - **reports %** = weighted average of the enabled items of type `report` (same weight, progress and notification
+    rules) **together with** the application's reports track (`app_reports`, non-base departments) counted as one
+    more item of weight 1 — null when the application has neither;
+  - **application %** = functions % × (1 − reports share) + reports % × reports share (15 %); functions % × 100 %
+    when there are no reports (as before); reports % × 100 % when every counted item is a report;
+  - department and project “functions only” figures leave out applications whose % has no functions part;
+  - an application's weight in `auto` mode stays the sum of all its enabled items (both types).
+- **Backend:** `counts.functions` / `done` (dashboard, project status, snapshots) count function items only;
+  `project-status` `reports` / `reports_done` / `reports_pct` pool report items and reports tracks (with no report
+  items, identical to 1.7.0).
+- **Frontend:** `PctEquation` takes the shares from the API (`calc.fnShare` / `reportShare`) instead of re-deriving
+  them; the share shown under each item is its share of its own part (functions or reports), as in the export.
+- **Docs:** 04 (Arabic user guide: the item type, how to change it, how the percentages are computed, an example),
+  05 (column, migration 016, the calculation table), 11 (fields, bulk, add-function, exports);
+  `deploy/db/schema-reference.sql` regenerated (migration 016).
+
+### Fixed
+- **Tests:** `audit-log.test.js` waits for the asynchronous `csrf_rejected` auth-log row before counting it
+  (intermittent failure).
+
+### Upgrade notes
+- **Migration `016_item_type.sql`** (applied by `update.sh`): `functions.item_type text NOT NULL DEFAULT 'function'`
+  with `CHECK (item_type IN ('function','report'))`.
+- **Percentages change only for items marked as reports.** On upgrade every item is a function, so every application,
+  department and project figure stays exactly as in 1.7.0 until someone marks an item «تقرير»; then only that
+  application's figures (and through it its department and the project) move. Re-seeding the catalog keeps the types.
+- Import files (the original tracker JSON) have no type column: imports never change an item's type.
+
+---
+
+## [1.7.0] — 2026-10-19 — Deleting users (one or several), with the history kept
+
+### Added
+- **Backend:** deleting users is a **soft delete** — the row stays, so every name in the history still resolves;
+  `audit_log` / `auth_log` (hash chains, migration 012) only receive new rows.
+  - `DELETE /api/users/:id` `{reason}` and `POST /api/users/bulk-delete` `{ids, reason}` (1–200 ids, one
+    transaction, **all or nothing**: 400 `bulk_delete_refused` with `errors: [{id, username?, error}]` —
+    `not_found`, `already_deleted`, `cannot_delete_self`, `last_admin`).
+  - System administrators only; reason required (3+ characters without spaces, at most 500:
+    `delete_reason_required` / `delete_reason_too_long`).
+  - In the same transaction: every session revoked (`revoke_reason='user_deleted'`), authenticator and recovery
+    codes removed, the user's pending edit requests **withdrawn** and pending import files **rejected** (each with
+    its own `edit_withdraw` / `import_reject` audit row, `context.user_deleted`), one strict `delete` / `user` audit
+    row per user (reason, target, by, scopes and overrides before, sessions / requests closed) plus `bulk_delete` /
+    `user` for a bulk request, and an `auth_log` row `user_deleted_by_admin`. After COMMIT the user's live streams
+    close (`session_check`).
+- **Backend:** `POST /api/users/:id/restore` `{reason}` — the account comes back with its role, scopes and
+  overrides, a new random temporary password (returned once, `must_change_password: true`) and no authenticator;
+  409 `username_taken` / `email_taken` when another account now uses them. Audit `restore` / `user`, auth
+  `user_restored_by_admin`.
+- **Backend:** `GET /api/users?deleted=1` lists the deleted accounts (who, when, why, whether the name / address
+  are taken); the users Excel export with `?deleted=1` exports them (deleted on, by, reason).
+- **Frontend:** Users screen tabs «المستخدمون» / «المستخدمون المحذوفون»:
+  - row checkboxes with select-all (own account and the last active administrator disabled, with a tooltip),
+    «حذف المحدد (n)», and a delete button on each row and on the user page;
+  - red confirmation dialog listing the names, a warning that the history is kept and a required reason with a
+    counter (Confirm disabled until valid, per-id errors shown); toast and refresh after;
+  - deleted-users tab with «استعادة» (disabled when the name / address is taken), showing the temporary password
+    once.
+- **Frontend:** audit sentences «حذف أحمد المدير المستخدم «سالم» — السبب: …», bulk delete and restore; a request or
+  import file closed by a deletion says so; the author of a history row is marked «(محذوف)».
+- **Tests:** `backend/test/user-delete.test.js` — 403 for non-administrators, self / last administrator refused,
+  reason rules, single delete (sign-in refused, sessions and live stream closed, hidden, history names intact,
+  audit row, `verifyAll()` intact), sessions of a deleted user refused on every auth path, pending requests /
+  imports closed, bulk all-or-nothing, username and e-mail reuse, restore (409 while taken, temporary password,
+  scopes back), and the partial e-mail index (rebuilt from the 1.6.0 shape, kept by later calls).
+
+### Changed
+- **Backend:** a deleted account is inactive everywhere (`loadUserContext`): no session, no 2FA step, no
+  re-authentication, no live stream, no approval of its old requests; sign-in by username or e-mail never finds
+  it. It is left out of the Users list, `GET /users/:id` and the actions (404), the bulk 2FA change, the bulk
+  import's "taken" checks, the administrator count (`last_admin`), `create-admin` and the system user count.
+- **Backend:** the username and e-mail of a deleted account are free for a new account. The users Excel export
+  leaves deleted accounts out by default; audit log rows carry `user_deleted` (also a column of the audit log
+  export).
+- **Docs:** 04 (Arabic user guide: deleting and restoring users), 05 (columns, migration 015, partial unique
+  indexes, FK inventory), 06 (deletion rules), 11 (endpoints and errors); `deploy/db/schema-reference.sql`
+  regenerated (migration 015).
+
+### Upgrade notes
+- **Migration `015_user_delete.sql`** (applied by `update.sh`): `users.deleted_at`, `deleted_by` (→ users,
+  `ON DELETE SET NULL`), `delete_reason` (≤ 500 characters).
+  - The username unique constraint becomes the partial index `users_username_live_key … WHERE deleted_at IS NULL`.
+  - `ets_ensure_email_unique_index()` (migration 014) is replaced so that `users_email_lower_uniq` also carries
+    `AND deleted_at IS NULL` — rebuilt from the 1.6.0 shape by the migration, and built that way by every later
+    call from `migrate.js`.
+
+---
+
+## [1.6.0] — 2026-10-19 — Sign in with the username or the e-mail address
+
+### Added
+- **Backend:** `POST /api/auth/login` accepts the **username or the e-mail address** in `username`. The value is
+  trimmed; one containing `@` is matched to `lower(email)`, anything else to the username (case-insensitive, as
+  before). With `@` and no e-mail match it falls back to an exact username match, so an older account whose
+  username contains `@` (command line only) keeps signing in. An address shared by several accounts signs nobody
+  in.
+- **Frontend:** login field «اسم المستخدم أو البريد الإلكتروني» / "Username or email" — plain text input (not
+  `type=email`), `autocomplete="username"`, `dir="ltr"`, placeholder `ahmed.ali / ahmed@example.ly`; the sub-title
+  and credential error texts mention the e-mail; new messages for `email_taken` / `duplicate_email_in_file`.
+- **Tests:** `backend/test/login-email.test.js` — login by username; by e-mail in mixed case and with spaces;
+  identical answers for wrong password by e-mail / username, unknown name / address and inactive user; lockout
+  across both names; per-name rate limit across case and spaces; 2FA step and forced change after an e-mail
+  sign-in; shared address refused while usernames work; migration 014 on duplicates (no failure, NOTICE, warning
+  row, no index, index on a later run) and on a clean database; users create / update / import refuse duplicates
+  and `@` in usernames; legacy `@` username still signs in and can be edited. `users-import.test.js` expects
+  `email_taken` on re-import (136 tests in total).
+
+### Changed
+- **Backend:** users create / update / import and `create-admin` store the e-mail trimmed in lower case; a
+  duplicate address (any case, or equal to an older username with `@`) is refused — `400 email_taken`, import row
+  codes `email_taken` / `duplicate_email_in_file` with `details` (`field: "email"`). `@` stays refused in new
+  usernames; `PATCH` accepts an older username sent back unchanged and checks the address only when it changes.
+- **Deployment:** the installer's final summary and `create-admin` say the administrator can sign in with the
+  username or the e-mail address.
+- 2FA, the forced password change, session rotation and the `__Host-ets_sid` cookie are unchanged.
+- **Docs:** user guide 04 (sign-in name, lockout note), administrator guide 03, database design 05 (§3b migration
+  014), security 06 (sign-in name, enumeration, lockout across names), logging 07 (`detail.via`,
+  `login_ambiguous_email`), test plan 09 (A-02b, A-02c), API reference 11; `deploy/db/schema-reference.sql`
+  regenerated with pg_dump after migration 014.
+
+### Security
+- No enumeration through the second name: every failure (unknown username or address, shared address, wrong
+  password, disabled or paused account) gives the same `401 invalid_credentials` without a cookie, and the unknown
+  / shared / paused cases still run the dummy bcrypt check of the same cost.
+- The per-account serialisation of password and code checks is keyed on the resolved user id (login, 2FA verify /
+  enable, re-authentication), so failures through the username and the e-mail address add up on one account
+  counter (e.g. 1 + 1 + 1 with `MAX_FAILED_LOGINS=3` pauses the account) and a pause applies to both names. The
+  per-name rate limit keys on the trimmed, lower-case typed name.
+- `auth_log` login rows carry `detail.via` (`username` | `email`) and, for a known account, `detail.identifier`
+  (trimmed, lower case) next to the resolved `user_id` / `username`; unknown names stay masked (ETS-SEC-051); new
+  event `login_ambiguous_email`.
+
+### Upgrade notes
+- **Migration `014_login_email.sql`:** unique index `users_email_lower_uniq` on `lower(email)` where set, built by
+  `ets_ensure_email_unique_index()`.
+  - On a database **without** shared e-mail addresses it creates the index.
+  - **With** shared addresses the update does not fail: the index is skipped with a `NOTICE` and a `system_log`
+    warning **`email_index_skipped`** (the addresses and any usernames with `@`). Sign-in by those addresses is
+    refused until each account has its own (Users screen); the next service start or `npm run migrate` creates
+    the index (`migrate.js` calls the function again and prints the migrations' own `ETS:` notices).
+  - On a local install `ets-log-protect migrate` runs with `client_min_messages = warning`, so the NOTICE is **not**
+    printed by `update.sh`: check Logs → System (`email_index_skipped`) or `app.log` (`notice: ETS: …`). Manual
+    check: [05 §3b](docs/handover/05-Database-Design.md).
+
+---
+
+## [1.5.1] — 2026-10-19 — Exclusion note required for every reason
+
+### Changed
+- **Backend:** «الملاحظات لسبب الإلغاء إلزامية» — `disabled_note` is now required for every reason (`duplicate`,
+  `out_of_scope`, `not_required`, `other`), not only `other`: at least 3 non-whitespace characters after
+  trimming, still ≤ 500.
+  - A missing, empty, whitespace-only or shorter note → 400 `disable_note_required` (`min: 3`) on every path that
+    turns a function off: `PATCH /api/tracker/functions/:id`, bulk `enabled: false`, and requests that wait for
+    the team lead (checked when submitted, `backend/src/services/disable.js` `NOTE_MIN`).
+  - Approval does not check it again, so requests submitted before 1.5.1 without a note are still approved as
+    they are. The `import` reason keeps its generated note (`#<batch id> <file name>`).
+- **Frontend:** the exclusion dialog and the bulk exclusion mark «ملاحظة الإلغاء» as required (*); the helper text
+  says it is required for every reason (at least 3 characters), a live counter shows the length, an inline error
+  appears once the field is typed in or left, and the confirm button stays disabled until the note is valid
+  (`frontend/src/components/DisableReason.jsx` `noteProblem`, `frontend/src/pages/Application.jsx`).
+- **Frontend:** messages `dr_note_hint`, `dr_note_placeholder`, `dr_note_required`, `err_disable_note_required`
+  updated in ar + en.
+- **Tests:** `backend/test/disable-reason.test.js` — each of the 4 reasons without a note, with an empty, `null`,
+  whitespace-only or too short note → 400 `disable_note_required`; 3 and 500 characters accepted; bulk without a
+  note (every reason) → 400; a request submitted without a note → 400 and no request created (single and bulk); a
+  pending request whose item has no note is still approved and applied (124 tests in total).
+- **Docs:** user guide (required note, disabled confirm button), API reference (PATCH / bulk / approvals), database
+  design; version 1.5.1 in both `package.json` and lockfiles.
+
+### Removed
+- **Frontend:** messages `dr_note_placeholder_required` and `dr_note_required_hint` (ar + en; key sets identical).
+
+### Fixed
+- **Frontend:** `.field-hint.red-text` is red again (`.field-hint` came later in `app.css` and turned inline
+  errors grey).
+
+### Upgrade notes
+- No migration.
+
+---
+
+## [1.5.0] — 2026-10-18 — Required reason when a function is excluded (duplicates)
+
+### Added
+- **Backend:** **excluding a function needs a reason** on every path that turns one off
+  (`backend/src/services/disable.js`).
+  - `PATCH /api/tracker/functions/:id` with `enabled: false` takes `disabled_reason`, `disabled_note` (required
+    for `other`) and, for `duplicate`, `duplicate_of` (function ids in the user's scope, not the function itself,
+    not removed) — otherwise 400 `disable_reason_required`, `disable_note_required`, `duplicate_of_required`,
+    `invalid_duplicate` (`self` / `unavailable` / `removed`) or `invalid_value`.
+  - Including again needs no reason and clears it; the audit row keeps the previous reason as its old value.
+- **Backend:** bulk exclusion — `POST /api/tracker/applications/:id/bulk` with `{field: 'enabled', value: false,
+  function_ids, disabled_reason, …}` (permission `tog`): one reason for the chosen functions (the duplicated
+  functions may not be among them), one audit row per function; `value: true` includes them again.
+- **Backend:** approval flow — a data-entry user's exclusion (single or bulk) carries its reason and links in the
+  request item (`meta`); the approver sees them (`GET /api/approvals`, Excel export of the approvals) and approval
+  applies them in the requester's name. The requester's scope is checked again for the duplicated functions
+  (409 `requester_not_allowed`); an exclusion whose duplicated function was removed meanwhile is skipped.
+- **Backend:** imports — a function an approved team-result batch turns off gets the reason `import` with the note
+  `#<batch id> <file name>`; the full legacy import marks the functions it turns off `import` too; functions turned
+  on by an import lose their reason. Restoring a removed function clears it.
+- **Backend:** `GET /api/tracker/function-options` (`app_id`, `all=1`, `q`, `exclude`) — the counted functions a
+  duplicate can point at, within scope; the application data lists `duplicate_of` (codes, application, names only
+  in scope) and `disabled_by_name`.
+- **Backend:** functions Excel export — columns «سبب الإلغاء», «مكررة مع», «ملاحظة الإلغاء» (after the existing
+  columns, whose positions do not change) and the `reason` filter; the approvals export adds the reason to an
+  exclusion.
+- **Frontend:** unticking a function opens the exclusion dialog (`frontend/src/components/DisableReason.jsx`,
+  `frontend/src/components/MultiSelect.jsx`):
+  - reason category (radio cards) and a note with a counter; Cancel leaves the box ticked;
+  - for «مكررة» a **searchable multi-select** of the functions it duplicates (code + name + application; this
+    application by default, «البحث في كل التطبيقات» for every application in scope; the function itself, excluded
+    and removed ones are not offered); chips with ×;
+  - keyboard: arrows, Home/End, Enter, Esc (closes the list, a second Esc the dialog), Backspace removes the last
+    chip; combobox / listbox roles, `aria-activedescendant`, `aria-selected`, a live result count; RTL and LTR.
+- **Frontend:** «تعيين جماعي» gains «إلغاء احتساب وظائف محددة»: pick the functions, then one reason.
+- **Frontend:** an excluded row shows its reason as a badge — «مكررة مع: D3، D5» (each code opens and highlights
+  that function, also in another application, `#fn-<id>`), «خارج النطاق», «استيراد», «بدون سبب مسجّل» …; a click
+  shows the note, who excluded it and when. New filter «سبب الإلغاء» (also sent to the export).
+- **Frontend:** the approvals screen and the "awaiting approval" chips show the reason of a pending exclusion.
+- **Frontend:** audit sentences — «ألغى أحمد سالم احتساب الوظيفة «D7 …» في تطبيق شؤون العاملين (مكررة مع D3، D5):
+  «…»» / "… excluded function … from the calculation (duplicate of D3, D5): …" with the reason, duplicates and note
+  as before → after lines; «أعاد … احتساب الوظيفة …» with the previous reason; requests list the reason (ar + en,
+  messages `dr_*`, `ms_*`, `au_disable_*`, `au_enable_*`, `err_disable_*`, `err_duplicate_of_required`,
+  `err_invalid_duplicate`).
+- **Tests:** `backend/test/disable-reason.test.js` — 400 without / with an invalid reason, `other` without a note,
+  duplicate without ids, pointing at itself, out of scope, unknown or removed; a valid exclusion stores reason,
+  note and links and writes them in the audit row; including again clears them (history kept); restore clears;
+  bulk exclusion and inclusion; approval carries the reason (single and bulk) and skips a removed duplicate; picker
+  options; export columns and reason filter; import batch and legacy import set `import` (124 tests in total).
+
+### Changed
+- Removal («إزالة») already required its own reason since 0.8.0 and is unchanged. Adding a function with
+  «تضمينها في حساب النسب» unticked records no exclusion reason (shown as «بدون سبب مسجّل»).
+- **Docs:** user guide (exclusion dialog, badge, filter, approvals), API reference (PATCH / bulk / function-options
+  / approvals / imports / export), database design and `deploy/db/schema-reference.sql` (migration 013).
+
+### Upgrade notes
+- **Migration `013_disable_reason.sql`:** `functions.disabled_reason` (`duplicate`, `out_of_scope`,
+  `not_required`, `other`; `import` set by imports), `disabled_note` (≤ 500), `disabled_by`, `disabled_at`; table
+  `function_duplicates(function_id, duplicate_of_id)` (FKs ON DELETE CASCADE — functions are only soft-removed —,
+  no self link, index on the target); `edit_request_items.meta` (the reason of a pending exclusion).
+- Safe on an existing database: functions excluded before 1.5.0 keep an empty reason («بدون سبب مسجّل» / "No reason
+  recorded"); `audit_log` / `auth_log` and their hash chains are untouched.
+
+---
+
+## [1.4.0] — 2026-10-18 — ERP module wheel and live updates
+
+### Added
+- **Frontend:** **ERP module wheel** at the top of the dashboard (`frontend/src/components/ErpWheel.jsx`,
+  `frontend/src/lib/erpModules.js` — the editable module list and mapping):
+  - a circle of the 8 standard ERP modules (Production, Human Resources, Planning, Inventory Management,
+    Reporting, CRM, Sales & Marketing, Finance & Accounting) around a hub with the overall progress «إجمالي
+    الإنجاز» / "Overall progress"; the hero ring card is replaced by the hub, the other cards stay below;
+  - a module fed by a department is **active**: navy / blue segment with its line icon, name and the department %
+    on a white chip, plus a thin progress arc on the outer rim, in the continuous tone of `pctTone` (critical →
+    good); click / Tab + Enter opens the department page;
+  - modules without a department are **faded** («غير مفعّل» / "Not activated", not clickable); for a scoped
+    reader a department outside the scope is faded «خارج نطاقك» / "Outside your scope" with no % (only
+    `/api/tracker/summary` data is used);
+  - mapping by department id: `hr` → Human Resources, `fin` → Finance & Accounting, `com` → Sales & Marketing;
+    `inf` (Infrastructure) and any other department get a segment of their own after the standard ones;
+  - pure inline SVG, constant-width white gaps, mirrored in Arabic, values glide to the new level (none with
+    `prefers-reduced-motion`), responsive (≈520 px on desktop, full card width on phones, no horizontal scroll);
+    beside it the active modules with their %, a legend (active / not activated / outside scope) and the tone
+    scale;
+  - new icons `factory`, `planning`, `chart`, `crm`, `megaphone`; messages `erp_*`, `live_*`.
+- **Backend:** **live updates** — `GET /api/events` (signed in), Server-Sent Events (`backend/src/services/live.js`,
+  `backend/src/routes/events.js`):
+  - events `ready`, `tracker_changed` (`{type, dept_id?, app_id?}` — ids only, never values), `session_ended`;
+    heartbeat comment every 25 s (`LIVE_HEARTBEAT_SECONDS`); at most 5 streams per user
+    (`LIVE_MAX_STREAMS_PER_USER`, `429 too_many_streams`); `X-Accel-Buffering: no`;
+  - every change is announced **after its transaction committed** with `pg_notify` on channel `ets_live`; each API
+    process keeps one dedicated `LISTEN` connection (opened with the first stream, reconnects with backoff and then
+    tells its streams to reload once), so it also works with several processes (the systemd unit runs one);
+  - events go only to streams whose user has that department / application in scope;
+  - announced changes: function edits (%, weight, statuses, note, include / exclude), bulk set, add / remove /
+    restore (direct or sent for approval), edit requests approved / rejected / withdrawn / approved in bulk,
+    application weights and calculation parameters, weights reset, reports track, schedule and timeline,
+    team-result imports (submitted, signed, applied, rejected), the full tracker import, and settings that change
+    the calculation or the approval rule.
+- **Frontend:** **screens update without reloading the page** — dashboard (wheel, cards, notices, curve),
+  department, application, project status, reports and weights reload through their usual scoped endpoints
+  (`useLiveUpdates`, `frontend/src/lib/live.js`):
+  - one `EventSource` per tab, reloads debounced 400 ms, filtered by department / application hints, reconnection
+    with backoff, paused while the tab is hidden and reloaded when shown again, polling every 30 s after repeated
+    failures; badge «تحديث مباشر» / "Live" (or "Every 30 s");
+  - `useLoad()` gained a silent `refresh()` that keeps the screen while loading and drops out-of-order answers;
+  - a live reload never overwrites what the user is typing: the application table keeps a number cell being edited
+    and rows whose save is in flight; the weights page keeps unsaved weights / parameters; open edit windows keep
+    their own values.
+- **Deployment:** new optional settings `LIVE_HEARTBEAT_SECONDS`, `LIVE_MAX_STREAMS_PER_USER`
+  (`backend/.env.example`); graceful shutdown closes the open streams first (`backend/src/server.js`).
+- **Tests:** `backend/test/live.test.js` — `/api/events` requires a session; a function % update sends
+  `tracker_changed` after commit with ids only and no values; a scoped user hears only about their scope; sign-out
+  and an expired session close the stream; the stream is not activity; the per-user cap; the stream opening is
+  logged once (116 tests in total).
+
+### Changed
+- **Docs:** user guide (dashboard wheel, live updates), API reference (`/events`), security (sessions and live
+  updates), installation guide (nginx step), operations runbook (live updates not arriving).
+
+### Security
+- The stream's session is re-checked on every heartbeat (revoked, expired, idle, user disabled, password change
+  required) and at once on sign-out, re-sign-in, password change / admin reset, 2FA reset / disable, *End
+  sessions*, deactivation and scope / role / permission changes (`session_check` notification to every process);
+  the stream then closes with `session_ended` and the app shows the sign-in page. A scope change applies to the
+  next events at once.
+- The stream and the reloads it triggers (header `X-ETS-Live: 1`) are not counted as activity for the idle
+  timeout, so an open dashboard does not keep a session alive; opening a stream counts as one request for the
+  general rate limit; the access log records the stream opening once, not its heartbeats. CSP unchanged
+  (`connect-src 'self'` covers the stream).
+
+### Upgrade notes
+- **nginx:** new `location = /api/events` — `proxy_buffering off`, `proxy_cache off`, `gzip off`,
+  `proxy_read_timeout` / `proxy_send_timeout` 1 h, HTTP/1.1 keep-alive to the API
+  (`deploy/nginx/ets-app.conf.tpl`). `update.sh` re-renders the snippet and runs `nginx -t`; after a manual change
+  run `sudo nginx -t && sudo systemctl reload nginx`.
+- A proxy / load balancer in front of nginx must not buffer `text/event-stream` (see the operations runbook if the
+  badge shows "Every 30 s" instead of "Live").
+
+---
+
+## [1.3.0] — 2026-10-18 — Excel exports and the export policy
+
+### Added
+- **Backend:** **Excel (xlsx) exports generated on the server** — `GET /api/export/<report>.xlsx`
+  (`backend/src/routes/export.js`, `backend/src/services/xlsx.js`, `backend/src/services/export-labels.js`):
+  - reports: dashboard summary (`summary`), project status (`project_status`), department page (`department?id=`),
+    application functions (`functions?id=` with the screen's `q, source, test, show_off, show_removed`), weights,
+    reports (`dept`), the schedule table (period, period end, planned, actual, deviation), edit requests with their
+    items (`approvals`: `status, mine`), import batches (`imports`: `status`) and one batch's changes
+    (`import_detail?id=`), users (`users`) and logs (`log?type=` with the Logs filters, beside the CSV);
+  - one sheet per file: title row, exporter / UTC time / filters, bold frozen header with an autofilter, sensible
+    column widths, numbers as numbers, percentages with a `0.0%` format, dates as dates, right-to-left sheet in
+    Arabic; headers and values translated (`lang=ar|en`, default: the user's language);
+  - `Content-Disposition` with an ASCII `filename` and the translated name as RFC 5987 `filename*`; at most 100,000
+    rows.
+- **Frontend:** «تصدير إلى إكسل» / "Export to Excel" button on the dashboard, project status, department,
+  application, weights, reports, curve, approvals, imports (list and batch), users and logs pages, sending the
+  filters applied and the UI language; shown only with `exp` (users: administrator with `usr` too). The file is
+  fetched with the session cookie and the `X-Requested-With` header; an error is shown as a message instead of a
+  JSON page (`frontend/src/components/ExportButton.jsx`, `downloadFile()` in `frontend/src/lib/api.js`, new
+  `sheet` icon). New messages `export_xlsx`, `exporting`, `au_export_report`, `au_export_report_of`,
+  `au_export_filters`, `au_export_truncated`, `xr_*`, `xf_*` (ar + en).
+- **Frontend:** export rows read as sentences in the audit trail — «تصدير تقرير «وظائف التطبيق» — «…» إلى ملف إكسل
+  (33 صف)» with the filters on a second line; the log export sentence names the format (CSV / Excel) and the row
+  count (`frontend/src/lib/audit.js`).
+- **Backend:** dependency `exceljs ^4.4.0` (with the `uuid ^11.1.1` override, as in the frontend; `npm audit`: 0).
+- **Tests:** `backend/test/export.test.js` — 403 without `exp` for every report and for the CSV log export (also
+  when `exp` is removed by an override), scope (another department / application → 403, summary / weights /
+  approvals limited to the scope, security logs and IP column for administrators only), users export
+  administrators only with exactly the listed columns and nothing sensitive, xlsx parsed back with exceljs
+  (headers, rows, RTL, frozen header, autofilter, `0.0%` format, filename headers), audit row contents, refusal
+  when the audit row cannot be written, formula neutralisation and no formula cells.
+
+### Changed
+- **Backend (refactoring):** the tracker, approvals, imports and users list handlers call exported data functions
+  shared with the exports; `exportRows()` in `routes/logs.js` serves the CSV and the Excel log export (the CSV
+  header line is now written also when no row matches).
+- **Docs:** *06-Security.md → 4a. Export policy / سياسة التصدير* with the report × permission × scope × sensitivity
+  × audit matrix; API reference (`/export`), Logging and Audit, Administrator Guide and the Arabic user guide.
+
+### Security
+- **Export policy:** every export needs `exp` — the Excel exports and now also the CSV log export (`log` **and**
+  `exp`; the Logs screen itself still needs `log` only).
+  - Each Excel export reads its rows through the same function as its screen (`summaryData`, `departmentData`,
+    `applicationData`, `weightsData`, `reportsData`, `scheduleData`, `projectStatusData` in `routes/tracker.js`;
+    `listRequests`, `listBatches`, `batchDetail`, `listUsers`, `exportRows`), so it never holds more than the
+    reader's scope.
+  - The users export needs `usr` + the administrator role + `exp` and contains only full name, username, role,
+    status, 2FA on/off, scope summary, last login and email (never password hashes, recovery codes, sessions, IPs,
+    user agents, failed attempts or lock times); log exports keep the admin-only security logs, the scope filter
+    and the IP / device removal.
+- Every export writes a strict audit row (`action=export`, `entity=<report key>`, `entity_id`,
+  `new_value={format, rows, truncated, filters, lang, target}`) before the file is sent; no row, no file
+  (ETS-SEC-049).
+- Strings in the sheets are plain values (never formulas), neutralised with the CSV rule (ETS-SEC-059,
+  `neutralise()` from `utils/csv.js`); characters XML cannot carry are dropped.
+
+### Upgrade notes
+- Users who export logs as CSV now need `exp` as well as `log`.
+- New backend dependency (`exceljs`): installed by `update.sh`.
+
+---
+
+## [1.2.0] — 2026-10-18 — Application progress as an equation of rings
+
+### Added
+- **Frontend:** the application page header shows the application % as a **visible weighted equation**
+  (owner-approved design "B") (`frontend/src/components/PctEquation.jsx`, `frontend/src/pages/Application.jsx`,
+  `frontend/src/styles/app.css`):
+  - two small input rings — functions % and reports % — whose connectors carry «× share = contribution» (e.g.
+    «× 85% = 14.7%», «× 15% = 0.0%»), then «=» and one large result ring with the application %;
+  - every number comes from the API (`application.calc` and `settings.reports_share`): reports count only when
+    `calc.reportPct != null` and `reports_share > 0` (same rule as `services/calc.js`), the functions share is
+    `1 − reports_share`, the result ring shows `calc.pct`;
+  - base (requirements) departments / no reports: one connector «× 100%» and the note «قسم متطلبات: التقارير لا
+    تدخل في نسبة التطبيق»;
+  - the formula line (`app_pct_note`) stays, small and muted, beside the pills row (weight, functions, passed in
+    green, failed in red); phone: the equation stacks with no horizontal scroll at 390 px; RTL and LTR.
+- **Frontend:** **continuous criticality colour** for the three rings — `pctTone(v) → {stroke, text, bg}` in
+  `frontend/src/lib/format.js`:
+  - OKLCH hue interpolated without steps from 25° (red, ≤ 20 %) via 55° (orange, 40 %) and 85° (amber, 60 %) to
+    145° (green, ≥ 80 %), fixed lightness per role (stroke L 0.635, text L 0.47, bg L 0.955), chroma reduced to fit
+    sRGB;
+  - ring strokes ≥ 3:1 on white, the result number uses the darkened `text` tone (≥ 6.4:1, WCAG AA), input numbers
+    stay in the normal text colour, the track uses the pale `bg` tint;
+  - `pctHue()` and `pctGradient()` helpers; a gradient legend (0 % «حرج / Critical» … «متوسط / Fair» … «جيد / Good»
+    100 %), right-to-left in Arabic. The discrete `pctColor()` used elsewhere is unchanged.
+- **Frontend:** the **progress header stays visible** while the functions table scrolls (owner request):
+  - the equation card is `position: sticky` under the top bar (`--navbar-h`) on a page-coloured band; once stuck it
+    gets a shadow and a compact layout (smaller rings, legend and formula line hidden, pills kept);
+  - the page title, breadcrumb and the «تعيين جماعي» / «إضافة وظيفة» buttons scroll away with the page;
+  - only on screens ≥ 900 px wide **and** ≥ 500 px high; the compact look switches on only when the page is long
+    enough to stay scrolled after shrinking (no flicker on short lists).
+- **Frontend:** the **functions table is paginated** (`frontend/src/pages/Application.jsx`,
+  `frontend/src/styles/app.css`, new icons `chevron_back`, `chevrons`, `chevrons_back` in
+  `frontend/src/components/Icon.jsx`):
+  - 10 rows per page by default, «صفوف في الصفحة» 5 / 10 / 15 / 20 / 25 (remembered per browser in `localStorage`
+    `ets.fnPageSize`), first / previous / next / last buttons (mirrored in Arabic: «التالي» points left), «صفحة X
+    من Y» and «عرض a–b من N»;
+  - pagination applies after the filters (search, source, test status, disabled / removed items); any filter
+    change goes back to page 1; the «33 / 40» counter is unchanged;
+  - saving a cell, a note or a toggle **keeps the current page** (clamped if the list got shorter); changing the
+    page size keeps the first visible row on screen; a page change from the bottom pager brings the top of the
+    table back under the sticky header; an empty result shows «لا توجد وظائف تطابق التصفية»;
+  - no row-selection column (the ✓ column is the per-function «included in the calculation» toggle) and no column
+    sorting, so nothing else changes. Only the application page uses this table.
+- **Frontend:** new messages `app_progress`, `eq_no_reports`, `eq_critical`, `eq_fair`, `eq_good`,
+  `rows_per_page`, `showing_range`, `first_page`, `last_page`, `previous_page`, `next_page`, `fn_no_matches`
+  (ar + en).
+
+### Changed
+- **Docs:** User Guide (AR) §5 describes the new header; STRUCTURE.md; version 1.2.0.
+
+### Removed
+- **Frontend:** the old horizontal progress bar and stats grid of the application header.
+
+### Fixed
+- **Frontend:** the sticky header now also sticks on short desktop windows (≥ 900 px wide, ≥ 500 px high, was
+  700 px — e.g. 1646 × 566); its stuck look is one line (equation | pills, ~116 px visible) so the table keeps
+  room; the weight chips hide in that line below 1200 px wide (`STICKY_MQ` and the `.app-sticky` media rule kept in
+  sync).
+- **Frontend:** pager arrows are chosen by direction, and the range is shown in an LTR span (from git, `5d53272`).
+
+---
+
+## [1.1.1] — 2026-10-16 — Bulk import: dropdown lists and names
+
+### Added
+- **Frontend:** the Excel template has **drop-down lists** built from the live roles, departments and applications
+  (`GET /users/meta`):
+  - Excel data validation of type *list* on `role`, `language`, `departments`, `department_2`, `department_3`,
+    `applications`, `application_2`, `application_3` for rows 2–501, pointing to ranges on a hidden `lists` sheet
+    (no 255-character inline-list limit, safe with Arabic and commas);
+  - names in the interface language («عضو فريق», «العربية», «إدارة الموارد البشرية والخدمات», «شؤون العاملين» /
+    English); an input message on every list column and a *warning* (not stop) alert, so several comma-separated
+    values can still be typed;
+  - frozen header `id / readable name` (e.g. `role / الدور`), column widths, right-to-left sheet in Arabic; the
+    `help` sheet is kept. New optional columns `department_2/3`, `application_2/3`; files from 1.1.0 (ids, seven
+    columns) are read as before.
+- **Frontend:** the import preview shows what will be created in names (role, language, departments,
+  applications) and quotes the unrecognised value in each message, e.g. «الدور غير موجود: مدير قسم», «الإدارة غير
+  موجودة: …»; the error report carries the same messages and the new columns.
+- **Backend:** `POST /api/users/import[/preview]` answers per error row `details: [{code, field, value, matches?}]`
+  — the value that was not recognised (the administrator's own text, shortened, and catalog ids only).
+- **Frontend (dependency):** `exceljs` 4.4.0, used only to write the template and loaded on demand (own chunk, not
+  in the main bundle; works under the production CSP — no `eval` / `new Function` on the paths used).
+  `read-excel-file` (reading) and `write-excel-file` (error report, passwords file) stay.
+- **Tests:** `users-import.test.js` — roles / languages / departments / applications by Arabic and English name with
+  tatweel, hamza, taa-marbuta, diacritic and ؤ/ئ variants, `,` `،` `;` separators and the extra columns; unknown
+  values named in `details`; `ambiguous_value` (and its resolution by id or «name (id)»); ids still work; the
+  browser and server matching files are identical.
+
+### Changed
+- **Docs:** Administrator Guide §1 (drop-down lists, names accepted, several values, matching rules), API Reference
+  (`details`, `ambiguous_value`, names), STRUCTURE.md; version 1.1.1.
+
+### Fixed
+- **Backend:** the bulk user import accepts **names as well as ids** (reported on the live server: a template filled
+  in Arabic — «عضو فريق», «عربي», Arabic department / application names — failed on every row with «الدور غير
+  موجود», «لغة غير مدعومة», «نطاق غير صالح») (`backend/src/utils/importMatch.js`, same file as
+  `frontend/src/lib/importMatch.js`):
+  - roles by id, `name_ar` or `name_en`; languages by `ar`/`en`, العربية, عربي, Arabic, الإنجليزية, انجليزي, إنجليزي,
+    English; departments by id, name or short name; applications by id or name;
+  - matching ignores case, extra spaces, tatweel, diacritics, أ/إ/آ vs ا, ؤ/ئ, ى/ي and ة/ه; `,` `،` `;` separate
+    several values, and a name that itself contains a comma is still recognised;
+  - an exact id wins; a name fitting several items is refused with the new row code `ambiguous_value` (ar + en);
+    the server stays authoritative; existing error codes and the all-or-nothing behaviour are unchanged.
+
+### Security
+- **Frontend:** `overrides.uuid ^11.1.1` for exceljs' `uuid` (GHSA-w5hq-g745-h8pq); `npm audit --omit=dev`: 0
+  vulnerabilities.
+
+---
+
+## [1.1.0] — 2026-10-15 — Bulk user import
+
+### Added
+- **Backend:** bulk user import for System Administrators:
+  - `POST /api/users/import/preview` checks every row (up to 500) without writing and answers per row `ok` or error
+    codes (`username_taken` case-insensitive, `duplicate_in_file`, `invalid_username`, `full_name_required`,
+    `invalid_email`, `invalid_role`, `invalid_language`, `invalid_scope`, `scope_required`, `usr_admin_only` …);
+  - `POST /api/users/import` checks again and creates every row in one transaction or nothing
+    (`400 import_has_errors`, also on a username taken meanwhile); more than 500 rows → `400 too_many_rows`.
+- **Backend:** each imported account gets a random temporary password (`crypto.randomBytes`, 16+ letters and digits
+  without look-alikes, passes the password policy incl. 12+ for administrators) and must change it at first
+  sign-in; the passwords are returned once in the import answer only — never stored in clear, never logged; the
+  bcrypt hashes are computed in short-lived worker threads before the transaction opens.
+- **Backend:** audit — one `create` / `user` row per imported user (same values as a single create, no password,
+  `context.via = "bulk_import"`) and one `bulk_create` / `user` summary row `{count, usernames}`, all in the import
+  transaction.
+- **Frontend:** Users → «استيراد مستخدمين / Import users»:
+  - template download (.xlsx with a «help» sheet listing the columns and every role / department / application id
+    in Arabic and English, or .csv);
+  - file read in the browser (.xlsx via `read-excel-file`, .csv parsed in-house: UTF-8 BOM, quotes, commas and line
+    breaks in quotes, CRLF, `;` separator);
+  - preview with per-row status and messages, error report (.xlsx / .csv, formula-safe), "Create N users" only
+    when no row has an error;
+  - result screen with the one-time passwords (copy, download .xlsx / .csv, warning before closing without saving
+    them).
+- **Frontend:** readable change-history sentences for `bulk_create` and for users created by an import (ar + en).
+- **Frontend (dependencies):** `read-excel-file` 9.3.10 and `write-excel-file` 4.1.1 (loaded on demand, not in the
+  main bundle); `npm audit --omit=dev`: 0 vulnerabilities.
+- **Tests:** `backend/test/users-import.test.js` — every row error code, size limits, admin-only, all-or-nothing
+  (also on a unique-key failure inside the transaction), passwords returned once / policy / forced change /
+  sign-in, audit rows without passwords, no password in any log.
+
+### Changed
+- **Backend:** the two import routes accept up to 1 MB of JSON, parsed only after the administrator check
+  (`middleware/body.js`); every other request keeps the 100 kB limit.
+- **Docs:** Administrator Guide §1 «Import users from a file», API Reference (two endpoints, 1 MB limit),
+  STRUCTURE.md, Logging and Audit (`bulk_create`); version 1.1.0.
+
+### Upgrade notes
+- **nginx:** accepts up to 1 MB and waits up to 300 s on `/api/users/import[/preview]` — run `update.sh` to
+  re-render the snippet.
+
+---
+
+## [1.0.0] — 2026-10-15 — Security remediation
+
+The security remediation release: authentication (WP1), authorisation and data scope (WP2, WP4), input handling
+(WP3), deployment hardening and supply chain (WP5, WP8), audit trail and logging (WP6), documentation accuracy
+(WP7) and the Phase 7 verification leftovers (R8).
+
+### Added
+- **Backend:** `npm run verify-audit` and `GET /api/logs/integrity` (admins) verify the audit hash chains; the daily
+  purge verifies first and writes the chain heads to the journal (ETS-SEC-013).
+- **Backend:** `APP_SECRET_OLD` + `npm run rotate-app-secret` (`scripts/rotate-app-secret.js`) rotate the secret
+  without losing 2FA enrolments (ETS-SEC-032).
+- **Deployment:** `/usr/local/sbin/ets-log-protect` (`deploy/scripts/log-protect.sh`: `apply`, `migrate`,
+  `restore`, `status`) applies the audit-trail protection automatically (see Security) (ETS-SEC-013).
+- **Deployment:** `.github/dependabot.yml` (npm backend + frontend, GitHub Actions; weekly, 7-day cooldown);
+  `npm audit --omit=dev` runs at every install/update (ETS-SEC-046, ETS-SEC-071).
+- **Frontend:** Logs → «Verify log integrity» button and failed-log-write counter; Settings → separate audit
+  retention field (min 365); ar + en texts (ETS-SEC-047, ETS-SEC-048, ETS-SEC-013).
+- **Tests:**
+  - `backend/test/input.test.js` (input handling; adapted to masked unknown usernames);
+  - `backend/test/authz.test.js` — regression tests for P3-AUTHZ-01…10 and ETS-SEC-058;
+  - `auth-security.test.js` (lockout, decay, enumeration, rate limits, session rotation, step-up, replay races,
+    recovery codes, CLI) and `passwords.test.js` (policy, recovery codes, cookie name, API limiter);
+  - `config.test.js` (APP_SECRET placeholders, DB TLS options per sslmode, remote-without-TLS refused, v2 envelope,
+    tag length, AAD, v1 compatibility, rotation) and `rotate.test.js` (rotate-app-secret on a database);
+  - `audit-log.test.js` (append-only, chain verification and tamper detection, purge floors and anchors, injected
+    log-write failures, new events incl. CLI, masking, requester IP, admin-only logs, flood limits);
+  - public `/api/health` returns no version (ETS-SEC-038); the first-note race repeated 10 times (ETS-SEC-056).
+
+### Changed
+- **Backend:** lockout is now a progressive pause per account (1, 2, 4 … minutes from `MAX_FAILED_LOGINS`, at most
+  `LOCK_MINUTES`) that ends by itself; the counter restarts after `LOCKOUT_RESET_MINUTES` (60) without failures, so
+  one wrong attempt after a lock no longer locks again for the full time (ETS-SEC-002).
+- **Backend:** password policy — never below 10 characters, 12 for administrators (also in `create-admin`, which
+  now uses the Settings minimum), at most 72 bytes, built-in list of common passwords; `BCRYPT_ROUNDS` kept within
+  10–14; hashes with another cost are re-hashed at the next sign-in (ETS-SEC-019, ETS-SEC-020). Settings → minimum
+  password length now accepts 10–64.
+- **Backend:** recovery codes have 12 characters (about 59 bits, no modulo bias) and are stored as HMAC-SHA-256
+  with an HKDF key from `APP_SECRET`; older codes keep working, the profile page suggests generating new ones
+  (ETS-SEC-030).
+- **Backend:** audit trail retention is its own setting `logs.audit_retention_days`, at least 365 days (kept at the
+  previous period when longer); every purge is recorded with its actor (`system` / `cli:<OS user>`) and row counts;
+  a shorter retention is flagged (ETS-SEC-048).
+- **Backend:** a broken audit/auth hash chain stops the retention purge — nothing is deleted, `purge_skipped`
+  (alert) is recorded in the audit trail and system log, `npm run purge-logs` exits 2; an administrator continues
+  with `npm run purge-logs -- --acknowledge-broken-chain`, recorded as `purge_acknowledge` with who and which
+  tables (ETS-SEC-013, ETS-SEC-048, V5-O1).
+- **Backend:** `POST /users/bulk-2fa` no longer exempts the caller: a list naming the caller is refused with
+  `cannot_change_own_permissions`, `all: true` leaves the caller out; removing exemptions is unchanged. UI label
+  «Exempt everyone else from 2FA» (ar + en) (ETS-SEC-004, V2-N1).
+- **Backend:** an administrator cannot reset their own password with `POST /users/<self>/reset-password` (400
+  `use_change_password`, ar + en message; the button is hidden on their own account) — `/auth/change-password` asks
+  for the current password (V2-N5).
+- **Deployment:** `update.sh` re-deploys the systemd unit, nginx site/snippets, logrotate, backup/restore commands
+  and cron from `install.conf`, reads `PORT` from `ets.env`, and prints rollback instructions on failure
+  (ETS-SEC-068); it stops the service and migrates before starting the new version.
+- **Deployment:** `restore.sh` verifies checksum + decryption + archive before touching anything, takes a
+  pre-restore backup, restores with `--single-transaction --exit-on-error` (extensions left to the DBA) and
+  `--no-acl`, fails hard and restarts the service on error, passes the file name to SQL as a psql variable
+  (ETS-SEC-041); `ets-restore` records the restore in the audit trail (ETS-SEC-013).
+- **Deployment:** nightly backup logs to root-only `/var/log/ets-backup.log` (outside the ets-writable
+  `/var/log/ets`), with its own logrotate entry (ETS-SEC-043).
+- **Deployment:** `ets.env.bak-*` are root:root 600, only the 5 newest kept; `ets.env` written atomically; a warning
+  before nginx's default site is disabled (ETS-SEC-064).
+- **Docs:**
+  - 02, 06 (new §6a secrets and APP_SECRET rotation), 07, 08 (encrypted backups, key escrow, restore), 09, 10,
+    README, STRUCTURE for the deployment work;
+  - Administrator guide, Security and API reference for the authorisation rules; review notes for imports (weights,
+    full import) (ETS-SEC-057);
+  - 07 (who sees what, new events, masking, transactional audit, integrity §3, protection, migrations, restores,
+    remote DBA, undo, alerts, retention and personal data, §3/§5 purge), 08 §3 (restore of a protected database),
+    06 (authorisation, audit trail, recommendations), 10 (ETS-SEC-013, ETS-SEC-047, ETS-SEC-048, ETS-SEC-049,
+    ETS-SEC-050, ETS-SEC-051, ETS-SEC-052, ETS-SEC-074, ETS-SEC-075, ETS-SEC-077);
+  - client IP behind a load balancer / reverse proxy / NAT: nginx `real_ip` for the balancer's addresses only, in
+    `/etc/nginx/conf.d/ets-realip.conf` (survives updates), never `TRUST_PROXY=true`; the shared-IP effect on the
+    rate limits; in-memory API counters reset on restart (02 §9, 06, 10, 12, `.env.example`; a pointer comment in
+    `deploy/nginx/ets-https.conf.tpl`) (ETS-SEC-022);
+  - consistency pass of the handover pack, README, STRUCTURE, `.env.example` and `answers.example` with the 1.0.0
+    code: sign-in pause model (no "account locked" / 423), rate limits, cookie `__Host-ets_sid`, HTTPS only,
+    database TLS, encrypted backups and key escrow, nine roles and 13 permissions, scope fail-closed, `usr` for
+    administrators only, import two-person rule, security logs for administrators only, audit retention ≥ 365, hash
+    chain and `verify-audit`, audit-trail protection, new settings / env variables (`LOCKOUT_RESET_MINUTES`,
+    `API_RATE_LIMIT`, `ALLOW_INSECURE_COOKIES`, `APP_SECRET_OLD`, `PGSSL*`, `TRUST_PROXY`), new npm scripts,
+    `/api/health` without version, Node.js 22.12+ / 24+; example passwords removed (ETS-SEC-076);
+  - 05 Database Design describes migrations 007–009 and 012 (`last_failed_at`, recovery-code hash format, `usr`
+    cleanup, hash-chain columns, `log_chain_head` / `log_chain_anchor`, chain functions and triggers,
+    `ets_purge_log`, ownership by `ets_log_owner`, new retention setting); `deploy/db/schema-reference.sql`
+    regenerated after migration 012 (ETS-SEC-076);
+  - 09 Test plan: 90 automated tests; new UAT cases for the sign-in pause, password rules, rate limits, cookie,
+    health, 2FA step-up and recovery-code format, `usr` admin-only, self-grant, scope fail-closed, application
+    scope, last admin, admin-only logs, integrity check, audit retention, audit-trail protection, two-person import
+    rule, restore, update and key escrow (ETS-SEC-076);
+  - 10 Runbook: security operations (verify-audit, broken chain, ets-log-protect, purge, backup key, APP_SECRET
+    rotation, create-admin) and sign-in pauses / unlocking; 12 Checklist: backup key escrow, audit-trail
+    protection, user scopes, network path, and the NodeSource key fingerprint; 04 User guide (AR): https only,
+    sign-in pause message, password rules (10 / 12 characters), 2FA changes need password + code, recovery code
+    format `xxxx-xxxx-xxxx`, no-scope users, uploader cannot sign (ETS-SEC-076).
+- Version 1.0.0 in `package.json` and `package-lock.json` (backend, frontend).
+
+### Removed
+- **Deployment:** plain-HTTP installation mode — `ETS_TLS=none` refused, previous plain-HTTP answers fall back to
+  self-signed, `update.sh` refuses a plain-HTTP install with a clear message; `COOKIE_SECURE=true` always;
+  `ets-http.conf.tpl` deleted (ETS-SEC-011).
+- **Backend:** `423 account_locked` with the lock time — a paused account answers exactly like a wrong password or
+  an unknown username (`401 invalid_credentials`, same bcrypt cost) (ETS-SEC-014).
+
+### Fixed
+- **Backend:** a duplicate permission in `overrides` is a 400 `invalid_permission` instead of a 500 (V2-N4).
+- **Database:** migration 009 records the full override list before/after in its audit rows and does not repeat the
+  `scope_fail_closed` warning when re-run; already-migrated databases are unaffected (applied by file name) (V2-N6).
+- **Backend:** ids (int4), dates (real calendar days), log page/user/status filters, scope/override/id lists,
+  `PUT /tracker/weights` without a body and malformed tracker import payloads give 400 instead of 500 and no longer
+  fill the error log (ETS-SEC-029).
+- **Backend:** `/2fa/verify` answers `400 mfa_not_pending` instead of 500 when 2FA was reset meanwhile
+  (ETS-SEC-055).
+
+### Security
+- **Input handling (WP3):**
+  - request bodies limited to 100 kB and 32 levels of nesting before the session is known; only the file uploads
+    (`POST /api/imports`, `/api/imports/preview`, `/api/tracker/import`, `PUT /api/branding/:key`) accept up to
+    5 MB, parsed only after login, CSRF and permission checks; non-JSON bodies get `415`; imported files refused when
+    nested too deeply; nginx `client_max_body_size` 128k, 6m only on the upload routes (ETS-SEC-008);
+  - allow-lists (settings, report/function fields, log types, `set-setting.js`) and the frontend icon lookup use own
+    keys only, so `toString`, `constructor`, `__proto__` … are refused with 400 (ETS-SEC-028);
+  - CSV export neutralises formulas also after leading whitespace/invisible characters, for `|` and the full-width
+    `＝ ＋ － ＠`, and cells starting with tab/CR/LF (ETS-SEC-059);
+  - frontend API paths built with encoded segments, address-bar ids checked before calling the API, pages show
+    "not found" instead of crashing on an unexpected response (ETS-SEC-060);
+  - bidirectional control characters (U+202A–202E, U+2066–2069, U+200E/200F) removed from every text value of a
+    request body except passwords (ETS-SEC-061);
+  - `extract-catalog.js` only runs the catalog block of the reviewed reference file (pinned SHA-256,
+    `--trust-source` to override), in an empty `vm` context with a timeout (ETS-SEC-062);
+  - branding uploads stored without metadata (EXIF/GPS, XMP, comments, PNG text chunks, WebP EXIF/XMP) and without
+    bytes after the end of the image; broken images refused (ETS-SEC-070).
+- **Authorisation and data scope (WP2, WP4):**
+  - user management (`usr`) is for the System Administrator role only — a `usr` override on any other role is
+    ignored and refused (`usr_admin_only`); all `/api/users` routes need the admin role; nobody can widen their own
+    permissions, scope or 2FA exemption (`cannot_change_own_permissions`); only administrators create/promote
+    administrators, reset an administrator's password/2FA or bulk-exempt 2FA (ETS-SEC-004);
+  - scope fails closed — full scope comes from the role only (admin, PM, TM); a user of another role with no scope
+    rows sees no data anywhere (tracker, export, logs, approvals, imports, `/auth/me` `fullScope:false`)
+    (ETS-SEC-005);
+  - last-administrator protection counts permission overrides (an active admin holding `usr` and `cfg` must remain)
+    and locks the administrator rows, so concurrent demotions cannot remove every admin (ETS-SEC-023, race part of
+    ETS-SEC-021);
+  - `GET /api/tracker/export` returns only the applications in scope; the project schedule only for full-scope
+    users (ETS-SEC-006);
+  - application-level scope is no longer treated as department scope — edit-request visibility and approval,
+    import preview/upload, import lead/final approval and rejection (every changed application must be in scope)
+    and batch details (only in-scope changes and figures) (ETS-SEC-007); a reader who sees part of an import batch
+    gets change count, counts, apply result and department figures from the visible changes only and no project
+    figure; project-status pending counts include only requests / batches of applications in scope (ETS-SEC-007,
+    V2-N2, V2-N3);
+  - `PUT /api/tracker/schedule` needs a full-scope user (`can.sch` follows) (ETS-SEC-024);
+  - import two-person rule — the uploader may sign neither approval stage; the final approver also needs every
+    changed application in scope (ETS-SEC-025);
+  - a new import file supersedes only waiting batches nobody has signed yet (own, or entirely within the uploader's
+    scope) and never when it has no changes (ETS-SEC-026);
+  - approving an edit request or the second signature of an import re-checks that the author is still active, in
+    scope and holds the needed permissions (409 `requester_not_allowed`; *Approve all* leaves such requests pending
+    and reports `blocked_requests`); deactivating a user withdraws their pending edit requests (ETS-SEC-027);
+  - "note with a noted status" exception: only when the status really changes to it (or the function has no note),
+    so a user without `tst` cannot overwrite notes; the two-step overwrite (status away and back with a new note)
+    is refused and an approved request re-checks that the note is still empty; a note written through the exception
+    is stored only if the function still has no note when the row is updated (409 `note_changed`), so a tester's
+    note saved at the same moment cannot be overwritten (ETS-SEC-056, V6-N1);
+  - `GET /api/settings` needs full scope; the impact preview ignores functions of other applications
+    (ETS-SEC-058);
+  - Users screen — *Manage users* cannot be granted to non-administrator roles, own permissions / scope / 2FA
+    exemption cannot be widened, warning and «بلا نطاق» badge for users without scope, new error texts in Arabic and
+    English (ETS-SEC-004, ETS-SEC-005).
+- **Authentication (WP1):**
+  - a correct password no longer resets the failure counter while 2FA is pending; it is cleared only by a complete
+    sign-in, so wrong 2FA codes add up across logins (ETS-SEC-001);
+  - every endpoint that checks a password, 2FA code or recovery code (login, 2FA verify / setup / enable / disable,
+    recovery codes, change password) is limited per IP and per account (`429 too_many_attempts` with
+    `retry_after`); wrong answers on the profile re-authentication count towards the pause and, at the limit, end
+    the session; a general per-IP limit applies to every `/api` request (`API_RATE_LIMIT`, `429
+    too_many_requests`); concurrent checks on one account run one after another (ETS-SEC-003, ETS-SEC-021);
+  - nginx login limit covers all those endpoints, in any letter case and with a trailing slash, and answers 429
+    (ETS-SEC-003);
+  - completing 2FA issues a new session token and revokes the pre-2FA one; signing in again revokes the browser's
+    previous session (ETS-SEC-015);
+  - turning 2FA on from the profile needs the password; turning it off and generating new recovery codes need the
+    password and an authenticator / recovery code (ETS-SEC-016);
+  - `/auth/me` before 2FA returns only username, language and stage (ETS-SEC-017);
+  - sessions are revoked on admin 2FA reset, self-service 2FA disable (other sessions) and `create-admin` from the
+    command line (ETS-SEC-018);
+  - TOTP replay check is a conditional update and a recovery code can only be used once, also under parallel
+    requests (ETS-SEC-021);
+  - with `COOKIE_SECURE=true` the session cookie is named `__Host-ets_sid`; cookies are cleared with the same
+    options everywhere; a production server refuses to start with insecure cookies unless
+    `ALLOW_INSECURE_COOKIES=true` (ETS-SEC-053);
+  - the forced-password-change gate is an explicit middleware on the allowed endpoints instead of a URL prefix test
+    (ETS-SEC-054).
+- **Deployment hardening and supply chain (WP5, WP8):**
+  - backups encrypted with gpg (AES-256, tamper-evident) using a separate root-only key `/etc/ets/backup.key`
+    created by the installer/update, with a `.sha256` checksum, never overwritten, and no longer with `ets.env`
+    (APP_SECRET, DB password) copied next to them; an old `ets.env.backup` is deleted and old plain dumps are
+    encrypted at the next run; key escrow and restore documented in doc 08 (ETS-SEC-009);
+  - remote PostgreSQL always over TLS — `PGSSLMODE` / `PGSSLROOTCERT` (libpq semantics: require / verify-ca /
+    verify-full) in `config.js` + `db/pool.js` and for psql / pg_dump / pg_restore; default `require` for a
+    non-local host and the app refuses to start with an unencrypted remote connection; the installer asks for the DB
+    server's CA (→ verify-full) and checks the connection is encrypted (ETS-SEC-010);
+  - the DB TLS guard also reads `DATABASE_URL` — its host (`?host=`, empty host → PGHOST, sockets) and its
+    `sslmode` / `ssl` parameters (URL wins over PGSSLMODE; `ssl=true` = verify-full); a weaker mode to another
+    machine is refused at start, and the pool gets the checked `ssl` options instead of the URL's TLS parameters, so
+    an embedded `sslmode=disable` can no longer win (ETS-SEC-010, V4-N1);
+  - self-signed certificate is an end-entity certificate (`basicConstraints=critical,CA:FALSE`, keyUsage
+    digitalSignature/keyEncipherment, extendedKeyUsage serverAuth, SAN, RSA-3072, 825 days); an existing CA:TRUE
+    certificate is replaced by install/update; docs no longer say to import it as a trusted root (ETS-SEC-012);
+  - `APP_SECRET` placeholders (e.g. the old `.env.example` value), values under 32 characters or with fewer than 12
+    different characters are refused at start; `.env.example` ships empty secrets (ETS-SEC-031);
+  - 2FA secret envelope `v2:<key id>:iv:tag:ct` with an HKDF-SHA-256 key, 16-byte GCM tag enforced, optional AAD;
+    `v1` still read (ETS-SEC-032, ETS-SEC-063 except AAD binding by callers);
+  - the DB role password is never on a command line or in the server log: the installer sends a SCRAM-SHA-256
+    verifier (`deploy/db/scram-verifier.mjs`) on stdin; `create-database.sql` no longer takes a password (DBAs use
+    `\password`); psql gets `PGPASSWORD` only per call; `create-admin --password` warns that it is deprecated
+    (ETS-SEC-033, ETS-SEC-065);
+  - `answers.example` ships no usable passwords (admin `CHANGE-ME` is refused); example / common words refused for
+    DB and admin passwords; admin password 12+ characters, max 72 bytes; an admin password from an answers file /
+    environment variable gets `must_change_password` (`create-admin --must-change-password`) (ETS-SEC-034);
+  - nginx sends CSP (mirrors helmet), X-Frame-Options DENY, nosniff, Referrer-Policy, HSTS, Permissions-Policy,
+    COOP/CORP on the SPA and assets via `snippets/ets-headers.conf`, included in every location that has its own
+    `add_header` (fixes the add_header inheritance gap) (ETS-SEC-035);
+  - systemd sandboxing extended (CapabilityBoundingSet=, PrivateDevices, ProtectKernelLogs/Clock/Hostname,
+    ProtectProc=invisible, RestrictNamespaces/Realtime/AddressFamilies, SystemCallFilter=@system-service,
+    SystemCallArchitectures=native, UMask=0027, RemoveIPC, IPAddressAllow=localhost [+ remote DB IP] /
+    IPAddressDeny=any); offline `systemd-analyze security` exposure 7.4 → 1.4 (ETS-SEC-036);
+  - legacy-import temp copy in a `mktemp -d` directory, mode 640 root:ets, removed afterwards (ETS-SEC-037);
+  - `server_tokens off`; public `/api/health` no longer returns the version (ETS-SEC-038);
+  - TLS: Mozilla intermediate ECDHE+AEAD ciphers, `ssl_prefer_server_ciphers off`, session tickets off, shared
+    session cache 1 d (ETS-SEC-039);
+  - `REVOKE ALL ON DATABASE … FROM PUBLIC`, `GRANT CONNECT, TEMPORARY` to the app role, `REVOKE CREATE ON SCHEMA
+    public FROM PUBLIC` (create-database.sql and every local install run) (ETS-SEC-040);
+  - only runtime files are copied to `/opt/ets` (allow-list: backend src/scripts/package files, frontend sources for
+    the build, deploy runtime files — no docs, tests, reference data, examples); code root-owned, backend
+    `root:ets 750`, only `frontend/dist` world-readable (ETS-SEC-042);
+  - no `curl | bash`: NodeSource apt repo with a fingerprint-pinned signing key and `signed-by`; npm ci and the Vite
+    build run as the unprivileged `ets-build` user with `--ignore-scripts`, in a staging copy; answers files and
+    `install.conf` are parsed as KEY=value data, never sourced (nothing exported); PGPASSWORD scoped to individual
+    psql calls (ETS-SEC-044, ETS-SEC-067);
+  - Node.js `engines` `^22.12.0 || >=24` with `engine-strict`; the installer upgrades any other version,
+    `update.sh` refuses one (ETS-SEC-045);
+  - existing-certificate mode warns when the private key is readable by others (ETS-SEC-066);
+  - local PostgreSQL: warning when `listen_addresses` is not local-only or pg_hba has trust/password/md5 network
+    rules (ETS-SEC-069).
+- **Audit trail, logging and privacy (WP6):**
+  - `audit_log` and `auth_log` are append-only (triggers refuse UPDATE, DELETE, TRUNCATE except the retention purge
+    and the user_id → NULL of a deleted user) and hash-chained (`chain_seq`, `prev_hash`, `row_hash`, computed by
+    the database; existing rows chained in id order); `log_chain_head`, `log_chain_anchor`; purge only through
+    `ets_purge_log()` (oldest rows first, never younger than 365 / 30 days) (ETS-SEC-013, ETS-SEC-048);
+  - audit-trail protection (`deploy/db/harden-log-tables.sql`: log tables, chain functions and schema `public`
+    owned by the NOLOGIN role `ets_log_owner`; the application role may only read and append) applied automatically
+    on every install and update of a local database, as the PostgreSQL superuser, by `ets-log-protect`. Migrations
+    and restores run as the application role inside one superuser transaction in which the log objects are lent to
+    it and protected again before COMMIT, so later migrations that change the log tables and restores keep
+    working; `ets-restore` refuses (before changing anything) a protected database it
+    cannot restore. The script is idempotent, checks inside its transaction that the application role can no longer
+    change the logs, grants SELECT on the log sequences (needed by `ets-backup`), and is a no-op before migration
+    012 (ETS-SEC-013);
+  - audit rows are strict (a failed write fails the request); unlock, bulk 2FA exemption, branding, language,
+    password change, 2FA setup/enable/disable, recovery codes, session revocation, admin resets and the 2FA policy
+    change write their audit / auth_log rows in the same transaction; tracker and log exports are refused without
+    their audit row; a sign-in creates no session without its `login` row; soft writes (failed sign-ins, denials,
+    logout, reads) are counted and reported with `alert:true` (ETS-SEC-049);
+  - new events `password_change_rejected`, `mfa_verify_while_locked`, `reauth_while_locked`, `session_expired`,
+    `session_revoked_reuse`, `csrf_rejected`, `password_change_required`, `admin_created_cli`, `mfa_reset_cli`;
+    audit rows for viewing a user record / security log, CLI `set-setting` and `create-admin` (as `cli:<OS user>`),
+    session revocation (ETS-SEC-050);
+  - an unknown username (and the name sent with a rate-limited request) is stored masked (`?x***#<HMAC>`), never as
+    typed — DB, files, journal, export (ETS-SEC-051);
+  - changes applied on approval carry the requester's own IP; the approver's IP is in `context.approver_ip`
+    (ETS-SEC-052);
+  - security logs (auth, access, error, system), log statistics and IPs / user agents for administrators only;
+    others with `log` get the audit trail with IPs removed server-side, also in CSV; Logs shows the security tabs
+    and statistics to administrators only (ETS-SEC-047);
+  - only the first rate-limited sign-in of a window (then every 10^n) is written to auth_log; anonymous 404 / 429
+    are not stored in access_log; user agent and paths capped at 300 characters (ETS-SEC-077);
+  - high-value events are written with `alert:true` for forwarding / SIEM rules (ETS-SEC-075).
+
+### Upgrade notes
+- **Migrations** (applied by `update.sh`):
+  - `008_auth_lockout.sql` — `users.last_failed_at` (time of the last failed check, for the lockout decay); comment
+    on the recovery-code hash formats; no data changed;
+  - `009_usr_admin_only.sql` — removes `usr` overrides held by non-administrators (each removal recorded in the
+    audit trail) and lists in the system log (`scope_fail_closed`, warning) the active users of a scoped role
+    without any scope (ETS-SEC-004, ETS-SEC-005);
+  - `012_audit_integrity.sql` — append-only, hash-chained `audit_log` / `auth_log`, new setting
+    `logs.audit_retention_days` (ETS-SEC-013, ETS-SEC-048).
+- **Scope fails closed:** users of a scoped role with no scope saw everything before 1.0.0 and now see nothing until
+  a department/application is ticked for them in *Users* (shown as «بلا نطاق / No scope»); nothing is granted
+  automatically — see 03-Administrator-Guide §1 and the system-log event `scope_fail_closed`.
+- **Everyone signs in again once** after the upgrade (new cookie name `__Host-ets_sid`).
+- **Backups** are now `.dump.gpg`; the new key `/etc/ets/backup.key` must be escrowed (the update prints a
+  reminder). PM / TM / managers no longer see the security logs. Check `sudo ets-log-protect status` → protected.
+- **HTTPS only:** `update.sh` refuses an installation still configured for plain HTTP (run `deploy/install.sh` once
+  and choose a certificate) and a Node.js older than 22.12; it adds `PGSSLMODE=require` to an existing remote
+  install (ETS-SEC-010).
+- **Remote database:** migrations run as the application role (all-or-nothing, clear DBA instructions on failure);
+  the DBA applies the audit-trail protection with `ETS_SU_CONNINFO=… ets-log-protect apply` or psql;
+  `deploy/db/harden-log-tables.sql` can also be run once by the DBA to give the log tables to a separate owner role
+  (ETS-SEC-013).
+- **Before the first install:** verify the NodeSource key fingerprint against NodeSource's published key (12
+  Checklist).
+
+---
+
+## [0.9.0] — 2026-10-15 — Readable audit trail: clear sentences with previous and new values
+
+### Added
+- **Backend:** an approved edit request or import writes one `update` audit row per function / report / application
+  weight with its old and new values, in the name of the employee who entered it, with the approvers in `context`
+  (before, only "N applied" was recorded and the item history did not show the change).
+- **Backend:** edit request, approval, rejection, withdrawal and every import step record their items (code, name,
+  field, old → new, applied); a bulk set records each changed function's previous value.
+- **Backend:** `GET /api/logs/audit` returns the person's full name, function code / name and application name;
+  search also matches them. Department-scoped users also see the edit requests of their applications.
+- **Frontend:** Logs → audit trail shows each row as a plain sentence (Arabic / English), e.g. «تعديل نسبة الإنجاز
+  للوظيفة «D0 …» في تطبيق المبيعات: من 70% إلى 75%», with action type, the approver and request number, and reasons;
+  the details window has a field / previous value / new value table and the list of items affected. Statuses,
+  percentages and settings are shown by name.
+- **Tests:** default language applies to `public-info` and to a new user created without a language.
+
+### Changed
+- **Frontend, Backend:** Settings → default language now takes effect: it is the language of the login screen and
+  interface for a browser with no stored choice (from `GET /api/auth/public-info`; the language button, profile and
+  the account's language after sign-in still win), and of new users created without a language
+  (`POST /api/users`, the new-user form's «default language» option, and `npm run create-admin` for a new account).
+
+### Removed
+- **Backend (dead code):** unused imports (`query` in settings routes, `HttpError` in users routes), unread
+  `config.isProd` / `config.appName`, the identity `publicUser` mapper, a redundant `'weight'` in the import field
+  allow-list, and `export` on symbols used only in their own module.
+- **Frontend (dead code):** unused `NOTIF_COLORS` / `REVIEW_COLORS`, `chart` / `key` icons, unused props
+  (`ProgressBar` `color`, `Icon` `stroke`, `PasswordForm` `onDone`), unused parameters in `paceFrom` and the audit
+  `diff`, unread `scheduleModel` fields, 23 unused translation keys, and duplicate / unused CSS rules (`.text-green`
+  / `.text-red` → `.green-text` / `.red-text`, `.indicator-pill.yellow`, `--green`).
+
+### Fixed
+- **Backend:** changes applied from an approved edit request were logged without a username.
+- **Backend:** saving weights no longer logs an unchanged application weight.
+- **Frontend:** a pending removal / restore of a function no longer shows «removed [object Object]» in the
+  function's "awaiting approval" chip; those requests are listed only in the lifecycle box above the table.
+- **Frontend:** 21 API error codes had no message and showed the generic error (`csrf_rejected`,
+  `not_authenticated`, `mfa_*`, `full_name_required`, `invalid_email` / `_language` / `_permission` / `_role` /
+  `_scope` / `_date` / `_json`, `unknown_setting` / `_field` / `_application` / `_log`, `no_reports_track`,
+  `payload_too_large`); Arabic and English texts added.
+- **Frontend:** the dialog close button's accessible name is translated (was the English word "close").
+- **Docs:** `deploy/db/schema-reference.sql` regenerated after migrations 001–007 (adds `audit_log.context`).
+
+### Security
+- **Backend:** the dummy hash checked for unknown usernames at login used bcrypt cost 4 while real hashes use
+  `BCRYPT_ROUNDS` (12), so unknown usernames answered faster (username enumeration). It now uses the configured
+  cost, built once at startup.
+
+### Upgrade notes
+- **Migration `007_audit_context.sql`:** `audit_log.context` (jsonb) — how a change came in (direct, edit request,
+  import), who requested and who approved it, and the items involved with their before → after values.
+
+---
+
+## [0.8.1] — 2026-10-14 — Functions catalog document
+
+### Added
+- **Docs:** `docs/handover/13-Functions-Catalog.xlsx` — all 513 catalog functions by module (department) and
+  application (code, name, source, reference, declared vendor status, counted by default) with a summary sheet
+  (formulas). Review: the catalog re-extracted from `reference/erp-tracker-original.html` is identical to
+  `catalog.json`; no duplicate codes, no empty names, every function linked to a valid application.
+
+---
+
+## [0.8.0] — 2026-10-14 — Add, remove and restore functions in any application
+
+### Added
+- **Backend:** `POST /api/tracker/applications/:id/functions` (name AR/EN, reference, weight, progress, included or
+  not), `POST /api/tracker/functions/:id/remove` (reason required, any source incl. scope functions),
+  `POST /api/tracker/functions/:id/restore`, and `POST /api/tracker/applications/:id/impact` (application,
+  department and project % before → after for a proposed addition / removal / include / exclude).
+- **Backend:** additions, removals and restores by data-entry users wait for the department team lead (same rule as
+  their other edits); approval creates / removes / restores with the requester as author.
+- **Frontend:** «إضافة وظيفة» dialog with live impact; «إزالة» on every function with reason and impact; include /
+  exclude (✓) now asks for confirmation with the impact; «عرض المُزالة» lists removed functions with who / when /
+  why and «استعادة»; pending additions / removals shown on the application; the approvals page shows them.
+- **Tests:** add (included / excluded), impact preview, member request → lead approval, remove a scope function
+  (reason, exclusion from counts, PATCH refused, seed / export / import do not bring it back), restore, code
+  numbering, scope.
+
+### Changed
+- **Backend:** team members get permission `tog` (include / exclude, add, remove) — all of it through the team
+  lead's approval.
+- **Backend:** removal is now a soft removal for every function (the old hard delete of added requirements is
+  replaced). Removed functions are excluded from calculations, summaries, project status, snapshots, search, the
+  JSON export, full imports and team result files.
+
+### Fixed
+- **Backend:** a new added function could get the code of an earlier one after a deletion (codes were `C` + count →
+  unique-key error); codes are now `C` + (highest + 1) and never reused.
+- **Backend:** adding / deleting requirements bypassed the team lead's approval for data-entry users.
+- **Docs:** `pg_dump` restrict markers removed from `deploy/db/schema-reference.sql` (from git, `dcccd0a`).
+
+### Upgrade notes
+- **Migration `006_function_lifecycle.sql`:** `functions.removed_at / removed_by / removed_reason / created_at /
+  created_by`; edit request kinds `add_function`, `remove_function`, `restore_function`.
+
+---
+
+## [0.7.0] — 2026-10-13 — Project timeline and project status page
+
+### Added
+- **Backend:** `PUT /api/tracker/timeline` (permission `cfg`, full scope) — project start and close date. With a
+  close date the number of curve periods is derived from start → close (the last period ends on the close date);
+  close before start, a missing start or more than 60 periods are refused. The curve page keeps the dates and
+  period count from Settings.
+- **Backend:** hourly progress snapshot (`services/snapshots.js`), latest value of the day kept.
+- **Backend:** `GET /api/tracker/project-status` — schedule, total and department progress, function states, test /
+  notification / review / reports counts, pending approvals and the daily trend, for the user's scope (a scoped
+  user's trend is the weighted average of their departments).
+- **Frontend:** Settings → «الجدول الزمني للمشروع» card (start, close date, duration and derived periods).
+- **Frontend:** new page «حالة المشروع» (sidebar → Tracking), calculations in `lib/health.js`:
+  - status badge (on track / at risk / delayed / past close date / completed), time elapsed vs work done,
+    planned-to-date, deviation, **schedule delay in days** (earned schedule), SPI and SPI(t);
+  - current and required pace per month, **forecast close date** and its variance, forecast by SPI(t), days
+    remaining, S-curve with the daily trend, departments vs plan (gap and 30-day change), quality & readiness;
+  - automatic recommendations (delay, forecast, required pace, stalled progress, lagging departments, functions not
+    started, failed / untested functions, notifications, reviews, open notes, pending approvals).
+- **Frontend:** the dashboard curve card shows the project status and its headline, forecast and close date.
+- **Tests:** timeline validation, derived periods (months and fortnights), schedule screen cannot move the dates,
+  permissions, snapshot and project-status payload, scoped user.
+
+### Changed
+- **Docs:** `deploy/db/schema-reference.sql` regenerated with all migrations (001–005); handover docs updated
+  (administrator guide, user guide, database design, API reference, test plan C-13d…f).
+
+### Fixed
+- **Backend:** PostgreSQL `date` values are now returned as stored (`YYYY-MM-DD`); before, on a server east of UTC
+  the schedule start date could come back one day earlier.
+- **Frontend:** two-column and card grids no longer overflow on phones.
+
+### Upgrade notes
+- **Migration `005_project_timeline.sql`:** `schedule.end_date` (planned close date) and table `progress_snapshots`
+  (one row per day: project %, functions, completed, tested, notes, % per department).
+
+---
+
+## [0.6.1] — 2026-10-13 — S-curve verified, redesigned and added to the dashboard
+
+### Added
+- **Frontend:** the dashboard shows a «منحنى الإنجاز التراكمي» card (4 KPIs + chart) with a link to the curve page.
+
+### Changed
+- **Frontend:** new shared component `components/SCurve.jsx` (model + chart + KPI cards) used by the schedule page
+  and the dashboard. Redesign: planned = dashed orange line, actual = solid blue line with a light area, period
+  markers, a «today» line with planned-now and actual-now points and the current value labelled, legend above the
+  chart, date labels on the time axis, crosshair + tooltip on hover (planned, actual, deviation per period), solid
+  hairline gridlines, drawn at the container's real width so text stays readable on phones. Colour pair
+  (#2a78d6 / #eb6834) validated for colour-blind separation and contrast.
+
+### Fixed
+- **Frontend:** the curve did not start at the origin (0 % at the start date); it now does for both planned and
+  actual.
+- **Frontend:** the current computed progress was not plotted; it now appears as the «اليوم / Today» point at the
+  exact position of today's date between periods.
+- **Frontend:** deviation and SPI compared the plan with the last manually recorded actual value (and showed «—»
+  when none was recorded). They now compare the current computed progress with the plan interpolated at today's
+  date: deviation = actual − planned (percentage points), SPI = actual ÷ planned.
+- **Frontend:** month periods overflowed on short months (31 Jan + 1 month gave 3 Mar); the day is now clamped to
+  the month's length.
+- **Frontend:** on phones the top bar (large logo + search) was wider than the screen and the page could be shifted
+  sideways; the logo and search now shrink and horizontal overflow is hidden.
+
+---
+
+## [0.6.0] — 2026-10-13 — Data-entry edits approved by the department team lead
+
+### Added
+- **Backend:** when a user who is not an approver of the department (team member, editor, tester…) changes a
+  function, runs a bulk set or edits a report, the change is stored as an edit request (HTTP 202 `pending`) and the
+  approved value stays unchanged.
+  - Only a team lead of that department (`apv_dept`, scope covering it) can approve or reject — the project /
+    technical manager is not required at this stage. Team leads, project / technical managers and system
+    administrators apply their own edits directly.
+  - Editing the same value again replaces the earlier pending value. On approval the change is applied with the
+    requester as author; a value changed meanwhile by someone else is skipped.
+  - Every step is audited (`edit_request`, `edit_approve`, `edit_reject`, `edit_withdraw`).
+- **Backend:** `/api/approvals` — list (approvers: their departments; everyone: own requests), pending count,
+  approve, reject (reason required), withdraw (requester), approve all.
+- **Frontend:** «اعتماد التعديلات» page with before/after values per request, approve / reject / withdraw / approve
+  all; red badge in the sidebar and a dashboard notice for the team lead; on the application and reports pages a
+  «بانتظار الاعتماد» chip shows the proposed value and a notice tells data-entry users their edits go for approval;
+  Settings → «الاعتمادات» switch to turn the rule on/off.
+- **Tests:** API test of the whole cycle (27 tests).
+
+### Upgrade notes
+- **Migration `004_edit_requests.sql`:** tables `edit_requests`, `edit_request_items`; setting
+  `approval.edits_need_lead` (default on).
+
+---
+
+## [0.5.2] — 2026-10-13 — Logo inside the login box
+
+### Changed
+- **Frontend:** the logo and system name now sit at the top of the sign-in box, above «تسجيل الدخول» and the
+  username/password fields, separated by a thin line (also on the 2FA and password-change screens). The logo size
+  slider for the login screen still applies.
+
+---
+
+## [0.5.1] — 2026-10-13 — Adjustable logo size
+
+### Added
+- **Frontend, Backend:** Settings → «الهوية البصرية» — two sliders: logo height in the top bar (20–80 px, default 28)
+  and on the login screen (40–200 px, default 64). The change is shown live while dragging and saved when released
+  (settings `app.logo_height`, `app.login_logo_height`). The top bar grows with the logo.
+
+### Fixed
+- **Frontend:** the logo was forced into a square, so wide logos looked tiny — it now keeps its proportions (height
+  set, width automatic).
+- **Frontend:** the main Save button of the Settings page no longer overwrites the logo sizes set by the sliders.
+
+---
+
+## [0.5.0] — 2026-10-13 — Branding: system logo, favicon, login background
+
+### Added
+- **Backend:** `/api/branding/:key` (`logo`, `favicon`, `login_bg`) — public GET with caching; upload (PUT, data
+  URL) and reset (DELETE) need the `cfg` permission. Only PNG, JPEG, WebP and ICO are accepted, recognised by their
+  content; SVG is refused (it can carry scripts). Limits: logo 1 MB, favicon 512 KB, background 3 MB. Uploads and
+  resets are audited. `public-info` and `me` return the branding versions.
+- **Frontend:** Settings → «الهوية البصرية» with preview, upload and "restore default" for each image. The logo
+  replaces the icon in the top bar and on the login screen; the favicon (or the logo if no favicon) is the browser
+  tab icon; the login screen shows the background picture with a dark overlay so the form stays readable.
+- **Tests:** branding API test (26 tests).
+
+### Fixed
+- **Frontend:** error messages with values (e.g. maximum size) now show the value.
+
+### Upgrade notes
+- **Migration `003_branding.sql`:** table `branding_assets` (images stored in the database, so they are included in
+  backups and survive updates).
+
+---
+
+## [0.4.0] — 2026-10-13 — Team result files: per-department import with two approvals; project roles
+
+### Added
+- **Backend:** `/api/imports` — a team's JSON (or HTML) file from the original tracker is read and the uploader
+  **must choose** what to import: one department (its functions and application weights) or **التقارير** (the
+  reports of the departments in the uploader's scope). Everything else in the file is ignored.
+  - The differences with the approved data are stored as a pending batch with their effect on the department and
+    project percentages; nothing changes until the batch is approved by the department team lead **and** the
+    project or technical manager — two different people, any order.
+  - Then the changes are applied in one transaction (a value changed meanwhile is skipped and reported). Either
+    approver can reject with a reason. A newer file for the same choice replaces the batch still waiting. Every
+    step is audited.
+- **Backend:** roles `pm` (مدير المشروع), `tm` (المدير الفني للمشروع), `lead` (رئيس فريق إدارة), `member` (عضو فريق);
+  permissions `apv_dept` (team lead approval) and `apv_final` (project / technical manager approval).
+- **Frontend:** «الاستيراد والاعتماد» page (list, import window with the mandatory department/reports choice showing
+  the number of changes and the effect of each option, batch page with before/after values per function, impact,
+  signatures, approve/reject); red badge in the sidebar with batches awaiting the user's signature; notice on the
+  dashboard while batches are pending.
+- **Tests:** API test of the full cycle (25 tests).
+
+### Changed
+- **Backend:** the full import without approval (Settings → Data) now also requires the `cfg` permission and is
+  labelled "initial migration only".
+
+### Upgrade notes
+- **Migration `002_import_approvals.sql`:** tables `import_batches` and `import_changes`; the new roles and
+  permissions above.
+
+---
+
+## [0.3.0] — 2026-10-13 — Mandatory note for "with notes" statuses
+
+### Added
+- **Backend:** choosing a "with notes" status — test status *Passed with note* (1), notifications *Working with
+  notes* (2), review *Present with notes* (3) — requires a non-empty note. The API refuses with `note_required`
+  when the status would be saved without a note, when the note is cleared while such a status is set, and for a
+  bulk *Passed with note* while some enabled items have no note. A user allowed to set such a status may write its
+  note in the same request.
+- **Frontend:** selecting one of these statuses on an item without a note opens the note window first ("Note
+  required", with the reason); Save stays disabled until a note is typed; Cancel keeps the previous status; "Clear"
+  is disabled while the note is required; items with such a status but no note (older data) show a red note icon.
+- **Tests:** API test for the rule (24 tests).
+
+### Changed
+- **Backend:** the login/2FA rate limit is configurable (`LOGIN_RATE_LIMIT`, default 30 per 15 min per IP).
+
+---
+
+## [0.2.2] — 2026-10-13 — Fix blank page after creating a user
+
+### Added
+- **Frontend:** error boundary — if a screen fails to render, a message with "reload" and "dashboard" buttons is
+  shown instead of a blank page; it clears when you navigate elsewhere.
+
+### Fixed
+- **Frontend:** after saving a new user the page `/users/<id>` went blank (`Cannot read properties of null (reading
+  'full_name')`): the form briefly treated the empty "new user" data as the saved user. The form is now re-created
+  for each user id. The user was always saved correctly; only the screen failed.
+
+---
+
+## [0.2.1] — 2026-10-13 — Reports in the department menus
+
+### Added
+- **Frontend:** new page `/reports/:dept` showing one department's reports, with a breadcrumb to the department.
+
+### Changed
+- **Frontend:** sidebar — «التقارير» moved from «المتابعة» to the top of «الإدارات». Each department now has an
+  expandable sub-list whose first item is that department's reports, followed by its applications. The department
+  of the current page opens automatically.
+
+### Fixed
+- **Frontend:** "%15" shown instead of "15%" in the reports share card in Arabic.
+
+---
+
+## [0.2.0] — 2026-10-12 — Installation wizard
+
+### Added
+- **Deployment:** `deploy/install.sh` rewritten as an interactive wizard. It asks for the domain or IP address
+  (auto-detected), the certificate type (self-signed / Let's Encrypt / own files / plain HTTP), the HTTPS port, the
+  HTTP redirect port, the internal application port, the database location (local or remote) with host, port, name,
+  user and password (or a generated one), the administrator username, name, e-mail and password, the 2FA policy,
+  the system names, the time zone, the backup retention, an optional data import and the firewall. Every answer is
+  validated; passwords are typed twice and never echoed. A summary must be confirmed before anything changes.
+- **Deployment:** `--dry-run` (writes the would-be config files to `./ets-dry-run/` with secrets masked),
+  `--answers FILE` and `--yes` for unattended installs; template `deploy/answers.example`.
+- **Deployment:** re-running the wizard keeps the data and `APP_SECRET`, offers the previous answers
+  (`/etc/ets/install.conf`) as defaults, backs up `ets.env`, and resets the admin password.
+- **Deployment:** nginx split into templates (`deploy/nginx/*.tpl`) for any HTTPS/HTTP/internal port; HTTP redirect
+  server with a Let's Encrypt webroot for automatic renewal; plain-HTTP mode.
+- **Deployment:** local PostgreSQL on a custom port (cluster port changed with `pg_conftool`); remote PostgreSQL
+  with connection and `citext` checks.
+- **Deployment:** the firewall opens the real SSH port (read from `sshd -T`) plus only the chosen web ports; time
+  zone and NTP set; first backup taken; health checks of the service and the web server.
+- **Backend:** `scripts/set-setting.js` to change a validated setting from the command line; `create-admin.js
+  --email`, password from `ETS_ADMIN_PASSWORD` (never on the command line).
+
+### Changed
+- **Database:** `deploy/db/create-database.sql` takes the database name, user and password as variables
+  (`-v db_name= -v db_user= -v db_password=`).
+- **Deployment:** `ets-backup` / `ets-restore` read the DB connection from `/etc/ets/ets.env`, so they work with any
+  DB name, user, port or remote server.
+- **Docs:** Installation Guide rewritten for the wizard (all questions, what to prepare, remote DB, re-running,
+  troubleshooting).
+
+### Fixed
+- **Deployment:** installation stopped at step 8 with `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a
+  string` — `/etc/ets` was `root:root 750`, so the `ets` user could not read `ets.env` and connected with an empty
+  password. The folder is now `root:ets 750`, and the installer checks the file is readable. The app now stops with
+  a clear message when its configuration file cannot be read (`ETS_ENV_FILE=none` skips it in tests).
+- **Deployment:** nginx refused `http2 on;` on Ubuntu's nginx 1.18/1.24 — now `listen … ssl http2`.
+- **Deployment:** nginx failed to start on servers with IPv6 disabled — `[::]` listeners are dropped there.
+- **Backend:** in plain-HTTP mode the API's security headers asked browsers to upgrade to HTTPS
+  (`upgrade-insecure-requests`) — now only sent with HTTPS; HSTS is sent once, by nginx.
+
+---
+
+## [0.1.0] — 2026-10-12 — First version (backend + frontend + PostgreSQL)
+
+Initial development: the repository was created on 2026-10-12 (`cfa5836`, README only) and the whole first version
+was built in one commit (`8119253`).
+
+### Added
+- **Database:** migration `001_init.sql` — users, roles, per-user permission overrides and scopes, sessions, 2FA
+  recovery codes, settings, departments, applications, functions, reports track, schedule, and five log tables
+  (`auth_log`, `audit_log`, `access_log`, `error_log`, `system_log`).
+- **Database:** catalog extracted from `reference/erp-tracker-original.html` by `tools/extract-catalog.js`:
+  4 departments, 30 applications, 513 functions (232 design, 125 vendor-list, 156 experience). Function codes
+  (`D0…`, `X0…`) are identical to the original page so its saved data imports without remapping.
+- **Backend:** Express 5 REST API — auth, tracker (summary, departments, applications, functions, bulk edit, custom
+  requirements, weights, reports, schedule, search, export/import), users, settings, logs, system info.
+- **Backend:** progress calculation ported from the original page (notification blending, reports share,
+  fixed/auto weights, department and project roll-up), with unit tests.
+- **Backend:** import of the original page's data (standalone HTML with `window.__SAVED`, or its JSON export) from
+  the UI (Settings → Data) or CLI (`npm run import-legacy`); export in the same format.
+- **Backend:** five roles (admin, department manager, application editor, tester, observer), 11 permission keys,
+  per-user grant/revoke overrides, department/application data scope; last-admin protection.
+- **Backend:** logging of every event to the database and to JSON-lines files (`app.log`, `error.log`,
+  `access.log`); log viewer API with filters, paging and CSV export; daily retention purge.
+- **Frontend:** React UI in the ERPNext visual style — top navbar with search, workspace sidebar, number cards,
+  indicator pills, list views and forms; Arabic (RTL) and English (LTR) with per-user language; Cairo font bundled
+  locally; responsive down to phone width.
+- **Frontend:** screens — login, 2FA verify (code or recovery code), 2FA enrolment, forced password change,
+  dashboard, department, application (inline editing of progress, weight, test/notification/review status, notes,
+  enable/disable, bulk set, add requirement), weights, reports, S-curve & schedule, search, users & permissions,
+  logs, settings, my account.
+- **Deployment:** `deploy/install.sh` for Ubuntu 22.04/24.04 (Node 22, PostgreSQL, nginx + HTTPS
+  self-signed/certbot/existing, systemd hardened unit, logrotate, daily `pg_dump` backups, ufw), `ets-backup`,
+  `ets-restore`, `update.sh`, `create-database.sql`, `schema-reference.sql`.
+- **Docs:** README, STRUCTURE, the change history (now this CHANGELOG) and the customer handover pack in
+  `docs/handover/`.
+- **Tests:** 23 automated tests — TOTP against RFC 6238/4226 vectors, calculation rules, and API integration tests
+  (login, lockout, CSRF, 2FA modes, permissions, scope, audit, users, settings, import, logs).
+
+### Fixed
+- Fixed during development, before release:
+  - **Backend:** the file logger crashed on early process exit (`sonic boom is not ready`) — file log streams are
+    now synchronous.
+  - **Frontend:** percentages showed as `%49.2` inside Arabic text — numbers are now bidi-isolated (LTR).
+  - **Frontend:** the application function table overflowed horizontally at 1360 px — status selects narrowed.
+  - **Backend:** the users list returned role ids only — now includes role names in both languages.
+
+### Security
+- **Backend:** login with username/password (bcrypt), account lockout after N failures, generic error messages,
+  equal timing for unknown users, rate limiting on login and 2FA.
+- **Backend:** two-factor authentication (TOTP, RFC 6238), compatible with Google/Microsoft Authenticator; QR
+  enrolment; 10 one-time recovery codes; replay protection; secrets encrypted with AES-256-GCM.
+- **Backend:** 2FA policy `off` / `optional` / `required`; per-user exemption; bulk exempt / un-exempt (all users or
+  selected); admin reset of a user's authenticator.
+- **Backend:** server-side sessions in PostgreSQL (httpOnly, SameSite=strict cookie, absolute and idle timeout,
+  revocation), CSRF header check, helmet security headers and CSP, forced password change.
+
+---
+
+<!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
+     (v1.7.0 …), replace the hashes with the tags. -->
+[Unreleased]: https://github.com/mscit-admin/ets/compare/4d4a7f0...HEAD
+[1.8.0]: https://github.com/mscit-admin/ets/compare/f7544d0...4d4a7f0
+[1.7.0]: https://github.com/mscit-admin/ets/compare/abd37eb...f7544d0
+[1.6.0]: https://github.com/mscit-admin/ets/compare/4e2c8c6...abd37eb
+[1.5.1]: https://github.com/mscit-admin/ets/compare/9085ef2...4e2c8c6
+[1.5.0]: https://github.com/mscit-admin/ets/compare/c2c6c45...9085ef2
+[1.4.0]: https://github.com/mscit-admin/ets/compare/0d5f4eb...c2c6c45
+[1.3.0]: https://github.com/mscit-admin/ets/compare/8a64cba...0d5f4eb
+[1.2.0]: https://github.com/mscit-admin/ets/compare/d91578f...8a64cba
+[1.1.1]: https://github.com/mscit-admin/ets/compare/50f1ec9...d91578f
+[1.1.0]: https://github.com/mscit-admin/ets/compare/c9ba0d7...50f1ec9
+[1.0.0]: https://github.com/mscit-admin/ets/compare/a984702...c9ba0d7
+[0.9.0]: https://github.com/mscit-admin/ets/compare/59ed8ac...a984702
+[0.8.1]: https://github.com/mscit-admin/ets/compare/6fed0bb...59ed8ac
+[0.8.0]: https://github.com/mscit-admin/ets/compare/9cbf0ea...6fed0bb
+[0.7.0]: https://github.com/mscit-admin/ets/compare/045df85...9cbf0ea
+[0.6.1]: https://github.com/mscit-admin/ets/compare/a21bd07...045df85
+[0.6.0]: https://github.com/mscit-admin/ets/compare/7265b93...a21bd07
+[0.5.2]: https://github.com/mscit-admin/ets/compare/f4123c0...7265b93
+[0.5.1]: https://github.com/mscit-admin/ets/compare/a51dc61...f4123c0
+[0.5.0]: https://github.com/mscit-admin/ets/compare/51be99a...a51dc61
+[0.4.0]: https://github.com/mscit-admin/ets/compare/7557934...51be99a
+[0.3.0]: https://github.com/mscit-admin/ets/compare/a8cec3d...7557934
+[0.2.2]: https://github.com/mscit-admin/ets/compare/7fdb5c6...a8cec3d
+[0.2.1]: https://github.com/mscit-admin/ets/compare/b1bd3b5...7fdb5c6
+[0.2.0]: https://github.com/mscit-admin/ets/compare/8119253...b1bd3b5
+[0.1.0]: https://github.com/mscit-admin/ets/compare/cfa5836...8119253

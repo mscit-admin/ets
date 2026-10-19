@@ -1,7 +1,7 @@
 # 12 — Handover Checklist & Acceptance · قائمة التسليم ومحضر الاستلام
 
 **Project:** ETS — ERP Tracking System (مركز متابعة إنجاز ERP)
-**Version delivered:** ________ (see `HISTORY.md`) **Commit / tag:** ________
+**Version delivered:** ________ (see `CHANGELOG.md`) **Commit / tag:** ________
 **Server:** ________________ **URL:** https://________________
 
 ## 1. Deliverables

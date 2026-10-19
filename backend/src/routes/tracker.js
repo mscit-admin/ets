@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
 import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept } from '../middleware/auth.js';
-import { summarize, sCurve } from '../services/calc.js';
+import { summarize, sCurve, CALC_FUNCTIONS_SQL, ITEM_TYPES, itemCounts, reportsOverview } from '../services/calc.js';
 import { allSettings, invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
@@ -24,8 +24,7 @@ async function loadVisible(user) {
   const [d, a, f, rep, settings] = await Promise.all([
     query('SELECT * FROM departments ORDER BY sort'),
     query('SELECT * FROM applications ORDER BY sort'),
-    query(`SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status,
-             (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`),
+    query(CALC_FUNCTIONS_SQL),
     query('SELECT * FROM app_reports'),
     allSettings(),
   ]);
@@ -59,15 +58,17 @@ const calcSettings = s => ({ weight_mode: s['calc.weight_mode'], notif_share: s[
 // (routes/export.js) use the same ones, so an export never shows more than the screen (export policy).
 export async function summaryData(user) {
   const v = await loadVisible(user);
-  const notes = v.functions.filter(f => f.enabled && f.has_note).length;
+  const n = itemCounts(v.functions);
   return {
     total: v.calc.total,
     departments: v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) })),
     applications: v.apps.map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
+    // functions / done: function items only; report_items: the items marked as reports (1.8.0); notes: every item
     counts: {
-      functions: v.functions.filter(f => f.enabled).length,
-      done: v.functions.filter(f => f.enabled && +f.progress >= 100).length,
-      notes,
+      functions: n.functions,
+      done: n.done,
+      report_items: n.report_items,
+      notes: n.notes,
       experienceOff: v.functions.filter(f => !f.enabled && f.source === 'experience').length,
     },
     settings: calcSettings(v.settings),
@@ -121,11 +122,13 @@ r.get('/applications/:id', async (req, res) => res.json(await applicationData(re
 const FIELD_PERM = {
   progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog',
   test_status: 'tst', review_status: 'tst', note: 'tst', name_en: 'tog',
+  item_type: 'tog',          // function / report (1.8.0): whoever adds and removes items sets their type
 };
 const FIELD_OK = {
   progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
   test_status: v => intIn(v, 0, 3), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 3),
   note: v => typeof v === 'string' && v.length <= 2000, name_en: v => typeof v === 'string' && v.length <= 500,
+  item_type: v => ITEM_TYPES.includes(v),
 };
 
 // Statuses that mean "… with notes": choosing one makes the note mandatory.
@@ -209,6 +212,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const { field, value } = req.body || {};
   if (field === 'enabled') return bulkEnabled(req, res, a);
+  if (field === 'item_type') return bulkItemType(req, res, a);
   if (!['progress', 'test_status'].includes(field)) throw bad('unknown_field');
   if (!hasPerm(req.user, FIELD_PERM[field])) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[field] });
   if (!FIELD_OK[field](value)) throw bad('invalid_value');
@@ -291,6 +295,41 @@ async function bulkEnabled(req, res, a) {
   res.json({ updated: n });
 }
 
+// Set the type (function / report, 1.8.0) of the chosen items of an application: { field: 'item_type', value, function_ids }.
+// Excluded items may be chosen too (their type matters once they count again); removed ones may not. One audit row per
+// item, like the other changes of a single item, so each one's history reads «… changed the type of D7 from … to …».
+async function bulkItemType(req, res, a) {
+  if (!hasPerm(req.user, FIELD_PERM.item_type)) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM.item_type });
+  const { value, function_ids: raw } = req.body;
+  if (!FIELD_OK.item_type(value)) throw bad('invalid_value', { field: 'value' });
+  if (!Array.isArray(raw) || !raw.length || raw.length > 500 || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids' });
+  const ids = [...new Set(raw)];
+  const rows = (await query('SELECT id, code, name_ar, item_type, removed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
+  // only items of this application that are not removed (ETS-SEC-058)
+  if (rows.length !== ids.length || rows.some(x => x.removed_at)) throw bad('invalid_value', { field: 'function_ids' });
+  const targets = rows.filter(x => x.item_type !== value);
+  if (!targets.length) return res.json({ updated: 0 });
+  if (await needsLeadApproval(req.user, a)) {
+    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
+      summary: `item_type = ${value} (${targets.length})`,
+      items: targets.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field: 'item_type', old_value: x.item_type, new_value: value })) }));
+    publishChange({ dept_id: a.department_id, app_id: a.id });
+    return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: targets.length });
+  }
+  const n = await tx(async c => {
+    const changed = (await c.query(`UPDATE functions SET item_type=$2, updated_at=now(), updated_by=$3
+      WHERE id = ANY($1) AND removed_at IS NULL AND item_type <> $2 RETURNING id`, [targets.map(x => x.id), value, req.user.id])).rows.map(x => x.id);
+    for (const x of targets.filter(t => changed.includes(t.id))) {
+      await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: x.id, summary: `${a.id}/${x.code} ${x.name_ar.slice(0, 80)}`,
+        oldValue: { item_type: x.item_type }, newValue: { item_type: value }, context: { bulk: true, app_id: a.id, count: changed.length } });
+    }
+    return changed.length;
+  });
+  // live updates: after COMMIT (services/live.js)
+  publishChange({ dept_id: a.department_id, app_id: a.id });
+  res.json({ updated: n });
+}
+
 // Functions a duplicate can point at: in the user's scope, counted (not excluded, not removed), other than the
 // ones being excluded. Default: the given application; all=1 searches every application in scope.
 r.get('/function-options', async (req, res) => {
@@ -324,10 +363,10 @@ async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
   const functions = v.functions.filter(f => !drop.includes(f.id)).map(f => (byId.has(f.id) ? { ...f, enabled: byId.get(f.id).enabled } : f));
   for (const x of set) if (!v.functions.some(f => f.id === x.function_id) && x.enabled) {
     const f = (await query('SELECT * FROM functions WHERE id=$1', [x.function_id])).rows[0];      // restoring a removed one
-    if (f) functions.push({ ...f, enabled: true, has_note: !!f.note });
+    if (f) functions.push({ ...f, enabled: true, has_note: !!f.note });   // SELECT * carries item_type
   }
-  if (add) functions.push({ id: -1, app_id: appId, source: 'custom', weight: add.weight, progress: add.progress, enabled: add.enabled,
-    test_status: 0, notif_status: 0, review_status: 0 });
+  if (add) functions.push({ id: -1, app_id: appId, source: 'custom', item_type: add.item_type || 'function', weight: add.weight,
+    progress: add.progress, enabled: add.enabled, test_status: 0, notif_status: 0, review_status: 0 });
   const after = summarize({ departments: v.departments, applications: v.apps, functions, reports: v.reports, settings: v.settings });
   const pick = (c) => ({ app: c.applications.find(x => x.id === appId), dept: c.departments.find(x => x.id === app.department_id), total: c.total });
   const b = pick(v.calc), a = pick(after);
@@ -491,10 +530,13 @@ export async function reportsData(user) {
     WHERE r.status='pending' AND i.kind='report'`)).rows;
   return {
     departments: v.departments.filter(d => !d.is_base),
-    applications: v.apps.filter(a => !base.has(a.department_id)).map(a => ({
-      id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en, icon: a.icon,
-      weight: v.calc.applications.find(x => x.id === a.id).weight, report: byApp.get(a.id) || null,
-      pending: pend.filter(p => p.app_id === a.id) })),
+    applications: v.apps.filter(a => !base.has(a.department_id)).map(a => {
+      const c = v.calc.applications.find(x => x.id === a.id);
+      // reportPct: the application's reports % — its report items (1.8.0) with this track — as used in its progress
+      return { id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en, icon: a.icon,
+        weight: c.weight, report: byApp.get(a.id) || null, report_pct: c.reportPct, report_items: c.reportItems,
+        pending: pend.filter(p => p.app_id === a.id) };
+    }),
     settings: calcSettings(v.settings),
     can: { rep: hasPerm(user, 'rep') },
   };
@@ -632,6 +674,7 @@ export async function projectStatusData(user) {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const v = await loadVisible(user);
   const on = v.functions.filter(f => f.enabled);
+  const n = itemCounts(v.functions);
   const [snaps, edits, imports] = await Promise.all([
     recentSnapshots(),
     query(`SELECT app_id, count(*)::int AS n FROM edit_requests WHERE status='pending' GROUP BY 1`),
@@ -652,25 +695,25 @@ export async function projectStatusData(user) {
   const visibleApps = new Set(v.apps.map(a => a.id));
   const mine = id => visibleApps.has(id);
   const pend = (rows, ok) => rows.filter(x => user.fullScope || ok(x)).reduce((a, x) => a + x.n, 0);
-  const reps = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
+  const tracks = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
   return {
     schedule: scheduleJson(s),
     today: new Date().toISOString().slice(0, 10),
     total: v.calc.total,
     departments: depts.map(d => ({ id: d.id, name_ar: d.name_ar, name_en: d.name_en, color: d.color, emblem: d.emblem,
       pct: d.pct, weight: d.weight, apps: d.apps })),
+    // functions / done / in_progress / not_started: function items; notes, tests and the flags: every counted item;
+    // reports*: the report items and the reports tracks pooled as in an application's reports % (1.8.0)
     counts: {
-      functions: on.length,
-      done: on.filter(f => +f.progress >= 100).length,
-      in_progress: on.filter(f => +f.progress > 0 && +f.progress < 100).length,
-      not_started: on.filter(f => !(+f.progress > 0)).length,
-      notes: on.filter(f => f.has_note).length,
+      functions: n.functions,
+      done: n.done,
+      in_progress: n.in_progress,
+      not_started: n.not_started,
+      notes: n.notes,
       tests: v.calc.total.tests,
       notif_bad: on.filter(f => (f.notif_status | 0) === 3).length,
       review_missing: on.filter(f => (f.review_status | 0) === 2).length,
-      reports: reps.length,
-      reports_done: reps.filter(x => +x.progress >= 100).length,
-      reports_pct: reps.length ? reps.reduce((a, x) => a + +x.progress, 0) / reps.length : null,
+      ...reportsOverview(v.functions, tracks, +v.settings['calc.notif_share'] || 0),
     },
     pending: { edits: pend(edits.rows, x => mine(x.app_id)), imports: pend(imports.rows, x => x.apps.some(mine)) },
     trend, dept_trend: deptTrend,
@@ -683,7 +726,7 @@ r.get('/project-status', async (req, res) => res.json(await projectStatusData(re
 r.get('/search', async (req, res) => {
   const q = str(req.query.q, 100);
   if (q.length < 2) return res.json({ results: [] });
-  const rows = (await query(`SELECT f.id, f.app_id, f.code, f.name_ar, f.name_en, f.reference, f.progress, f.enabled, f.source,
+  const rows = (await query(`SELECT f.id, f.app_id, f.code, f.name_ar, f.name_en, f.reference, f.progress, f.enabled, f.source, f.item_type,
         a.department_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en
       FROM functions f JOIN applications a ON a.id=f.app_id
       WHERE f.removed_at IS NULL AND (f.name_ar ILIKE $1 OR f.name_en ILIKE $1 OR f.reference ILIKE $1 OR f.note ILIKE $1

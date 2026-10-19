@@ -1,10 +1,14 @@
 // Application progress as a visible, weighted equation (header of the application page):
 //   functions % × (1 − reports_share)  +  reports % × reports_share  =  application %
 // Two small input rings feed one large result ring; the weights and contributions sit on the connectors.
-// Every number comes from the API (application.calc + settings.reports_share), nothing is hard-coded.
+// Every number comes from the API (application.calc: fnPct, reportPct and the shares fnShare / reportShare the server
+// used for calc.pct — services/calc.js), nothing is recomputed here. Since 1.8.0 the reports ring is the application's
+// report items with its reports track; an application without reports shows functions × 100 %, one whose counted
+// items are all reports shows reports × 100 %.
 // All three rings are coloured by pctTone(): a continuous red → orange → amber → green scale.
 import { useI18n } from '../i18n/index.jsx';
 import { pc, pctGradient, pctTone } from '../lib/format.js';
+import { Icon } from './Icon.jsx';
 
 const share = w => Math.round(w * 1000) / 10 + '%';   // 0.15 → "15%", 0.125 → "12.5%"
 
@@ -25,11 +29,14 @@ function EqRing({ value, size, stroke, big }) {
 
 // The numbers the equation needs, all from the same values the API already used for calc.pct.
 export function equation(calc, settings) {
-  const rw = +settings?.reports_share || 0;
-  const withReports = calc.reportPct != null && rw > 0;   // same rule as services/calc.js (hasRep && rw)
-  const fw = withReports ? 1 - rw : 1;
+  // the shares the server used; an older answer without them: the 1.7.0 rule (reports blended when present)
+  const rwSetting = +settings?.reports_share || 0;
+  const rw = calc.reportShare ?? (calc.reportPct != null ? rwSetting : 0);
+  const fw = calc.fnShare ?? 1 - rw;
+  const withReports = calc.reportPct != null && rw > 0;
+  const withFunctions = fw > 0;
   return {
-    withReports, fw, rw,
+    withReports, withFunctions, both: withReports && withFunctions, fw, rw,
     fn: calc.fnPct, fnPart: calc.fnPct * fw,
     rep: withReports ? calc.reportPct : null, repPart: withReports ? calc.reportPct * rw : 0,
     result: calc.pct,
@@ -38,10 +45,12 @@ export function equation(calc, settings) {
 
 function Stats({ calc }) {
   const { t } = useI18n();
+  const n = calc.items || { function: calc.count, report: 0 };
   return (
     <div className="eq-stats">
       <div><span>{t('weight')}</span><b className="num">{pc(calc.weight)}</b></div>
-      <div><span>{t('functions')}</span><b className="num">{calc.count}</b></div>
+      <div className="it-stat it-function" title={t('it_hint_function')}><Icon name="item_function" size={13} /><span>{t('it_functions')}</span><b className="num">{n.function}</b></div>
+      <div className="it-stat it-report" title={t('it_hint_report')}><Icon name="item_report" size={13} /><span>{t('it_reports')}</span><b className="num">{n.report}</b></div>
       <div className="ok"><span>{t('ts_2')}</span><b className="num">{calc.tests[2]}</b></div>
       <div className="bad"><span>{t('ts_3')}</span><b className="num">{calc.tests[3]}</b></div>
     </div>
@@ -50,6 +59,7 @@ function Stats({ calc }) {
 
 function Note({ e }) {
   const { t } = useI18n();
+  if (!e.withFunctions) return <div className="eq-note">{t('eq_only_reports')}</div>;
   return e.withReports
     ? <div className="eq-note">{t('app_pct_note', { fw: '\u0001', rw: '\u0002' }).split(/([\u0001\u0002])/).map((x, i) =>
         x === '\u0001' ? <span key={i} className="num">{share(e.fw)}</span>
@@ -57,11 +67,11 @@ function Note({ e }) {
     : <div className="eq-note">{t('eq_no_reports')}</div>;
 }
 
-function Input({ label, value, w, part }) {
+function Input({ label, sub, value, w, part }) {
   return (
     <div className="eqb-row">
       <EqRing value={value} size={70} stroke={7} />
-      <div className="eqb-lbl"><span>{label}</span></div>
+      <div className="eqb-lbl"><span>{label}</span>{sub && <small className="eqb-sub">{sub}</small>}</div>
       <div className="eqb-conn">
         {w != null
           ? <span className="eqb-chip num">× {share(w)} <i>=</i> <b>{pc(part)}%</b></span>
@@ -86,16 +96,24 @@ function Legend() {
   );
 }
 
+// What the reports ring is made of: «5 بند تقرير + متابعة التقارير».
+const repParts = (t, calc) => {
+  const n = calc.reportItems || 0;
+  if (n && calc.reportTrack) return t('eq_rep_items_track', { n });
+  if (n) return t('eq_rep_items', { n });
+  return calc.reportTrack ? t('eq_rep_track') : null;
+};
+
 export function PctEquation({ calc, settings }) {
   const { t } = useI18n();
   const e = equation(calc, settings);
   return (
     <div className="app-head card eq-card">
       <div className="eqb-main">
-        <div className={'eqb-inputs' + (e.withReports ? ' two' : '')}>
-          <Input label={t('fn_progress')} value={e.fn} w={e.withReports ? e.fw : null} part={e.fnPart} />
-          {e.withReports && <div className="eqb-plus"><span>+</span></div>}
-          {e.withReports && <Input label={t('report_progress')} value={e.rep} w={e.rw} part={e.repPart} />}
+        <div className={'eqb-inputs' + (e.both ? ' two' : '')}>
+          {e.withFunctions && <Input label={t('fn_progress')} value={e.fn} w={e.both ? e.fw : null} part={e.fnPart} />}
+          {e.both && <div className="eqb-plus"><span>+</span></div>}
+          {e.withReports && <Input label={t('report_progress')} sub={repParts(t, calc)} value={e.rep} w={e.both ? e.rw : null} part={e.repPart} />}
         </div>
         <div className="eqb-join"><span className="eq-sign">=</span></div>
         <div className="eqb-result">

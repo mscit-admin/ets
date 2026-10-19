@@ -53,7 +53,8 @@ export default function Department() {
                     {a.extra_module && <Indicator color="purple">{t('extra_module')}</Indicator>}
                   </div>
                 </td>
-                <td className="hide-mobile num">{a.calc.count}</td>
+                <td className="hide-mobile num">{a.calc.items ? a.calc.items.function : a.calc.count}
+                  {a.calc.items?.report > 0 && <span className="it-count-rep" title={t('it_hint_report')}> + <Icon name="item_report" size={12} /> {a.calc.items.report}</span>}</td>
                 <td className="hide-mobile">
                   <span className="mini-tests">
                     <span className="green" title={t('ts_2')}>{a.calc.tests[2]}</span>

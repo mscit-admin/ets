@@ -78,7 +78,7 @@ backup/restore/`ets-log-protect` commands from `/etc/ets/install.conf`, stops th
 migrations (local database: as the PostgreSQL superuser through `ets-log-protect`, then protects the audit trail
 again; remote database: as the application role), and starts the new version (checking the port in `ets.env`).
 It refuses an installation still configured for plain HTTP (run `deploy/install.sh` once and choose a
-certificate) and a Node.js older than 22.12. Read [HISTORY.md](../../HISTORY.md) for what changed.
+certificate) and a Node.js older than 22.12. Read [CHANGELOG.md](../../CHANGELOG.md) for what changed — its **Upgrade notes** list what to do or check for each version.
 
 **Upgrading to 1.0.0 — check afterwards:** users of scoped roles without a scope see nothing (03 §1, system-log
 event `scope_fail_closed`); everyone signs in again once (new cookie name); backups are now `.dump.gpg` and the

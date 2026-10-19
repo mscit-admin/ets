@@ -176,7 +176,8 @@ export default function ProjectStatus() {
             <div><span>{t('with_notes')}</span><span className="num">{c.notes}</span></div>
             <div><span>{t('notif_status')}: {t('ns_3')}</span><span className={'num ' + (c.notif_bad ? 'red-text' : '')}>{c.notif_bad}</span></div>
             <div><span>{t('review_status')}: {t('rv_2')}</span><span className="num">{c.review_missing}</span></div>
-            {c.reports > 0 && <div><span>{t('reports_title')}</span><span className="num">{pc(c.reports_pct)}% · {c.reports_done}/{c.reports}</span></div>}
+            {c.reports > 0 && <div><span>{t('reports_title')}{c.report_items > 0 && <span className="muted small"> ({t('eq_rep_items', { n: c.report_items })})</span>}</span>
+              <span className="num">{pc(c.reports_pct)}% · {c.reports_done}/{c.reports}</span></div>}
             <div><span>{t('pending_approvals')}</span><span className="num">{st.pending.edits + st.pending.imports}</span></div>
           </div>
         </Card>

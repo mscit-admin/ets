@@ -1,6 +1,6 @@
 // Per-department import of results sent by the teams (JSON exported from the original tracker page),
 // held for two-step approval before they change the approved data.
-import { summarize } from './calc.js';
+import { summarize, CALC_FUNCTIONS_SQL } from './calc.js';
 import { allSettings } from './settings.js';
 import { setDisabled, clearDisabled, currentReasons, hadReason, importReason } from './disable.js';
 
@@ -79,7 +79,7 @@ async function loadAll(c) {
   const [d, a, f, r] = await Promise.all([
     c.query('SELECT * FROM departments ORDER BY sort'),
     c.query('SELECT * FROM applications ORDER BY sort'),
-    c.query('SELECT id, app_id, code, source, weight, progress, enabled, test_status, notif_status, review_status FROM functions WHERE removed_at IS NULL'),
+    c.query(CALC_FUNCTIONS_SQL),          // with item_type: report items count in the reports % (1.8.0)
     c.query('SELECT * FROM app_reports'),
   ]);
   return { departments: d.rows, applications: a.rows, functions: f.rows, reports: r.rows };

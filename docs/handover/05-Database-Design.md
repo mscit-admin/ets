@@ -53,9 +53,9 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 |---|---|---|
 | `departments` | 4 departments | `id` (hr, fin, com, inf), names AR/EN, `color`, `emblem`, `is_base` (no reports track) |
 | `applications` | 30 applications | `id` (per, pay, acc…), `department_id`, names, `default_weight`, `weight`, `note_ar`, `addendum`, `scope_cut`, `extra_module` |
-| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import), `disabled_reason` (`duplicate`, `out_of_scope`, `not_required`, `other`, or `import` set by an import; NULL = excluded before 1.5.0), `disabled_note` (≤ 500; required by the API for every reason a user chooses since 1.5.1, ≥ 3 characters — older rows and `import` keep theirs), `disabled_by/at` — why an excluded function (`enabled=false`) does not count, cleared when it is included again (migration 013) |
+| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import), `disabled_reason` (`duplicate`, `out_of_scope`, `not_required`, `other`, or `import` set by an import; NULL = excluded before 1.5.0), `disabled_note` (≤ 500; required by the API for every reason a user chooses since 1.5.1, ≥ 3 characters — older rows and `import` keep theirs), `disabled_by/at` — why an excluded function (`enabled=false`) does not count, cleared when it is included again (migration 013), `item_type` (`function` default / `report`: which part of the application % the item counts in — migration 016, see 3d) |
 | `function_duplicates` | For a function excluded as a duplicate: the functions it duplicates (any application) | `function_id`, `duplicate_of_id` (PK on both; FKs to `functions` ON DELETE CASCADE — functions are only soft-removed; `CHECK function_id <> duplicate_of_id`; index on `duplicate_of_id`) — migration 013 |
-| `app_reports` | Reports track per application | `progress`, `status`, `note` |
+| `app_reports` | Reports track per application (non-base departments; counted with the application's report items, weight 1 — 3d) | `progress`, `status`, `note` |
 | `schedule` | Project schedule (one row, `id = 1`) | `start_date`, `end_date` (planned close, migration 005; when set, `periods` is derived from start → close), `periods`, `unit` (month/fortnight), `plan numeric[]`, `actual numeric[]` |
 
 ### Imports & approvals (migration 002)
@@ -156,6 +156,30 @@ References to users and what a deletion does to them (rows are never removed, so
 SELECT id, username, full_name, deleted_at, delete_reason FROM users WHERE deleted_at IS NOT NULL;  -- deleted accounts
 ```
 
+### 3d. Migration 016 — item type: function or report (1.8.0)
+
+`functions.item_type text NOT NULL DEFAULT 'function'`, `CHECK (item_type IN ('function','report'))`
+(`functions_item_type_check`). Every existing row becomes `'function'`, so the upgrade changes no figure. The seed
+(`npm run seed`) never touches the column: a type set by the users survives a re-seed.
+
+How the type enters the calculation (`backend/src/services/calc.js`, the only place the formula lives):
+
+| Part | Made of |
+|---|---|
+| functions % | enabled, not removed items with `item_type='function'`, weighted by `weight` (notification blending as before) |
+| reports % | enabled, not removed items with `item_type='report'` (same rules) **plus** the `app_reports` row of the application (non-base departments only) as one more item of weight 1; NULL when there is neither |
+| application % | functions % × (1 − `calc.reports_share`) + reports % × `calc.reports_share`; functions % alone when reports % is NULL (1.7.0 behaviour); reports % alone when every counted item is a report |
+| application weight (`auto` mode) | sum of the weights of all enabled items, both types (unchanged by a type change) |
+
+A type change is an ordinary edit: `edit_request_items.field = 'item_type'` (`old_value` / `new_value` `"function"` /
+`"report"`) while it waits for the team lead, and an `audit_log` row `update` / `function` with
+`old_value {item_type}` → `new_value {item_type}`. The legacy JSON import / export format has no type: imports leave
+`item_type` as it is.
+
+```sql
+SELECT app_id, code, name_ar FROM functions WHERE item_type = 'report' AND removed_at IS NULL ORDER BY app_id, sort;
+```
+
 ## 4. Code values
 
 | Column | 0 | 1 | 2 | 3 |
@@ -191,9 +215,10 @@ the same keys as the original tracker page, which is what makes import possible.
 ## 6. Useful queries
 
 ```sql
--- progress per application (functions only, enabled items)
+-- functions % per application (function items only, enabled; without notification blending)
 SELECT a.id, a.name_en, round(sum(f.weight*f.progress)/nullif(sum(f.weight),0),1) AS pct
-FROM applications a JOIN functions f ON f.app_id=a.id AND f.enabled GROUP BY a.id, a.name_en ORDER BY pct;
+FROM applications a JOIN functions f ON f.app_id=a.id AND f.enabled AND f.removed_at IS NULL AND f.item_type='function'
+GROUP BY a.id, a.name_en ORDER BY pct;
 
 -- who changed what today
 SELECT ts, username, action, entity, entity_id, summary FROM audit_log WHERE ts::date = current_date ORDER BY ts DESC;
