@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No cleartext anywhere.
+  When the pairing QR carries cert_sha256, the app bypasses these anchors entirely and
+  trusts only that one certificate (see net/Tls.kt). Without a pin it uses the anchors
+  below: the system store, plus user-installed CAs so that a corporate CA pushed by MDM
+  works. User CAs are never consulted for pinned servers.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

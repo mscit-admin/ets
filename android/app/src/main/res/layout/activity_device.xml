@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/screen_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Not paired -->
+        <LinearLayout
+            android:id="@+id/unpaired_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/EtsHeading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/pair_title" />
+
+            <TextView
+                style="@style/EtsBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/pair_instructions" />
+
+            <Button
+                android:id="@+id/scan_button"
+                style="@style/EtsPrimaryButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/scan_qr" />
+
+            <TextView
+                style="@style/EtsLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:labelFor="@id/paste_input"
+                android:text="@string/or_paste" />
+
+            <EditText
+                android:id="@+id/paste_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/input_background"
+                android:fontFamily="monospace"
+                android:gravity="top|start"
+                android:hint="@string/paste_hint"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textNoSuggestions"
+                android:minLines="3"
+                android:padding="12dp"
+                android:textDirection="ltr"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/pair_button"
+                style="@style/EtsSecondaryButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/pair" />
+
+            <ProgressBar
+                android:id="@+id/pair_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:indeterminate="true"
+                android:visibility="gone" />
+
+            <TextView
+                style="@style/EtsHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/vpn_hint" />
+        </LinearLayout>
+
+        <!-- Paired -->
+        <LinearLayout
+            android:id="@+id/paired_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/EtsLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/label_server" />
+
+            <TextView
+                android:id="@+id/server_value"
+                style="@style/EtsValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textDirection="ltr"
+                android:textIsSelectable="true" />
+
+            <TextView
+                style="@style/EtsLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/label_user" />
+
+            <TextView
+                android:id="@+id/name_value"
+                style="@style/EtsValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                style="@style/EtsLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/label_certificate" />
+
+            <TextView
+                android:id="@+id/trust_value"
+                style="@style/EtsHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textIsSelectable="true" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/persistent_switch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/persistent"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+            <TextView
+                style="@style/EtsHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/persistent_desc" />
+
+            <Button
+                android:id="@+id/battery_button"
+                style="@style/EtsSecondaryButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/battery" />
+
+            <TextView
+                style="@style/EtsHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/battery_desc" />
+
+            <Button
+                android:id="@+id/open_alerts_button"
+                style="@style/EtsPrimaryButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/open_alerts" />
+
+            <Button
+                android:id="@+id/unpair_button"
+                style="@style/EtsDangerButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/unpair" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/version_value"
+            style="@style/EtsHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:gravity="center" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ETS Alerts</string>
+
+    <!-- Main screen -->
+    <string name="action_refresh">Refresh</string>
+    <string name="action_device">Device &amp; pairing</string>
+    <string name="status_line">%1$d unread · %2$s</string>
+    <string name="empty_list">No alerts yet. New ETS alerts will appear here.</string>
+    <string name="severity_critical">Critical</string>
+    <string name="severity_warning">Warning</string>
+    <string name="severity_info">Info</string>
+    <string name="state_read">Read</string>
+    <string name="state_unread">Unread</string>
+    <string name="error_unreachable">Could not reach the ETS server. Check that the VPN is connected.</string>
+    <string name="no_browser">No browser is installed to open this alert.</string>
+
+    <!-- Notifications -->
+    <string name="public_alert_title">New ETS alert</string>
+    <string name="channel_critical">Critical alerts</string>
+    <string name="channel_critical_desc">Urgent ETS alerts. Sound and heads-up.</string>
+    <string name="channel_warning">Warnings</string>
+    <string name="channel_warning_desc">ETS alerts that need attention.</string>
+    <string name="channel_info">Information</string>
+    <string name="channel_info_desc">Informational ETS alerts, delivered quietly.</string>
+    <string name="channel_service">Connection</string>
+    <string name="channel_service_desc">Shown while the persistent connection is on.</string>
+    <string name="channel_account">Account</string>
+    <string name="service_title">ETS Alerts is connected</string>
+    <string name="service_text">Waiting for new alerts</string>
+    <string name="revoked_title">Device unpaired</string>
+    <string name="revoked_body">This phone was removed from ETS. Pair again from Profile → My devices.</string>
+
+    <!-- Pairing screen -->
+    <string name="pair_title">Pair this phone</string>
+    <string name="pair_instructions">In ETS on the web, open Profile → My devices (أجهزتي) and create a pairing QR code. Then scan it here.</string>
+    <string name="scan_qr">Scan QR code</string>
+    <string name="scan_prompt">Point the camera at the ETS pairing QR code</string>
+    <string name="or_paste">Or paste the pairing code (JSON)</string>
+    <string name="paste_hint" translatable="false">{\"v\":1,\"url\":\"https://…\",\"code\":\"…\"}</string>
+    <string name="pair">Pair</string>
+    <string name="vpn_hint">The phone must be connected to the company VPN to reach the ETS server.</string>
+    <string name="confirm_pair_title">Pair with this server?</string>
+    <string name="confirm_pair_message">%1$s\n\n%2$s</string>
+    <string name="paired_as">Paired as %1$s</string>
+    <string name="pair_failed">Pairing failed</string>
+
+    <string name="label_server">Server</string>
+    <string name="label_user">User</string>
+    <string name="label_certificate">Certificate</string>
+    <string name="trust_pinned">Pinned certificate SHA-256:\n%1$s</string>
+    <string name="trust_system">Certificate trusted by the system</string>
+    <string name="persistent">Persistent connection</string>
+    <string name="persistent_desc">Keeps a live connection for instant alerts and shows a small permanent notification. When off, the app checks for alerts about every 15 minutes.</string>
+    <string name="battery">Battery optimisation settings</string>
+    <string name="battery_desc">For reliable delivery, set ETS Alerts to “Not optimised” / “Unrestricted”.</string>
+    <string name="battery_settings_missing">Battery settings are not available on this device.</string>
+    <string name="open_alerts">Open alerts</string>
+    <string name="unpair">Unpair</string>
+    <string name="confirm_unpair_message">This removes the pairing from this phone. Please also remove the device on the web under Profile → My devices.</string>
+    <string name="app_version">Version %1$s</string>
+    <string name="app_and_server_version">App %1$s · Server %2$s</string>
+
+    <!-- Errors -->
+    <string name="err_payload_empty">Scan the QR code or paste the pairing code first.</string>
+    <string name="err_payload_not_json">This is not an ETS pairing code. Paste the full JSON shown under the QR code.</string>
+    <string name="err_payload_version">This pairing code needs a newer version of the app.</string>
+    <string name="err_payload_url">The server address in the code is invalid. Only https:// addresses are allowed.</string>
+    <string name="err_payload_code">The pairing code is missing or invalid.</string>
+    <string name="err_payload_fingerprint">The certificate fingerprint in the code is invalid.</string>
+    <string name="err_code_rejected">The server rejected the pairing code. It may have expired; create a new QR code and try again.</string>
+    <string name="err_server_status">The server returned an error (HTTP %1$d).</string>
+    <string name="err_tls">Secure connection failed: the server certificate does not match the pairing code.</string>
+    <string name="err_unreachable_vpn">Could not reach the server. Make sure the VPN is connected and try again.</string>
+    <string name="err_generic">Something went wrong. Please try again.</string>
+</resources>

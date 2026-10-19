@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ets_navy">#0B2545</color>
+    <color name="ets_navy_dark">#071A33</color>
+    <color name="ets_blue">#1D4E89</color>
+    <color name="ets_blue_light">#E6EDF7</color>
+    <color name="screen_bg">#F5F7FA</color>
+    <color name="row_read">#FFFFFF</color>
+    <color name="row_unread">#EEF3FB</color>
+    <color name="text_primary">#13213A</color>
+    <color name="text_secondary">#4A5568</color>
+    <color name="divider">#DDE3EC</color>
+    <color name="danger">#B3261E</color>
+    <color name="white">#FFFFFF</color>
+
+    <color name="severity_critical">#C62828</color>
+    <color name="severity_warning">#D97706</color>
+    <color name="severity_info">#1565C0</color>
+</resources>
