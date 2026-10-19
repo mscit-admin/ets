@@ -96,6 +96,15 @@ class DeviceActivity : AppCompatActivity() {
             }
         }
         versionValue.text = getString(R.string.app_version, BuildConfig.VERSION_NAME)
+
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_UNPAIR_HINT, false)) {
+            // The server could not confirm the revoke: the device may still be listed on the web.
+            AlertDialog.Builder(this)
+                .setTitle(R.string.unpair)
+                .setMessage(R.string.unpair_remote_failed)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
     }
 
     override fun onStart() {
@@ -232,17 +241,30 @@ class DeviceActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.unpair)
             .setMessage(R.string.confirm_unpair_message)
-            .setPositiveButton(R.string.unpair) { _, _ ->
-                Session.unpair(this)
+            .setPositiveButton(R.string.unpair) { _, _ -> unpair() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Best-effort server revoke (short timeout), then an unconditional local wipe. */
+    private fun unpair() {
+        if (busy) return
+        busy = true
+        findViewById<Button>(R.id.unpair_button).isEnabled = false
+        io.execute {
+            val needsWebCleanup = Session.unpair(applicationContext)
+            runOnUiThread {
+                busy = false
+                if (isDestroyed) return@runOnUiThread
                 // Start a clean task so no screen of the old pairing remains on the back stack.
                 startActivity(
                     Intent(this, DeviceActivity::class.java)
+                        .putExtra(EXTRA_UNPAIR_HINT, needsWebCleanup)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
                 )
                 finish()
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
     }
 
     private fun openBatterySettings() {
@@ -280,5 +302,9 @@ class DeviceActivity : AppCompatActivity() {
             getString(R.string.err_unreachable_vpn)
         is IOException -> getString(R.string.err_unreachable_vpn)
         else -> getString(R.string.err_generic)
+    }
+
+    companion object {
+        private const val EXTRA_UNPAIR_HINT = "unpair_hint"
     }
 }

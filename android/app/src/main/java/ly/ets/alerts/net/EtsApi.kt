@@ -11,6 +11,7 @@ import okhttp3.Response
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /** The device token was revoked or is unknown (HTTP 401). The app must unpair. */
 class UnauthorizedException : IOException("unauthorized")
@@ -19,6 +20,18 @@ class UnauthorizedException : IOException("unauthorized")
 class ApiException(val status: Int, val serverMessage: String?) : IOException("HTTP $status")
 
 data class PairResult(val deviceId: String, val token: String, val fullName: String, val lang: String?)
+
+/** Result of asking the server to revoke this device (`DELETE /api/m/device`). */
+enum class RemoteUnpair {
+    /** 2xx: the server revoked the device. */
+    REVOKED,
+
+    /** 401: the token is already unknown or revoked, so there is nothing left to revoke. */
+    ALREADY_GONE,
+
+    /** Network error, timeout or any other status: the device may still be listed on the web. */
+    FAILED,
+}
 
 data class Me(val fullName: String, val lang: String?, val serverVersion: String?)
 
@@ -76,6 +89,35 @@ class EtsApi(
         client.newCall(request).execute().use { checkStatus(it, unauthorizedIsRevocation = true) }
     }
 
+    /**
+     * Best-effort `DELETE /api/m/device` with a short overall timeout. Never throws:
+     * the caller always wipes local state afterwards, whatever the outcome.
+     */
+    fun unregisterDevice(timeoutMs: Long = UNPAIR_TIMEOUT_MS): RemoteUnpair {
+        val quick = client.newBuilder()
+            .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
+        return try {
+            val request = baseRequest("/api/m/device").delete().build()
+            quick.newCall(request).execute().use { response ->
+                when {
+                    response.isSuccessful -> RemoteUnpair.REVOKED
+                    response.code == 401 -> RemoteUnpair.ALREADY_GONE
+                    else -> RemoteUnpair.FAILED
+                }
+            }
+        } catch (e: UnauthorizedException) {
+            RemoteUnpair.ALREADY_GONE // no token stored at all
+        } catch (e: IOException) {
+            RemoteUnpair.FAILED
+        } catch (e: RuntimeException) {
+            RemoteUnpair.FAILED
+        }
+    }
+
     /** Request for the SSE stream; executed by okhttp-sse in the foreground service. */
     fun eventsRequest(): Request = baseRequest("/api/m/events")
         .header("Accept", "text/event-stream")
@@ -120,6 +162,7 @@ class EtsApi(
 
     companion object {
         const val PAGE_SIZE = 50
+        const val UNPAIR_TIMEOUT_MS = 5_000L
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }
 }

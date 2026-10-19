@@ -48,7 +48,7 @@ A small native Android app that delivers ETS notifications to the phone.
 4. راجع عنوان الخادم وبصمة الشهادة، ثم أكّد. سيظهر اسمك بعد نجاح الربط.
 5. اسمح بالإشعارات عندما يطلبها التطبيق (أندرويد 13 وما بعده).
 
-لإلغاء الربط اضغط **فصل** في شاشة «الجهاز والربط»، ثم احذف الجهاز أيضاً من **أجهزتي** على الموقع.
+لإلغاء الربط اضغط **فصل** في شاشة «الجهاز والربط». يطلب التطبيق من الخادم حذف الجهاز ثم يمسح بياناته من الهاتف في كل الأحوال. إذا تعذّر الوصول إلى الخادم (مثلاً الـ VPN غير متصل) ينبّهك التطبيق لحذف الجهاز يدوياً من **أجهزتي** على الموقع.
 إذا أُلغي الجهاز من الموقع يمسح التطبيق بياناته تلقائياً، ويظهر إشعار «تم إلغاء ربط الجهاز».
 
 ### الـ VPN
@@ -147,7 +147,7 @@ gh secret set ANDROID_KEY_PASSWORD
 4. Check the server address and certificate fingerprint, then confirm. Your name appears once pairing succeeds.
 5. Allow notifications when asked (Android 13+).
 
-**Unpairing:** tap **Unpair (فصل)** on the *Device & pairing* screen, and also remove the device under **My devices** on the web.
+**Unpairing:** tap **Unpair (فصل)** on the *Device & pairing* screen. The app asks the server to revoke the device, then always wipes its local data. If the server cannot be reached (for example the VPN is off), the app tells you to also remove the device under **My devices** on the web.
 
 **Revoked on the web:** if the device is revoked there, the app wipes its data automatically and shows "Device unpaired".
 
@@ -254,8 +254,9 @@ Debug builds use the application id `ly.ets.alerts.debug`, so they install side 
 |---|---|
 | `POST /api/devices/pair` | `{code, device_name, platform:"android", app_version}` → `{device_id, token, user:{full_name, lang}}` |
 | `GET /api/m/me` | → `{full_name, lang, server_version}` |
-| `GET /api/m/notifications?after_id=N&limit=50` | → `{items:[…], unread}` |
+| `GET /api/m/notifications?after_id=N&limit=50` | → `{items:[…], unread}`. Expected: items with `id > N` in **ascending id order** (oldest first), at most `limit`. The client pages by advancing `after_id` to the largest id seen. |
 | `POST /api/m/notifications/{id}/read` | → 204 |
+| `DELETE /api/m/device` | → 204. Called by «فصل» with a 5 s timeout. 2xx or 401 = done; anything else, or a network error, shows the أجهزتي hint. The local wipe always happens. |
 | `GET /api/m/events` | Server-Sent Events. Must answer `Content-Type: text/event-stream`. Events: `notification` `{id}`, `unread` `{unread}`. Comment heartbeat every 25 s; the client read timeout is 75 s. |
 
 - Every call except pairing sends `Authorization: Bearer <token>`.

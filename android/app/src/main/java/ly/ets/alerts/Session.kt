@@ -14,6 +14,7 @@ import androidx.work.WorkManager
 import ly.ets.alerts.data.Settings
 import ly.ets.alerts.net.EtsApi
 import ly.ets.alerts.net.Http
+import ly.ets.alerts.net.RemoteUnpair
 import ly.ets.alerts.notify.Notifier
 import ly.ets.alerts.service.AlertStreamService
 import ly.ets.alerts.work.PollWorker
@@ -87,13 +88,32 @@ object Session {
         wm.cancelUniqueWork(WORK_NOW)
     }
 
-    /** User pressed «فصل». Local wipe only; the device should also be removed on the web. */
-    fun unpair(context: Context) {
-        stopDelivery(context)
-        Settings.get(context).clearPairing()
-        Notifier.cancelAllAlerts(context)
-        AlertsBus.changed()
+    /**
+     * User pressed «فصل». Blocking (call off the main thread): asks the server to revoke this
+     * device (best effort, short timeout), then ALWAYS wipes locally.
+     * @return true if the server could not confirm, so the user should also remove the
+     *   device under أجهزتي on the web. 401 counts as already gone.
+     */
+    fun unpair(context: Context): Boolean {
+        val app = context.applicationContext
+        userUnpairing = true
+        try {
+            // Stop delivery first so the stream/poll do not race the DELETE and report a 401
+            // as a revocation (which would post «تم إلغاء ربط الجهاز» for a deliberate unpair).
+            val api = api(app)
+            stopDelivery(app)
+            val remote = api?.unregisterDevice() ?: RemoteUnpair.ALREADY_GONE
+            Settings.get(app).clearPairing()
+            Notifier.cancelAllAlerts(app)
+            AlertsBus.changed()
+            return remote == RemoteUnpair.FAILED
+        } finally {
+            userUnpairing = false
+        }
     }
+
+    @Volatile
+    private var userUnpairing = false
 
     /** Server answered 401: the device was revoked. Wipe, stop, and tell the user once. */
     @Synchronized
@@ -102,7 +122,7 @@ object Session {
         stopDelivery(app)
         val hadPairing = Settings.get(app).clearPairing()
         Notifier.cancelAllAlerts(app)
-        if (hadPairing) Notifier.showRevoked(app)
+        if (hadPairing && !userUnpairing) Notifier.showRevoked(app)
         AlertsBus.changed()
     }
 }

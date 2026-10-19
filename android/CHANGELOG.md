@@ -36,6 +36,7 @@ Releases are tagged `android-vX.Y.Z`.
 
 **Revocation**
 - A 401 wipes the pairing, stops delivery and posts «تم إلغاء ربط الجهاز».
+- «فصل» calls `DELETE /api/m/device` (best effort, 5 s timeout), then always wipes locally. 401 or success needs no further action. On a network error or other status, the app asks the user to also remove the device under أجهزتي.
 
 **Main screen and languages**
 - The main screen lists the last 50 alerts with severity colour, time and read state, and has a refresh button.

@@ -56,7 +56,8 @@
     <string name="battery_settings_missing">إعدادات البطارية غير متاحة على هذا الجهاز.</string>
     <string name="open_alerts">عرض التنبيهات</string>
     <string name="unpair">فصل</string>
-    <string name="confirm_unpair_message">سيُزال الربط من هذا الهاتف. يُرجى أيضاً حذف الجهاز من الموقع في الملف الشخصي ← أجهزتي.</string>
+    <string name="confirm_unpair_message">فصل هذا الهاتف؟ سيتوقف عن استقبال تنبيهات ETS وسيُطلب من الخادم حذفه.</string>
+    <string name="unpair_remote_failed">تم الفصل على هذا الهاتف، لكن تعذّر الوصول إلى خادم ETS للتأكيد. يُرجى أيضاً حذف الجهاز من الموقع في الملف الشخصي ← أجهزتي.</string>
     <string name="app_version">الإصدار %1$s</string>
     <string name="app_and_server_version">التطبيق %1$s · الخادم %2$s</string>
 

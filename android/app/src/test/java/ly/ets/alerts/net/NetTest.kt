@@ -180,4 +180,50 @@ class NetTest {
         assertEquals("/api/m/notifications/7/read", mark.path)
         assertTrue(mark.getHeader("Authorization")!!.startsWith("Bearer "))
     }
+
+    @Test
+    fun unregisterDeviceOutcomes() {
+        val s = server(localhostCert)
+        val client = pinnedClient(pin(localhostCert))
+
+        s.enqueue(MockResponse().setResponseCode(204))
+        assertEquals(RemoteUnpair.REVOKED, api(s, client).unregisterDevice())
+        val req = s.takeRequest()
+        assertEquals("DELETE", req.method)
+        assertEquals("/api/m/device", req.path)
+        assertEquals("Bearer tok-123", req.getHeader("Authorization"))
+
+        // Already revoked on the web: nothing left to do, no hint needed.
+        s.enqueue(MockResponse().setResponseCode(401))
+        assertEquals(RemoteUnpair.ALREADY_GONE, api(s, client).unregisterDevice())
+
+        // Older server without the endpoint, or a server error: report failure, never throw.
+        s.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(RemoteUnpair.FAILED, api(s, client).unregisterDevice())
+        s.enqueue(MockResponse().setResponseCode(500))
+        assertEquals(RemoteUnpair.FAILED, api(s, client).unregisterDevice())
+
+        // No token at all counts as already gone.
+        assertEquals(RemoteUnpair.ALREADY_GONE, api(s, client, token = null).unregisterDevice())
+    }
+
+    @Test
+    fun unregisterDeviceTimesOutQuickly() {
+        val s = server(localhostCert)
+        s.enqueue(MockResponse().setResponseCode(204).setHeadersDelay(5, TimeUnit.SECONDS))
+        val started = System.nanoTime()
+        val outcome = api(s, pinnedClient(pin(localhostCert))).unregisterDevice(timeoutMs = 500)
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertEquals(RemoteUnpair.FAILED, outcome)
+        assertTrue("took $elapsedMs ms", elapsedMs < 3_000)
+    }
+
+    @Test
+    fun unregisterDeviceUnreachableServerFails() {
+        val s = server(localhostCert)
+        val base = base(s)
+        s.shutdown()
+        val outcome = EtsApi(base, pinnedClient(pin(localhostCert)), "tok", "t").unregisterDevice(timeoutMs = 1_000)
+        assertEquals(RemoteUnpair.FAILED, outcome)
+    }
 }
