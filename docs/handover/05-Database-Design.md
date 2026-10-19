@@ -3,8 +3,8 @@
 **DBMS:** PostgreSQL 14+ · **Database:** `ets` · **Application role / database owner:** `ets` ·
 **Log owner role:** `ets_log_owner` (no login, owns the log tables — §3a) · **Extension:** `citext`
 **Creation script:** `deploy/db/create-database.sql` · **Schema source:** `backend/src/db/migrations/*.sql`
-(001–009, 012 and 013; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
-(after migration 013)
+(001–009 and 012–014; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
+(after migration 014)
 
 ## 1. How the schema is managed
 
@@ -41,7 +41,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | Table | Purpose | Key columns |
 |---|---|---|
 | `roles` | The nine roles | `id` (admin, pm, tm, mgr, lead, member, ed, qa, obs), `name_ar/en`, `full_scope` (true only for admin, pm, tm), `permissions text[]` |
-| `users` | Accounts | `username citext unique`, `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip` |
+| `users` | Accounts | `username citext unique` (3–60 of `A–Z a–z 0–9 . _ -`, never `@`, enforced by the API), `email citext` (optional; stored trimmed in lower case; **one account per address** — unique index `users_email_lower_uniq` on `lower(email)` where set, migration 014; sign-in accepts the username or the address), `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip` |
 | `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (`h1:` + HMAC-SHA-256, migration 008; older plain SHA-256 codes stay valid until used or regenerated), `used_at` |
 | `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool`. `usr` may be granted to the admin role only (migration 009 removed other grants, each recorded in the audit trail) |
 | `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. Full scope comes from `roles.full_scope` only: a user of another role with **no rows sees nothing** (fail closed; migration 009 lists such users in `system_log`, event `scope_fail_closed`) |
@@ -101,6 +101,30 @@ the seven functions and schema `public` to `ets_log_owner` (NOLOGIN). The applic
 `INSERT` on `audit_log` / `auth_log`, `SELECT` on `log_chain_head` / `log_chain_anchor` and the log sequences,
 `EXECUTE` on `ets_purge_log`, and `USAGE, CREATE` on schema `public`; it owns every other table. Remote database:
 the DBA applies the same script ([07 §3](07-Logging-and-Audit.md)). Check: `sudo ets-log-protect status`.
+
+### 3b. Migration 014 — unique e-mail addresses (sign-in by e-mail, 1.6.0)
+
+`users_email_lower_uniq` = `UNIQUE (lower(email::text)) WHERE email IS NOT NULL AND email <> ''`, created by the
+function `ets_ensure_email_unique_index()` (returns `true` when the index exists afterwards). On a database where
+several accounts already share an address (any case) the migration does **not** fail: the index is skipped, the
+function raises a `NOTICE` (`ETS: … e-mail address(es) are used by more than one account …`) and writes a
+`system_log` row `level='warn', event='email_index_skipped'` whose `detail` lists the addresses
+(`duplicates: [{email, accounts}]`) and any usernames containing `@` (`usernames_with_at`). While the index is
+missing, signing in by such an address is refused (generic error; by username it works) and the Users screen /
+import refuse new duplicates. `migrate.js` — run at every service start and by `npm run migrate` — calls the function
+again, so the index is created by itself once an administrator has given each account its own address. To check or
+do it by hand:
+
+```sql
+SELECT to_regclass('users_email_lower_uniq');            -- NULL = not created yet
+SELECT lower(email::text), array_agg(username) FROM users
+ WHERE email IS NOT NULL AND email <> '' GROUP BY 1 HAVING count(*) > 1;   -- the addresses to fix
+SELECT ets_ensure_email_unique_index();                  -- true once created
+```
+
+Note: on a local install `ets-log-protect migrate` runs the SQL with `client_min_messages = warning`, so the NOTICE is
+not printed by `update.sh`; the `system_log` row (Logs → System) and the service start-up log (`notice: ETS: …` in
+`app.log`, repeated at every start while duplicates remain) carry it.
 
 ## 4. Code values
 

@@ -160,8 +160,10 @@ export default function Login() {
       <form onSubmit={login}>
         {err && <Alert>{errText(err)}</Alert>}
         <label className="field">
-          <span className="field-label">{t('username')}</span>
-          <input className="input" autoComplete="username" value={form.username} dir="ltr" autoFocus required
+          {/* username or e-mail address (1.6.0): a plain text field — type="email" would refuse a username */}
+          <span className="field-label">{t('login_identifier')}</span>
+          <input className="input" type="text" name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off"
+            spellCheck={false} inputMode="email" value={form.username} dir="ltr" placeholder={t('login_identifier_ph')} autoFocus required
             onChange={e => setForm({ ...form, username: e.target.value })} />
         </label>
         <label className="field">

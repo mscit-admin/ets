@@ -11,7 +11,8 @@ administrators create or promote administrators, reset an administrator's passwo
 from 2FA in bulk.
 
 ### Create a user
-1. **New user** → fill in the full name, username (Latin letters, digits, `. _ -`), email (optional),
+1. **New user** → fill in the full name, username (Latin letters, digits, `. _ -`; never `@`), email (optional;
+   stored in lower case, one account per address — the user can sign in with it instead of the username),
    language and an initial password (at least 10 characters — 12 for an administrator —, letters and digits,
    not a common password, not containing the username, at most 72 bytes).
 2. Keep **Must change password at first login** ticked. The user then picks their own password.
@@ -86,7 +87,7 @@ To create many accounts at once: **Users → Import users** (استيراد مس
 3. **Choose the file.** It is read in your browser and every row is checked by the server **without creating
    anything**. The preview lists each row with what will be created, **in names** (role, language, departments,
    applications — e.g. «عضو فريق», «العربية»), and «سليم / OK» or its errors (username taken, duplicate in the
-   file, invalid username / email / role / language / department / application, ambiguous name, missing scope,
+   file, email already used by an account or twice in the file, invalid username / email / role / language / department / application, ambiguous name, missing scope,
    missing full name). An unrecognised value is quoted in the message, e.g. «الدور غير موجود: مدير قسم» or
    «الإدارة غير موجودة: …».
    If any row has an error, **nothing can be created**: download the **error report** (.xlsx or .csv — the

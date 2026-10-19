@@ -41,8 +41,10 @@ ets/
 │   │   │   │   ├── 008_auth_lockout.sql  users.last_failed_at (sign-in pause that expires); recovery-code hash format
 │   │   │   │   ├── 009_usr_admin_only.sql  Removes `usr` overrides from non-admins (audited); lists users without scope
 │   │   │   │   ├── 012_audit_integrity.sql  Append-only, hash-chained audit_log / auth_log; separate audit retention
-│   │   │   │   └── 013_disable_reason.sql  Why a function is excluded: functions.disabled_*, function_duplicates,
-│   │   │   │                      edit_request_items.meta (010 and 011 are not used)
+│   │   │   │   ├── 013_disable_reason.sql  Why a function is excluded: functions.disabled_*, function_duplicates,
+│   │   │   │   │                  edit_request_items.meta (010 and 011 are not used)
+│   │   │   │   └── 014_login_email.sql  Unique lower(email) for sign-in by e-mail; skipped (NOTICE + system_log) while
+│   │   │   │                      addresses are shared, created by a later migrate run
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -112,6 +114,7 @@ ets/
 │       ├── users-import.test.js   Bulk user import: row checks, limits, all-or-nothing, one-time passwords, audit
 │       ├── export.test.js         Excel exports: exp required, scope, users admin-only, audit, valid xlsx, no formulas
 │       ├── disable-reason.test.js Exclusion reason: 400s, links, re-include, bulk, approval, picker, export, imports
+│       ├── login-email.test.js    Sign-in by username or e-mail: same answer, shared lockout, duplicates, 014 upgrade
 │       ├── live.test.js           /api/events: auth, tracker_changed after commit without values, scope, sign-out /
 │       │                          expiry close the stream, per-user cap, access log (needs TEST_DATABASE_URL)
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)

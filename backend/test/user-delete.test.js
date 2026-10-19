@@ -370,22 +370,46 @@ test('the username (and e-mail) of a deleted user can be used again; restore nee
   assert.equal((await verifyAll()).ok, true);
 });
 
-test('migration 015 makes an e-mail unique index partial (sign-in by e-mail, migration 014)', { skip }, async () => {
+test('the unique e-mail index (migration 014) only covers accounts that are not deleted, also when rebuilt later', { skip }, async () => {
+  const idx = async c => (await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='users_email_lower_uniq'`)).rows[0]?.indexdef;
+  const root = await as('root');
+  // a deleted account keeps its address; a new account may take it (bulk1 was deleted above)
+  const nb = await root.post('/users', { username: 'bulk1new', full_name: 'Bulk One New', email: 'BULK1@example.ly', role_id: 'pm',
+    password: 'New-Passw0rd-2026', must_change_password: false });
+  assert.equal(nb.status, 201, JSON.stringify(nb.data));
+  assert.equal((await client().login('bulk1@example.ly', 'New-Passw0rd-2026')).data.stage, 'done');      // sign-in by e-mail
+  assert.equal((await client().login('bulk1@example.ly', PW)).status, 401);                              // never the deleted one
+  // a second live account with that address is refused; restoring the deleted owner is refused (409)
+  assert.equal((await root.post('/users', { username: 'other1', full_name: 'x', email: 'bulk1@example.ly', role_id: 'pm',
+    password: 'New-Passw0rd-2026' })).data.error, 'email_taken');
+  const r409 = await root.post(`/users/${ids.bulk1}/restore`, { reason: 'came back' });
+  assert.equal(r409.status, 409);
+  assert.equal(r409.data.error, 'email_taken');
+  assert.equal((await root.get('/users?deleted=1')).data.users.find(u => u.id === ids.bulk1).email_taken, true);
+
   const c = await pool.connect();
   try {
+    assert.match(await idx(c), /WHERE \(\(email IS NOT NULL\) AND \(email <> ''::citext\) AND \(deleted_at IS NULL\)\)/);
+    assert.match((await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='users_username_live_key'`)).rows[0].indexdef, /WHERE \(deleted_at IS NULL\)/);
     await c.query('BEGIN');
-    // the shape migration 014 may use: unique on lower(email), not partial (deleted rows' e-mails cleared so it builds)
+    // the 1.6.0 shape (built by 014 before 015): rebuilt with the deleted_at condition by the function migrate.js calls
+    await c.query('DROP INDEX users_email_lower_uniq');
     await c.query(`UPDATE users SET email=NULL WHERE deleted_at IS NOT NULL`);
-    await c.query(`CREATE UNIQUE INDEX users_email_lower_key ON users (lower(email::text))`);
+    await c.query(`CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text)) WHERE email IS NOT NULL AND email <> ''`);
+    assert.equal((await c.query('SELECT ets_ensure_email_unique_index() AS ok')).rows[0].ok, true);
+    assert.match(await idx(c), /AND \(deleted_at IS NULL\)\)$/);
+    const def = await idx(c);
+    assert.equal((await c.query('SELECT ets_ensure_email_unique_index() AS ok')).rows[0].ok, true);     // already right: unchanged
+    assert.equal(await idx(c), def);
+    // index missing (skipped for duplicates): a duplicate held only by a deleted account does not block it
+    await c.query('DROP INDEX users_email_lower_uniq');
+    await c.query(`UPDATE users SET email='dup@example.ly' WHERE id IN ($1, $2)`, [ids.bulk2, ids.bulk3]);   // bulk2 is deleted
+    assert.equal((await c.query('SELECT ets_ensure_email_unique_index() AS ok')).rows[0].ok, true);
+    assert.equal(await idx(c), def);
+    // the migration file itself is re-runnable
     const fs = await import('node:fs');
-    const sql = fs.readFileSync(new URL('../src/db/migrations/015_user_delete.sql', import.meta.url), 'utf8');
-    await c.query(sql);                                      // re-runnable
-    const def = (await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='users_email_lower_key'`)).rows[0].indexdef;
-    assert.match(def, /UNIQUE INDEX users_email_lower_key ON public\.users USING btree \(lower\(\(email\)::text\)\) WHERE \(deleted_at IS NULL\)/);
-    await c.query(sql);                                      // already partial: unchanged
-    assert.equal((await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='users_email_lower_key'`)).rows[0].indexdef, def);
-    const uname = (await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='users_username_live_key'`)).rows[0].indexdef;
-    assert.match(uname, /WHERE \(deleted_at IS NULL\)/);
+    await c.query(fs.readFileSync(new URL('../src/db/migrations/015_user_delete.sql', import.meta.url), 'utf8'));
+    assert.equal(await idx(c), def);
   } finally {
     await c.query('ROLLBACK');
     c.release();
