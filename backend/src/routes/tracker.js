@@ -8,6 +8,7 @@ import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
+import { PASS, passConflict, passRuleError, itemList } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
@@ -164,6 +165,9 @@ r.patch('/functions/:id', async (req, res) => {
   if (needsNote(after) && !String(after.note || '').trim()) {
     throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
   }
+  // «نجح» needs 100 % (1.8.1): checked here for a direct edit and for one sent for approval (checked again on approval)
+  const passErr = passRuleError(cur, changes);
+  if (passErr) throw bad(passErr, { progress: Number(after.progress), test_status: Number(after.test_status), code: cur.code });
   // excluding a function needs a reason; a duplicate names the function(s) it duplicates
   let disable = null;
   if (changes.enabled === false) {
@@ -189,6 +193,11 @@ r.patch('/functions/:id', async (req, res) => {
       ${firstNoteOnly ? "AND btrim(coalesce(note, ''))=''" : ''} RETURNING *`,
     [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
     if (!u) throw new HttpError(409, 'note_changed');
+    // the row as saved: another edit at the same moment must not leave it «نجح» below 100 % (rolled back)
+    if (('test_status' in changes || 'progress' in changes) && passConflict(u)) {
+      throw new HttpError(409, 'test_status' in changes ? 'pass_requires_100' : 'progress_below_100_while_passed',
+        { progress: Number(u.progress), test_status: u.test_status, code: cur.code });
+    }
     const oldValue = Object.fromEntries(keys.map(k => [k, cur[k]])), newValue = { ...changes };
     if (disable) {
       await setDisabled(c, [id], disable, req.user.id);
@@ -220,6 +229,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
   }
+  await bulkPassCheck({ query }, a.id, field, value);         // «نجح» needs 100 % (1.8.1): all or nothing
   if (await needsLeadApproval(req.user, a)) {
     const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
       .filter(x => Number(x.v) !== Number(value));
@@ -232,6 +242,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
   }
   const n = await tx(async c => {
     const before = (await c.query(`SELECT id, code, name_ar, name_en, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
+    await bulkPassCheck(c, a.id, field, value);              // again on the locked rows
     const q = await c.query(`UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`,
       [a.id, value, req.user.id]);
     const changed = before.filter(x => Number(x.v) !== Number(value));
@@ -245,6 +256,25 @@ r.post('/applications/:id/bulk', async (req, res) => {
   publishChange({ dept_id: a.department_id, app_id: a.id });
   res.json({ updated: n });
 });
+
+// «نجح» needs 100 % (1.8.1) for a bulk set of every counted item of an application: refused (400) when it would set
+// «نجح» on an item below 100 % or a progress below 100 on a passed item, with the list of those items. Items already
+// passed below 100 % that the bulk set does not change (same value) are not counted.
+async function bulkPassCheck(c, appId, field, value) {
+  let rows = [];
+  if (field === 'test_status' && value === PASS) {
+    rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
+      WHERE app_id=$1 AND enabled AND test_status <> $2 AND progress < 100 ORDER BY sort, id`, [appId, PASS])).rows;
+  } else if (field === 'progress' && value < 100) {
+    rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
+      WHERE app_id=$1 AND enabled AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
+  }
+  if (!rows.length) return;
+  const error = field === 'test_status' ? 'pass_requires_100' : 'progress_below_100_while_passed';
+  const items = rows.map(x => ({ function_id: x.id, app_id: appId, code: x.code, name_ar: x.name_ar, name_en: x.name_en, item_type: x.item_type,
+    progress: Number(field === 'progress' ? value : x.progress), current_progress: Number(x.progress), test_status: field === 'test_status' ? value : x.test_status, error }));
+  throw bad(error, { bulk: true, count: items.length, items: items.slice(0, 200), list: itemList(items.map(x => ({ code: x.code }))) });
+}
 
 // Reason of an exclusion as carried by a pending request item (edit_request_items.meta), applied on approval.
 const reasonMeta = d => ({ disabled_reason: d.reason, disabled_note: d.note, duplicate_of: refs(d.duplicates || []) });

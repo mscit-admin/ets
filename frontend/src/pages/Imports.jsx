@@ -7,6 +7,7 @@ import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 
+const pctText = v => String(Math.round((+v || 0) * 100) / 100);     // 80 → "80" (row errors)
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', no_changes: 'gray' };
 
 // "12.5% → 14.0%" with direction colour
@@ -139,14 +140,25 @@ function ImportModal({ onClose, onDone }) {
             {preview.options.map(o => {
               const key = o.target + ':' + (o.department_id || '');
               const d0 = o.summary?.departments?.[0];
+              // rows breaking «نجح» needs 100 % (1.8.1): this part of the file cannot be sent until the file is fixed
+              const errors = o.errors || [];
               return (
-                <label key={key} className={'option-row' + (choice === key ? ' on' : '') + (o.target === 'reports' ? ' reports' : '')}>
-                  <input type="radio" name="target" checked={choice === key} onChange={() => setChoice(key)} />
+                <label key={key} className={'option-row' + (choice === key ? ' on' : '') + (o.target === 'reports' ? ' reports' : '') + (errors.length ? ' has-errors' : '')}>
+                  <input type="radio" name="target" checked={choice === key} disabled={errors.length > 0} onChange={() => setChoice(key)} />
                   <span className="option-main">
                     <b>{o.target === 'reports' ? t('import_target_reports') : nm(o)}</b>
                     {o.target === 'reports' && <span className="muted small">{t('import_target_reports_sub', { depts: o.departments.map(deptName).join('، ') })}</span>}
+                    {errors.length > 0 && <>
+                      <span className="small red-text">{t('imp_pass_errors_hint')}</span>
+                      <ul className="imp-errors">
+                        {errors.slice(0, 50).map(e => <li key={e.function_id}><span className="code" dir="ltr">{e.app_id}/{e.code}</span> <span lang="ar" dir="rtl">{e.name_ar}</span>
+                          {' — '}{t(e.error === 'pass_requires_100' ? 'imp_row_pass_below_100' : 'imp_row_progress_below_100', { progress: pctText(e.progress) })}</li>)}
+                        {errors.length > 50 && <li>… +{errors.length - 50}</li>}
+                      </ul>
+                    </>}
                   </span>
                   <span className="option-side">
+                    {errors.length > 0 && <Indicator color="red">{t('imp_errors_n', { n: errors.length })}</Indicator>}
                     {o.changes ? <Indicator color="orange">{t('import_n_changes', { n: o.changes })}</Indicator> : <Indicator color="gray">{t('import_no_changes')}</Indicator>}
                     {o.target === 'department' && d0 && <Delta before={d0.before} after={d0.after} />}
                   </span>
@@ -246,7 +258,7 @@ export function ImportDetail() {
                       <td className="nowrap">{t(FIELD_LABEL[ch.field] || ch.field)}</td>
                       <td className="muted">{fmt(ch.field, ch.old_value)}</td>
                       <td><b>{fmt(ch.field, ch.new_value)}</b></td>
-                      {b.status === 'applied' && <td>{ch.applied ? <Indicator color="green">✓</Indicator> : <Indicator color="red" title={ch.note}>✗</Indicator>}</td>}
+                      {b.status === 'applied' && <td>{ch.applied ? <Indicator color="green">✓</Indicator> : <Indicator color="red" title={/^(pass_requires_100|progress_below_100_while_passed)$/.test(ch.note || '') ? t('err_' + ch.note) : ch.note}>✗</Indicator>}</td>}
                     </tr>
                   ))}
                 </tbody>

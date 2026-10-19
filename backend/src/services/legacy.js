@@ -1,7 +1,8 @@
 // Import/export compatible with the original single-file tracker
 // (reference/erp-tracker-original.html): its JSON export, or a standalone HTML
 // copy with the state embedded in window.__SAVED.
-import { isDate, jsonDepth, MAX_JSON_DEPTH } from '../utils/http.js';
+import { isDate, jsonDepth, MAX_JSON_DEPTH, bad } from '../utils/http.js';
+import { passRuleErrors, itemList } from './passRule.js';
 
 import { canSeeApp } from '../middleware/auth.js';
 
@@ -25,9 +26,26 @@ function parseShallow(json) {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 
-// Applies a legacy payload inside a transaction (client c). Returns counts.
+// Items the file would leave «نجح» below 100 % by changing their test status or progress (1.8.1): the import's row
+// errors. An item already passed below 100 % that the file leaves as it is, is not one.
+export async function legacyPassErrors(c, p) {
+  const rows = (await c.query('SELECT id, app_id, code, name_ar, name_en, item_type, progress, test_status FROM functions WHERE removed_at IS NULL')).rows;
+  const list = [];
+  for (const r of rows) {
+    const v = p.f?.[r.app_id]?.[r.code];
+    if (!v || typeof v !== 'object') continue;
+    list.push({ cur: r, changes: { progress: clamp(v.p, 0, 100), test_status: clamp(v.t, 0, 3) | 0 },
+      app_id: r.app_id, function_id: r.id, code: r.code, name_ar: r.name_ar, name_en: r.name_en, item_type: r.item_type });
+  }
+  return passRuleErrors(list);
+}
+
+// Applies a legacy payload inside a transaction (client c). Returns counts. Refused as a whole (400
+// import_has_row_errors, nothing written) when a row breaks «نجح» needs 100 % (1.8.1).
 export async function applyLegacy(c, p, userId) {
   if (!p || typeof p !== 'object' || !p.f) throw new Error('no_legacy_state');
+  const errors = await legacyPassErrors(c, p);
+  if (errors.length) throw bad('import_has_row_errors', { count: errors.length, errors: errors.slice(0, 200), list: itemList(errors) });
   const counts = { functions: 0, weights: 0, reports: 0, settings: 0, schedule: 0 };
   for (const [appId, items] of Object.entries(p.f)) {
     if (!items || typeof items !== 'object') continue;

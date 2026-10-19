@@ -54,6 +54,7 @@ const ar = {
   k_pending_imports: 'دفعات استيراد معلّقة', k_start: 'بداية المشروع', k_end: 'تاريخ إغلاق المشروع', k_periods: 'عدد الفترات',
   k_dept: 'إنجاز الإدارة: {name}',
   // filters
+  pass_conflict: 'تعارض الحالة والنسبة (نجح والنسبة أقل من 100%)',
   f_q: 'بحث', f_source: 'المصدر', f_test: 'حالة الاختبار', f_show_off: 'إظهار غير المفعّلة', f_show_removed: 'إظهار المُزالة',
   f_status: 'الحالة', f_mine: 'طلباتي', f_dept: 'الإدارة', f_type: 'السجل', f_from: 'من', f_to: 'إلى', f_user_id: 'المستخدم',
   f_event: 'الحدث', f_success: 'النجاح', f_deleted: 'المستخدمون المحذوفون',
@@ -117,6 +118,7 @@ const en = {
   k_reports_done: 'Reports complete', k_reports_pct: 'Reports progress', k_pending_edits: 'Pending edit requests',
   k_pending_imports: 'Pending import batches', k_start: 'Project start', k_end: 'Project close date', k_periods: 'Periods',
   k_dept: 'Department progress: {name}',
+  pass_conflict: 'Status / progress conflict (passed below 100%)',
   f_q: 'Search', f_source: 'Source', f_test: 'Test status', f_show_off: 'Show disabled', f_show_removed: 'Show removed',
   f_status: 'Status', f_mine: 'My requests', f_dept: 'Department', f_type: 'Log', f_from: 'From', f_to: 'To', f_user_id: 'User',
   f_event: 'Event', f_success: 'Success', f_deleted: 'Deleted users',

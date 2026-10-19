@@ -14,6 +14,7 @@ import { requireAuth, requirePerm, requireAdmin } from '../middleware/auth.js';
 import { logAudit } from '../services/logs.js';
 import { buildWorkbook, contentDisposition, XLSX_TYPE } from '../services/xlsx.js';
 import { labels } from '../services/export-labels.js';
+import { passConflict } from '../services/passRule.js';
 import { notFound, own, str } from '../utils/http.js';
 import { summaryData, projectStatusData, departmentData, applicationData, weightsData, reportsData, scheduleData, addPeriods }
   from './tracker.js';
@@ -113,7 +114,7 @@ const REPORTS = {
   },
 
   // The functions table of an application, with the screen's filters (q, source, test, show_off, show_removed, reason,
-  // item_type = function | report).
+  // item_type = function | report; test = 0…3, or 'conflict': «نجح» below 100 %, 1.8.1).
   functions: {
     async build(req, L) {
       const { t } = L;
@@ -126,7 +127,7 @@ const REPORTS = {
       const shown = d.functions.filter(x =>
         (x.removed_at ? on('show_removed') : (on('show_off') || x.enabled || x.source !== 'experience')) &&
         (!f.source || x.source === f.source) &&
-        (f.test === undefined || x.test_status === +f.test) &&
+        (f.test === undefined || (f.test === 'conflict' ? passConflict(x) : x.test_status === +f.test)) &&
         (f.reason === undefined || (!x.enabled && !x.removed_at && (x.disabled_reason || 'none') === f.reason)) &&
         (f.item_type === undefined || x.item_type === f.item_type) &&
         (!q || (x.name_ar + ' ' + (x.reference || '') + ' ' + (x.note || '')).toLowerCase().includes(q)));
@@ -296,7 +297,7 @@ const runGuards = async (guards, req, res) => {
 
 // Readable list of the filters for the sheet's second row.
 const filterText = (L, f) => Object.entries(f || {}).map(([k, v]) => `${L.t('f_' + k)}: ${k === 'type' ? L.t('log_' + v) : k === 'reason' ? L.t('dr_' + v)
-  : k === 'item_type' ? L.t('it_' + v) : v}`).join(' · ');
+  : k === 'item_type' ? L.t('it_' + v) : k === 'test' && v === 'conflict' ? L.t('pass_conflict') : v}`).join(' · ');
 
 r.get('/:file', async (req, res) => {
   const m = /^([a-z_]+)\.xlsx$/.exec(req.params.file);

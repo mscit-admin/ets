@@ -198,6 +198,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .option-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); cursor: pointer; }
 .option-row.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .option-row.reports { border-style: dashed; }
+.option-row.has-errors { cursor: default; border-color: var(--red-text); background: var(--red-bg); align-items: flex-start; }
 .option-main { flex: 1; display: grid; }
 .option-side { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -816,3 +817,14 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
   .fn-title { flex-wrap: wrap; gap: 4px 8px; }
   .it-menu { min-width: 200px; }
 }
+
+/* «نجح» needs 100 % (1.8.1): items passed below 100 % before the rule are flagged next to their test status,
+   and a filter chip lists them */
+.ts-cell { display: flex; align-items: center; gap: 6px; }
+.pass-conflict { display: inline-flex; flex: none; color: var(--orange-text); cursor: help; }
+.pass-conflict-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--orange-text); background: var(--orange-bg); border: 1px solid transparent; cursor: pointer; }
+.pass-conflict-chip:hover { border-color: var(--orange-text); }
+.pass-conflict-chip.on { border-color: var(--orange-text); box-shadow: 0 0 0 1px var(--orange-text); }
+.pass-conflict-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.bulk-blocked { max-height: 220px; overflow: auto; }

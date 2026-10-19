@@ -24,6 +24,14 @@ const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', c
 const REASON_FILTER = [...DISABLE_REASONS, 'import', 'none'];
 const DEFAULT_FILTER = { q: '', source: '', test: '', reason: '', type: '', showOff: false, showRemoved: false };
 const typeOf = f => (f.item_type === 'report' ? 'report' : 'function');
+// «نجح» needs 100 % (1.8.1, also enforced by the server): the test status «نجح» (2) only at 100 %, and no progress
+// below 100 on a passed item. «نجح مع ملاحظة» (1) has no progress rule. Nothing is filled in automatically: the user
+// enters 100 % first, then picks «نجح». Items passed below 100 % before 1.8.1 are flagged (passConflict).
+const PASS = 2;
+const passConflict = f => f.test_status === PASS && +f.progress < 100;
+// readable list of the items a bulk set refused (server answer of pass_requires_100 / progress_below_100_while_passed)
+const pctText = v => String(Math.round((+v || 0) * 100) / 100);     // 80 → "80", 82.5 → "82.5" (alerts)
+const blockedItems = e => (Array.isArray(e?.data?.items) ? e.data.items : []);
 
 // Functions table pagination: rows per page (remembered per browser, default 10).
 const PAGE_SIZES = [5, 10, 15, 20, 25];
@@ -98,7 +106,8 @@ function Pager({ page, pages, total, size, onPage, onSize }) {
 // Number input that only commits on blur / Enter (one request per edit, not per keystroke).
 // A new value from the server (save, or a live update by another user) replaces the shown one, except while the
 // user is typing in this cell: the typed value is kept until it is committed or abandoned (blur).
-function NumCell({ value, min, max, step = 1, disabled, onCommit, label }) {
+// check(n): a message when the value cannot be saved (shown as an alert; the cell goes back to its value).
+function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }) {
   const [v, setV] = useState(String(value));
   const editing = useRef(false);
   useEffect(() => { if (!editing.current) setV(String(value)); }, [value]);
@@ -106,7 +115,10 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label }) {
     editing.current = false;
     const n = Math.min(max, Math.max(min, parseFloat(v)));
     if (!Number.isFinite(n)) { setV(String(value)); return; }
-    if (n !== +value) onCommit(n); else setV(String(value));
+    if (n === +value) { setV(String(value)); return; }
+    const problem = check?.(n);
+    if (problem) { toast(problem, 'red'); setV(String(value)); return; }
+    onCommit(n);
   };
   return (
     <input className="input input-sm num-input" type="number" min={min} max={max} step={step} value={v} disabled={disabled}
@@ -137,6 +149,7 @@ export default function Application() {
   // rows saved by this user whose answer has not come back yet: a reload must not put the old value back
   const inflight = useRef(new Map());
   const [filter, setFilterState] = useState(DEFAULT_FILTER);
+  const conflicts = useMemo(() => fns.filter(f => !f.removed_at && passConflict(f)).length, [fns]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(readPageSize);
   // any filter change starts again at page 1 (saving a cell reloads the data but keeps the page)
@@ -158,7 +171,7 @@ export default function Application() {
     (!filter.reason || (!f.enabled && !f.removed_at && (f.disabled_reason || 'none') === filter.reason)) &&
     (!filter.source || f.source === filter.source) &&
     (!filter.type || typeOf(f) === filter.type) &&
-    (filter.test === '' || f.test_status === +filter.test) &&
+    (filter.test === '' || (filter.test === 'conflict' ? !f.removed_at && passConflict(f) : f.test_status === +filter.test)) &&
     (!filter.q || (f.name_ar + ' ' + (f.reference || '') + ' ' + f.note).toLowerCase().includes(filter.q.toLowerCase()))
   ), [fns, filter]);
 
@@ -254,6 +267,11 @@ export default function Application() {
   // A "with notes" status on an item without a note opens the note window first;
   // status and note are then saved together (cancel = no change).
   const setStatus = (f, field, v) => {
+    // «نجح» below 100 %: not saved, the list goes back to its value (controlled select), and the alert says why
+    if (field === 'test_status' && v === PASS && +f.progress < 100) {
+      toast(t('pass_needs_100_now', { progress: pctText(f.progress) }), 'red');
+      return;
+    }
     const after = { ...f, [field]: v };
     if (needsNote(after) && !(f.note || '').trim()) setNoteFor({ f, pending: { [field]: v } });
     else patch(f, { [field]: v });
@@ -322,7 +340,14 @@ export default function Application() {
           <select className="input input-sm" value={filter.test} onChange={e => setFilter({ ...filter, test: e.target.value })} aria-label={t('test_status')}>
             <option value="">{t('test_status')}: {t('all')}</option>
             {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
+            {(conflicts > 0 || filter.test === 'conflict') && <option value="conflict">⚠ {t('pass_conflict')} ({conflicts})</option>}
           </select>
+          {conflicts > 0 && (
+            <button type="button" className={'pass-conflict-chip' + (filter.test === 'conflict' ? ' on' : '')} aria-pressed={filter.test === 'conflict'}
+              title={t('pass_conflict_hint')} onClick={() => setFilter({ ...filter, test: filter.test === 'conflict' ? '' : 'conflict' })}>
+              <Icon name="alert" size={14} /> {t('pass_conflict_n', { n: conflicts })}
+            </button>
+          )}
           <select className="input input-sm" value={filter.reason} onChange={e => setFilter({ ...filter, reason: e.target.value })} aria-label={t('dr_filter')}>
             <option value="">{t('dr_filter')}: {t('all')}</option>
             {REASON_FILTER.map(r => <option key={r} value={r}>{t('dr_' + r)}</option>)}
@@ -383,10 +408,20 @@ export default function Application() {
                   </td>
                   <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
                   <td className="num-col">
-                    <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })} />
+                    <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })}
+                      check={v => (f.test_status === PASS && v < 100 ? t('pass_lower_blocked', { progress: pctText(v) }) : null)} />
                     <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
                   </td>
-                  <td><StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} /></td>
+                  <td>
+                    <div className="ts-cell">
+                      <StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
+                      {!f.removed_at && passConflict(f) && (
+                        <span className="pass-conflict" role="img" aria-label={t('pass_conflict_hint')} title={t('pass_conflict_hint') + ' — ' + t('pass_conflict_fix')}>
+                          <Icon name="alert" size={15} />
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
                   <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
                   <td className="w-check">
@@ -479,9 +514,17 @@ function BulkModal({ app, can, onClose, onDone }) {
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
         <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy || (exclude && !!noteProblem(why))} onClick={run}>
           {exclude ? t('confirm_exclude_n', { n: chosen.length }) : retype ? t('confirm_type_n', { n: chosen.length }) : t('apply')}</button></>}>
-      {err && <Alert>{errText(err)}</Alert>}
+      {err && <Alert>{errText(err)}
+        {blockedItems(err).length > 0 && <>
+          <div className="mt-s"><b>{t('bulk_blocked_items', { n: err.data.count ?? blockedItems(err).length })}</b></div>
+          <ul className="imp-errors bulk-blocked">
+            {blockedItems(err).map(x => <li key={x.function_id}><span className="code">{x.code}</span> <span lang="ar" dir="rtl">{x.name_ar}</span>
+              {' — '}{t(x.error === 'pass_requires_100' ? 'bulk_item_below_100' : 'bulk_item_passed', { progress: pctText(x.current_progress) })}</li>)}
+          </ul>
+        </>}
+      </Alert>}
       <Field label={t('bulk_set')}>
-        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); setTried(false); }}>
+        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); setTried(false); setErr(null); }}>
           {can.pct && <option value="progress">{t('bulk_progress')}</option>}
           {can.tst && <option value="test_status">{t('bulk_test')}</option>}
           {can.tog && <option value="exclude">{t('bulk_exclude')}</option>}
