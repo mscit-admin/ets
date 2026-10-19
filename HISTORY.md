@@ -12,6 +12,57 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.7.0] — 2026-10-19 — Deleting users (one or several), with the history kept
+
+### Features
+- feat(db): migration `015_user_delete.sql` — `users.deleted_at`, `deleted_by` (→ users, `ON DELETE SET NULL`),
+  `delete_reason` (≤ 500 characters). Deleting is a **soft delete**: the row stays, so every name in the history still
+  resolves; `audit_log` / `auth_log` (hash chains, migration 012) only receive new rows. The username unique constraint
+  becomes the partial index `users_username_live_key … WHERE deleted_at IS NULL`; `ets_ensure_email_unique_index()`
+  (migration 014) is replaced so that `users_email_lower_uniq` also carries `AND deleted_at IS NULL` — rebuilt from the
+  1.6.0 shape by the migration, and built that way by every later call from `migrate.js`. The username and e-mail of a
+  deleted account are free for a new account
+- feat(backend): `DELETE /api/users/:id` `{reason}` and `POST /api/users/bulk-delete` `{ids, reason}` (1–200 ids, one
+  transaction, **all or nothing**: 400 `bulk_delete_refused` with `errors: [{id, username?, error}]` — `not_found`,
+  `already_deleted`, `cannot_delete_self`, `last_admin`). System administrators only; reason required (3+ characters
+  without spaces, at most 500: `delete_reason_required` / `delete_reason_too_long`). In the same transaction: every
+  session revoked (`revoke_reason='user_deleted'`), authenticator and recovery codes removed, the user's pending edit
+  requests **withdrawn** and pending import files **rejected** (each with its own `edit_withdraw` / `import_reject`
+  audit row, `context.user_deleted`), one strict `delete` / `user` audit row per user (reason, target, by, scopes and
+  overrides before, sessions / requests closed) plus `bulk_delete` / `user` for a bulk request, and an
+  `auth_log` row `user_deleted_by_admin`. After COMMIT the user's live streams close (`session_check`)
+- feat(backend): `POST /api/users/:id/restore` `{reason}` — the account comes back with its role, scopes and overrides,
+  a new random temporary password (returned once, `must_change_password: true`, as in the bulk import) and no
+  authenticator; 409 `username_taken` / `email_taken` when another account now uses them. Audit `restore` / `user`,
+  auth `user_restored_by_admin`. `GET /api/users?deleted=1` lists the deleted accounts (who, when, why, whether the
+  name / address are taken)
+- feat(backend): a deleted account is inactive everywhere (`loadUserContext`): no session, no 2FA step, no
+  re-authentication, no live stream, no approval of its old requests; sign-in by username or e-mail never finds it.
+  It is left out of the Users list, `GET /users/:id` and the actions (404), the bulk 2FA change, the bulk import's
+  "taken" checks, the administrator count (`last_admin`), `create-admin` and the system user count
+- feat(backend): Excel export of the users leaves deleted accounts out; `?deleted=1` exports them (deleted on, by,
+  reason). The audit log rows carry `user_deleted` (also a column of the audit log export)
+- feat(frontend): Users screen — tabs «المستخدمون» / «المستخدمون المحذوفون»; row checkboxes with select-all (own
+  account and the last active administrator disabled, with a tooltip), «حذف المحدد (n)» and a delete button on each
+  row and on the user page; confirmation dialog in red listing the names, a warning that the history is kept and a
+  required reason with a counter (Confirm disabled until valid, per-id errors shown); toast and refresh after.
+  Deleted-users tab with «استعادة» (disabled when the name / address is taken) showing the temporary password once
+- feat(frontend): audit sentences «حذف أحمد المدير المستخدم «سالم» — السبب: …», bulk delete and restore; a request or
+  import file closed by a deletion says so; the author of a row in the change history is marked «(محذوف)»
+
+### Tests
+- test(tests): `backend/test/user-delete.test.js` — 403 for non-administrators, self / last administrator refused,
+  reason rules, single delete (sign-in refused, sessions and live stream closed, hidden, history names intact, audit
+  row, `verifyAll()` intact), sessions of a deleted user refused on every auth path, pending requests / imports
+  closed, bulk all-or-nothing, username and e-mail reuse, restore (409 while taken, temporary password, scopes back),
+  and the partial e-mail index (rebuilt from the 1.6.0 shape, kept by later calls)
+
+### Docs
+- docs: 04 (Arabic user guide: deleting and restoring users), 05 (columns, migration 015, partial unique indexes, FK inventory),
+  06 (deletion rules), 11 (endpoints and errors); `deploy/db/schema-reference.sql` regenerated (migration 015)
+
+---
+
 ## [1.6.0] — 2026-10-19 — Sign in with the username or the e-mail address
 
 ### Features

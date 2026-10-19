@@ -84,6 +84,18 @@
 - Refused requests are logged in the login & security log: `access_denied` (permission / scope), `csrf_rejected`
   (missing CSRF header) and `password_change_required`.
 - At least one active administrator always remains.
+- **Deleting users (1.7.0)** — a soft delete (the row and the history stay): System Administrator role only, never
+  your own account, never the last active administrator holding `usr` and `cfg` (counted after overrides, rows
+  locked), a reason of 3–500 characters, at most 200 users per request, all or nothing. The deleted account is
+  treated as inactive by the session middleware (`loadUserContext`), so a surviving session is useless on every path —
+  API, 2FA verify / setup, re-authentication (change password, 2FA disable, recovery codes) and the live stream;
+  sign-in by username or e-mail never finds it (same `invalid_credentials` answer as an unknown name). All its
+  sessions are revoked, its authenticator and recovery codes removed, its pending requests withdrawn and pending
+  import files rejected, in the same transaction as the strict audit rows. There is no separate re-authentication
+  for this administrator action (the application has none for administrator actions); the reason and the audit rows
+  (`delete`, `bulk_delete`, auth `user_deleted_by_admin`) make it accountable. Restoring sets a new random temporary
+  password that must be changed at the next sign-in, and is refused (409) when the username or e-mail now belongs to
+  another account.
 
 ## 4a. Export policy / سياسة التصدير (1.3.0)
 

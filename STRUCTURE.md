@@ -43,8 +43,10 @@ ets/
 │   │   │   │   ├── 012_audit_integrity.sql  Append-only, hash-chained audit_log / auth_log; separate audit retention
 │   │   │   │   ├── 013_disable_reason.sql  Why a function is excluded: functions.disabled_*, function_duplicates,
 │   │   │   │   │                  edit_request_items.meta (010 and 011 are not used)
-│   │   │   │   └── 014_login_email.sql  Unique lower(email) for sign-in by e-mail; skipped (NOTICE + system_log) while
-│   │   │   │                      addresses are shared, created by a later migrate run
+│   │   │   │   ├── 014_login_email.sql  Unique lower(email) for sign-in by e-mail; skipped (NOTICE + system_log) while
+│   │   │   │   │                  addresses are shared, created by a later migrate run
+│   │   │   │   └── 015_user_delete.sql  Soft delete of users (deleted_at/by/reason); username and e-mail unique only
+│   │   │   │                      among accounts not deleted (partial indexes, e-mail function of 014 replaced)
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -115,6 +117,8 @@ ets/
 │       ├── export.test.js         Excel exports: exp required, scope, users admin-only, audit, valid xlsx, no formulas
 │       ├── disable-reason.test.js Exclusion reason: 400s, links, re-include, bulk, approval, picker, export, imports
 │       ├── login-email.test.js    Sign-in by username or e-mail: same answer, shared lockout, duplicates, 014 upgrade
+│       ├── user-delete.test.js    Deleting users: admin only, self / last admin, reason, sessions + stream closed,
+│       │                          history kept, pending requests closed, bulk all-or-nothing, reuse, restore
 │       ├── live.test.js           /api/events: auth, tracker_changed after commit without values, scope, sign-out /
 │       │                          expiry close the stream, per-user cap, access log (needs TEST_DATABASE_URL)
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
@@ -147,6 +151,7 @@ ets/
 │       │   ├── ExportButton.jsx   «Export to Excel» button (exp only) with the screen's filters
 │       │   ├── MultiSelect.jsx    Searchable multi-select (combobox + listbox, chips, keyboard, aria)
 │       │   ├── DisableReason.jsx  Exclusion reason form, reason badge of excluded rows, reason text
+│       │   ├── DeleteUsers.jsx    Delete-users confirmation (names, required reason) and restore dialog
 │       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG) and its legend
 │       │   ├── LiveBadge.jsx      «تحديث مباشر» / "Live" status badge
 │       │   ├── Icon.jsx           SVG icon set

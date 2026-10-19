@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–014).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–015).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -73,15 +73,20 @@ CREATE FUNCTION public.ets_ensure_email_unique_index() RETURNS boolean
 DECLARE
   dups  jsonb;
   ats   jsonb;
+  pred  text;
 BEGIN
+  SELECT pg_get_expr(i.indpred, i.indrelid) INTO pred FROM pg_index i WHERE i.indexrelid = to_regclass('users_email_lower_uniq');
   IF to_regclass('users_email_lower_uniq') IS NOT NULL THEN
-    RETURN true;
+    IF pred ~* 'deleted_at' THEN
+      RETURN true;
+    END IF;
+    DROP INDEX users_email_lower_uniq;        -- the 1.6.0 shape: rebuilt below (no duplicate can exist, it was unique)
   END IF;
   SELECT jsonb_agg(jsonb_build_object('email', e, 'accounts', n) ORDER BY e) INTO dups
     FROM (SELECT lower(email::text) AS e, count(*) AS n FROM users
-          WHERE email IS NOT NULL AND email <> '' GROUP BY 1 HAVING count(*) > 1) d;
+          WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1) d;
   IF dups IS NOT NULL THEN
-    SELECT jsonb_agg(username::text ORDER BY username) INTO ats FROM users WHERE position('@' IN username) > 0;
+    SELECT jsonb_agg(username::text ORDER BY username) INTO ats FROM users WHERE position('@' IN username) > 0 AND deleted_at IS NULL;
     RAISE NOTICE 'ETS: % e-mail address(es) are used by more than one account; the unique e-mail index was not created. Signing in by e-mail is refused for these addresses until each account has its own address (Users screen), then run npm run migrate again. Addresses: %',
       jsonb_array_length(dups), (SELECT string_agg(x->>'email', ', ') FROM jsonb_array_elements(dups) x);
     INSERT INTO system_log(level, event, message, detail)
@@ -90,7 +95,8 @@ BEGIN
             jsonb_build_object('duplicates', dups, 'usernames_with_at', COALESCE(ats, '[]'::jsonb)));
     RETURN false;
   END IF;
-  CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text)) WHERE email IS NOT NULL AND email <> '';
+  CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text))
+    WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL;
   RETURN true;
 END $$;
 -- Name: ets_log_append_only(); Type: FUNCTION; Schema: public; Owner: -
@@ -606,6 +612,10 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by integer,
     last_failed_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    deleted_by integer,
+    delete_reason text,
+    CONSTRAINT users_delete_reason_check CHECK (((delete_reason IS NULL) OR (char_length(delete_reason) <= 500))),
     CONSTRAINT users_language_check CHECK ((language = ANY (ARRAY['ar'::text, 'en'::text])))
 );
 -- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -728,9 +738,6 @@ ALTER TABLE ONLY public.user_scopes
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
--- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_username_key UNIQUE (username);
 -- Name: access_log_status_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX access_log_status_idx ON public.access_log USING btree (status);
 -- Name: access_log_ts_idx; Type: INDEX; Schema: public; Owner: -
@@ -785,8 +792,12 @@ CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE INDEX system_log_ts_idx ON public.system_log USING btree (ts DESC);
 -- Name: user_recovery_codes_user_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX user_recovery_codes_user_id_idx ON public.user_recovery_codes USING btree (user_id);
+-- Name: users_deleted_at; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX users_deleted_at ON public.users USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
 -- Name: users_email_lower_uniq; Type: INDEX; Schema: public; Owner: -
-CREATE UNIQUE INDEX users_email_lower_uniq ON public.users USING btree (lower((email)::text)) WHERE ((email IS NOT NULL) AND (email OPERATOR(public.<>) ''::public.citext));
+CREATE UNIQUE INDEX users_email_lower_uniq ON public.users USING btree (lower((email)::text)) WHERE ((email IS NOT NULL) AND (email OPERATOR(public.<>) ''::public.citext) AND (deleted_at IS NULL));
+-- Name: users_username_live_key; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX users_username_live_key ON public.users USING btree (username) WHERE (deleted_at IS NULL);
 -- Name: audit_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_append_only();
 -- Name: auth_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
@@ -917,6 +928,9 @@ ALTER TABLE ONLY public.user_scopes
 -- Name: users users_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: users users_deleted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: users users_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
