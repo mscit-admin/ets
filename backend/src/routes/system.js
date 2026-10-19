@@ -25,7 +25,7 @@ r.get('/info', async (req, res) => {
       current_database() AS name,
       (SELECT max(version) FROM schema_migrations) AS migration`)).rows[0];
   const counts = (await query(`SELECT
-      (SELECT count(*)::int FROM users) AS users,
+      (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS users,
       (SELECT count(*)::int FROM functions) AS functions,
       (SELECT count(*)::int FROM audit_log) AS audit_rows,
       (SELECT count(*)::int FROM access_log) AS access_rows,

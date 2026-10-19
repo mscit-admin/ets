@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–015).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -66,6 +66,39 @@ CREATE FUNCTION public.ets_chain_hash(prev text, body text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT encode(sha256(convert_to(prev || '|' || body, 'UTF8')), 'hex') $$;
+-- Name: ets_ensure_email_unique_index(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_ensure_email_unique_index() RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  dups  jsonb;
+  ats   jsonb;
+  pred  text;
+BEGIN
+  SELECT pg_get_expr(i.indpred, i.indrelid) INTO pred FROM pg_index i WHERE i.indexrelid = to_regclass('users_email_lower_uniq');
+  IF to_regclass('users_email_lower_uniq') IS NOT NULL THEN
+    IF pred ~* 'deleted_at' THEN
+      RETURN true;
+    END IF;
+    DROP INDEX users_email_lower_uniq;        -- the 1.6.0 shape: rebuilt below (no duplicate can exist, it was unique)
+  END IF;
+  SELECT jsonb_agg(jsonb_build_object('email', e, 'accounts', n) ORDER BY e) INTO dups
+    FROM (SELECT lower(email::text) AS e, count(*) AS n FROM users
+          WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL GROUP BY 1 HAVING count(*) > 1) d;
+  IF dups IS NOT NULL THEN
+    SELECT jsonb_agg(username::text ORDER BY username) INTO ats FROM users WHERE position('@' IN username) > 0 AND deleted_at IS NULL;
+    RAISE NOTICE 'ETS: % e-mail address(es) are used by more than one account; the unique e-mail index was not created. Signing in by e-mail is refused for these addresses until each account has its own address (Users screen), then run npm run migrate again. Addresses: %',
+      jsonb_array_length(dups), (SELECT string_agg(x->>'email', ', ') FROM jsonb_array_elements(dups) x);
+    INSERT INTO system_log(level, event, message, detail)
+    VALUES ('warn', 'email_index_skipped',
+            'Unique e-mail index not created: some e-mail addresses are used by more than one account',
+            jsonb_build_object('duplicates', dups, 'usernames_with_at', COALESCE(ats, '[]'::jsonb)));
+    RETURN false;
+  END IF;
+  CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text))
+    WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL;
+  RETURN true;
+END $$;
 -- Name: ets_log_append_only(); Type: FUNCTION; Schema: public; Owner: -
 CREATE FUNCTION public.ets_log_append_only() RETURNS trigger
     LANGUAGE plpgsql
@@ -238,6 +271,7 @@ CREATE TABLE public.edit_request_items (
     new_value jsonb,
     applied boolean,
     note text,
+    meta jsonb,
     CONSTRAINT edit_request_items_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'report'::text])))
 );
 -- Name: edit_request_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -297,6 +331,12 @@ CREATE SEQUENCE public.error_log_id_seq
     CACHE 1;
 -- Name: error_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.error_log_id_seq OWNED BY public.error_log.id;
+-- Name: function_duplicates; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.function_duplicates (
+    function_id integer NOT NULL,
+    duplicate_of_id integer NOT NULL,
+    CONSTRAINT function_duplicates_check CHECK ((function_id <> duplicate_of_id))
+);
 -- Name: functions; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.functions (
     id integer NOT NULL,
@@ -322,6 +362,12 @@ CREATE TABLE public.functions (
     removed_reason text,
     created_at timestamp with time zone,
     created_by integer,
+    disabled_reason text,
+    disabled_note text,
+    disabled_by integer,
+    disabled_at timestamp with time zone,
+    CONSTRAINT functions_disabled_note_check CHECK (((disabled_note IS NULL) OR (char_length(disabled_note) <= 500))),
+    CONSTRAINT functions_disabled_reason_check CHECK (((disabled_reason IS NULL) OR (disabled_reason = ANY (ARRAY['duplicate'::text, 'out_of_scope'::text, 'not_required'::text, 'other'::text, 'import'::text])))),
     CONSTRAINT functions_notif_status_check CHECK (((notif_status >= 0) AND (notif_status <= 3))),
     CONSTRAINT functions_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric))),
     CONSTRAINT functions_review_status_check CHECK (((review_status >= 0) AND (review_status <= 3))),
@@ -566,6 +612,10 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by integer,
     last_failed_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    deleted_by integer,
+    delete_reason text,
+    CONSTRAINT users_delete_reason_check CHECK (((delete_reason IS NULL) OR (char_length(delete_reason) <= 500))),
     CONSTRAINT users_language_check CHECK ((language = ANY (ARRAY['ar'::text, 'en'::text])))
 );
 -- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -634,6 +684,9 @@ ALTER TABLE ONLY public.edit_requests
 -- Name: error_log error_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_pkey PRIMARY KEY (id);
+-- Name: function_duplicates function_duplicates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_pkey PRIMARY KEY (function_id, duplicate_of_id);
 -- Name: functions functions_app_id_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_code_key UNIQUE (app_id, code);
@@ -685,9 +738,6 @@ ALTER TABLE ONLY public.user_scopes
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
--- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: -
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_username_key UNIQUE (username);
 -- Name: access_log_status_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX access_log_status_idx ON public.access_log USING btree (status);
 -- Name: access_log_ts_idx; Type: INDEX; Schema: public; Owner: -
@@ -722,6 +772,8 @@ CREATE INDEX edit_requests_requested_by_status_idx ON public.edit_requests USING
 CREATE INDEX edit_requests_status_department_id_idx ON public.edit_requests USING btree (status, department_id);
 -- Name: error_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX error_log_ts_idx ON public.error_log USING btree (ts DESC);
+-- Name: function_duplicates_target; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX function_duplicates_target ON public.function_duplicates USING btree (duplicate_of_id);
 -- Name: functions_app_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX functions_app_id_idx ON public.functions USING btree (app_id);
 -- Name: import_batches_status_target_department_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -740,6 +792,12 @@ CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE INDEX system_log_ts_idx ON public.system_log USING btree (ts DESC);
 -- Name: user_recovery_codes_user_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX user_recovery_codes_user_id_idx ON public.user_recovery_codes USING btree (user_id);
+-- Name: users_deleted_at; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX users_deleted_at ON public.users USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
+-- Name: users_email_lower_uniq; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX users_email_lower_uniq ON public.users USING btree (lower((email)::text)) WHERE ((email IS NOT NULL) AND (email OPERATOR(public.<>) ''::public.citext) AND (deleted_at IS NULL));
+-- Name: users_username_live_key; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX users_username_live_key ON public.users USING btree (username) WHERE (deleted_at IS NULL);
 -- Name: audit_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_append_only();
 -- Name: auth_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
@@ -804,12 +862,21 @@ ALTER TABLE ONLY public.edit_requests
 -- Name: error_log error_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: function_duplicates function_duplicates_duplicate_of_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_duplicate_of_id_fkey FOREIGN KEY (duplicate_of_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: function_duplicates function_duplicates_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_duplicates
+    ADD CONSTRAINT function_duplicates_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
 -- Name: functions functions_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
 -- Name: functions functions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: functions functions_disabled_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.functions
+    ADD CONSTRAINT functions_disabled_by_fkey FOREIGN KEY (disabled_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: functions functions_removed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_removed_by_fkey FOREIGN KEY (removed_by) REFERENCES public.users(id) ON DELETE SET NULL;
@@ -861,6 +928,9 @@ ALTER TABLE ONLY public.user_scopes
 -- Name: users users_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: users users_deleted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.users(id) ON DELETE SET NULL;
 -- Name: users users_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);

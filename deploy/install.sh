@@ -591,7 +591,7 @@ ${GR}═════════════════════════
 ${GR}  ETS is installed${N}
 
   Open:            ${B}$URL${N}
-  Administrator:   $ETS_ADMIN_USER  (the password you entered$( [[ $ADMIN_PW_PRESET == 1 ]] && echo " — must be changed at first sign-in"))
+  Administrator:   $ETS_ADMIN_USER${ETS_ADMIN_EMAIL:+ or $ETS_ADMIN_EMAIL (either signs in)}  (the password you entered$( [[ $ADMIN_PW_PRESET == 1 ]] && echo " — must be changed at first sign-in"))
   2FA policy:      $ETS_MFA_MODE
   Database:        $ETS_DB_NAME on $ETS_DB_HOST:$ETS_DB_PORT, user $ETS_DB_USER
   Audit trail:     $( [[ $ETS_DB_MODE == local ]] && echo "protected in the database (read/append only for $ETS_DB_USER) · sudo ets-log-protect status" || echo "see the note above about the DBA protecting the log tables" )

@@ -12,6 +12,209 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.7.0] — 2026-10-19 — Deleting users (one or several), with the history kept
+
+### Features
+- feat(db): migration `015_user_delete.sql` — `users.deleted_at`, `deleted_by` (→ users, `ON DELETE SET NULL`),
+  `delete_reason` (≤ 500 characters). Deleting is a **soft delete**: the row stays, so every name in the history still
+  resolves; `audit_log` / `auth_log` (hash chains, migration 012) only receive new rows. The username unique constraint
+  becomes the partial index `users_username_live_key … WHERE deleted_at IS NULL`; `ets_ensure_email_unique_index()`
+  (migration 014) is replaced so that `users_email_lower_uniq` also carries `AND deleted_at IS NULL` — rebuilt from the
+  1.6.0 shape by the migration, and built that way by every later call from `migrate.js`. The username and e-mail of a
+  deleted account are free for a new account
+- feat(backend): `DELETE /api/users/:id` `{reason}` and `POST /api/users/bulk-delete` `{ids, reason}` (1–200 ids, one
+  transaction, **all or nothing**: 400 `bulk_delete_refused` with `errors: [{id, username?, error}]` — `not_found`,
+  `already_deleted`, `cannot_delete_self`, `last_admin`). System administrators only; reason required (3+ characters
+  without spaces, at most 500: `delete_reason_required` / `delete_reason_too_long`). In the same transaction: every
+  session revoked (`revoke_reason='user_deleted'`), authenticator and recovery codes removed, the user's pending edit
+  requests **withdrawn** and pending import files **rejected** (each with its own `edit_withdraw` / `import_reject`
+  audit row, `context.user_deleted`), one strict `delete` / `user` audit row per user (reason, target, by, scopes and
+  overrides before, sessions / requests closed) plus `bulk_delete` / `user` for a bulk request, and an
+  `auth_log` row `user_deleted_by_admin`. After COMMIT the user's live streams close (`session_check`)
+- feat(backend): `POST /api/users/:id/restore` `{reason}` — the account comes back with its role, scopes and overrides,
+  a new random temporary password (returned once, `must_change_password: true`, as in the bulk import) and no
+  authenticator; 409 `username_taken` / `email_taken` when another account now uses them. Audit `restore` / `user`,
+  auth `user_restored_by_admin`. `GET /api/users?deleted=1` lists the deleted accounts (who, when, why, whether the
+  name / address are taken)
+- feat(backend): a deleted account is inactive everywhere (`loadUserContext`): no session, no 2FA step, no
+  re-authentication, no live stream, no approval of its old requests; sign-in by username or e-mail never finds it.
+  It is left out of the Users list, `GET /users/:id` and the actions (404), the bulk 2FA change, the bulk import's
+  "taken" checks, the administrator count (`last_admin`), `create-admin` and the system user count
+- feat(backend): Excel export of the users leaves deleted accounts out; `?deleted=1` exports them (deleted on, by,
+  reason). The audit log rows carry `user_deleted` (also a column of the audit log export)
+- feat(frontend): Users screen — tabs «المستخدمون» / «المستخدمون المحذوفون»; row checkboxes with select-all (own
+  account and the last active administrator disabled, with a tooltip), «حذف المحدد (n)» and a delete button on each
+  row and on the user page; confirmation dialog in red listing the names, a warning that the history is kept and a
+  required reason with a counter (Confirm disabled until valid, per-id errors shown); toast and refresh after.
+  Deleted-users tab with «استعادة» (disabled when the name / address is taken) showing the temporary password once
+- feat(frontend): audit sentences «حذف أحمد المدير المستخدم «سالم» — السبب: …», bulk delete and restore; a request or
+  import file closed by a deletion says so; the author of a row in the change history is marked «(محذوف)»
+
+### Tests
+- test(tests): `backend/test/user-delete.test.js` — 403 for non-administrators, self / last administrator refused,
+  reason rules, single delete (sign-in refused, sessions and live stream closed, hidden, history names intact, audit
+  row, `verifyAll()` intact), sessions of a deleted user refused on every auth path, pending requests / imports
+  closed, bulk all-or-nothing, username and e-mail reuse, restore (409 while taken, temporary password, scopes back),
+  and the partial e-mail index (rebuilt from the 1.6.0 shape, kept by later calls)
+
+### Docs
+- docs: 04 (Arabic user guide: deleting and restoring users), 05 (columns, migration 015, partial unique indexes, FK inventory),
+  06 (deletion rules), 11 (endpoints and errors); `deploy/db/schema-reference.sql` regenerated (migration 015)
+
+---
+
+## [1.6.0] — 2026-10-19 — Sign in with the username or the e-mail address
+
+### Features
+- feat(backend): `POST /api/auth/login` accepts the **username or the e-mail address** in `username`. The value is
+  trimmed; one containing `@` is matched to `lower(email)`, anything else to the username (case-insensitive, as
+  before). With `@` and no e-mail match it falls back to an exact username match, so an older account whose username
+  contains `@` (command line only) keeps signing in. An address shared by several accounts signs nobody in
+- feat(db): migration `014_login_email.sql` — unique index `users_email_lower_uniq` on `lower(email)` where set, built by
+  `ets_ensure_email_unique_index()`. Safe on existing data: when addresses are already shared the index is skipped
+  with a `NOTICE` and a `system_log` warning (`email_index_skipped`, the addresses and any usernames with `@`);
+  `migrate.js` (service start, `npm run migrate`) calls the function again and creates the index once the duplicates
+  are fixed, and prints the migrations' own `ETS:` notices
+- feat(backend): users create / update / import and `create-admin`: e-mail stored trimmed in lower case; a duplicate
+  address (any case, or equal to an older username with `@`) is refused — `400 email_taken`, import row codes
+  `email_taken` / `duplicate_email_in_file` with `details` (`field: "email"`). `@` stays refused in new usernames;
+  `PATCH` accepts an older username sent back unchanged, and checks the address only when it changes
+- feat(frontend): login field «اسم المستخدم أو البريد الإلكتروني» / "Username or email" — plain text input (not
+  `type=email`), `autocomplete="username"`, `dir="ltr"`, placeholder `ahmed.ali / ahmed@example.ly`; sub-title and the
+  credential error texts mention the e-mail; new messages for `email_taken` / `duplicate_email_in_file`
+- ops(deploy): the installer's final summary and `create-admin` say the administrator can sign in with the username
+  or the e-mail address
+
+### Security
+- sec(backend): no enumeration through the second name — every failure (unknown username or address, shared address,
+  wrong password, disabled or paused account) gives the same `401 invalid_credentials` without a cookie, and the
+  unknown / shared / paused cases still run the dummy bcrypt check of the same cost
+- sec(backend): the per-account serialisation of password and code checks is keyed on the resolved user id (login,
+  2FA verify / enable, re-authentication), so failures through the username and the e-mail address add up on the one
+  account counter (e.g. 1 + 1 + 1 with `MAX_FAILED_LOGINS=3` pauses the account) and a pause applies to both names.
+  The per-name rate limit keys on the trimmed, lower-case typed name
+- sec(backend): `auth_log` login rows carry `detail.via` (`username` | `email`) and, for a known account,
+  `detail.identifier` (trimmed, lower case) next to the resolved `user_id` / `username`; unknown names stay masked
+  (ETS-SEC-051); new event `login_ambiguous_email`
+
+### Notes
+- Upgrade path: on a database without shared e-mail addresses 014 creates the index. With shared addresses the update
+  does not fail; sign-in by those addresses is refused until each account has its own (Users screen), and the next
+  service start or `npm run migrate` creates the index. On a local install `ets-log-protect migrate` runs with
+  `client_min_messages = warning`, so the NOTICE is not printed by `update.sh`; see Logs → System
+  (`email_index_skipped`) or `app.log` (`notice: ETS: …`). Manual check: [05 §3b](docs/handover/05-Database-Design.md)
+- 2FA, the forced password change, session rotation and the `__Host-ets_sid` cookie are unchanged
+
+### Tests
+- test(tests): `backend/test/login-email.test.js` — login by username; by e-mail in mixed case and with spaces;
+  identical answers for wrong password by e-mail / username, unknown name / address and inactive user; lockout across
+  both names; per-name rate limit across case and spaces; 2FA step and forced change after an e-mail sign-in; shared
+  address refused while usernames work; migration 014 on duplicates (no failure, NOTICE, warning row, no index, index
+  on a later run) and on a clean database; users create / update / import refuse duplicates and `@` in usernames;
+  legacy `@` username still signs in and can be edited. `users-import.test.js` expects `email_taken` on re-import
+  (136 tests in total)
+
+### Documentation
+- docs(docs): user guide 04 (sign-in name, lockout note), administrator guide 03, database design 05 (§3b
+  migration 014), security 06 (sign-in name, enumeration, lockout across names), logging 07 (`detail.via`,
+  `login_ambiguous_email`), test plan 09 (A-02b, A-02c), API reference 11; `deploy/db/schema-reference.sql`
+  regenerated with pg_dump after migration 014
+
+## [1.5.1] — 2026-10-19 — Exclusion note required for every reason
+
+### Changes
+- feat(backend): «الملاحظات لسبب الإلغاء إلزامية» — `disabled_note` is now required for every reason a user chooses
+  (`duplicate`, `out_of_scope`, `not_required`, `other`), not only `other`: at least 3 non-whitespace characters after
+  trimming, still ≤ 500. A missing, empty, whitespace-only or shorter note → 400 `disable_note_required` (`min: 3`) on
+  every path that turns a function off: `PATCH /api/tracker/functions/:id`, bulk `enabled: false`, and requests that
+  wait for the team lead (checked when submitted, `backend/src/services/disable.js` `NOTE_MIN`). Approval does not
+  check it again, so requests submitted before 1.5.1 without a note are still approved as they are. The `import`
+  reason keeps its generated note (`#<batch id> <file name>`). No migration
+- feat(frontend): the exclusion dialog and the bulk exclusion mark «ملاحظة الإلغاء» as required (*), the helper text
+  says it is required for every reason (at least 3 characters), a live counter shows the length, an inline error
+  appears under the field once it is typed in or left, and the confirm button stays disabled until the note is valid
+  (`frontend/src/components/DisableReason.jsx` `noteProblem`, `frontend/src/pages/Application.jsx`); messages
+  `dr_note_hint`, `dr_note_placeholder`, `dr_note_required`, `err_disable_note_required` updated in ar + en,
+  `dr_note_placeholder_required` and `dr_note_required_hint` removed from both (key sets identical)
+- fix(frontend): `.field-hint.red-text` is red again (`.field-hint` came later in `app.css` and turned inline errors grey)
+
+### Tests
+- test(tests): `backend/test/disable-reason.test.js` — each of the 4 reasons without a note, with an empty, `null`,
+  whitespace-only or too short note → 400 `disable_note_required`; 3 and 500 characters accepted; bulk without a note
+  (every reason) → 400; a request submitted without a note → 400 and no request created (single and bulk); a pending
+  request whose item has no note is still approved and applied (added to the existing tests; 124 tests in total)
+
+### Documentation
+- docs(docs): user guide (required note, disabled confirm button), API reference (PATCH / bulk / approvals), database
+  design; version 1.5.1 in both `package.json` and lockfiles
+
+---
+
+## [1.5.0] — 2026-10-18 — Required reason when a function is excluded (duplicates)
+
+### Features
+- feat(db): migration `013_disable_reason.sql` — `functions.disabled_reason` (`duplicate`, `out_of_scope`,
+  `not_required`, `other`; `import` set by imports), `disabled_note` (≤ 500), `disabled_by`, `disabled_at`; table
+  `function_duplicates(function_id, duplicate_of_id)` (FKs ON DELETE CASCADE — functions are only soft-removed —,
+  no self link, index on the target); `edit_request_items.meta` (the reason of a pending exclusion). Safe on an
+  existing database: functions excluded before 1.5.0 keep an empty reason («بدون سبب مسجّل» / "No reason recorded");
+  `audit_log` / `auth_log` and their hash chains are untouched
+- feat(backend): **excluding a function needs a reason** on every path that turns one off
+  (`backend/src/services/disable.js`): `PATCH /api/tracker/functions/:id` with `enabled: false` takes
+  `disabled_reason`, `disabled_note` (required for `other`) and, for `duplicate`, `duplicate_of` (function ids in the
+  user's scope, not the function itself, not removed) — otherwise 400 `disable_reason_required`,
+  `disable_note_required`, `duplicate_of_required`, `invalid_duplicate` (`self` / `unavailable` / `removed`) or
+  `invalid_value`. Including again needs no reason and clears it; the audit row keeps the previous reason as its old value
+- feat(backend): bulk exclusion — `POST /api/tracker/applications/:id/bulk` with `{field: 'enabled', value: false,
+  function_ids, disabled_reason, …}` (permission `tog`): one reason for the chosen functions of the application (the
+  duplicated functions may not be among them), one audit row per function; `value: true` includes them again
+- feat(backend): approval flow — a data-entry user's exclusion (single or bulk) carries its reason and links in the
+  request item (`meta`); the approver sees them (`GET /api/approvals`, Excel export of the approvals) and approval
+  applies them in the requester's name. The requester's scope is checked again for the duplicated functions
+  (409 `requester_not_allowed`); an exclusion whose duplicated function was removed meanwhile is skipped
+- feat(backend): imports — a team-result file has no reason column, so a function an approved batch turns off gets
+  the reason `import` with the note `#<batch id> <file name>`; the full legacy import marks the functions it turns
+  off `import` too; functions turned on by an import lose their reason. Restoring a removed function clears it
+- feat(backend): `GET /api/tracker/function-options` (`app_id`, `all=1`, `q`, `exclude`) — the counted functions a
+  duplicate can point at, within scope; the application data lists `duplicate_of` (codes, application, names only in
+  scope) and `disabled_by_name`
+- feat(backend): functions Excel export — columns «سبب الإلغاء», «مكررة مع», «ملاحظة الإلغاء» (after the existing
+  columns, whose positions do not change) and the `reason` filter; the approvals export adds the reason to an exclusion
+- feat(frontend): unticking a function opens the exclusion dialog — reason category (radio cards), note with a
+  counter, and for «مكررة» a **searchable multi-select** of the functions it duplicates (code + name + application;
+  this application by default, «البحث في كل التطبيقات» for every application in scope; the function itself, excluded
+  and removed ones are not offered); chips with ×; keyboard: arrows, Home/End, Enter, Esc (closes the list, a second
+  Esc the dialog), Backspace removes the last chip; combobox / listbox roles, `aria-activedescendant`,
+  `aria-selected`, a live result count; RTL and LTR (`frontend/src/components/MultiSelect.jsx`,
+  `frontend/src/components/DisableReason.jsx`). Cancel leaves the box ticked
+- feat(frontend): «تعيين جماعي» gains «إلغاء احتساب وظائف محددة»: pick the functions, then one reason
+- feat(frontend): an excluded row shows its reason as a badge — «مكررة مع: D3، D5» (each code opens and highlights that
+  function, also in another application, `#fn-<id>`), «خارج النطاق», «استيراد», «بدون سبب مسجّل» …; a click shows the
+  note, who excluded it and when. New filter «سبب الإلغاء» (also sent to the export)
+- feat(frontend): the approvals screen and the "awaiting approval" chips show the reason of a pending exclusion
+- feat(frontend): audit sentences — «ألغى أحمد سالم احتساب الوظيفة «D7 …» في تطبيق شؤون العاملين (مكررة مع D3، D5):
+  «…»» / "… excluded function … from the calculation (duplicate of D3, D5): …" with the reason, duplicates and note as
+  before → after lines; «أعاد … احتساب الوظيفة …» with the previous reason; requests list the reason (ar + en,
+  messages `dr_*`, `ms_*`, `au_disable_*`, `au_enable_*`, `err_disable_*`, `err_duplicate_of_required`,
+  `err_invalid_duplicate`)
+
+### Notes
+- Removal («إزالة») already required its own reason since 0.8.0, so it is unchanged. Adding a function with
+  «تضمينها في حساب النسب» unticked records no exclusion reason (it is shown as «بدون سبب مسجّل»)
+
+### Tests
+- test(tests): `backend/test/disable-reason.test.js` — 400 without / with an invalid reason, `other` without a note,
+  duplicate without ids, pointing at itself, out of scope, unknown or removed; valid exclusion stores reason, note and
+  links and writes them in the audit row; including again clears them (history kept); restore clears; bulk exclusion
+  and inclusion; approval carries the reason (single and bulk) and skips a removed duplicate; picker options; export
+  columns and reason filter; import batch and legacy import set `import` (124 tests in total)
+
+### Documentation
+- docs(docs): user guide (exclusion dialog, badge, filter, approvals), API reference (PATCH / bulk / function-options /
+  approvals / imports / export), database design and `deploy/db/schema-reference.sql` (migration 013)
+
+---
+
 ## [1.4.0] — 2026-10-18 — ERP module wheel and live updates
 
 ### Features

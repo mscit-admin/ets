@@ -3,8 +3,8 @@
 **DBMS:** PostgreSQL 14+ · **Database:** `ets` · **Application role / database owner:** `ets` ·
 **Log owner role:** `ets_log_owner` (no login, owns the log tables — §3a) · **Extension:** `citext`
 **Creation script:** `deploy/db/create-database.sql` · **Schema source:** `backend/src/db/migrations/*.sql`
-(001–009 and 012; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
-(after migration 012)
+(001–009 and 012–014; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
+(after migration 014)
 
 ## 1. How the schema is managed
 
@@ -41,7 +41,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | Table | Purpose | Key columns |
 |---|---|---|
 | `roles` | The nine roles | `id` (admin, pm, tm, mgr, lead, member, ed, qa, obs), `name_ar/en`, `full_scope` (true only for admin, pm, tm), `permissions text[]` |
-| `users` | Accounts | `username citext unique`, `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip` |
+| `users` | Accounts | `username citext`, unique among accounts not deleted (3–60 of `A–Z a–z 0–9 . _ -`, never `@`, enforced by the API), `email citext` (optional; stored trimmed in lower case; **one account per address** — unique index `users_email_lower_uniq` on `lower(email)` where set, migration 014; sign-in accepts the username or the address), `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip`, `deleted_at` / `deleted_by` / `delete_reason` (migration 015: soft delete, see 3c) |
 | `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (`h1:` + HMAC-SHA-256, migration 008; older plain SHA-256 codes stay valid until used or regenerated), `used_at` |
 | `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool`. `usr` may be granted to the admin role only (migration 009 removed other grants, each recorded in the audit trail) |
 | `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. Full scope comes from `roles.full_scope` only: a user of another role with **no rows sees nothing** (fail closed; migration 009 lists such users in `system_log`, event `scope_fail_closed`) |
@@ -53,7 +53,8 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 |---|---|---|
 | `departments` | 4 departments | `id` (hr, fin, com, inf), names AR/EN, `color`, `emblem`, `is_base` (no reports track) |
 | `applications` | 30 applications | `id` (per, pay, acc…), `department_id`, names, `default_weight`, `weight`, `note_ar`, `addendum`, `scope_cut`, `extra_module` |
-| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import) |
+| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import), `disabled_reason` (`duplicate`, `out_of_scope`, `not_required`, `other`, or `import` set by an import; NULL = excluded before 1.5.0), `disabled_note` (≤ 500; required by the API for every reason a user chooses since 1.5.1, ≥ 3 characters — older rows and `import` keep theirs), `disabled_by/at` — why an excluded function (`enabled=false`) does not count, cleared when it is included again (migration 013) |
+| `function_duplicates` | For a function excluded as a duplicate: the functions it duplicates (any application) | `function_id`, `duplicate_of_id` (PK on both; FKs to `functions` ON DELETE CASCADE — functions are only soft-removed; `CHECK function_id <> duplicate_of_id`; index on `duplicate_of_id`) — migration 013 |
 | `app_reports` | Reports track per application | `progress`, `status`, `note` |
 | `schedule` | Project schedule (one row, `id = 1`) | `start_date`, `end_date` (planned close, migration 005; when set, `periods` is derived from start → close), `periods`, `unit` (month/fortnight), `plan numeric[]`, `actual numeric[]` |
 
@@ -72,7 +73,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | Table | Purpose | Key columns |
 |---|---|---|
 | `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result` |
-| `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied` |
+| `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied`, `meta` (jsonb, migration 013: the reason of a pending exclusion — `disabled_reason`, `disabled_note`, `duplicate_of: [{id, app_id, code}]` — applied on approval) |
 
 ### Branding (migration 003)
 | Table | Purpose | Key columns |
@@ -100,6 +101,60 @@ the seven functions and schema `public` to `ets_log_owner` (NOLOGIN). The applic
 `INSERT` on `audit_log` / `auth_log`, `SELECT` on `log_chain_head` / `log_chain_anchor` and the log sequences,
 `EXECUTE` on `ets_purge_log`, and `USAGE, CREATE` on schema `public`; it owns every other table. Remote database:
 the DBA applies the same script ([07 §3](07-Logging-and-Audit.md)). Check: `sudo ets-log-protect status`.
+
+### 3b. Migration 014 — unique e-mail addresses (sign-in by e-mail, 1.6.0)
+
+`users_email_lower_uniq` = `UNIQUE (lower(email::text)) WHERE email IS NOT NULL AND email <> ''`, created by the
+function `ets_ensure_email_unique_index()` (returns `true` when the index exists afterwards). On a database where
+several accounts already share an address (any case) the migration does **not** fail: the index is skipped, the
+function raises a `NOTICE` (`ETS: … e-mail address(es) are used by more than one account …`) and writes a
+`system_log` row `level='warn', event='email_index_skipped'` whose `detail` lists the addresses
+(`duplicates: [{email, accounts}]`) and any usernames containing `@` (`usernames_with_at`). While the index is
+missing, signing in by such an address is refused (generic error; by username it works) and the Users screen /
+import refuse new duplicates. `migrate.js` — run at every service start and by `npm run migrate` — calls the function
+again, so the index is created by itself once an administrator has given each account its own address. To check or
+do it by hand:
+
+```sql
+SELECT to_regclass('users_email_lower_uniq');            -- NULL = not created yet
+SELECT lower(email::text), array_agg(username) FROM users
+ WHERE email IS NOT NULL AND email <> '' GROUP BY 1 HAVING count(*) > 1;   -- the addresses to fix
+SELECT ets_ensure_email_unique_index();                  -- true once created
+```
+
+Note: on a local install `ets-log-protect migrate` runs the SQL with `client_min_messages = warning`, so the NOTICE is
+not printed by `update.sh`; the `system_log` row (Logs → System) and the service start-up log (`notice: ETS: …` in
+`app.log`, repeated at every start while duplicates remain) carry it.
+
+### 3c. Migration 015 — deleted users (1.7.0)
+
+A deleted user keeps their `users` row: `deleted_at`, `deleted_by` (→ `users`, `ON DELETE SET NULL`) and
+`delete_reason` (≤ 500 characters) are set; nothing else references change. Uniqueness only applies to accounts that
+are not deleted:
+
+- `users_username_live_key` = `UNIQUE (username) WHERE deleted_at IS NULL` (replaces the `users_username_key`
+  constraint; `create-admin` uses `ON CONFLICT (username) WHERE deleted_at IS NULL`);
+- `users_email_lower_uniq` = `UNIQUE (lower(email::text)) WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL`.
+  Migration 015 replaces `ets_ensure_email_unique_index()` (014): it rebuilds an index of the 1.6.0 shape, counts
+  duplicates among accounts not deleted, and builds the index with the `deleted_at` condition — also when
+  `migrate.js` calls it later.
+
+References to users and what a deletion does to them (rows are never removed, so no `ON DELETE` rule fires):
+
+| Reference | `ON DELETE` | On deletion |
+|---|---|---|
+| `audit_log.user_id`, `auth_log.user_id` (hash-chained, append-only, migration 012) | SET NULL | untouched; new rows `delete` / `bulk_delete` and `user_deleted_by_admin` are appended |
+| `access_log.user_id`, `error_log.user_id` | SET NULL | untouched |
+| `functions.updated_by / removed_by / disabled_by / created_by`, `applications.updated_by`, `app_reports.updated_by`, `schedule.updated_by`, `settings.updated_by`, `branding_assets.updated_by`, `users.created_by` | SET NULL | untouched — the names still resolve |
+| `edit_requests.requested_by / decided_by` | SET NULL | the user's `pending` requests → `withdrawn` (decided by the administrator, reason `user deleted: …`, audit `edit_withdraw`) |
+| `import_batches.uploaded_by / lead_by / final_by / rejected_by` | SET NULL | the user's `pending` uploads → `rejected` (audit `import_reject`); a signature they already gave stays |
+| `sessions.user_id` | CASCADE | every session revoked (`revoke_reason = 'user_deleted'`) |
+| `user_recovery_codes.user_id` | CASCADE | deleted (with the authenticator) |
+| `user_permissions.user_id`, `user_scopes.user_id` | CASCADE | **kept but inert** (no session can use them); restored with the account |
+
+```sql
+SELECT id, username, full_name, deleted_at, delete_reason FROM users WHERE deleted_at IS NOT NULL;  -- deleted accounts
+```
 
 ## 4. Code values
 

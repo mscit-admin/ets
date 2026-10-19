@@ -31,6 +31,8 @@ fill the table without signing in.
 | `login` | Successful login (after 2FA when required) |
 | `password_ok_mfa_pending` | Password accepted, waiting for 2FA (`detail.stage` = verify / enroll) |
 | `login_bad_password` / `login_unknown_user` / `login_inactive_user` | Failed login and the real reason (for an unknown user the typed name is masked, see below) |
+| `login_ambiguous_email` | Sign-in by an e-mail address that several accounts share (possible only while the unique e-mail index is missing, [05 §3b](05-Database-Design.md)); `username` holds the address, no `user_id` |
+| *(every login row, 1.6.0)* | `detail.via` = `username` or `email` — which name was typed — and, for a known account, `detail.identifier` = the name as typed, trimmed and in lower case; `user_id` / `username` are the resolved account. For an unknown name only `detail.via` is stored next to the masked name |
 | `login_while_locked` | Attempt on a paused account |
 | `account_locked` | Account paused after too many failures |
 | `rate_limited` | Too many attempts from one IP / for one account. Only the **first** refusal of a 15-minute window is written, then one row at 1 000, 10 000 … refusals (`detail.refused_in_window`) |

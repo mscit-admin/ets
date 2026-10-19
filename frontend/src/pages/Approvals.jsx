@@ -6,6 +6,7 @@ import { pc } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { DisabledReason } from '../components/DisableReason.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
@@ -94,7 +95,13 @@ export default function Approvals() {
                       : <><span className="code">{i.code}</span> <span lang="ar" dir="rtl">{i.fn_name_ar}</span></>}</td>
                     <td className="nowrap">{t(FIELD_LABEL[i.field] || i.field)}</td>
                     <td className="muted">{fmt(i.kind, i.field, i.old_value)}</td>
-                    <td><b>{fmt(i.kind, i.field, i.new_value)}</b>{i.applied === false && <> <Indicator color="red" title={i.note}>✗</Indicator></>}</td>
+                    <td><b>{fmt(i.kind, i.field, i.new_value)}</b>{i.applied === false && <> <Indicator color="red" title={i.note}>✗</Indicator></>}
+                      {i.field === 'enabled' && i.new_value === false && (
+                        <div className="req-reason">
+                          <span className="muted small">{t('dr_reason')}:</span> <DisabledReason f={i.meta || {}} appId={rq.app_id} />
+                          {i.meta?.disabled_note && <div className="small">{t('dr_note')}: <span className="muted">{i.meta.disabled_note}</span></div>}
+                        </div>
+                      )}</td>
                   </tr>
                 ))}
               </tbody>

@@ -40,7 +40,19 @@ if (errs.length) {
   process.exit(1);
 }
 
-const email = arg('email') || null;
+// Same rules as the Users screen (1.6.0): a new username has no "@" (a sign-in name with "@" is an e-mail
+// address), and an e-mail address is stored trimmed, in lower case, and belongs to one account only.
+const existing = (await pool.query('SELECT id FROM users WHERE username=$1 AND deleted_at IS NULL', [username])).rows[0];
+if (!existing && !/^[A-Za-z0-9._-]{3,60}$/.test(username)) {
+  console.error('Invalid username: 3–60 characters, Latin letters, digits, . _ - (no "@")');
+  process.exit(1);
+}
+const email = (arg('email') || '').trim().toLowerCase() || null;
+if (email && (await pool.query(`SELECT 1 FROM users WHERE id<>$2 AND deleted_at IS NULL AND (lower(email::text)=$1 OR lower(username::text)=$1)`,
+  [email, existing?.id ?? 0])).rowCount) {
+  console.error('This e-mail address is already used by another account');
+  process.exit(1);
+}
 const mustChange = process.argv.includes('--must-change-password');
 // A new account gets the default language from Settings; an existing account keeps its own.
 // Everything below commits together with its audit / auth_log rows, in the name of "cli:<OS user>" (ETS-SEC-050).
@@ -51,7 +63,7 @@ const lang = await getSetting('app.default_language');
 const { r, revoked } = await tx(async c => {
   const r = await c.query(`INSERT INTO users(username, full_name, email, password_hash, role_id, language, must_change_password)
     VALUES ($1,$2,$3,$4,'admin',$5,false)
-    ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
+    ON CONFLICT (username) WHERE deleted_at IS NULL DO UPDATE SET password_hash=EXCLUDED.password_hash, role_id='admin', is_active=true,
       full_name=COALESCE(NULLIF(EXCLUDED.full_name,''), users.full_name), email=COALESCE(EXCLUDED.email, users.email),
       failed_attempts=0, locked_until=NULL, last_failed_at=NULL, password_changed_at=now(), updated_at=now()
     RETURNING id, (xmax = 0) AS created`, [username, name, email, pwHash, lang]);
@@ -77,6 +89,7 @@ if (reset2fa) console.log('Two-factor authentication removed for this account.')
 if (revoked.rowCount) console.log(`${revoked.rowCount} active session(s) of this account signed out.`);
 await logSystem('create_admin', `administrator ${r.rows[0].created ? 'created' : 'reset'} from CLI`, { username, reset2fa, by: actor.username });
 console.log(`Administrator "${username}" ${r.rows[0].created ? 'created' : 'updated'} (id ${r.rows[0].id}).` +
+  ` Sign in with the username${email ? ` or the e-mail address ${email}` : ''}.` +
   (mustChange ? ' A new password must be chosen at the next sign-in.' : ''));
 await pool.end();
 process.exit(0);

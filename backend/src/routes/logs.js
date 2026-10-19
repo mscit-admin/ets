@@ -33,7 +33,7 @@ const TYPES = {
     search: ['l.username', 'l.event', 'host(l.ip)'], event: 'l.event' },
   // Names of the person, function and application, so each row reads as a sentence in the Logs screen.
   audit: { table: 'audit_log',
-    cols: `l.id, l.ts, l.user_id, l.username, u.full_name, l.action, l.entity, l.entity_id, l.summary, l.old_value, l.new_value, l.context,
+    cols: `l.id, l.ts, l.user_id, l.username, u.full_name, (u.deleted_at IS NOT NULL) AS user_deleted, l.action, l.entity, l.entity_id, l.summary, l.old_value, l.new_value, l.context,
       f.code AS fn_code, f.name_ar AS fn_name_ar, f.name_en AS fn_name_en, a.id AS app_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en,
       host(l.ip) AS ip`,
     search: ['l.username', 'u.full_name', 'l.entity', 'l.entity_id', 'l.summary', 'l.action', 'f.code', 'f.name_ar', 'f.name_en', 'a.name_ar', 'a.name_en'],

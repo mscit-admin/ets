@@ -2,6 +2,7 @@
 // held for two-step approval before they change the approved data.
 import { summarize } from './calc.js';
 import { allSettings } from './settings.js';
+import { setDisabled, clearDisabled, currentReasons, hadReason, importReason } from './disable.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 const int03 = v => clamp(v, 0, 3) | 0;
@@ -125,8 +126,16 @@ export async function impactSummary(c, changes) {
 
 // Applies an approved batch. A change is applied only if the approved value is still the one the
 // batch was compared against; otherwise it is skipped (someone changed it meanwhile) and reported.
+// A file has no reason for the functions it turns off: they get the reason 'import' with the batch reference
+// (migration 013); functions it turns on lose their reason. reasons: the extra before → after values of those
+// functions for their audit rows (not part of the stored result).
 export async function applyBatch(c, batchId, userId) {
   const changes = (await c.query('SELECT * FROM import_changes WHERE batch_id=$1 ORDER BY id', [batchId])).rows;
+  const b = (await c.query('SELECT filename FROM import_batches WHERE id=$1', [batchId])).rows[0];
+  const reason = importReason(`#${batchId}${b?.filename ? ' ' + b.filename : ''}`);
+  const reasons = [];
+  const extra = (ch, before, after) => ['disabled_reason', 'disabled_note'].forEach(field => reasons.push({ kind: 'function', app_id: ch.app_id,
+    function_id: ch.function_id, field, old_value: before?.[field] ?? null, new_value: after ? { disabled_reason: after.reason, disabled_note: after.note }[field] : null }));
   let applied = 0, skipped = 0;
   for (const ch of changes) {
     if (!ALLOWED_FIELDS.has(ch.field)) continue;      // never interpolate an unexpected column name
@@ -136,6 +145,17 @@ export async function applyBatch(c, batchId, userId) {
     else cur = (await c.query('SELECT weight AS v FROM applications WHERE id=$1 FOR UPDATE', [ch.app_id])).rows[0];
     const ok = cur && same(cur.v, ch.old_value);
     if (ok) {
+      if (ch.kind === 'function' && ch.field === 'enabled') {
+        if (ch.new_value === false) { await setDisabled(c, [ch.function_id], reason, userId); extra(ch, null, reason); }
+        else {
+          const before = (await currentReasons(c, [ch.function_id])).get(ch.function_id);
+          await clearDisabled(c, [ch.function_id]);
+          if (hadReason(before)) {
+            extra(ch, before, null);
+            if (before.duplicate_of?.length) reasons.push({ kind: 'function', app_id: ch.app_id, function_id: ch.function_id, field: 'duplicate_of', old_value: before.duplicate_of, new_value: [] });
+          }
+        }
+      }
       if (ch.kind === 'function') await c.query(`UPDATE functions SET ${ch.field}=$2, updated_at=now(), updated_by=$3 WHERE id=$1`, [ch.function_id, ch.new_value, userId]);
       else if (ch.kind === 'report') await c.query(`UPDATE app_reports SET ${ch.field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1`, [ch.app_id, ch.new_value, userId]);
       else await c.query('UPDATE applications SET weight=$2, updated_at=now(), updated_by=$3 WHERE id=$1', [ch.app_id, ch.new_value, userId]);
@@ -144,7 +164,7 @@ export async function applyBatch(c, batchId, userId) {
     await c.query('UPDATE import_changes SET applied=$2, note=$3 WHERE id=$1',
       [ch.id, ok, ok ? null : 'value changed after the file was imported']);
   }
-  return { applied, skipped };
+  return { applied, skipped, reasons };
 }
 
 // Column names used above come only from these allow-lists.

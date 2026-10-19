@@ -37,7 +37,7 @@ export const api = {
   post: (url, body = {}) => request('POST', url, body),
   put: (url, body = {}) => request('PUT', url, body),
   patch: (url, body = {}) => request('PATCH', url, body),
-  del: url => request('DELETE', url),
+  del: (url, body) => request('DELETE', url, body),
 };
 
 // API path with encoded segments: path`/users/${id}/reset-password`. A route parameter such as "..%2Fauth%2Fme"

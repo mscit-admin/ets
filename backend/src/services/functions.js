@@ -36,7 +36,11 @@ export async function removeFunction(c, id, reason, userId) {
       updated_at=now(), updated_by=$2 WHERE id=$1 AND removed_at IS NULL RETURNING *`, [id, userId, reason])).rows[0];
 }
 
+// A restored function counts again, so an exclusion reason it had is cleared too (migration 013).
 export async function restoreFunction(c, id, userId) {
-  return (await c.query(`UPDATE functions SET removed_at=NULL, removed_by=NULL, removed_reason=NULL, enabled=true,
+  const f = (await c.query(`UPDATE functions SET removed_at=NULL, removed_by=NULL, removed_reason=NULL, enabled=true,
+      disabled_reason=NULL, disabled_note=NULL, disabled_by=NULL, disabled_at=NULL,
       updated_at=now(), updated_by=$2 WHERE id=$1 AND removed_at IS NOT NULL RETURNING *`, [id, userId])).rows[0];
+  if (f) await c.query('DELETE FROM function_duplicates WHERE function_id=$1', [id]);
+  return f;
 }

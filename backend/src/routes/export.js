@@ -19,7 +19,7 @@ import { summaryData, projectStatusData, departmentData, applicationData, weight
   from './tracker.js';
 import { listRequests } from './approvals.js';
 import { listBatches, batchDetail } from './imports.js';
-import { listUsers } from './users.js';
+import { listUsers, listDeletedUsers } from './users.js';
 import { exportRows, logFilters, EXPORT_CAP } from './logs.js';
 
 const r = Router();
@@ -43,6 +43,15 @@ function fmtValue(L, kind, field, v) {
   if (field === 'progress') return `${+v}%`;
   if (field === 'enabled') return yesNo(t, v);
   return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+// Reason of an exclusion: «مكررة مع: D3، D5», «خارج النطاق — note» …; '' for a counted function.
+const dupCodes = (list, appId, lang) => (list || []).map(d => (d.app_id && d.app_id !== appId ? `${d.app_id}/${d.code}` : d.code)).join(lang === 'ar' ? '، ' : ', ');
+function reasonText(L, m, appId) {
+  if (!m) return '';
+  const { t } = L;
+  const r = m.disabled_reason ? t('dr_' + m.disabled_reason) : t('dr_none');
+  const dup = dupCodes(m.duplicate_of, appId, L.lang);
+  return [dup ? `${r}: ${dup}` : r, m.disabled_note].filter(Boolean).join(' — ');
 }
 const FIELD_KEY = { status: 'report_status', create: 'fn_add', removed: 'removed', name_en: 'name_en' };
 const fieldLabel = (t, f) => t(FIELD_KEY[f] || f);
@@ -99,31 +108,39 @@ const REPORTS = {
     },
   },
 
-  // The functions table of an application, with the screen's filters (q, source, test, show_off, show_removed).
+  // The functions table of an application, with the screen's filters (q, source, test, show_off, show_removed, reason).
   functions: {
     async build(req, L) {
       const { t } = L;
       const id = q1(req.query, 'id', 40);
       if (!id) throw notFound();
       const d = await applicationData(req.user, id);
-      const f = pick(req.query, ['q', 'source', 'test', 'show_off', 'show_removed']);
+      const f = pick(req.query, ['q', 'source', 'test', 'show_off', 'show_removed', 'reason']);
       const on = k => f[k] === '1' || f[k] === 'true';
       const q = (f.q || '').toLowerCase();
       const shown = d.functions.filter(x =>
         (x.removed_at ? on('show_removed') : (on('show_off') || x.enabled || x.source !== 'experience')) &&
         (!f.source || x.source === f.source) &&
         (f.test === undefined || x.test_status === +f.test) &&
+        (f.reason === undefined || (!x.enabled && !x.removed_at && (x.disabled_reason || 'none') === f.reason)) &&
         (!q || (x.name_ar + ' ' + (x.reference || '') + ' ' + (x.note || '')).toLowerCase().includes(q)));
       const totalW = d.application.calc?.fnWeight || 0;
+      const a0 = d.application;
       const rows = shown.map(x => ({ code: x.code, name_ar: x.name_ar, name_en: x.name_en, source: t('src_' + x.source), reference: x.reference,
         enabled: yesNo(t, x.enabled), weight: +x.weight, share: x.enabled && totalW > 0 && !x.removed_at ? pctOf(+x.weight, totalW) : null,
         progress: +x.progress, test: t('ts_' + (x.test_status | 0)), notif: t('ns_' + (x.notif_status | 0)), review: t('rv_' + (x.review_status | 0)),
         vendor: x.vendor_status > 0 ? t('vs_' + x.vendor_status) : '', note: x.note, by: x.updated_by_name, at: x.updated_at,
-        removed: x.removed_at ? yesNo(t, true) : '', reason: x.removed_reason }));
+        removed: x.removed_at ? yesNo(t, true) : '', reason: x.removed_reason,
+        // why it is excluded (migration 013); excluded before 1.5.0 → "no reason recorded"
+        dreason: !x.enabled && !x.removed_at ? (x.disabled_reason ? t('dr_' + x.disabled_reason) : t('dr_none')) : '',
+        dups: !x.enabled && !x.removed_at ? dupCodes(x.duplicate_of, a0.id, L.lang) : '',
+        dnote: !x.enabled && !x.removed_at ? x.disabled_note || '' : '' }));
       const columns = [['code', 'code'], ['name_ar', 'name_ar'], ['name_en', 'name_en'], ['source', 'source'], ['reference', 'reference'],
         ['enabled', 'enabled'], ['weight', 'weight', 'number'], ['share', 'share', 'pct'], ['progress', 'progress', 'pct'],
         ['test', 'test_status'], ['notif', 'notif_status'], ['review', 'review_status'], ['vendor', 'vendor_status'], ['note', 'note'],
-        ['by', 'updated_by'], ['at', 'updated_at', 'datetime']];
+        ['by', 'updated_by'], ['at', 'updated_at', 'datetime'],
+        // after the existing columns, so their positions stay as before 1.5.0
+        ['dreason', 'disabled_reason'], ['dups', 'duplicate_of'], ['dnote', 'disabled_note']];
       if (on('show_removed')) columns.push(['removed', 'removed'], ['reason', 'removed_reason']);
       const a = d.application;
       return { rows, columns, filters: f, id: a.id, name: L.nm(a), target: { id: a.id, name_ar: a.name_ar, name_en: a.name_en }, context: { app_id: a.id } };
@@ -184,7 +201,8 @@ const REPORTS = {
           summary: rq.summary, by: rq.requested_by_name, at: rq.requested_at, dby: rq.decided_by_name, dat: rq.decided_at, reason: rq.reason };
         if (!rq.items.length) return [base];
         return rq.items.map(i => ({ ...base, item: itemLabel(L, i), field: fieldLabel(t, i.field), before: fmtValue(L, i.kind, i.field, i.old_value),
-          after: fmtValue(L, i.kind, i.field, i.new_value), applied: i.applied === undefined || i.applied === null ? '' : yesNo(t, i.applied) }));
+          after: fmtValue(L, i.kind, i.field, i.new_value) + (i.field === 'enabled' && i.new_value === false ? ' — ' + reasonText(L, i.meta || {}, rq.app_id) : ''),
+          applied: i.applied === undefined || i.applied === null ? '' : yesNo(t, i.applied) }));
       });
       return { rows, filters: f, columns: [['id', 'request', 'int'], ['status', 'status'], ['dept', 'department'], ['app', 'application'],
         ['kind', 'kind'], ['by', 'requested_by'], ['at', 'requested_at', 'datetime'], ['dby', 'decided_by'], ['dat', 'decided_at', 'datetime'],
@@ -221,11 +239,18 @@ const REPORTS = {
   },
 
   // Administrators only. Never: passwords / hashes, recovery codes, sessions, IP addresses, user agents,
-  // failed attempts, lock times — the columns below are the whole list.
+  // failed attempts, lock times — the columns below are the whole list. Deleted users (1.7.0) are left out; with
+  // ?deleted=1 the file lists only them, with who deleted each one, when and why.
   users: {
     guard: [requirePerm('usr'), requireAdmin],
     async build(req, L) {
       const { t } = L;
+      if (req.query.deleted === '1') {
+        const rows = (await listDeletedUsers()).map(u => ({ full_name: u.full_name, username: u.username, role: L.nm(u, 'role_name'),
+          deleted_at: u.deleted_at, deleted_by: u.deleted_by_name || u.deleted_by_username || '', delete_reason: u.delete_reason, email: u.email }));
+        return { rows, filters: { deleted: t('yes') }, columns: [['full_name', 'full_name'], ['username', 'username'], ['role', 'role'],
+          ['deleted_at', 'deleted_at', 'datetime'], ['deleted_by', 'deleted_by'], ['delete_reason', 'delete_reason'], ['email', 'email']] };
+      }
       const [users, scopes] = await Promise.all([listUsers(), query(`SELECT s.user_id, s.kind,
           coalesce(d.name_ar, a.name_ar, s.ref_id) AS name_ar, coalesce(d.name_en, a.name_en, s.ref_id) AS name_en
         FROM user_scopes s LEFT JOIN departments d ON s.kind='department' AND d.id=s.ref_id
@@ -258,7 +283,7 @@ const runGuards = async (guards, req, res) => {
 };
 
 // Readable list of the filters for the sheet's second row.
-const filterText = (L, f) => Object.entries(f || {}).map(([k, v]) => `${L.t('f_' + k)}: ${k === 'type' ? L.t('log_' + v) : v}`).join(' · ');
+const filterText = (L, f) => Object.entries(f || {}).map(([k, v]) => `${L.t('f_' + k)}: ${k === 'type' ? L.t('log_' + v) : k === 'reason' ? L.t('dr_' + v) : v}`).join(' · ');
 
 r.get('/:file', async (req, res) => {
   const m = /^([a-z_]+)\.xlsx$/.exec(req.params.file);

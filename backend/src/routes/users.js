@@ -4,9 +4,11 @@ import { requireAuth, requirePerm, requireAdmin, ADMIN_ROLE } from '../middlewar
 import { hashPassword, checkPolicy, generateTemporaryPassword, hashManyPasswords } from '../services/passwords.js';
 import { getSetting } from '../services/settings.js';
 import { logAudit, logAuth } from '../services/logs.js';
-import { publishSessionCheck } from '../services/live.js';
+import { publishSessionCheck, publishChange, publishApps } from '../services/live.js';
+import { requestContext } from '../services/edits.js';
+import { userRef, namedItems, loadUser as loadAuditUser } from '../services/audit.js';
 import { userImportJson } from '../middleware/body.js';
-import { bad, notFound, str, idParam, isId } from '../utils/http.js';
+import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
 import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../utils/importMatch.js';
 
 const r = Router();
@@ -37,13 +39,16 @@ export async function listUsers() {
       (SELECT count(*)::int FROM sessions s WHERE s.user_id=u.id AND s.revoked_at IS NULL AND s.expires_at>now()) AS active_sessions,
       (SELECT count(*)::int FROM user_scopes s WHERE s.user_id=u.id) AS scope_count,
       r.name_ar AS role_name_ar, r.name_en AS role_name_en, r.full_scope AS role_full_scope
-    FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.username`)).rows;
+    FROM users u JOIN roles r ON r.id=u.role_id WHERE u.deleted_at IS NULL ORDER BY u.username`)).rows;
 }
 
-r.get('/', async (req, res) => res.json({ users: await listUsers(), mfa_mode: await getSetting('mfa.mode') }));
+// ?deleted=1: the deleted (archived) accounts instead, for the "Deleted users" view (see the delete block below).
+r.get('/', async (req, res) => res.json(req.query.deleted === '1' ? { users: await listDeletedUsers(), deleted: true }
+  : { users: await listUsers(), mfa_mode: await getSetting('mfa.mode') }));
 
 async function loadUser(id) {
-  const u = (await query(`SELECT ${USER_COLS} FROM users u WHERE u.id=$1`, [id])).rows[0];
+  // a deleted account is not found: it is only listed (GET /?deleted=1) and restored (POST /:id/restore)
+  const u = (await query(`SELECT ${USER_COLS} FROM users u WHERE u.id=$1 AND u.deleted_at IS NULL`, [id])).rows[0];
   if (!u) throw notFound();
   u.scopes = (await query('SELECT kind, ref_id FROM user_scopes WHERE user_id=$1', [id])).rows;
   u.overrides = (await query('SELECT permission, granted FROM user_permissions WHERE user_id=$1', [id])).rows;
@@ -60,12 +65,38 @@ r.get('/:id', async (req, res) => {
   res.json({ user });
 });
 
-async function validateCommon(body, { creating }) {
+// Usernames: 3–60 of A–Z a–z 0–9 . _ - — never "@", so a sign-in name with "@" is always an e-mail address
+// (routes/auth.js, 1.6.0). E-mail addresses are stored trimmed and in lower case, one account per address.
+const USERNAME_RE = /^[A-Za-z0-9._-]{3,60}$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const normEmail = e => e.trim().toLowerCase();
+
+// The address may not belong to another account, nor equal the username of an older account that has "@" in it
+// (both would be the same sign-in name). Checked without regard to case; the unique index of migration 014 backs it.
+async function emailTaken(email, exceptId = 0) {
+  return (await query(`SELECT 1 FROM users WHERE id<>$2 AND deleted_at IS NULL
+      AND (lower(email::text) = lower($1) OR lower(username::text) = lower($1)) LIMIT 1`,
+    [email, exceptId])).rowCount > 0;
+}
+const EMAIL_INDEX = 'users_email_lower_uniq';
+// The same address saved by someone else between the check and the write: the index refuses it → email_taken.
+async function emailIndexed(fn) {
+  try { return await fn(); } catch (e) {
+    if (e?.code === '23505' && e.constraint === EMAIL_INDEX) throw bad('email_taken');
+    throw e;
+  }
+}
+
+// keepUsername: the account's current username (update) — sent back unchanged it is not checked again, so an
+// account created before with a name the rules no longer accept (e.g. containing "@") can still be edited.
+async function validateCommon(body, { creating, keepUsername }) {
   const out = {};
   if (creating || body.username !== undefined) {
     const un = str(body.username, 60);
-    if (!/^[A-Za-z0-9._-]{3,60}$/.test(un)) throw bad('invalid_username');
-    out.username = un;
+    if (!(keepUsername !== undefined && un === keepUsername)) {
+      if (!USERNAME_RE.test(un)) throw bad('invalid_username');
+      out.username = un;
+    }
   }
   if (creating || body.full_name !== undefined) {
     const fn = str(body.full_name, 120);
@@ -73,8 +104,8 @@ async function validateCommon(body, { creating }) {
     out.full_name = fn;
   }
   if (body.email !== undefined) {
-    const e = str(body.email, 200);
-    if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw bad('invalid_email');
+    const e = normEmail(str(body.email, 200));
+    if (e && !EMAIL_RE.test(e)) throw bad('invalid_email');
     out.email = e || null;
   }
   if (creating || body.role_id !== undefined) {
@@ -152,11 +183,12 @@ r.post('/', async (req, res) => {
   const b = req.body || {};
   const v = await validateCommon(b, { creating: true });
   await validatePassword(b.password, v.username, v.role_id);
-  if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
+  if ((await query('SELECT 1 FROM users WHERE username=$1 AND deleted_at IS NULL', [v.username])).rowCount) throw bad('username_taken');
+  if (v.email && await emailTaken(v.email)) throw bad('email_taken');
   assertShapes(b.scopes, b.overrides);
   assertOverridesAllowed(v.role_id, b.overrides);
   v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
-  const id = await tx(async c => {
+  const id = await emailIndexed(() => tx(async c => {
     const row = (await c.query(`INSERT INTO users(username,full_name,email,password_hash,role_id,language,is_active,must_change_password,totp_exempt,created_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [v.username, v.full_name, v.email || null, await hashPassword(b.password), v.role_id, v.language || 'ar',
@@ -165,7 +197,7 @@ r.post('/', async (req, res) => {
     await logAudit(req, { db: c, action: 'create', entity: 'user', entityId: row.id, summary: v.username,
       newValue: { ...v, scopes: b.scopes || [], overrides: b.overrides || [] } });
     return row.id;
-  });
+  }));
   res.status(201).json({ user: await loadUser(id) });
 });
 
@@ -175,8 +207,6 @@ r.post('/', async (req, res) => {
 // must be changed at first sign-in; the passwords are returned once, in the answer to POST /import, and are never
 // stored or logged in clear.
 export const IMPORT_MAX_ROWS = 500;
-const USERNAME_RE = /^[A-Za-z0-9._-]{3,60}$/;
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const cell = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
 // departments / applications: one cell or an array of cells (the template's extra columns), each holding ids or
 // names separated by "," "،" ";" — matched by utils/importMatch.js
@@ -205,7 +235,15 @@ async function checkImportRows(rows) {
   for (const n of names) if (n) count.set(n.toLowerCase(), (count.get(n.toLowerCase()) || 0) + 1);
   const valid = names.filter(n => USERNAME_RE.test(n));
   const taken = new Set(valid.length
-    ? (await query('SELECT lower(username::text) AS u FROM users WHERE username = ANY($1::citext[])', [valid])).rows.map(x => x.u) : []);
+    ? (await query('SELECT lower(username::text) AS u FROM users WHERE username = ANY($1::citext[]) AND deleted_at IS NULL', [valid])).rows.map(x => x.u) : []);
+  // e-mail addresses (trimmed, lower case): one account each, in the file and against the accounts (1.6.0)
+  const emails = rows.map(x => (x && typeof x === 'object' && !Array.isArray(x) ? normEmail(cell(x.email)) : ''));
+  const emailCount = new Map();
+  for (const e of emails) if (e) emailCount.set(e, (emailCount.get(e) || 0) + 1);
+  const wellFormed = [...emailCount.keys()].filter(e => e.length <= 200 && EMAIL_RE.test(e));
+  const emailsTaken = new Set(wellFormed.length
+    ? (await query(`SELECT lower(email::text) AS e FROM users WHERE lower(email::text) = ANY($1::text[]) AND deleted_at IS NULL
+        UNION SELECT lower(username::text) FROM users WHERE lower(username::text) = ANY($1::text[]) AND deleted_at IS NULL`, [wellFormed])).rows.map(x => x.e) : []);
 
   return rows.map((row, index) => {
     const errors = [], details = [];
@@ -220,8 +258,10 @@ async function checkImportRows(rows) {
     const fullName = cell(row.full_name);
     if (!fullName) add('full_name_required');
     else if (fullName.length > 120) add('full_name_too_long');
-    const email = cell(row.email);
+    const email = emails[index];
     if (email && (email.length > 200 || !EMAIL_RE.test(email))) add('invalid_email');
+    else if (email && emailsTaken.has(email)) detail('email_taken', 'email', email);
+    if (email && emailCount.get(email) > 1) detail('duplicate_email_in_file', 'email', email);
     const roleText = cell(row.role_id ?? row.role);
     const rm = matchOne(ix.role, roleText);
     const role = rm.id !== undefined ? roleMap.get(rm.id) : undefined;
@@ -307,7 +347,7 @@ r.post('/import', userImportJson, async (req, res) => {
 // Prevents locking everybody out: there must always be one active admin who still holds user administration
 // and settings after permission overrides (ETS-SEC-023).
 const EFFECTIVE_ADMINS = `SELECT count(*)::int AS n FROM users u JOIN roles ro ON ro.id=u.role_id
-  WHERE u.role_id='admin' AND u.is_active AND ${['usr', 'cfg'].map(p => `(EXISTS (SELECT 1 FROM user_permissions o WHERE o.user_id=u.id AND o.permission='${p}' AND o.granted)
+  WHERE u.role_id='admin' AND u.is_active AND u.deleted_at IS NULL AND ${['usr', 'cfg'].map(p => `(EXISTS (SELECT 1 FROM user_permissions o WHERE o.user_id=u.id AND o.permission='${p}' AND o.granted)
     OR ('${p}' = ANY(ro.permissions) AND NOT EXISTS (SELECT 1 FROM user_permissions o WHERE o.user_id=u.id AND o.permission='${p}' AND NOT o.granted)))`).join(' AND ')}`;
 const effectiveAdmins = async c => (await c.query(EFFECTIVE_ADMINS)).rows[0].n;
 // Called at the start of the transaction: locks every admin row (and the edited one) so that two concurrent
@@ -325,15 +365,18 @@ r.patch('/:id', async (req, res) => {
   const id = idParam(req.params.id);
   const before = await loadUser(id);
   const b = req.body || {};
-  const v = await validateCommon(b, { creating: false });
+  const v = await validateCommon(b, { creating: false, keepUsername: before.username });
   if (v.username && v.username.toLowerCase() !== before.username.toLowerCase() &&
-      (await query('SELECT 1 FROM users WHERE username=$1 AND id<>$2', [v.username, id])).rowCount) throw bad('username_taken');
+      (await query('SELECT 1 FROM users WHERE username=$1 AND id<>$2 AND deleted_at IS NULL', [v.username, id])).rowCount) throw bad('username_taken');
+  // only a changed address is checked: an account that already shares its address (data from before 1.6.0) can
+  // still be edited, and given its own address
+  if (v.email && v.email !== String(before.email || '').toLowerCase() && await emailTaken(v.email, id)) throw bad('email_taken');
   if (id === req.user.id && (v.is_active === false || (v.role_id && v.role_id !== before.role_id))) throw bad('cannot_change_own_role');
   assertShapes(b.scopes, b.overrides);
   if (id === req.user.id) await assertNoSelfGrant(before, b, v);
   const nextRole = v.role_id || before.role_id;
   assertOverridesAllowed(nextRole, b.overrides);
-  await tx(async c => {
+  await emailIndexed(() => tx(async c => {
     const admins = await lockAdmins(c, id);
     const keys = Object.keys(v);
     if (keys.length) {
@@ -358,7 +401,7 @@ r.patch('/:id', async (req, res) => {
       await logAuth(req, { db: c, userId: id, username: before.username, event: v.totp_exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed',
         success: true, detail: { by: req.user.username } });
     }
-  });
+  }));
   // open live-updates streams of this user: closed when deactivated, new scope / permissions otherwise
   publishSessionCheck(id);
   res.json({ user: await loadUser(id) });
@@ -436,8 +479,8 @@ r.post('/bulk-2fa', async (req, res) => {
   const skip = exempt ? req.user.id : 0;
   const q = await tx(async c => {
     const q = all
-      ? await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 AND id<>$2 RETURNING id, username', [exempt, skip])
-      : await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 AND id<>$3 RETURNING id, username', [exempt, user_ids, skip]);
+      ? await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE totp_exempt<>$1 AND id<>$2 AND deleted_at IS NULL RETURNING id, username', [exempt, skip])
+      : await c.query('UPDATE users SET totp_exempt=$1, updated_at=now() WHERE id = ANY($2) AND totp_exempt<>$1 AND id<>$3 AND deleted_at IS NULL RETURNING id, username', [exempt, user_ids, skip]);
     await logAudit(req, { db: c, action: 'bulk_update', entity: 'user', summary: `totp_exempt=${exempt} on ${q.rowCount} users`,
       newValue: { all: !!all, user_ids: user_ids || null, exempt } });
     for (const u of q.rows) {
@@ -447,6 +490,183 @@ r.post('/bulk-2fa', async (req, res) => {
     return q;
   });
   res.json({ updated: q.rowCount });
+});
+
+// ---- delete (archive) and restore — 1.7.0, migration 015 ----
+// Deleting is a soft delete: the row stays, so every name in the history still resolves (audit_log, auth_log,
+// functions.updated_by / removed_by / disabled_by, edit requests, import batches…), and audit_log / auth_log are
+// only appended to. In one transaction, for each deleted user:
+//   · deleted_at / deleted_by / delete_reason are set; the account is inactive everywhere (middleware/auth.js)
+//   · every session is revoked (the live-updates streams close after COMMIT, services/live.js)
+//   · the authenticator and the 2FA recovery codes are removed (a restored account starts again)
+//   · their edit requests still waiting are withdrawn, and their import files still waiting are rejected, each with
+//     its own audit row (approving them would fail anyway: requester_inactive)
+//   · scopes and permission overrides are kept but inert (no session can use them); a restore brings them back
+//   · the username and e-mail are free for a new account (partial unique indexes)
+// Refused for the caller's own account, for the last effective administrator, for an unknown or already deleted id.
+// A bulk request is all-or-nothing: any refused id refuses the whole request with the reason of each id.
+export const DELETE_MAX = 200;
+export const DELETE_REASON_MIN = 3, DELETE_REASON_MAX = 500;
+
+// The reason (required): 3+ non-whitespace characters, at most 500 — same rule as the exclusion note (1.5.1).
+function deleteReason(body) {
+  const v = typeof body?.reason === 'string' ? body.reason.trim() : '';
+  if (v.length > DELETE_REASON_MAX) throw bad('delete_reason_too_long', { max: DELETE_REASON_MAX });
+  if (v.replace(/\s/gu, '').length < DELETE_REASON_MIN) throw bad('delete_reason_required', { min: DELETE_REASON_MIN });
+  return v;
+}
+
+const EFFECTIVE_ADMIN_IDS = EFFECTIVE_ADMINS.replace('count(*)::int AS n', 'u.id');
+
+export async function listDeletedUsers() {
+  return (await query(`SELECT u.id, u.username, u.full_name, u.email, u.role_id, u.is_active, u.deleted_at, u.delete_reason,
+      u.last_login_at, r.name_ar AS role_name_ar, r.name_en AS role_name_en,
+      d.full_name AS deleted_by_name, d.username AS deleted_by_username,
+      EXISTS (SELECT 1 FROM users o WHERE o.deleted_at IS NULL AND o.username = u.username) AS username_taken,
+      (u.email IS NOT NULL AND EXISTS (SELECT 1 FROM users o WHERE o.deleted_at IS NULL AND (lower(o.email::text) = lower(u.email::text) OR lower(o.username::text) = lower(u.email::text)))) AS email_taken
+    FROM users u JOIN roles r ON r.id=u.role_id LEFT JOIN users d ON d.id=u.deleted_by
+    WHERE u.deleted_at IS NOT NULL ORDER BY u.deleted_at DESC, u.id DESC`)).rows;
+}
+
+// Context of the audit row of an edit request / import batch closed because its author was deleted.
+async function closedContext(c, req, kind, row, reason) {
+  if (kind === 'edit_request') return { ...(await requestContext(c, row, req, { reason })), user_deleted: true };
+  const changes = (await c.query('SELECT * FROM import_changes WHERE batch_id=$1 ORDER BY id', [row.id])).rows;
+  return { via: 'import', batch_id: row.id, target: row.target, department_id: row.department_id, departments: row.departments,
+    filename: row.filename, uploaded_by: userRef(await loadAuditUser(c, row.uploaded_by)), lead_by: userRef(await loadAuditUser(c, row.lead_by)),
+    final_by: userRef(await loadAuditUser(c, row.final_by)), items: await namedItems(c, changes), reason, user_deleted: true };
+}
+
+async function deleteUsers(req, ids, reason, { bulk }) {
+  const out = await tx(async c => {
+    // the administrators and the users concerned are locked first (same order as PATCH, see lockAdmins)
+    await c.query(`SELECT id FROM users WHERE role_id='admin' OR id = ANY($1) ORDER BY id FOR UPDATE`, [ids]);
+    const rows = new Map((await c.query(`SELECT id, username, full_name, email, role_id, is_active, deleted_at FROM users WHERE id = ANY($1)`, [ids]))
+      .rows.map(u => [u.id, u]));
+    const admins = (await c.query(EFFECTIVE_ADMIN_IDS)).rows.map(x => x.id);
+    const errors = [];
+    for (const id of ids) {
+      const u = rows.get(id);
+      if (!u) errors.push({ id, error: 'not_found' });
+      else if (u.deleted_at) errors.push({ id, username: u.username, error: 'already_deleted' });
+      else if (id === req.user.id) errors.push({ id, username: u.username, error: 'cannot_delete_self' });
+    }
+    // deleting every remaining effective administrator is refused (the caller is never deleted, see above)
+    if (admins.length && admins.every(a => ids.includes(a))) {
+      for (const a of admins) if (!errors.some(e => e.id === a)) errors.push({ id: a, username: rows.get(a)?.username, error: 'last_admin' });
+    }
+    if (errors.length) {
+      if (!bulk) throw errors[0].error === 'not_found' ? notFound() : bad(errors[0].error, { id: errors[0].id });
+      throw bad('bulk_delete_refused', { errors });
+    }
+    const users = ids.map(id => rows.get(id));
+    await c.query(`UPDATE users SET deleted_at=now(), deleted_by=$2, delete_reason=$3, totp_enabled=false, totp_secret=NULL,
+      totp_last_step=NULL, totp_enabled_at=NULL, failed_attempts=0, locked_until=NULL, last_failed_at=NULL, updated_at=now()
+      WHERE id = ANY($1)`, [ids, req.user.id, reason]);
+    await c.query('DELETE FROM user_recovery_codes WHERE user_id = ANY($1)', [ids]);
+    const sessions = await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='user_deleted'
+      WHERE user_id = ANY($1) AND revoked_at IS NULL RETURNING user_id`, [ids]);
+    // their requests still waiting would stay stuck (approval refuses an inactive author): closed now, audited
+    const note = `user deleted: ${reason}`;
+    const reqs = (await c.query(`UPDATE edit_requests SET status='withdrawn', decided_by=$2, decided_at=now(), reason=$3
+      WHERE requested_by = ANY($1) AND status='pending' RETURNING *`, [ids, req.user.id, note])).rows;
+    const batches = (await c.query(`UPDATE import_batches SET status='rejected', rejected_by=$2, rejected_at=now(), reject_reason=$3
+      WHERE uploaded_by = ANY($1) AND status='pending' RETURNING *`, [ids, req.user.id, note])).rows;
+    const by = userRef(req.user);
+    for (const u of users) {
+      const [scopes, overrides] = await Promise.all([
+        c.query('SELECT kind, ref_id FROM user_scopes WHERE user_id=$1 ORDER BY kind, ref_id', [u.id]),
+        c.query('SELECT permission, granted FROM user_permissions WHERE user_id=$1 ORDER BY permission', [u.id])]);
+      await logAudit(req, { db: c, action: 'delete', entity: 'user', entityId: u.id, summary: u.username,
+        oldValue: { username: u.username, full_name: u.full_name, email: u.email, role_id: u.role_id, is_active: u.is_active,
+          scopes: scopes.rows, overrides: overrides.rows },
+        newValue: { deleted: true, reason },
+        context: { reason, target: userRef(u), by, ...(bulk ? { bulk: true, count: users.length } : {}),
+          sessions_revoked: sessions.rows.filter(x => x.user_id === u.id).length,
+          requests_withdrawn: reqs.filter(x => x.requested_by === u.id).map(x => x.id),
+          imports_rejected: batches.filter(x => x.uploaded_by === u.id).map(x => x.id) } });
+    }
+    if (bulk) {
+      await logAudit(req, { db: c, action: 'bulk_delete', entity: 'user', summary: `${users.length} users deleted`,
+        newValue: { count: users.length, ids, usernames: users.map(u => u.username), reason },
+        context: { reason, by, users: users.map(userRef), requests_withdrawn: reqs.map(x => x.id), imports_rejected: batches.map(x => x.id) } });
+    }
+    for (const rq of reqs) {
+      await logAudit(req, { db: c, action: 'edit_withdraw', entity: 'edit_request', entityId: rq.id, summary: note,
+        context: await closedContext(c, req, 'edit_request', rq, note) });
+    }
+    for (const b of batches) {
+      await logAudit(req, { db: c, action: 'import_reject', entity: 'import_batch', entityId: b.id, summary: note,
+        context: await closedContext(c, req, 'import_batch', b, note) });
+    }
+    // audit rows first, then the auth rows: every transaction takes the two log chains in the same order
+    for (const u of users) {
+      await logAuth(req, { db: c, userId: u.id, username: u.username, event: 'user_deleted_by_admin', success: true,
+        detail: { by: req.user.username, reason, ...(bulk ? { bulk: true } : {}) } });
+    }
+    return { users, reqs, batches };
+  });
+  // after COMMIT: open streams of these users close; "awaiting approval" badges and pending lists refresh
+  for (const id of ids) publishSessionCheck(id);
+  if (out.reqs.length) {
+    publishApps((await query('SELECT id, department_id FROM applications WHERE id = ANY($1)', [out.reqs.map(x => x.app_id)])).rows);
+  }
+  for (const b of out.batches) for (const d of (b.departments?.length ? b.departments : [b.department_id]).filter(Boolean)) publishChange({ dept_id: d });
+  return { deleted: out.users.map(u => ({ id: u.id, username: u.username })), requests_withdrawn: out.reqs.length,
+    imports_rejected: out.batches.length };
+}
+
+// DELETE /users/:id  { reason }
+r.delete('/:id', async (req, res) => {
+  const id = idParam(req.params.id);
+  const reason = deleteReason(req.body);
+  res.json(await deleteUsers(req, [id], reason, { bulk: false }));
+});
+
+// POST /users/bulk-delete  { ids: [..] (1–200), reason }
+r.post('/bulk-delete', async (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || !ids.length || !ids.every(isId)) throw bad('invalid_value', { field: 'ids' });
+  if (ids.length > DELETE_MAX) throw bad('too_many_ids', { max: DELETE_MAX, count: ids.length });
+  if (new Set(ids).size !== ids.length) throw bad('invalid_value', { field: 'ids', reason: 'duplicate' });
+  const reason = deleteReason(req.body);
+  res.json(await deleteUsers(req, ids, reason, { bulk: true }));
+});
+
+// POST /users/:id/restore  { reason } — the account comes back with its role, scopes and overrides, a new temporary
+// password (returned once, must be changed at the next sign-in, same as the bulk import) and no authenticator.
+// Refused (409) when its username or e-mail now belongs to another account.
+r.post('/:id/restore', async (req, res) => {
+  const id = idParam(req.params.id);
+  const reason = deleteReason(req.body);
+  const u0 = (await query('SELECT id, username, role_id, deleted_at FROM users WHERE id=$1', [id])).rows[0];
+  if (!u0) throw notFound();
+  if (!u0.deleted_at) throw bad('not_deleted');
+  const password = generateTemporaryPassword({ minLength: await getSetting('security.password_min_length'), username: u0.username,
+    admin: u0.role_id === ADMIN_ROLE });
+  const hash = await hashPassword(password);      // before the transaction: slow, needs no lock
+  let u;
+  try {
+    u = await tx(async c => {
+      const x = (await c.query('SELECT id, username, full_name, email, role_id, deleted_at, delete_reason FROM users WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!x.deleted_at) throw bad('not_deleted');
+      if ((await c.query('SELECT 1 FROM users WHERE username=$1 AND deleted_at IS NULL', [x.username])).rowCount) throw new HttpError(409, 'username_taken');
+      if (x.email && await emailTaken(x.email, id)) throw new HttpError(409, 'email_taken');
+      await c.query(`UPDATE users SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL, password_hash=$2, must_change_password=true,
+        failed_attempts=0, locked_until=NULL, last_failed_at=NULL, password_changed_at=now(), updated_at=now() WHERE id=$1`, [id, hash]);
+      await logAudit(req, { db: c, action: 'restore', entity: 'user', entityId: id, summary: x.username,
+        oldValue: { deleted_at: x.deleted_at, delete_reason: x.delete_reason }, newValue: { deleted: false, reason, must_change_password: true },
+        context: { reason, target: userRef(x), by: userRef(req.user) } });
+      await logAuth(req, { db: c, userId: id, username: x.username, event: 'user_restored_by_admin', success: true,
+        detail: { by: req.user.username, reason } });
+      return x;
+    });
+  } catch (e) {
+    // taken meanwhile (unique indexes)
+    if (e?.code === '23505') throw new HttpError(409, e.constraint === EMAIL_INDEX ? 'email_taken' : 'username_taken');
+    throw e;
+  }
+  res.json({ user: await loadUser(id), username: u.username, temporary_password: password });
 });
 
 export default r;

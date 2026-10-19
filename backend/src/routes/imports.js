@@ -279,12 +279,12 @@ r.post('/:id/approve', async (req, res) => {
     const ctx = await batchContext(c, u);
     await logAudit(req, { db: c, action: `import_approve_${stage}`, entity: 'import_batch', entityId: id, summary: note, context: { ...ctx, note } });
     if (u.lead_by && u.final_by) {
-      const r2 = await applyBatch(c, id, req.user.id);
+      const { reasons, ...r2 } = await applyBatch(c, id, req.user.id);
       await c.query(`UPDATE import_batches SET status='applied', applied_at=now(), apply_result=$2 WHERE id=$1`, [id, JSON.stringify(r2)]);
       // one row per changed item, in the name of the employee who sent the file
       const done = (await c.query('SELECT * FROM import_changes WHERE batch_id=$1 AND applied ORDER BY id', [id])).rows;
       // in the uploader's name with the uploader's IP; the approver's IP stays in the context (ETS-SEC-052)
-      await logAppliedChanges(req, c, done, { actor: ctx.uploaded_by, actorIp: await originIp(c, 'import_submit', 'import_batch', id),
+      await logAppliedChanges(req, c, [...done, ...reasons], { actor: ctx.uploaded_by, actorIp: await originIp(c, 'import_submit', 'import_batch', id),
         context: { via: 'import', batch_id: id, filename: u.filename, requested_by: ctx.uploaded_by, approved_by: ctx.lead_by,
           final_by: ctx.final_by, approver_ip: req.ip || null } });
       await logAudit(req, { db: c, action: 'import_apply', entity: 'import_batch', entityId: id,

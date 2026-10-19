@@ -7,6 +7,7 @@ import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { UserImport } from './UserImport.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { DeleteUsersDialog, RestoreUserDialog, undeletable } from '../components/DeleteUsers.jsx';
 
 function TfaBadge({ u }) {
   const { t } = useI18n();
@@ -16,13 +17,77 @@ function TfaBadge({ u }) {
 
 export function UserList() {
   const { t, nm, errText, fmtDate } = useI18n();
-  const { data, error, loading, reload } = useLoad(() => api.get('/users'), []);
+  const { user: me } = useAuth();
+  const [view, setView] = useState('active');               // 'active' | 'deleted' (1.7.0)
+  const { data, error, loading, reload } = useLoad(() => api.get(view === 'deleted' ? '/users?deleted=1' : '/users'), [view]);
   const [sel, setSel] = useState(new Set());
   const [importing, setImporting] = useState(false);
+  const [deleting, setDeleting] = useState(null);            // users in the delete dialog
+  const [restoring, setRestoring] = useState(null);
   const nav = useNavigate();
-  if (loading && !data) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
+  const tabs = (
+    <div className="tabs" role="tablist">
+      {['active', 'deleted'].map(v => (
+        <button key={v} type="button" role="tab" aria-selected={view === v} className={'tab' + (view === v ? ' active' : '')}
+          onClick={() => { setView(v); setSel(new Set()); }}>
+          {t(v === 'active' ? 'users_current' : 'deleted_users')}
+        </button>
+      ))}
+    </div>
+  );
+  if (loading && (!data || !!data.deleted !== (view === 'deleted'))) return <div>{tabs}<Loading /></div>;
+  if (error) return <div>{tabs}<ErrorBox error={error} /></div>;
 
+  if (view === 'deleted') {
+    return (
+      <div>
+        <PageHeader title={t('users_title')} icon="users">
+          <ExportButton report="users" params={{ deleted: 1 }} adminOnly />
+        </PageHeader>
+        {tabs}
+        <Card>
+          {!data.users.length ? <p className="muted">{t('no_deleted_users')}</p> : (
+            <div className="table-wrap">
+              <table className="table list-view">
+                <thead>
+                  <tr>
+                    <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('deleted_at')}</th>
+                    <th className="hide-mobile">{t('deleted_by')}</th><th>{t('delete_reason')}</th><th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.users.map(u => {
+                    const blocked = u.username_taken ? 'restore_username_taken' : u.email_taken ? 'restore_email_taken' : null;
+                    return (
+                      <tr key={u.id}>
+                        <td><b>{u.full_name}</b> <Indicator color="gray">{t('deleted_marker')}</Indicator></td>
+                        <td dir="ltr" className="code">{u.username}</td>
+                        <td>{nm(u, 'role_name')}</td>
+                        <td className="muted small">{fmtDate(u.deleted_at)}</td>
+                        <td className="hide-mobile">{u.deleted_by_name || u.deleted_by_username || '—'}</td>
+                        <td className="small del-reason-cell">{u.delete_reason}</td>
+                        <td>
+                          <span title={blocked ? t(blocked) : undefined}>
+                            <button className="btn btn-default btn-sm" disabled={!!blocked} onClick={() => setRestoring(u)}>
+                              <Icon name="restore" size={14} /> {t('restore_user')}
+                            </button>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+        {restoring && <RestoreUserDialog user={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); reload(); }} />}
+      </div>
+    );
+  }
+
+  const blockedOf = u => undeletable(u, me, data.users);
+  const selectable = data.users.filter(u => !blockedOf(u));
   const toggle = id => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const bulk = async (exempt, all) => {
     if (!window.confirm(t('are_you_sure'))) return;
@@ -31,6 +96,7 @@ export function UserList() {
       toast(t('done_n', { n: r.updated })); setSel(new Set()); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
+  const selected = data.users.filter(u => sel.has(u.id));
 
   return (
     <div>
@@ -39,6 +105,7 @@ export function UserList() {
         <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
         <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>
       </PageHeader>
+      {tabs}
       {importing && <UserImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); reload(); }} />}
       <Card title={t('two_fa')} actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
         <div className="row gap wrap">
@@ -47,6 +114,10 @@ export function UserList() {
           <span className="sep-v" />
           <button className="btn btn-default btn-sm" disabled={!sel.size} onClick={() => bulk(true, false)}>{t('bulk_2fa_off_sel')}</button>
           <button className="btn btn-default btn-sm" disabled={!sel.size} onClick={() => bulk(false, false)}>{t('bulk_2fa_on_sel')}</button>
+          <span className="sep-v" />
+          <button className="btn btn-danger btn-sm" disabled={!sel.size} onClick={() => setDeleting(selected)}>
+            <Icon name="trash" size={14} /> {t('delete_selected_n', { n: sel.size })}
+          </button>
           {sel.size > 0 && <span className="muted small">{t('selected_n', { n: sel.size })}</span>}
         </div>
       </Card>
@@ -55,32 +126,46 @@ export function UserList() {
           <table className="table list-view">
             <thead>
               <tr>
-                <th className="w-check"><input type="checkbox" aria-label={t('all')} checked={sel.size === data.users.length && data.users.length > 0}
-                  onChange={e => setSel(e.target.checked ? new Set(data.users.map(u => u.id)) : new Set())} /></th>
+                <th className="w-check"><input type="checkbox" aria-label={t('all')} checked={sel.size === selectable.length && selectable.length > 0}
+                  onChange={e => setSel(e.target.checked ? new Set(selectable.map(u => u.id)) : new Set())} /></th>
                 <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('status')}</th>
                 <th>{t('two_fa')}</th><th className="hide-mobile">{t('scope')}</th><th className="hide-mobile">{t('last_login')}</th>
+                <th className="w-check"><span className="sr-only">{t('delete_user')}</span></th>
               </tr>
             </thead>
             <tbody>
-              {data.users.map(u => (
-                <tr key={u.id}>
-                  <td className="w-check"><input type="checkbox" checked={sel.has(u.id)} onChange={() => toggle(u.id)} aria-label={u.username} /></td>
-                  <td><Link to={'/users/' + u.id}><b>{u.full_name}</b></Link></td>
-                  <td dir="ltr" className="code">{u.username}</td>
-                  <td>{nm(u, 'role_name')}</td>
-                  <td>
-                    {u.is_active ? <Indicator color="green">{t('active')}</Indicator> : <Indicator color="gray">{t('inactive')}</Indicator>}
-                    {u.locked_until && new Date(u.locked_until) > new Date() && <> <Indicator color="red">{t('locked')}</Indicator></>}
-                  </td>
-                  <td><TfaBadge u={u} /></td>
-                  <td className="hide-mobile">{u.role_full_scope ? t('full_scope') : u.scope_count || <Indicator color="red">{t('no_scope')}</Indicator>}</td>
-                  <td className="hide-mobile muted small">{fmtDate(u.last_login_at)}</td>
-                </tr>
-              ))}
+              {data.users.map(u => {
+                const why = blockedOf(u);
+                return (
+                  <tr key={u.id} className={sel.has(u.id) ? 'row-selected' : undefined}>
+                    <td className="w-check" title={why ? t(why) : undefined}>
+                      <input type="checkbox" checked={sel.has(u.id)} disabled={!!why} onChange={() => toggle(u.id)} aria-label={u.username} />
+                    </td>
+                    <td><Link to={'/users/' + u.id}><b>{u.full_name}</b></Link></td>
+                    <td dir="ltr" className="code">{u.username}</td>
+                    <td>{nm(u, 'role_name')}</td>
+                    <td>
+                      {u.is_active ? <Indicator color="green">{t('active')}</Indicator> : <Indicator color="gray">{t('inactive')}</Indicator>}
+                      {u.locked_until && new Date(u.locked_until) > new Date() && <> <Indicator color="red">{t('locked')}</Indicator></>}
+                    </td>
+                    <td><TfaBadge u={u} /></td>
+                    <td className="hide-mobile">{u.role_full_scope ? t('full_scope') : u.scope_count || <Indicator color="red">{t('no_scope')}</Indicator>}</td>
+                    <td className="hide-mobile muted small">{fmtDate(u.last_login_at)}</td>
+                    <td className="w-check">
+                      <span title={why ? t(why) : t('delete_user')}>
+                        <button type="button" className="btn-icon danger" disabled={!!why} aria-label={t('delete_user') + ' ' + u.username}
+                          onClick={() => setDeleting([u])}><Icon name="trash" size={15} /></button>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </Card>
+      {deleting && <DeleteUsersDialog users={deleting} onClose={() => setDeleting(null)}
+        onDone={() => { setDeleting(null); setSel(new Set()); reload(); }} />}
     </div>
   );
 }
@@ -104,6 +189,7 @@ function UserFormInner({ id }) {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pwModal, setPwModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!usr.data) return;
@@ -160,6 +246,9 @@ function UserFormInner({ id }) {
           {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => action('reset-2fa')}>{t('reset_2fa')}</button>}
           {u.locked_until && new Date(u.locked_until) > new Date() && <button className="btn btn-default btn-sm" onClick={() => action('unlock', false)}>{t('unlock')}</button>}
           {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}
+          <span title={self ? t('del_self_tip') : undefined}>
+            <button className="btn btn-danger btn-sm" disabled={self} onClick={() => setDeleting(true)}><Icon name="trash" size={14} /> {t('delete_user')}</button>
+          </span>
         </>}
         <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>
       </PageHeader>
@@ -248,6 +337,7 @@ function UserFormInner({ id }) {
       </Card>
 
       {pwModal && <ResetPassword id={id} onClose={() => setPwModal(false)} onDone={() => { setPwModal(false); usr.reload(); }} />}
+      {deleting && <DeleteUsersDialog users={[u]} onClose={() => setDeleting(false)} onDone={() => nav('/users', { replace: true })} />}
     </div>
   );
 }
