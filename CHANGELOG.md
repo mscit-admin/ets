@@ -30,6 +30,79 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.8.0] — 2026-10-19 — Mark each item as a function or a report
+
+### Added
+- **Database:** `functions.item_type` — `function` (default) or `report` (migration 016).
+- **Backend:** the type of an item can be changed by whoever can add and remove items (permission `tog`):
+  - `PATCH /api/tracker/functions/:id` `{item_type}` (400 `invalid_value` for anything but `function` / `report`);
+  - bulk `POST /api/tracker/applications/:id/bulk` `{field: 'item_type', value, function_ids}` (1–500 items of the
+    application, not removed; excluded ones allowed), one audit row per item with `context.bulk`;
+  - add-function `POST /api/tracker/applications/:id/functions` `{…, item_type}`, also in the impact preview.
+  - With `approval.edits_need_lead` on, a data-entry user's change waits for the team lead
+    (`edit_request_items.field = 'item_type'`) and is applied in their name. Every change has its `update` /
+    `function` audit row `{item_type}` old → new; live updates fire after COMMIT.
+- **Backend:** `summary`, `departments/:id`, `applications/:id` → `calc.fnShare`, `reportShare`,
+  `items {function, report}`, `typeWeight`, `reportItems`, `reportTrack`, `reportWeight`; `summary.counts.report_items`;
+  `reports` → `report_pct`, `report_items`; `project-status` → `report_items`, `report_tracks`; `search` →
+  `item_type`.
+- **Backend:** Excel — functions export: column «النوع» / “Type” and the filter `item_type=function|report`;
+  department export: «بنود التقارير» and «إنجاز التقارير»; reports export: the application's report items and
+  reports %; project status: «بنود مصنّفة تقارير».
+- **Frontend:** functions page — every row shows its type beside the name:
+  - a navy cog chip «وظيفة» or a teal document-chart chip «تقرير», plus a teal line on the start edge of report rows
+    (colours outside the red → green progress scale and the pass / fail test colours);
+  - for users with `tog` the chip is a menu button (`aria-haspopup="menu"`, `menuitemradio` options; Enter / Space /
+    ↓ open, ↑ ↓ Home End move, Esc closes); read-only otherwise;
+  - a type filter «النوع: الكل / وظائف / تقارير» (also passed to the Excel export) and a legend «دليل الأنواع».
+- **Frontend:** «تعيين جماعي» → «تعيين النوع لبنود محددة»; a type choice in «إضافة وظيفة»; the header counts
+  «وظائف 31 · تقارير 2»; the reports ring shows what it is made of («2 بند تقرير + متابعة التقارير»); pending chips
+  and the approvals screen show the type old → new.
+- **Frontend:** audit sentence «غيّر أحمد نوع البند «D7 …» من وظيفة إلى تقرير» (bulk: «ضمن تعيين جماعي (n بند)»).
+- **Frontend:** the dashboard card «وظيفة داخلة في الحساب» adds «+ n بند تقرير»; the department table shows the
+  report items next to the functions; the reports screen adds «بنود التقارير» and «نسبة التقارير المحتسبة» (its
+  top card uses the latter); search results show the type icon.
+- **Tests:** `backend/test/item-type.test.js` (default type and constraint, exact figures before / after on a
+  fixture, excluded / removed report items, base department and all-report application, PATCH audit, approval flow
+  and the approvals export, bulk, add-function and its impact preview, scope, Excel column and filter, project status
+  and reports agree); `calc.test.js` (5 tests: the move between parts, 1.7.0 figures without report items, base
+  department, notification blending, counts); `live.test.js` (type change → `tracker_changed` after commit).
+
+### Changed
+- **Backend:** the calculation (`backend/src/services/calc.js`, the only copy of the formula — screens, Excel,
+  snapshots, schedule current %, import impact all use it; the function columns it reads are one constant,
+  `CALC_FUNCTIONS_SQL`):
+  - **functions %** = weighted average of the enabled items of type `function`;
+  - **reports %** = weighted average of the enabled items of type `report` (same weight, progress and notification
+    rules) **together with** the application's reports track (`app_reports`, non-base departments) counted as one
+    more item of weight 1 — null when the application has neither;
+  - **application %** = functions % × (1 − reports share) + reports % × reports share (15 %); functions % × 100 %
+    when there are no reports (as before); reports % × 100 % when every counted item is a report;
+  - department and project “functions only” figures leave out applications whose % has no functions part;
+  - an application's weight in `auto` mode stays the sum of all its enabled items (both types).
+- **Backend:** `counts.functions` / `done` (dashboard, project status, snapshots) count function items only;
+  `project-status` `reports` / `reports_done` / `reports_pct` pool report items and reports tracks (with no report
+  items, identical to 1.7.0).
+- **Frontend:** `PctEquation` takes the shares from the API (`calc.fnShare` / `reportShare`) instead of re-deriving
+  them; the share shown under each item is its share of its own part (functions or reports), as in the export.
+- **Docs:** 04 (Arabic user guide: the item type, how to change it, how the percentages are computed, an example),
+  05 (column, migration 016, the calculation table), 11 (fields, bulk, add-function, exports);
+  `deploy/db/schema-reference.sql` regenerated (migration 016).
+
+### Fixed
+- **Tests:** `audit-log.test.js` waits for the asynchronous `csrf_rejected` auth-log row before counting it
+  (intermittent failure).
+
+### Upgrade notes
+- **Migration `016_item_type.sql`** (applied by `update.sh`): `functions.item_type text NOT NULL DEFAULT 'function'`
+  with `CHECK (item_type IN ('function','report'))`.
+- **Percentages change only for items marked as reports.** On upgrade every item is a function, so every application,
+  department and project figure stays exactly as in 1.7.0 until someone marks an item «تقرير»; then only that
+  application's figures (and through it its department and the project) move. Re-seeding the catalog keeps the types.
+- Import files (the original tracker JSON) have no type column: imports never change an item's type.
+
+---
+
 ## [1.7.0] — 2026-10-19 — Deleting users (one or several), with the history kept
 
 ### Added
@@ -1264,6 +1337,7 @@ was built in one commit (`8119253`).
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
 [Unreleased]: https://github.com/mscit-admin/ets/compare/f7544d0...HEAD
+[1.8.0]: https://github.com/mscit-admin/ets/compare/f7544d0...HEAD
 [1.7.0]: https://github.com/mscit-admin/ets/compare/abd37eb...f7544d0
 [1.6.0]: https://github.com/mscit-admin/ets/compare/4e2c8c6...abd37eb
 [1.5.1]: https://github.com/mscit-admin/ets/compare/9085ef2...4e2c8c6
