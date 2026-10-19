@@ -1,8 +1,8 @@
 # ETS — Handover Pack · حزمة التسليم
 
 **System:** ETS — ERP Tracking System (مركز متابعة إنجاز ERP)
-**Version:** 1.1.0 (see [HISTORY.md](../../HISTORY.md))
-**Date:** 2026-10-15
+**Version:** 1.7.0 (release notes: [CHANGELOG.md](../../CHANGELOG.md))
+**Date:** 2026-10-19
 
 This folder contains every document delivered to the customer with the system. Documents marked
 **(AR)** are in Arabic for end users; technical documents are in English.
@@ -30,5 +30,6 @@ This folder contains every document delivered to the customer with the system. D
    and migrations `backend/src/db/migrations/`.
 3. Schema reference `deploy/db/schema-reference.sql`.
 4. Installer `deploy/install.sh` and operations scripts (`ets-backup`, `ets-restore`, `ets-log-protect`, `update.sh`).
-5. This documentation pack.
+5. This documentation pack, and the release notes [CHANGELOG.md](../../CHANGELOG.md) (every version, what changed
+   and what to check when updating).
 6. Automated tests (`backend/test/`, 90 tests).

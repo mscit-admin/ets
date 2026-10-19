@@ -1,12 +1,12 @@
 # STRUCTURE — هيكل المشروع
 
 Map of the repository: what each folder and file is for. Update this file whenever a file is added,
-moved or removed (and record the change in [HISTORY.md](HISTORY.md)).
+moved or removed (and record the change in [CHANGELOG.md](CHANGELOG.md)).
 
 ```
 ets/
 ├── README.md                      Overview and quick start
-├── HISTORY.md                     History of all changes and fixes (changelog)
+├── CHANGELOG.md                   Release notes: all changes, fixes and upgrade steps (Keep a Changelog)
 ├── STRUCTURE.md                   This file
 ├── .gitignore
 ├── .github/dependabot.yml         Weekly npm (backend, frontend) and GitHub Actions update proposals (7-day cooldown)

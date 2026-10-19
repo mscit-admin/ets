@@ -59,6 +59,6 @@ Unattended mode: `--answers deploy/answers.example --yes`. See
 ## Documents
 
 - [STRUCTURE.md](STRUCTURE.md) — what every folder and file is for
-- [HISTORY.md](HISTORY.md) — history of every change and fix
+- [CHANGELOG.md](CHANGELOG.md) — release notes: every change, fix, upgrade and the operator steps per version
 - [docs/handover/](docs/handover/00-Handover-Index.md) — handover pack for the customer (installation, admin
   and user guides, database, security, logging, backup, test plan / UAT, acceptance)
