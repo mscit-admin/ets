@@ -7,6 +7,7 @@ import { Icon } from './Icon.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import { useBranding } from '../lib/branding.jsx';
 import { useLoad } from './ui.jsx';
+import { NotificationBell } from './NotificationBell.jsx';
 
 function Navbar({ onMenu }) {
   const { t, lang, setLang, nm } = useI18n();
@@ -43,6 +44,7 @@ function Navbar({ onMenu }) {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('search_placeholder')} aria-label={t('search_placeholder')} />
         </form>
         <div className="nav-right">
+          <NotificationBell />
           <button className="btn btn-sm btn-ghost" onClick={switchLang} title={t('language')}>
             <Icon name="globe" size={15} /> <span className="hide-mobile">{t('lang_switch')}</span>
           </button>

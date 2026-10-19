@@ -4,14 +4,19 @@
 
 const STATUS_PREFIX = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_', status: 'rs_' };
 const PCT_FIELDS = new Set(['progress']);
-const BOOL_FIELDS = new Set(['is_active', 'totp_exempt', 'must_change_password', 'approval.edits_need_lead']);
+const BOOL_FIELDS = new Set(['is_active', 'totp_exempt', 'must_change_password', 'approval.edits_need_lead', 'notify.enabled']);
 const SETTING_LABEL = {
   'mfa.mode': 'mfa_mode', 'mfa.issuer': 'mfa_issuer', 'approval.edits_need_lead': 'edits_need_lead',
   'app.org_name_ar': 'org_name_ar', 'app.org_name_en': 'org_name_en', 'app.default_language': 'default_language',
   'security.password_min_length': 'password_min_length', 'logs.retention_days': 'retention_days',
   'logs.access_retention_days': 'access_retention_days', 'calc.weight_mode': 'weight_mode',
   'calc.notif_share': 'notif_share', 'calc.reports_share': 'reports_share',
+  // notifications (1.9.0): the thresholds use their Settings labels (ns_<name>)
+  'notify.enabled': 'notify_enabled', 'notify.timezone': 'notify_timezone', 'notify.digest_hour': 'notify_digest_hour',
+  'notify.work_days': 'notify_work_days', 'notify.policy': 'notify_policy',
 };
+// ns_<key without "notify."> for the thresholds of Settings → «الإشعارات»
+const notifyLabel = k => (k.startsWith('notify.') ? 'ns_' + k.slice(7) : null);
 // Reports that can be exported to Excel (backend routes/export.js); the audit entity of an export is the report key.
 const EXPORT_REPORTS = new Set(['summary', 'project_status', 'department', 'functions', 'weights', 'reports', 'schedule', 'approvals',
   'imports', 'import_detail', 'users']);
@@ -24,7 +29,7 @@ const num = v => (Number.isFinite(+v) ? String(Math.round(+v * 100) / 100) : Str
 export function makeAudit({ t, lang }) {
   const tx = (key, vars) => { const s = t(key, vars); return s === key ? null : s; };   // null when the key is missing
   const fieldLabel = f => tx('au_f_' + f) || tx(f) || f;
-  const settingLabel = k => (SETTING_LABEL[k] && tx(SETTING_LABEL[k])) || k;
+  const settingLabel = k => (SETTING_LABEL[k] && tx(SETTING_LABEL[k])) || (notifyLabel(k) && tx(notifyLabel(k))) || k;
   const person = u => (u ? u.full_name || u.username || '—' : '—');
   // the author of a row, with «(محذوف)» when that account was deleted since (logs.js: user_deleted)
   const actorName = r => (r.full_name || r.username || '—') + (r.user_deleted ? ' ' + t('deleted_marker') : '');
@@ -53,6 +58,8 @@ export function makeAudit({ t, lang }) {
     if (field === 'removed') return v ? t('au_removed') : t('au_present');
     if (field === 'language' || field === 'app.default_language') return tx('au_lang_' + v) || String(v);
     if (field === 'mfa.mode') return tx('mfa_' + v) || String(v);
+    if (field === 'notify.work_days' && Array.isArray(v)) return v.map(d => tx('wd_' + d) || d).join(listSep);
+    if (field === 'notify.digest_hour') return String(v).padStart(2, '0') + ':00';
     if (BOOL_FIELDS.has(field) || typeof v === 'boolean') return v ? t('yes') : t('no');
     if (field === 'role_id') return v;
     if (field === 'note' || typeof v === 'string') return quote(short(String(v)));
@@ -125,6 +132,21 @@ export function makeAudit({ t, lang }) {
     if (nv.truncated) notes.push(t('au_export_truncated'));
   };
 
+  // Cells of the notification policy that changed (1.9.0): «وظائف عالقة» أُوقف لدور «عضو فريق»، …
+  function policyChanges(o, n) {
+    const out = [];
+    const typeName = k => tx('nt_' + k) || k;
+    for (const k of Object.keys(n || {})) {
+      const a = o?.[k] || {}, b = n[k] || {};
+      for (const role of Object.keys({ ...(a.roles || {}), ...(b.roles || {}) })) {
+        if (!!a.roles?.[role] !== !!b.roles?.[role]) out.push(t('au_policy_role', { type: typeName(k), role: tx('rl_' + role) || role, state: t(b.roles?.[role] ? 'au_policy_on' : 'au_policy_off') }));
+      }
+      if (!!a.push !== !!b.push) out.push(t('au_policy_push', { type: typeName(k), state: t(b.push ? 'au_policy_push_on' : 'au_policy_push_off') }));
+      if (!!a.mandatory !== !!b.mandatory) out.push(t('au_policy_mandatory', { type: typeName(k), state: t(b.mandatory ? 'au_policy_mandatory_on' : 'au_policy_mandatory_off') }));
+    }
+    return out.length ? out.join(listSep) : t('au_policy_none');
+  }
+
   // { text, lines: [{label, from, to}], items: [...], notes: [string], type }
   return function describe(r) {
     const ctx = r.context || {};
@@ -186,6 +208,7 @@ export function makeAudit({ t, lang }) {
         break;
       case 'update:setting': {
         const k = r.entity_id;
+        if (k === 'notify.policy') { text = t('au_policy', { changes: policyChanges(r.old_value?.value, r.new_value?.value) }); break; }
         text = t('au_update_setting', { key: settingLabel(k), from: fmt(k, r.old_value?.value), to: fmt(k, r.new_value?.value) });
         break;
       }
@@ -205,6 +228,13 @@ export function makeAudit({ t, lang }) {
         break;
       case 'update:user':
         if (r.summary === 'language') { text = t('au_update_language', { to: fmt('language', r.new_value?.language) }); break; }
+        if (r.new_value && 'notify_blocks' in r.new_value) {
+          // «حظر تنبيه «تعارض النجاح» على الجوال للمستخدم «سارة»» (1.9.0)
+          const list = (r.new_value.notify_blocks || []).map(b => t(b.channel === 'mobile' ? 'au_block_item_mobile' : 'au_block_item_all',
+            { type: b.type === '*' ? t('block_every_type') : tx('nt_' + b.type) || b.type })).join(listSep);
+          text = t('au_notify_blocks', { target: quote(person(ctx.target) !== '—' ? person(ctx.target) : r.summary || r.entity_id), list: list || t('au_blocks_none') });
+          break;
+        }
         text = t('au_update_user', { target: quote(r.summary || r.entity_id) });
         lines = diff(r.old_value, r.new_value);
         break;
@@ -279,6 +309,14 @@ export function makeAudit({ t, lang }) {
         else if (ctx.reason) notes.push(t('au_reason', { reason: ctx.reason }));
         if (ctx.note) notes.push(t('au_approval_note', { note: ctx.note }));
         items = itemLines(ctx.items);
+        break;
+      }
+      // phones (1.9.0): «ربط أحمد الجوال «Samsung A54» بحسابه», «إلغاء الجوال … من المسؤول خالد: الحساب معطّل»
+      case 'pair:device': text = t('au_pair_device', { who: actorName(r), name: ctx.device?.name || r.new_value?.name || '' }); break;
+      case 'revoke:device': {
+        const reason = tx('rr_' + (ctx.reason || r.new_value?.reason)) || ctx.reason || '';
+        const owner = quote(person(ctx.owner)), name = ctx.device?.name || '';
+        text = ctx.by && ctx.by.id !== ctx.owner?.id ? t('au_revoke_device_by', { by: person(ctx.by), owner, name, reason }) : t('au_revoke_device', { owner, name, reason });
         break;
       }
       case 'update:branding': text = t('au_branding_update', { key: tx('brand_' + r.entity_id) || r.entity_id }); break;

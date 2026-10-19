@@ -167,7 +167,7 @@ test('T2 untested, T3 failed not re-tested, T4 «نجح» below 100 %: rules and
   await pool.query(`UPDATE functions SET item_type='report' WHERE id = ANY($1)`, [[u1, u2]]);
   await digest();
   const t = (await (await as('mem_app')).get('/notifications')).data.items.find(i => i.type === 'untested');
-  assert.match(t.title, /^تقريران مكتملة في تطبيق/);
+  assert.match(t.title, /^تقريران في تطبيق .+ بنسبة 100% دون اختبار منذ أكثر من 7 أيام$/);
   await pool.query(`UPDATE functions SET item_type='function' WHERE id = ANY($1)`, [[u1, u2]]);
   await setFns([u1, u2, f1, c1, recent], { progress: 0, test_status: 0 });
 });

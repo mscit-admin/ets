@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api } from '../lib/api.js';
 import { Alert, Card, Field, Indicator, Modal, PageHeader, toast } from '../components/ui.jsx';
 import { PasswordForm, RecoveryCodes, TotpEnroll } from './Login.jsx';
+import { DevicesCard, NotifyPrefsCard } from '../components/ProfileNotify.jsx';
 
 export default function Profile() {
   const { t, nm, lang, setLang, errText } = useI18n();
@@ -70,6 +71,9 @@ export default function Profile() {
       <Card title={t('change_password')}>
         <div className="narrow"><PasswordForm /></div>
       </Card>
+
+      <NotifyPrefsCard />
+      <DevicesCard />
 
       {confirm && (
         <Modal title={t(needsCode ? 'confirm_with_password_code' : 'confirm_with_password')} onClose={closeConfirm}

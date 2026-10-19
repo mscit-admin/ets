@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { useBranding } from '../lib/branding.jsx';
 import { addPeriods } from '../components/SCurve.jsx';
+import { NotifySettingsCard } from '../components/NotifySettings.jsx';
 
 export default function Settings() {
   const { t, errText, fmtDate } = useI18n();
@@ -85,6 +86,8 @@ export default function Settings() {
           onChange={e => set('approval.edits_need_lead', e.target.checked)} /> {t('edits_need_lead')}</label>
         <div className="field-hint mt-s">{t('edits_need_lead_hint')}</div>
       </Card>
+
+      <NotifySettingsCard s={s} set={set} />
 
       <BrandingCard />
 

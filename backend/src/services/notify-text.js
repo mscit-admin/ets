@@ -88,16 +88,16 @@ const T = {
     title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} بلا تقدّم منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} ${where(l, p)} without progress for more than ${en(p.days, 'day')}`,
     body: l === 'ar' ? 'نسبة الإنجاز بين 0% و100% ولم تتغيّر' : 'Progress between 0% and 100% and unchanged' }),
   untested: (l, p, n) => ({
-    title: l === 'ar' ? `${items(l, p, n)} مكتملة ${where(l, p)} لم تُختبر منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} at 100% ${where(l, p)} not tested for more than ${en(p.days, 'day')}`,
+    title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} بنسبة 100% دون اختبار منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} at 100% ${where(l, p)} not tested for more than ${en(p.days, 'day')}`,
     body: l === 'ar' ? 'الإنجاز 100% وحالة الاختبار «لم تُختبر»' : 'Progress 100% and test status “not tested”' }),
   failed_retest: (l, p, n) => ({
-    title: l === 'ar' ? `${items(l, p, n)} فشلت ${where(l, p)} ولم يُعَد اختبارها منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} failed ${where(l, p)} and not tested again for more than ${en(p.days, 'day')}`,
+    title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} حالتها «فشل» دون إعادة اختبار منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} failed ${where(l, p)} and not tested again for more than ${en(p.days, 'day')}`,
     body: l === 'ar' ? 'حالة الاختبار «فشل»' : 'Test status “failed”' }),
   pass_conflict: (l, p, n) => ({
     title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} حالتها «نجح» ونسبتها أقل من 100%` : `${items(l, p, n)} ${where(l, p)} passed with progress below 100%`,
     body: l === 'ar' ? 'صحّح النسبة إلى 100% أو غيّر حالة الاختبار' : 'Set the progress to 100% or change the test status' }),
   not_started: (l, p, n) => ({
-    title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} لم تبدأ بعد مرور ${ar(p.days, 'day')}` : `${items(l, p, n)} ${where(l, p)} not started after ${en(p.days, 'day')}`,
+    title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} بنسبة 0% بعد مرور ${ar(p.days, 'day')}` : `${items(l, p, n)} ${where(l, p)} not started after ${en(p.days, 'day')}`,
     body: l === 'ar' ? 'نسبة الإنجاز 0%' : 'Progress 0%' }),
   quality: (l, p, n) => ({
     title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)}: إشعار لا يعمل أو مراجعة ناقصة` : `${items(l, p, n)} ${where(l, p)}: notification not working or review missing`,
