@@ -554,6 +554,9 @@ case $ETS_TLS in
     fi ;;
 esac
 
+# phones (1.9.0): the address and certificate fingerprint written into the pairing QR code
+set_mobile_env "$ENVF"
+
 step "Web server (nginx)"
 render_nginx "$NGX_SITE" "$NGX_SNIP"
 nginx -t

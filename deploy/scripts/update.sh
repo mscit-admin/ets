@@ -58,6 +58,8 @@ case $ETS_TLS in
 esac
 render_nginx /etc/nginx/sites-available/ets /etc/nginx/snippets/ets-app.conf
 nginx -t
+# phones (1.9.0): the address and certificate fingerprint written into the pairing QR code
+set_mobile_env "$ENVF"
 
 systemctl daemon-reload
 systemctl reload nginx

@@ -228,6 +228,31 @@ selfsigned_needs_renewal() {   # $1 = address, $2 = cert file
   return 1
 }
 
+# ---------------------------------------------------------------- phones (Android app, 1.9.0)
+# SHA-256 fingerprint of a certificate file (DER), 64 lower-case hex digits — what the app pins.
+cert_sha256() { openssl x509 -in "$1" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f'; }
+# set_env_kv FILE KEY VALUE — replaces KEY=… in the env file, or appends it (the file keeps its owner and mode).
+set_env_kv() {
+  local f=$1 k=$2 v=$3
+  if grep -q "^$k=" "$f"; then sed -i "s|^$k=.*|$k=$(sed_esc "$v")|" "$f"; else printf '%s=%s\n' "$k" "$v" >>"$f"; fi
+}
+# Writes PUBLIC_BASE_URL (https://ADDRESS[:port], the address in the pairing QR code) and TLS_CERT_SHA256 (the nginx
+# certificate's fingerprint, which the app pins) into ets.env. A Let's Encrypt certificate is renewed every few
+# months and is publicly trusted: TLS_CERT_SHA256 is left empty (null in the QR, the phone checks the CA chain).
+# A PUBLIC_BASE_URL already set by hand (e.g. the VPN name of the server) is kept.
+# Uses: ETS_ADDRESS, ETS_HTTPS_PORT, ETS_TLS, ETS_CERT; $1 = env file.
+set_mobile_env() {
+  local f=$1 url fp=''
+  url="https://$ETS_ADDRESS$( [[ ${ETS_HTTPS_PORT:-443} == 443 ]] || echo ":$ETS_HTTPS_PORT")"
+  if ! grep -q '^PUBLIC_BASE_URL=.\+' "$f"; then
+    { grep -q '^# Phones (Android app)' "$f" || printf '\n# Phones (Android app): address in the pairing QR code, server certificate fingerprint (set by install.sh / update.sh)\n'; } >>"$f"
+    set_env_kv "$f" PUBLIC_BASE_URL "$url"
+  fi
+  if [[ ${ETS_TLS:-} != letsencrypt && -r "${ETS_CERT:-}" ]]; then fp=$(cert_sha256 "$ETS_CERT"); fi
+  set_env_kv "$f" TLS_CERT_SHA256 "$fp"
+  echo "Phones: PUBLIC_BASE_URL=$(env_get "$f" PUBLIC_BASE_URL), TLS_CERT_SHA256=${fp:-(empty: publicly trusted certificate)}"
+}
+
 # ---------------------------------------------------------------- nginx
 # render_nginx SITE SNIPPET [1 = temporary port-80 site for the Let's Encrypt challenge]
 # Also writes the security-headers snippet next to SNIPPET.
