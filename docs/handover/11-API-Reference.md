@@ -12,7 +12,8 @@ nesting (`413 payload_too_large`, `400 invalid_json`); the file uploads `POST /i
 the int4 range (`400 invalid_id`). Bidirectional control characters are removed from text values.
 
 Errors: HTTP status + `{"error": "<code>", ...}`. Codes include `invalid_credentials` (401 — wrong or unknown
-username, wrong password, disabled **or paused** account: the answer is the same), `too_many_attempts` (429, with
+username or e-mail address, wrong password, disabled **or paused** account, an address shared by several accounts:
+the answer is the same), `too_many_attempts` (429, with
 `retry_after` seconds: per-IP / per-account limit on password and 2FA checks, or a paused account at the 2FA step
 or a re-authentication), `too_many_requests` (429, general `/api` limit, with `retry_after`), `invalid_code`,
 `mfa_required`, `mfa_not_pending`, `not_authenticated`, `forbidden` (with `permission`), `out_of_scope`,
@@ -22,7 +23,7 @@ or a re-authentication), `too_many_requests` (429, general `/api` limit, with `r
 `423` / `account_locked` answer.
 
 Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`, `/auth/change-password`)
-`LOGIN_RATE_LIMIT` (30) per IP per 15 min and 30 failures per typed username per 15 min; every `/api` request
+`LOGIN_RATE_LIMIT` (30) per IP per 15 min and 30 failures per typed sign-in name (username or e-mail, trimmed, lower case) per 15 min; every `/api` request
 `API_RATE_LIMIT` (600) per IP per minute; nginx adds 10 / min per IP on the sign-in endpoints.
 
 ## Public
@@ -34,7 +35,7 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 ## Authentication — `/auth`
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/login` | `{username, password}` | → `{stage: "done" \| "verify" \| "enroll"}`; sets the cookie (a new token; the browser's previous session is revoked). The failure counter is cleared only when the sign-in is complete (after 2FA) |
+| POST | `/login` | `{username, password}` | `username` is the sign-in name: **the username or the e-mail address** (1.6.0; trimmed; a value with `@` is matched to `lower(email)`, otherwise to the username, both case-insensitive; with `@` and no e-mail match, an older username containing `@`). → `{stage: "done" \| "verify" \| "enroll"}`; sets the cookie (a new token; the browser's previous session is revoked). The failure counter belongs to the account, whichever name was typed, and is cleared only when the sign-in is complete (after 2FA). `400 missing_credentials` when a field is empty |
 | POST | `/2fa/verify` | `{code}` or `{recovery_code}` | Partial session, stage `verify`; on success a new session token replaces the partial one. `400 mfa_not_pending` when no 2FA step is pending |
 | POST | `/2fa/setup` | `{password}` (not needed at the login enrol step) | → `{secret, uri, qr}` (QR as a data URL) |
 | POST | `/2fa/enable` | `{code}` | → `{recovery_codes:[10]}` |
@@ -105,7 +106,10 @@ Function, bulk and report edits by data-entry users answer **202** `{pending: tr
 Errors: `usr_admin_only` (granting `usr` to another role), `cannot_change_own_permissions` (widening your own
 permissions / scope / 2FA exemption), `last_admin` (would leave no active administrator holding `usr` and `cfg`),
 `invalid_permission` (unknown or duplicate permission in `overrides`), `use_change_password` (resetting your own
-password — use `POST /auth/change-password`).
+password — use `POST /auth/change-password`), `invalid_username` (not 3–60 of `A–Z a–z 0–9 . _ -`; `@` is never
+allowed — an older username sent back unchanged by `PATCH` is accepted), `username_taken`, `invalid_email`,
+`email_taken` (1.6.0: the address, compared without regard to case, belongs to another account or equals an older
+username with `@`; on `PATCH` only a changed address is checked). `email` is stored trimmed and in lower case.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/meta` | Roles, permission keys, departments, applications, 2FA policy |
@@ -117,7 +121,7 @@ password — use `POST /auth/change-password`).
 | POST | `/:id/reset-2fa` | Remove the authenticator; signs the user out |
 | POST | `/:id/unlock` | Clears the failure count and the sign-in pause |
 | POST | `/:id/revoke-sessions` | |
-| POST | `/import/preview` | Bulk import check, writes nothing: `{rows: [{username, full_name, email?, role, language?, departments?, applications?, overrides?}]}` (1–500 rows; `role_id` is accepted for `role`; `role`, `language`, `departments`, `applications` take ids **or names** (1.1.1: Arabic / English name, department short name; languages `ar`/`en`/العربية/عربي/Arabic/الإنجليزية/انجليزي/English; Arabic spelling variants are normalised, see `backend/src/utils/importMatch.js`); `departments` / `applications` are an array of cells or one string, values separated by `,` `،` `;`; `overrides` is API-only, same rules as `POST /`) → `{results: [{index, username, status: "ok"\|"error", errors: [codes], details?: [{code, field, value, matches?}]}], ok, errors}` — `details` names the value that was not recognised (`field`: `role`, `language`, `departments`, `applications`; `matches`: the candidate ids of an ambiguous name). Row codes: `username_taken` (case-insensitive), `duplicate_in_file`, `invalid_username`, `full_name_required`, `full_name_too_long`, `invalid_email`, `invalid_role`, `invalid_language`, `invalid_scope`, `ambiguous_value` (a name matching more than one item), `scope_required` (department-limited role without department/application), `usr_admin_only`, `invalid_permission`, `invalid_row`. Request errors: 400 `invalid_value` (`field: "rows"`, empty / not a list), 400 `too_many_rows` (`max: 500`, `count`), 413 `payload_too_large` (> 1 MB) |
+| POST | `/import/preview` | Bulk import check, writes nothing: `{rows: [{username, full_name, email?, role, language?, departments?, applications?, overrides?}]}` (1–500 rows; `role_id` is accepted for `role`; `role`, `language`, `departments`, `applications` take ids **or names** (1.1.1: Arabic / English name, department short name; languages `ar`/`en`/العربية/عربي/Arabic/الإنجليزية/انجليزي/English; Arabic spelling variants are normalised, see `backend/src/utils/importMatch.js`); `departments` / `applications` are an array of cells or one string, values separated by `,` `،` `;`; `overrides` is API-only, same rules as `POST /`) → `{results: [{index, username, status: "ok"\|"error", errors: [codes], details?: [{code, field, value, matches?}]}], ok, errors}` — `details` names the value that was not recognised (`field`: `role`, `language`, `departments`, `applications`; `matches`: the candidate ids of an ambiguous name). Row codes: `username_taken` (case-insensitive), `duplicate_in_file`, `invalid_username`, `full_name_required`, `full_name_too_long`, `invalid_email`, `email_taken` (1.6.0, with `details` `field: "email"`), `duplicate_email_in_file` (the same address, any case, on two rows; with `details`), `invalid_role`, `invalid_language`, `invalid_scope`, `ambiguous_value` (a name matching more than one item), `scope_required` (department-limited role without department/application), `usr_admin_only`, `invalid_permission`, `invalid_row`. Request errors: 400 `invalid_value` (`field: "rows"`, empty / not a list), 400 `too_many_rows` (`max: 500`, `count`), 413 `payload_too_large` (> 1 MB) |
 | POST | `/import` | Same body. Checks again and creates **every** row in one transaction (active, `must_change_password: true`, random temporary password, language default = Settings), or nothing: 400 `import_has_errors` with the same `{results, ok, errors}` when any row is refused (also when a username was taken meanwhile). → **201** `{created, users: [{id, username, temporary_password}]}` — the only place the temporary passwords ever appear (not stored in clear, not logged). Audit: one `create` / `user` row per user (`context.via = "bulk_import"`, no password) and one `bulk_create` / `user` row `{count, usernames}`, in the same transaction |
 | POST | `/bulk-2fa` | `{all: true, exempt}` or `{user_ids: [..], exempt}` → `{updated}`. With `exempt: true`, `all` leaves the caller out and a list naming the caller is refused (400 `cannot_change_own_permissions`); removing exemptions includes the caller |
 

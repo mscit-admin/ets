@@ -12,6 +12,65 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.6.0] — 2026-10-19 — Sign in with the username or the e-mail address
+
+### Features
+- feat(backend): `POST /api/auth/login` accepts the **username or the e-mail address** in `username`. The value is
+  trimmed; one containing `@` is matched to `lower(email)`, anything else to the username (case-insensitive, as
+  before). With `@` and no e-mail match it falls back to an exact username match, so an older account whose username
+  contains `@` (command line only) keeps signing in. An address shared by several accounts signs nobody in
+- feat(db): migration `014_login_email.sql` — unique index `users_email_lower_uniq` on `lower(email)` where set, built by
+  `ets_ensure_email_unique_index()`. Safe on existing data: when addresses are already shared the index is skipped
+  with a `NOTICE` and a `system_log` warning (`email_index_skipped`, the addresses and any usernames with `@`);
+  `migrate.js` (service start, `npm run migrate`) calls the function again and creates the index once the duplicates
+  are fixed, and prints the migrations' own `ETS:` notices
+- feat(backend): users create / update / import and `create-admin`: e-mail stored trimmed in lower case; a duplicate
+  address (any case, or equal to an older username with `@`) is refused — `400 email_taken`, import row codes
+  `email_taken` / `duplicate_email_in_file` with `details` (`field: "email"`). `@` stays refused in new usernames;
+  `PATCH` accepts an older username sent back unchanged, and checks the address only when it changes
+- feat(frontend): login field «اسم المستخدم أو البريد الإلكتروني» / "Username or email" — plain text input (not
+  `type=email`), `autocomplete="username"`, `dir="ltr"`, placeholder `ahmed.ali / ahmed@example.ly`; sub-title and the
+  credential error texts mention the e-mail; new messages for `email_taken` / `duplicate_email_in_file`
+- ops(deploy): the installer's final summary and `create-admin` say the administrator can sign in with the username
+  or the e-mail address
+
+### Security
+- sec(backend): no enumeration through the second name — every failure (unknown username or address, shared address,
+  wrong password, disabled or paused account) gives the same `401 invalid_credentials` without a cookie, and the
+  unknown / shared / paused cases still run the dummy bcrypt check of the same cost
+- sec(backend): the per-account serialisation of password and code checks is keyed on the resolved user id (login,
+  2FA verify / enable, re-authentication), so failures through the username and the e-mail address add up on the one
+  account counter (e.g. 1 + 1 + 1 with `MAX_FAILED_LOGINS=3` pauses the account) and a pause applies to both names.
+  The per-name rate limit keys on the trimmed, lower-case typed name
+- sec(backend): `auth_log` login rows carry `detail.via` (`username` | `email`) and, for a known account,
+  `detail.identifier` (trimmed, lower case) next to the resolved `user_id` / `username`; unknown names stay masked
+  (ETS-SEC-051); new event `login_ambiguous_email`
+
+### Notes
+- Upgrade path: on a database without shared e-mail addresses 014 creates the index. With shared addresses the update
+  does not fail; sign-in by those addresses is refused until each account has its own (Users screen), and the next
+  service start or `npm run migrate` creates the index. On a local install `ets-log-protect migrate` runs with
+  `client_min_messages = warning`, so the NOTICE is not printed by `update.sh`; see Logs → System
+  (`email_index_skipped`) or `app.log` (`notice: ETS: …`). Manual check: [05 §3b](docs/handover/05-Database-Design.md)
+- 2FA, the forced password change, session rotation and the `__Host-ets_sid` cookie are unchanged
+
+### Tests
+- test(tests): `backend/test/login-email.test.js` — login by username; by e-mail in mixed case and with spaces;
+  identical answers for wrong password by e-mail / username, unknown name / address and inactive user; lockout across
+  both names; per-name rate limit across case and spaces; 2FA step and forced change after an e-mail sign-in; shared
+  address refused while usernames work; migration 014 on duplicates (no failure, NOTICE, warning row, no index, index
+  on a later run) and on a clean database; users create / update / import refuse duplicates and `@` in usernames;
+  legacy `@` username still signs in and can be edited. `users-import.test.js` expects `email_taken` on re-import
+  (136 tests in total)
+
+### Documentation
+- docs(docs): user guide 04 (sign-in name, lockout note), administrator guide 03, database design 05 (§3b
+  migration 014), security 06 (sign-in name, enumeration, lockout across names), logging 07 (`detail.via`,
+  `login_ambiguous_email`), test plan 09 (A-02b, A-02c), API reference 11; `deploy/db/schema-reference.sql`
+  regenerated with pg_dump after migration 014
+
+---
+
 ## [1.5.0] — 2026-10-18 — Required reason when a function is excluded (duplicates)
 
 ### Features
