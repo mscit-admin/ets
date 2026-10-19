@@ -60,12 +60,37 @@ r.get('/:id', async (req, res) => {
   res.json({ user });
 });
 
-async function validateCommon(body, { creating }) {
+// Usernames: 3–60 of A–Z a–z 0–9 . _ - — never "@", so a sign-in name with "@" is always an e-mail address
+// (routes/auth.js, 1.6.0). E-mail addresses are stored trimmed and in lower case, one account per address.
+const USERNAME_RE = /^[A-Za-z0-9._-]{3,60}$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const normEmail = e => e.trim().toLowerCase();
+
+// The address may not belong to another account, nor equal the username of an older account that has "@" in it
+// (both would be the same sign-in name). Checked without regard to case; the unique index of migration 014 backs it.
+async function emailTaken(email, exceptId = 0) {
+  return (await query(`SELECT 1 FROM users WHERE id<>$2 AND (lower(email::text) = lower($1) OR lower(username::text) = lower($1)) LIMIT 1`,
+    [email, exceptId])).rowCount > 0;
+}
+const EMAIL_INDEX = 'users_email_lower_uniq';
+// The same address saved by someone else between the check and the write: the index refuses it → email_taken.
+async function emailIndexed(fn) {
+  try { return await fn(); } catch (e) {
+    if (e?.code === '23505' && e.constraint === EMAIL_INDEX) throw bad('email_taken');
+    throw e;
+  }
+}
+
+// keepUsername: the account's current username (update) — sent back unchanged it is not checked again, so an
+// account created before with a name the rules no longer accept (e.g. containing "@") can still be edited.
+async function validateCommon(body, { creating, keepUsername }) {
   const out = {};
   if (creating || body.username !== undefined) {
     const un = str(body.username, 60);
-    if (!/^[A-Za-z0-9._-]{3,60}$/.test(un)) throw bad('invalid_username');
-    out.username = un;
+    if (!(keepUsername !== undefined && un === keepUsername)) {
+      if (!USERNAME_RE.test(un)) throw bad('invalid_username');
+      out.username = un;
+    }
   }
   if (creating || body.full_name !== undefined) {
     const fn = str(body.full_name, 120);
@@ -73,8 +98,8 @@ async function validateCommon(body, { creating }) {
     out.full_name = fn;
   }
   if (body.email !== undefined) {
-    const e = str(body.email, 200);
-    if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw bad('invalid_email');
+    const e = normEmail(str(body.email, 200));
+    if (e && !EMAIL_RE.test(e)) throw bad('invalid_email');
     out.email = e || null;
   }
   if (creating || body.role_id !== undefined) {
@@ -153,10 +178,11 @@ r.post('/', async (req, res) => {
   const v = await validateCommon(b, { creating: true });
   await validatePassword(b.password, v.username, v.role_id);
   if ((await query('SELECT 1 FROM users WHERE username=$1', [v.username])).rowCount) throw bad('username_taken');
+  if (v.email && await emailTaken(v.email)) throw bad('email_taken');
   assertShapes(b.scopes, b.overrides);
   assertOverridesAllowed(v.role_id, b.overrides);
   v.language ||= await getSetting('app.default_language');   // Settings → default language when none was picked
-  const id = await tx(async c => {
+  const id = await emailIndexed(() => tx(async c => {
     const row = (await c.query(`INSERT INTO users(username,full_name,email,password_hash,role_id,language,is_active,must_change_password,totp_exempt,created_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [v.username, v.full_name, v.email || null, await hashPassword(b.password), v.role_id, v.language || 'ar',
@@ -165,7 +191,7 @@ r.post('/', async (req, res) => {
     await logAudit(req, { db: c, action: 'create', entity: 'user', entityId: row.id, summary: v.username,
       newValue: { ...v, scopes: b.scopes || [], overrides: b.overrides || [] } });
     return row.id;
-  });
+  }));
   res.status(201).json({ user: await loadUser(id) });
 });
 
@@ -175,8 +201,6 @@ r.post('/', async (req, res) => {
 // must be changed at first sign-in; the passwords are returned once, in the answer to POST /import, and are never
 // stored or logged in clear.
 export const IMPORT_MAX_ROWS = 500;
-const USERNAME_RE = /^[A-Za-z0-9._-]{3,60}$/;
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const cell = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
 // departments / applications: one cell or an array of cells (the template's extra columns), each holding ids or
 // names separated by "," "،" ";" — matched by utils/importMatch.js
@@ -206,6 +230,14 @@ async function checkImportRows(rows) {
   const valid = names.filter(n => USERNAME_RE.test(n));
   const taken = new Set(valid.length
     ? (await query('SELECT lower(username::text) AS u FROM users WHERE username = ANY($1::citext[])', [valid])).rows.map(x => x.u) : []);
+  // e-mail addresses (trimmed, lower case): one account each, in the file and against the accounts (1.6.0)
+  const emails = rows.map(x => (x && typeof x === 'object' && !Array.isArray(x) ? normEmail(cell(x.email)) : ''));
+  const emailCount = new Map();
+  for (const e of emails) if (e) emailCount.set(e, (emailCount.get(e) || 0) + 1);
+  const wellFormed = [...emailCount.keys()].filter(e => e.length <= 200 && EMAIL_RE.test(e));
+  const emailsTaken = new Set(wellFormed.length
+    ? (await query(`SELECT lower(email::text) AS e FROM users WHERE lower(email::text) = ANY($1::text[])
+        UNION SELECT lower(username::text) FROM users WHERE lower(username::text) = ANY($1::text[])`, [wellFormed])).rows.map(x => x.e) : []);
 
   return rows.map((row, index) => {
     const errors = [], details = [];
@@ -220,8 +252,10 @@ async function checkImportRows(rows) {
     const fullName = cell(row.full_name);
     if (!fullName) add('full_name_required');
     else if (fullName.length > 120) add('full_name_too_long');
-    const email = cell(row.email);
+    const email = emails[index];
     if (email && (email.length > 200 || !EMAIL_RE.test(email))) add('invalid_email');
+    else if (email && emailsTaken.has(email)) detail('email_taken', 'email', email);
+    if (email && emailCount.get(email) > 1) detail('duplicate_email_in_file', 'email', email);
     const roleText = cell(row.role_id ?? row.role);
     const rm = matchOne(ix.role, roleText);
     const role = rm.id !== undefined ? roleMap.get(rm.id) : undefined;
@@ -325,15 +359,18 @@ r.patch('/:id', async (req, res) => {
   const id = idParam(req.params.id);
   const before = await loadUser(id);
   const b = req.body || {};
-  const v = await validateCommon(b, { creating: false });
+  const v = await validateCommon(b, { creating: false, keepUsername: before.username });
   if (v.username && v.username.toLowerCase() !== before.username.toLowerCase() &&
       (await query('SELECT 1 FROM users WHERE username=$1 AND id<>$2', [v.username, id])).rowCount) throw bad('username_taken');
+  // only a changed address is checked: an account that already shares its address (data from before 1.6.0) can
+  // still be edited, and given its own address
+  if (v.email && v.email !== String(before.email || '').toLowerCase() && await emailTaken(v.email, id)) throw bad('email_taken');
   if (id === req.user.id && (v.is_active === false || (v.role_id && v.role_id !== before.role_id))) throw bad('cannot_change_own_role');
   assertShapes(b.scopes, b.overrides);
   if (id === req.user.id) await assertNoSelfGrant(before, b, v);
   const nextRole = v.role_id || before.role_id;
   assertOverridesAllowed(nextRole, b.overrides);
-  await tx(async c => {
+  await emailIndexed(() => tx(async c => {
     const admins = await lockAdmins(c, id);
     const keys = Object.keys(v);
     if (keys.length) {
@@ -358,7 +395,7 @@ r.patch('/:id', async (req, res) => {
       await logAuth(req, { db: c, userId: id, username: before.username, event: v.totp_exempt ? 'mfa_exempted_by_admin' : 'mfa_exemption_removed',
         success: true, detail: { by: req.user.username } });
     }
-  });
+  }));
   // open live-updates streams of this user: closed when deactivated, new scope / permissions otherwise
   publishSessionCheck(id);
   res.json({ user: await loadUser(id) });
