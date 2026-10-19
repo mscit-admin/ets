@@ -7,15 +7,21 @@ import { MultiSelect } from './MultiSelect.jsx';
 // Why a function is excluded from the calculation (backend services/disable.js, migration 013).
 export const DISABLE_REASONS = ['duplicate', 'out_of_scope', 'not_required', 'other'];
 export const NOTE_MAX = 500;
+export const NOTE_MIN = 3;           // the note is required for every reason (1.5.1): at least 3 non-whitespace characters
 export const emptyReason = () => ({ reason: '', note: '', duplicates: [] });
 
+// null when the note can be sent, else the message key of the problem (same rule as the server).
+export function noteProblem(v) {
+  const note = v.note.trim();
+  if (note.length > NOTE_MAX) return 'dr_note_too_long';
+  if (note.replace(/\s/gu, '').length < NOTE_MIN) return 'dr_note_required';
+  return null;
+}
 // null when the reason can be sent, else the message key of what is missing.
 export function reasonProblem(v) {
   if (!DISABLE_REASONS.includes(v.reason)) return 'dr_pick_reason';
-  if (v.note.trim().length > NOTE_MAX) return 'dr_note_too_long';
-  if (v.reason === 'other' && !v.note.trim()) return 'dr_note_required';
   if (v.reason === 'duplicate' && !v.duplicates.length) return 'dr_pick_duplicates';
-  return null;
+  return noteProblem(v);
 }
 // The request body fields of a reason.
 export const reasonBody = v => ({ disabled_reason: v.reason, disabled_note: v.note.trim(),
@@ -30,8 +36,10 @@ export function DisableReasonForm({ appId, excludeIds, value, onChange, showErro
   const { t, nm } = useI18n();
   const uid = useId();
   const set = patch => onChange({ ...value, ...patch });
+  const [touched, setTouched] = useState(false);       // the note was typed in or left: its error shows live
   const problem = reasonProblem(value);
-  const noteRequired = value.reason === 'other';
+  const noteErr = noteProblem(value);
+  const showNoteErr = !!noteErr && (showErrors || touched);
   const len = value.note.trim().length;
   const load = (q, all) => api.get('/tracker/function-options' + qs({ app_id: all ? '' : appId, all: all ? 1 : '', q,
     exclude: excludeIds.join(',') }))
@@ -68,16 +76,20 @@ export function DisableReasonForm({ appId, excludeIds, value, onChange, showErro
           <span id={uid + '-dh'} className="field-hint">{t('dr_duplicates_hint')}</span>
         </div>
       )}
-      <label className="field">
-        <span className="field-label">{t('dr_note')}{noteRequired ? ' *' : ''}</span>
-        <textarea className={'input' + (showErrors && (problem === 'dr_note_required' || problem === 'dr_note_too_long') ? ' input-required' : '')}
-          rows={3} maxLength={NOTE_MAX + 50} value={value.note} onChange={e => set({ note: e.target.value })}
-          aria-required={noteRequired} placeholder={noteRequired ? t('dr_note_placeholder_required') : t('dr_note_placeholder')} />
-        <span className={'field-hint dr-count' + (len > NOTE_MAX ? ' red-text' : '')}>
-          {noteRequired ? t('dr_note_required_hint') : t('dr_note_hint')} · <bdi dir="ltr">{len}/{NOTE_MAX}</bdi>
+      <div className="field">
+        <label className="field-label" htmlFor={uid + '-note'}>{t('dr_note')} *</label>
+        <textarea id={uid + '-note'} className={'input' + (showNoteErr ? ' input-required' : '')}
+          rows={3} maxLength={NOTE_MAX + 50} value={value.note}
+          onChange={e => { set({ note: e.target.value }); if (e.target.value.trim()) setTouched(true); }} onBlur={() => setTouched(true)}
+          required aria-required="true" aria-invalid={showNoteErr || undefined}
+          aria-describedby={uid + '-nh' + (showNoteErr ? ' ' + uid + '-ne' : '')} placeholder={t('dr_note_placeholder')} />
+        <span id={uid + '-nh'} className="field-hint dr-count">
+          <span>{t('dr_note_hint', { min: NOTE_MIN })}</span>
+          <bdi dir="ltr" className={len > NOTE_MAX ? 'red-text' : ''} aria-live="polite">{len}/{NOTE_MAX}</bdi>
         </span>
-      </label>
-      {showErrors && problem && <div className="alert red" role="alert">{t(problem)}</div>}
+        {showNoteErr && <span id={uid + '-ne'} className="field-hint red-text" role="alert">{t(noteErr, { min: NOTE_MIN })}</span>}
+      </div>
+      {showErrors && problem && problem !== noteErr && <div className="alert red" role="alert">{t(problem)}</div>}
     </div>
   );
 }

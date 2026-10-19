@@ -7,11 +7,15 @@ import { bad, isId } from '../utils/http.js';
 // Reasons a user chooses; 'import' is set by the system for files that turn functions off.
 export const DISABLE_REASONS = ['duplicate', 'out_of_scope', 'not_required', 'other'];
 export const NOTE_MAX = 500;
+// The note is required for every reason a user chooses (1.5.1): at least NOTE_MIN non-whitespace characters.
+export const NOTE_MIN = 3;
 export const MAX_DUPLICATES = 50;
 // Fields of a request body that belong to the reason (not columns edited directly).
 export const REASON_KEYS = ['disabled_reason', 'disabled_note', 'duplicate_of'];
 
-// The reason sent with an exclusion: { reason, note, duplicate_of: [ids] } — throws 400.
+// The reason sent with an exclusion: { reason, note, duplicate_of: [ids] } — throws 400. Checked when the change is
+// made or the request is submitted; approving a request applies the reason it carries as is (requests created before
+// 1.5.1 may have no note).
 export function parseDisableReason(body = {}) {
   const reason = body.disabled_reason;
   if (reason === undefined || reason === null || reason === '') throw bad('disable_reason_required');
@@ -20,7 +24,7 @@ export function parseDisableReason(body = {}) {
   if (typeof raw !== 'string') throw bad('invalid_value', { field: 'disabled_note' });
   const note = raw.trim();
   if (note.length > NOTE_MAX) throw bad('invalid_value', { field: 'disabled_note', max: NOTE_MAX });
-  if (reason === 'other' && !note) throw bad('disable_note_required');
+  if (note.replace(/\s/gu, '').length < NOTE_MIN) throw bad('disable_note_required', { min: NOTE_MIN });
   let ids = [];
   if (reason === 'duplicate') {
     const v = body.duplicate_of;
@@ -30,7 +34,7 @@ export function parseDisableReason(body = {}) {
   } else if (body.duplicate_of !== undefined && !(Array.isArray(body.duplicate_of) && body.duplicate_of.length === 0)) {
     throw bad('invalid_value', { field: 'duplicate_of' });       // only a duplicate points at other functions
   }
-  return { reason, note: note || null, duplicate_of: ids };
+  return { reason, note, duplicate_of: ids };
 }
 
 // The functions a duplicate points at must exist, be in the user's scope, not be one of the functions being

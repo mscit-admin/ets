@@ -12,6 +12,36 @@ and must be mentioned here with the migration name.
 
 ---
 
+## [1.5.1] — 2026-10-19 — Exclusion note required for every reason
+
+### Changes
+- feat(backend): «الملاحظات لسبب الإلغاء إلزامية» — `disabled_note` is now required for every reason a user chooses
+  (`duplicate`, `out_of_scope`, `not_required`, `other`), not only `other`: at least 3 non-whitespace characters after
+  trimming, still ≤ 500. A missing, empty, whitespace-only or shorter note → 400 `disable_note_required` (`min: 3`) on
+  every path that turns a function off: `PATCH /api/tracker/functions/:id`, bulk `enabled: false`, and requests that
+  wait for the team lead (checked when submitted, `backend/src/services/disable.js` `NOTE_MIN`). Approval does not
+  check it again, so requests submitted before 1.5.1 without a note are still approved as they are. The `import`
+  reason keeps its generated note (`#<batch id> <file name>`). No migration
+- feat(frontend): the exclusion dialog and the bulk exclusion mark «ملاحظة الإلغاء» as required (*), the helper text
+  says it is required for every reason (at least 3 characters), a live counter shows the length, an inline error
+  appears under the field once it is typed in or left, and the confirm button stays disabled until the note is valid
+  (`frontend/src/components/DisableReason.jsx` `noteProblem`, `frontend/src/pages/Application.jsx`); messages
+  `dr_note_hint`, `dr_note_placeholder`, `dr_note_required`, `err_disable_note_required` updated in ar + en,
+  `dr_note_placeholder_required` and `dr_note_required_hint` removed from both (key sets identical)
+- fix(frontend): `.field-hint.red-text` is red again (`.field-hint` came later in `app.css` and turned inline errors grey)
+
+### Tests
+- test(tests): `backend/test/disable-reason.test.js` — each of the 4 reasons without a note, with an empty, `null`,
+  whitespace-only or too short note → 400 `disable_note_required`; 3 and 500 characters accepted; bulk without a note
+  (every reason) → 400; a request submitted without a note → 400 and no request created (single and bulk); a pending
+  request whose item has no note is still approved and applied (added to the existing tests; 124 tests in total)
+
+### Documentation
+- docs(docs): user guide (required note, disabled confirm button), API reference (PATCH / bulk / approvals), database
+  design; version 1.5.1 in both `package.json` and lockfiles
+
+---
+
 ## [1.5.0] — 2026-10-18 — Required reason when a function is excluded (duplicates)
 
 ### Features

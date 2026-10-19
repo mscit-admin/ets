@@ -9,7 +9,7 @@ import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, to
 import { ExportButton } from '../components/ExportButton.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 import { MultiSelect } from '../components/MultiSelect.jsx';
-import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
+import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -454,7 +454,7 @@ function BulkModal({ app, can, onClose, onDone }) {
   return (
     <Modal title={t('bulk_set')} onClose={onClose} wide={exclude}
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy} onClick={run}>{exclude ? t('confirm_exclude_n', { n: chosen.length }) : t('apply')}</button></>}>
+        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy || (exclude && !!noteProblem(why))} onClick={run}>{exclude ? t('confirm_exclude_n', { n: chosen.length }) : t('apply')}</button></>}>
       {err && <Alert>{errText(err)}</Alert>}
       <Field label={t('bulk_set')}>
         <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); }}>
@@ -589,7 +589,7 @@ function ConfirmModal({ app, f, mode, enabled, onClose, onDone }) {
   return (
     <Modal title={title} onClose={onClose} wide
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className={'btn ' + (mode === 'remove' ? 'btn-danger' : 'btn-primary')} disabled={busy || (mode === 'remove' && !reason.trim())} onClick={run}>
+        <button className={'btn ' + (mode === 'remove' ? 'btn-danger' : 'btn-primary')} disabled={busy || (mode === 'remove' && !reason.trim()) || (excluding && !!noteProblem(why))} onClick={run}>
           {{ remove: t('confirm_remove'), restore: t('confirm_restore'), toggle: enabled ? t('confirm_include') : t('confirm_exclude') }[mode]}
         </button></>}>
       {err && <Alert>{errText(err)}</Alert>}

@@ -1,5 +1,7 @@
 // Reason for excluding a function from the calculation (1.5.0, migration 013): required on every path that turns a
-// function off (direct edit, bulk, approved request, import), duplicates name the functions they duplicate (in scope,
+// function off (direct edit, bulk, approved request, import), with a note of at least 3 characters for every reason a
+// user chooses (1.5.1; not for 'import', and requests submitted before 1.5.1 without a note are still approved as they
+// are), duplicates name the functions they duplicate (in scope,
 // not the function itself, not removed), including again clears the reason, the audit trail and the Excel export
 // show it. Same disposable database as api.test.js:
 //   TEST_DATABASE_URL=postgres://ets:pw@127.0.0.1/ets_test npm test
@@ -82,22 +84,41 @@ test('exclusion without a valid reason is refused (400)', { skip }, async () => 
   const err = async (body, code) => { const r = await p(body); assert.equal(r.status, 400, JSON.stringify(body)); assert.equal(r.data.error, code); return r; };
   await err({}, 'disable_reason_required');
   await err({ disabled_reason: 'whatever' }, 'invalid_value');
-  await err({ disabled_reason: 'other' }, 'disable_note_required');
-  await err({ disabled_reason: 'other', disabled_note: '   ' }, 'disable_note_required');
+  // the note is required for every reason (1.5.1): missing, empty, whitespace only, fewer than 3 characters
+  for (const reason of ['duplicate', 'out_of_scope', 'not_required', 'other']) {
+    const dup = reason === 'duplicate' ? { duplicate_of: [d3.id] } : {};
+    const r = await err({ disabled_reason: reason, ...dup }, 'disable_note_required');
+    assert.equal(r.data.min, 3);
+    await err({ disabled_reason: reason, disabled_note: '', ...dup }, 'disable_note_required');
+    await err({ disabled_reason: reason, disabled_note: null, ...dup }, 'disable_note_required');
+    await err({ disabled_reason: reason, disabled_note: '   ', ...dup }, 'disable_note_required');
+    await err({ disabled_reason: reason, disabled_note: ' \n\t ', ...dup }, 'disable_note_required');
+    await err({ disabled_reason: reason, disabled_note: ' ab ', ...dup }, 'disable_note_required');
+    await err({ disabled_reason: reason, disabled_note: 'a b', ...dup }, 'disable_note_required');    // 2 characters + a space
+  }
   await err({ disabled_reason: 'out_of_scope', disabled_note: 'x'.repeat(501) }, 'invalid_value');
   await err({ disabled_reason: 'out_of_scope', disabled_note: 42 }, 'invalid_value');
-  await err({ disabled_reason: 'duplicate' }, 'duplicate_of_required');
-  await err({ disabled_reason: 'duplicate', duplicate_of: [] }, 'duplicate_of_required');
-  await err({ disabled_reason: 'duplicate', duplicate_of: ['7'] }, 'invalid_value');
-  await err({ disabled_reason: 'not_required', duplicate_of: [d3.id] }, 'invalid_value');      // only a duplicate names functions
+  const N = { disabled_note: 'a valid note' };
+  await err({ disabled_reason: 'duplicate', ...N }, 'duplicate_of_required');
+  await err({ disabled_reason: 'duplicate', duplicate_of: [], ...N }, 'duplicate_of_required');
+  await err({ disabled_reason: 'duplicate', duplicate_of: ['7'], ...N }, 'invalid_value');
+  await err({ disabled_reason: 'not_required', duplicate_of: [d3.id], ...N }, 'invalid_value');      // only a duplicate names functions
   // pointing at itself, outside the user's scope (finance), at a function that does not exist, at a removed one
-  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [f.id] }, 'invalid_duplicate')).data.problem, 'self');
+  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [f.id], ...N }, 'invalid_duplicate')).data.problem, 'self');
   const fin = await fn('acc', 'D0');
-  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [d3.id, fin.id] }, 'invalid_duplicate')).data.problem, 'unavailable');
-  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [2000000000] }, 'invalid_duplicate')).data.problem, 'unavailable');
+  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [d3.id, fin.id], ...N }, 'invalid_duplicate')).data.problem, 'unavailable');
+  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [2000000000], ...N }, 'invalid_duplicate')).data.problem, 'unavailable');
   const gone = await fn('per', 'D9');
   assert.equal((await lead.post(`/tracker/functions/${gone.id}/remove`, { reason: 'test' })).status, 200);
-  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [gone.id] }, 'invalid_duplicate')).data.problem, 'removed');
+  assert.equal((await err({ disabled_reason: 'duplicate', duplicate_of: [gone.id], ...N }, 'invalid_duplicate')).data.problem, 'removed');
+  // exactly 3 characters and exactly 500 are accepted (on another function)
+  const g = await fn('per', 'D17');
+  const ok3 = await lead.patch('/tracker/functions/' + g.id, { enabled: false, disabled_reason: 'other', disabled_note: '  abc  ' });
+  assert.equal(ok3.status, 200);
+  assert.equal((await fn('per', 'D17')).disabled_note, 'abc');
+  assert.equal((await lead.patch('/tracker/functions/' + g.id, { enabled: true })).status, 200);
+  assert.equal((await lead.patch('/tracker/functions/' + g.id, { enabled: false, disabled_reason: 'not_required', disabled_note: 'ن'.repeat(500) })).status, 200);
+  assert.equal((await lead.patch('/tracker/functions/' + g.id, { enabled: true })).status, 200);
   // a reason without an exclusion is refused too
   assert.equal((await lead.patch('/tracker/functions/' + f.id, { disabled_reason: 'other', disabled_note: 'x' })).status, 400);
   assert.equal((await lead.patch('/tracker/functions/' + f.id, { progress: 10, disabled_reason: 'other', disabled_note: 'x' })).status, 400);
@@ -158,7 +179,7 @@ test('valid exclusion stores the reason and the links; audit row; page; includin
 test('restoring a removed function clears an exclusion reason', { skip }, async () => {
   const lead = await as('lead_hr');
   const f = await fn('per', 'D2');
-  assert.equal((await lead.patch('/tracker/functions/' + f.id, { enabled: false, disabled_reason: 'out_of_scope' })).status, 200);
+  assert.equal((await lead.patch('/tracker/functions/' + f.id, { enabled: false, disabled_reason: 'out_of_scope', disabled_note: 'not in phase 1' })).status, 200);
   assert.equal((await lead.post(`/tracker/functions/${f.id}/remove`, { reason: 'dropped' })).status, 200);
   assert.equal((await lead.post(`/tracker/functions/${f.id}/restore`)).status, 200);
   const r = await fn('per', 'D2');
@@ -170,11 +191,22 @@ test('bulk exclusion with one reason for the chosen functions', { skip }, async 
   const [a, b, c] = await Promise.all(['D4', 'D5', 'D6'].map(code => fn('per', code)));
   const bulk = body => lead.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [a.id, b.id], ...body });
   assert.equal((await bulk({})).data.error, 'disable_reason_required');
-  assert.equal((await bulk({ disabled_reason: 'duplicate' })).data.error, 'duplicate_of_required');
-  assert.equal((await bulk({ disabled_reason: 'duplicate', duplicate_of: [b.id] })).data.error, 'invalid_duplicate');    // one of the selection
-  assert.equal((await bulk({ disabled_reason: 'out_of_scope', function_ids: [] })).status, 400);
+  // the note is required in bulk too, for every reason
+  for (const reason of ['duplicate', 'out_of_scope', 'not_required', 'other']) {
+    const dup = reason === 'duplicate' ? { duplicate_of: [c.id] } : {};
+    for (const note of [undefined, '', '   ', 'ab']) {
+      const r = await bulk({ disabled_reason: reason, disabled_note: note, ...dup });
+      assert.equal(r.status, 400, `${reason} ${JSON.stringify(note)}`);
+      assert.equal(r.data.error, 'disable_note_required');
+    }
+  }
+  assert.equal((await fn('per', 'D4')).enabled, true);
+  const N = { disabled_note: 'bulk note' };
+  assert.equal((await bulk({ disabled_reason: 'duplicate', ...N })).data.error, 'duplicate_of_required');
+  assert.equal((await bulk({ disabled_reason: 'duplicate', duplicate_of: [b.id], ...N })).data.error, 'invalid_duplicate');    // one of the selection
+  assert.equal((await bulk({ disabled_reason: 'out_of_scope', function_ids: [], ...N })).status, 400);
   const fin = await fn('acc', 'D1');
-  assert.equal((await bulk({ disabled_reason: 'out_of_scope', function_ids: [a.id, fin.id] })).status, 400);         // other application
+  assert.equal((await bulk({ disabled_reason: 'out_of_scope', function_ids: [a.id, fin.id], ...N })).status, 400);         // other application
   const ok = await bulk({ disabled_reason: 'duplicate', disabled_note: 'merged screens', duplicate_of: [c.id] });
   assert.equal(ok.status, 200);
   assert.equal(ok.data.updated, 2);
@@ -198,6 +230,16 @@ test('approval flow: the reason travels with the request and is applied on appro
   const member = await as('member_hr'), lead = await as('lead_hr');
   const f = await fn('per', 'D7'), d8 = await fn('per', 'D8');
   assert.equal((await member.patch('/tracker/functions/' + f.id, { enabled: false })).data.error, 'disable_reason_required');
+  // a request is checked when it is submitted: no note → 400 and no request is created
+  const pendingBefore = (await one(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending'`)).n;
+  for (const body of [{ disabled_reason: 'duplicate', duplicate_of: [d8.id] }, { disabled_reason: 'out_of_scope', disabled_note: '  ' }]) {
+    const x = await member.patch('/tracker/functions/' + f.id, { enabled: false, ...body });
+    assert.equal(x.status, 400);
+    assert.equal(x.data.error, 'disable_note_required');
+  }
+  const xb = await member.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [f.id], disabled_reason: 'not_required' });
+  assert.deepEqual([xb.status, xb.data.error], [400, 'disable_note_required']);
+  assert.equal((await one(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending'`)).n, pendingBefore);
   const r = await member.patch('/tracker/functions/' + f.id, { enabled: false, disabled_reason: 'duplicate', disabled_note: 'see D8', duplicate_of: [d8.id] });
   assert.equal(r.status, 202);
   assert.equal((await fn('per', 'D7')).enabled, true);
@@ -222,15 +264,27 @@ test('approval flow: the reason travels with the request and is applied on appro
 
   // a bulk request by the member carries the reason too
   const [a, b] = await Promise.all(['D10', 'D11'].map(code => fn('per', code)));
-  const br = await member.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [a.id, b.id], disabled_reason: 'not_required' });
+  const br = await member.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [a.id, b.id], disabled_reason: 'not_required',
+    disabled_note: 'covered by HR portal' });
   assert.equal(br.status, 202);
   assert.equal(br.data.requested, 2);
   assert.equal((await lead.post(`/approvals/${br.data.request_id}/approve`)).data.applied_changes, 2);
   assert.equal((await fn('per', 'D10')).disabled_reason, 'not_required');
+  assert.equal((await fn('per', 'D10')).disabled_note, 'covered by HR portal');
+
+  // a request submitted before 1.5.1 without a note is still approved as it is (no check at approval)
+  const [o1, o2] = await Promise.all(['D20', 'D21'].map(code => fn('per', code)));
+  const old = await member.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [o1.id, o2.id],
+    disabled_reason: 'out_of_scope', disabled_note: 'will be cleared' });
+  assert.equal(old.status, 202);
+  await pool.query(`UPDATE edit_request_items SET meta = meta - 'disabled_note' WHERE request_id=$1`, [old.data.request_id]);
+  assert.equal((await lead.post(`/approvals/${old.data.request_id}/approve`)).data.applied_changes, 2);
+  const o = await fn('per', 'D20');
+  assert.deepEqual([o.enabled, o.disabled_reason, o.disabled_note], [false, 'out_of_scope', null]);
 
   // a duplicated function removed after the request: the exclusion is not applied (reported as skipped)
   const g = await fn('per', 'D12'), h = await fn('per', 'D13');
-  const r2 = await member.patch('/tracker/functions/' + g.id, { enabled: false, disabled_reason: 'duplicate', duplicate_of: [h.id] });
+  const r2 = await member.patch('/tracker/functions/' + g.id, { enabled: false, disabled_reason: 'duplicate', disabled_note: 'same as D13', duplicate_of: [h.id] });
   assert.equal(r2.status, 202);
   assert.equal((await lead.post(`/tracker/functions/${h.id}/remove`, { reason: 'gone' })).status, 200);
   const ap2 = await lead.post(`/approvals/${r2.data.request_id}/approve`);
