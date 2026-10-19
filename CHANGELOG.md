@@ -1384,7 +1384,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/4d4a7f0...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/261ea0b...HEAD
+[1.8.1]: https://github.com/mscit-admin/ets/compare/4d4a7f0...261ea0b
 [1.8.0]: https://github.com/mscit-admin/ets/compare/f7544d0...4d4a7f0
 [1.7.0]: https://github.com/mscit-admin/ets/compare/abd37eb...f7544d0
 [1.6.0]: https://github.com/mscit-admin/ets/compare/4e2c8c6...abd37eb
