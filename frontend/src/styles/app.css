@@ -20,6 +20,10 @@
   --purple-bg: #f5f0ff; --purple-text: #6e46c6;
   --cyan-bg: #e6f9fb; --cyan-text: #0f7c8c;
   --gray-bg: #f3f3f3; --gray-text: #525252;
+  /* item types (1.8.0): navy for a function, teal for a report — away from the red → green progress scale and the
+     pass (green) / fail (red) test colours; text colours ≥ 4.5:1 on their backgrounds */
+  --it-fn: #1b3a66; --it-fn-bg: #e8eef7; --it-fn-line: #b9c8de;
+  --it-rep: #0b6e69; --it-rep-bg: #e0f4f2; --it-rep-line: #8fd0c9; --it-rep-strong: #0e8a83;
   --radius: 8px; --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .05);
   --shadow: 0 0 1px rgba(0, 0, 0, .35), 0 6px 8px -4px rgba(0, 0, 0, .1);
@@ -461,7 +465,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .btn-danger { background: #d63c3c; color: #fff; border-color: #d63c3c; }
 .btn-danger:hover:not(:disabled) { background: #b92f2f; color: #fff; }
 .plain-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-.row-removed .fn-name > div:first-child { text-decoration: line-through; }
+.row-removed .fn-title-text { text-decoration: line-through; }
 .impact { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--gray-50); margin-top: 8px; }
 .impact-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
 .impact .table { background: transparent; }
@@ -753,3 +757,62 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 .del-errors { margin: 6px 0 0; padding-inline-start: 20px; }
 .del-reason-cell { max-width: 320px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .temp-pw { font-size: 15px; padding: 6px 10px; background: var(--gray-100); border-radius: 6px; user-select: all; }
+
+/* ---------- item type: function / report (1.8.0) ---------- */
+.it-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  line-height: 1.6; white-space: nowrap; vertical-align: middle; font-family: inherit; }
+.it-chip .icon { flex: none; }
+.it-chip.it-function { background: var(--it-fn-bg); color: var(--it-fn); box-shadow: 0 0 0 1px var(--it-fn-line) inset; }
+.it-chip.it-report { background: var(--it-rep-bg); color: var(--it-rep); box-shadow: 0 0 0 1px var(--it-rep-line) inset; }
+.it-chip.compact { padding: 2px 4px; }
+.it-btn { border: 0; cursor: pointer; }
+.it-btn:hover.it-function { box-shadow: 0 0 0 1px var(--it-fn) inset; }
+.it-btn:hover.it-report { box-shadow: 0 0 0 1px var(--it-rep) inset; }
+.it-btn:focus-visible { outline: 2px solid var(--primary-blue); outline-offset: 2px; }
+.it-caret { opacity: .7; margin-inline-start: 1px; }
+.it-wrap { position: relative; display: inline-flex; flex: none; }
+.it-menu { position: absolute; z-index: 40; top: calc(100% + 4px); inset-inline-start: 0; min-width: 230px; background: var(--card);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 4px; display: grid; gap: 2px; }
+.it-opt { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none;
+  font: inherit; color: var(--text); cursor: pointer; text-align: start; }
+.it-opt:hover, .it-opt:focus-visible { background: var(--gray-100); outline: none; }
+.it-opt:focus-visible { box-shadow: 0 0 0 2px var(--primary-blue) inset; }
+.it-opt-icon { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.it-opt.it-function .it-opt-icon { background: var(--it-fn-bg); color: var(--it-fn); }
+.it-opt.it-report .it-opt-icon { background: var(--it-rep-bg); color: var(--it-rep); }
+.it-opt-text { display: grid; line-height: 1.35; flex: 1; }
+.it-opt-text b { font-size: 13px; }
+.it-opt-text span { font-size: 11.5px; color: var(--text-muted); }
+.it-opt-tick { color: var(--primary-blue); }
+.fn-title { display: flex; align-items: flex-start; gap: 8px; }
+.fn-title .it-wrap, .fn-title > .it-chip { margin-top: 2px; }
+.fn-title-text { min-width: 0; }
+/* a report row: a teal line on its start edge */
+.fn-table tr.row-report > td:first-child { box-shadow: inset 3px 0 0 var(--it-rep-strong); }
+[dir=rtl] .fn-table tr.row-report > td:first-child { box-shadow: inset -3px 0 0 var(--it-rep-strong); }
+.it-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: -4px 0 12px; font-size: 12px; color: var(--text-muted); }
+.it-legend-title { font-weight: 600; color: var(--gray-700); }
+.it-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.it-filter-function { box-shadow: 0 0 0 1px var(--it-fn) inset; color: var(--it-fn); }
+.it-filter-report { box-shadow: 0 0 0 1px var(--it-rep) inset; color: var(--it-rep); }
+.eq-stats .it-stat { align-items: center; }
+.eq-stats .it-stat.it-function { background: var(--it-fn-bg); box-shadow: none; }
+.eq-stats .it-stat.it-function span, .eq-stats .it-stat.it-function b, .eq-stats .it-stat.it-function .icon { color: var(--it-fn); }
+.eq-stats .it-stat.it-report { background: var(--it-rep-bg); box-shadow: none; }
+.eq-stats .it-stat.it-report span, .eq-stats .it-stat.it-report b, .eq-stats .it-stat.it-report .icon { color: var(--it-rep); }
+.eqb-sub { font-size: 11px; color: var(--it-rep); font-weight: 600; }
+.app-sticky.stuck .eqb-sub { display: none; }
+.it-count-rep { color: var(--it-rep); font-weight: 700; white-space: nowrap; }
+.it-count-rep .icon { vertical-align: -2px; }
+.it-choice { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+.it-choice-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.it-choice-opt { flex: 1 1 200px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--border-strong) inset; cursor: pointer; }
+.it-choice-opt input { flex: none; }
+.it-choice-opt.on.it-function { box-shadow: 0 0 0 2px var(--it-fn) inset; background: var(--it-fn-bg); }
+.it-choice-opt.on.it-report { box-shadow: 0 0 0 2px var(--it-rep) inset; background: var(--it-rep-bg); }
+.it-choice-opt:focus-within { outline: 2px solid var(--primary-blue); outline-offset: 2px; }
+@media (max-width: 560px) {
+  .fn-title { flex-wrap: wrap; gap: 4px 8px; }
+  .it-menu { min-width: 200px; }
+}

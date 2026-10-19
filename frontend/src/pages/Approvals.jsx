@@ -7,17 +7,20 @@ import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { DisabledReason } from '../components/DisableReason.jsx';
+import { TypeBadge } from '../components/ItemType.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
   notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_en: 'name',
-  create: 'fn_add', removed: 'fn_remove' };
+  create: 'fn_add', removed: 'fn_remove', item_type: 'item_type' };
 
 function useFmt() {
   const { t } = useI18n();
   return (kind, field, v) => {
     if (v === null || v === undefined || v === '') return '—';
-    if (field === 'create') return `${v.name_ar} · ${t('weight')} \u2066${v.weight}\u2069 · \u2066${pc(v.progress)}%\u2069 · ${v.enabled ? t('include_in_calc') : t('exclude_hint')}`;
+    if (field === 'create') return `${v.name_ar} · ${t('weight')} \u2066${v.weight}\u2069 · \u2066${pc(v.progress)}%\u2069 · ${v.enabled ? t('include_in_calc') : t('exclude_hint')}`
+      + (v.item_type === 'report' ? ' · ' + t('it_report') : '');
+    if (field === 'item_type') return t('it_' + v);
     if (field === 'removed') return v.removed ? `${t('fn_state_removed')}${v.reason ? ' — ' + v.reason : ''}` : t('fn_state_present');
     const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
     if (P[field]) return t(P[field] + v);
@@ -94,8 +97,8 @@ export default function Approvals() {
                     <td>{i.kind === 'report' ? t('kind_report') : i.field === 'create' ? <b>＋ {t('add_function')}</b>
                       : <><span className="code">{i.code}</span> <span lang="ar" dir="rtl">{i.fn_name_ar}</span></>}</td>
                     <td className="nowrap">{t(FIELD_LABEL[i.field] || i.field)}</td>
-                    <td className="muted">{fmt(i.kind, i.field, i.old_value)}</td>
-                    <td><b>{fmt(i.kind, i.field, i.new_value)}</b>{i.applied === false && <> <Indicator color="red" title={i.note}>✗</Indicator></>}
+                    <td className="muted">{i.field === 'item_type' ? <TypeBadge type={i.old_value} /> : fmt(i.kind, i.field, i.old_value)}</td>
+                    <td><b>{i.field === 'item_type' ? <TypeBadge type={i.new_value} /> : fmt(i.kind, i.field, i.new_value)}</b>{i.applied === false && <> <Indicator color="red" title={i.note}>✗</Indicator></>}
                       {i.field === 'enabled' && i.new_value === false && (
                         <div className="req-reason">
                           <span className="muted small">{t('dr_reason')}:</span> <DisabledReason f={i.meta || {}} appId={rq.app_id} />

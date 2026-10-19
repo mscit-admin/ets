@@ -298,6 +298,7 @@ test('ETS-SEC-050: security events are recorded', { skip }, async () => {
   const pm = await as('pm1');
   const noCsrf = client(undefined, { csrf: false }); noCsrf.cookie = pm.cookie;
   assert.equal((await noCsrf.put('/auth/language', { language: 'en' })).status, 403);
+  await settle();                                   // like the denial below, the row is written after the answer
   assert.equal(await ev('csrf_rejected', 'pm1'), 1);
   assert.equal((await pm.get('/users')).status, 403);
   await settle();

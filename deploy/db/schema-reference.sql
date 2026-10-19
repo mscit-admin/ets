@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–015).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–016).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -366,8 +366,10 @@ CREATE TABLE public.functions (
     disabled_note text,
     disabled_by integer,
     disabled_at timestamp with time zone,
+    item_type text DEFAULT 'function'::text NOT NULL,
     CONSTRAINT functions_disabled_note_check CHECK (((disabled_note IS NULL) OR (char_length(disabled_note) <= 500))),
     CONSTRAINT functions_disabled_reason_check CHECK (((disabled_reason IS NULL) OR (disabled_reason = ANY (ARRAY['duplicate'::text, 'out_of_scope'::text, 'not_required'::text, 'other'::text, 'import'::text])))),
+    CONSTRAINT functions_item_type_check CHECK ((item_type = ANY (ARRAY['function'::text, 'report'::text]))),
     CONSTRAINT functions_notif_status_check CHECK (((notif_status >= 0) AND (notif_status <= 3))),
     CONSTRAINT functions_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric))),
     CONSTRAINT functions_review_status_check CHECK (((review_status >= 0) AND (review_status <= 3))),
@@ -376,6 +378,8 @@ CREATE TABLE public.functions (
     CONSTRAINT functions_vendor_status_check CHECK (((vendor_status >= 0) AND (vendor_status <= 3))),
     CONSTRAINT functions_weight_check CHECK ((weight >= (0)::numeric))
 );
+-- Name: COLUMN functions.item_type; Type: COMMENT; Schema: public; Owner: -
+COMMENT ON COLUMN public.functions.item_type IS 'function | report (1.8.0): which part of the application % the item counts in';
 -- Name: functions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.functions_id_seq
     AS integer

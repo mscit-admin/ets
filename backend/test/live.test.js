@@ -135,6 +135,26 @@ test('a function % update sends tracker_changed after commit, with ids only and 
   s.close();
 });
 
+test('a type change (function / report, 1.8.0) sends tracker_changed after commit — single and bulk', { skip }, async () => {
+  const c = client();
+  assert.equal((await c.login('root')).status, 200);
+  const s = await stream(c);
+  assert.ok(await s.next('ready'));
+  const f = await fnOf('rec');
+  const n0 = s.events.length;
+  assert.equal((await c.patch('/tracker/functions/' + f.id, { item_type: 'report' })).status, 200);
+  const e = await s.next('tracker_changed', 4000, n0);
+  assert.deepEqual(e?.data, { type: 'tracker_changed', dept_id: 'hr', app_id: 'rec' });
+  assert.ok(!e.raw.includes(String(f.id)) && !/"item_type"|"report"/.test(e.raw));     // ids only, no values
+  assert.equal((await c.get('/tracker/applications/rec')).data.functions.find(x => x.id === f.id).item_type, 'report');
+  const n1 = s.events.length;
+  assert.equal((await c.post('/tracker/applications/rec/bulk', { field: 'item_type', value: 'function', function_ids: [f.id] })).data.updated, 1);
+  const e2 = await s.next('tracker_changed', 4000, n1);
+  assert.deepEqual(e2?.data, { type: 'tracker_changed', dept_id: 'hr', app_id: 'rec' });
+  assert.equal((await c.get('/tracker/applications/rec')).data.functions.find(x => x.id === f.id).item_type, 'function');
+  s.close();
+});
+
 test('a scoped user only hears about changes in their scope', { skip }, async () => {
   const root = client(), hr = client();
   await root.login('root'); await hr.login('hred');

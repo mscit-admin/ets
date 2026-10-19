@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { Card, Empty, ErrorBox, Indicator, Loading, PageHeader, Pct, useLoad } from '../components/ui.jsx';
+import { TypeBadge } from '../components/ItemType.jsx';
 
 export default function Search() {
   const [params] = useSearchParams();
@@ -19,7 +20,7 @@ export default function Search() {
               <tbody>
                 {data.results.map(r => (
                   <tr key={r.id} className={r.enabled ? '' : 'row-off'}>
-                    <td><div lang="ar" dir="rtl">{r.name_ar}</div><div className="fn-meta"><span className="code">{r.code}</span>
+                    <td><div lang="ar" dir="rtl">{r.name_ar}</div><div className="fn-meta"><TypeBadge type={r.item_type} compact /><span className="code">{r.code}</span>
                       <Indicator color="gray">{t('src_' + r.source)}</Indicator>{r.reference && <span className="muted">{r.reference}</span>}</div></td>
                     <td><Link to={'/app/' + r.app_id}>{nm(r, 'app_name')}</Link></td>
                     <td className="num-col"><Pct value={r.progress} /></td>
