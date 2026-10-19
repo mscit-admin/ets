@@ -20,7 +20,8 @@ or a re-authentication), `too_many_requests` (429, general `/api` limit, with `r
 `admin_only`, `csrf_rejected`, `password_change_required`, `weak_password` (with `reasons`), `invalid_value`
 (with `field`), `invalid_id`, `invalid_date`, `invalid_json`, `invalid_request`, `payload_too_large`,
 `unsupported_media_type`, `requester_not_allowed`, `cannot_approve`, `not_found`, `server_error`,
-`pass_requires_100`, `progress_below_100_while_passed`, `import_has_row_errors` (1.8.1, see below). There is no
+`pass_requires_100`, `progress_below_100_while_passed`, `import_has_row_errors` (1.8.1, see below), `mandatory_type`,
+`invalid_token` (401, `/m/*`), `too_many_devices` (409) (1.9.0). There is no
 `423` / `account_locked` answer.
 
 **«نجح» needs 100 % (1.8.1).** The test status «نجح» (`test_status: 2`, plain pass) is accepted only with progress
@@ -176,6 +177,52 @@ See *06-Security.md → 4a. Export policy* for the permission × scope matrix.
 | GET | `/events` | `text/event-stream` (Server-Sent Events). Events: `ready` (stream open), `tracker_changed` (`{"type":"tracker_changed","dept_id"?,"app_id"?}` — ids only, never values; sent after the change is committed, only to users whose scope includes that department / application, without ids for project-wide changes), `session_ended` (signed out, expired, idle, revoked or disabled — the stream then closes). Heartbeat comment every `LIVE_HEARTBEAT_SECONDS` (25 s), on which the session is re-checked. At most `LIVE_MAX_STREAMS_PER_USER` (5) streams per user per API process → `429 too_many_streams`; `503 live_unavailable` when the database listener cannot start. Opening the stream is written to the access log once; neither the stream nor reloads marked `X-ETS-Live: 1` count as activity for the idle timeout |
 
 Changes that send `tracker_changed`: function edits (%, weight, test / notification / review status, note, include / exclude), bulk set, add / remove / restore, edit requests sent / approved / rejected / withdrawn, application weights and calculation parameters, weights reset, reports track, schedule / timeline, team-result imports (submitted, signed, applied, rejected), the full tracker import, and settings that change the calculation or the approval rule. Between API processes the event travels through PostgreSQL `LISTEN/NOTIFY` (channel `ets_live`, `pg_notify` after `COMMIT`).
+
+## Notifications — `/notifications` (signed in, 1.9.0)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | `?unread=1&category=approvals\|tracking\|plan\|security\|system&type=<type>&severity=info\|warning\|critical&before=<id>&limit=1..100&lang=ar\|en` → `{items:[{id, type, category, severity, title, body, link, count, created_at, updated_at, read}], next_before}` — newest first; title / body rendered by the server in `lang` (default: the user's language); only rows the user may see now |
+| GET | `/count` | `{unread, critical, top_severity}` (the bell) |
+| POST | `/:id/read` · `/:id/unread` | → `{marked}` (0 for a row that is not the user's or not visible) |
+| POST | `/read-all` | `{ids?:[..]}` (≤ 500) — every visible unread alert, or these → `{marked}` |
+| GET | `/prefs` | `{types:[{type, code, category, kind, digest, mandatory, blocked, mobile_blocked, push_allowed, muted, mobile_muted}], digest}` — the types this user may receive |
+| PUT | `/prefs` | `{muted?:[type], mobile_muted?:[type], digest?:bool}` → as GET; `400 mandatory_type` for a mandatory type |
+| GET | `/policy-meta` | (`cfg`, full scope) `{roles, types:[{type, code, category, kind, severity, digest, admin_only, eligible:[role], locked:[role], default_on:[role], default_push}], policy}` |
+
+Types: `approval_pending` (A1), `approval_overdue` (A2), `request_decided` (A3), `import_pending` (A4), `import_result`
+(A5), `import_overdue` (A6), `stuck` (T1), `untested` (T2), `failed_retest` (T3), `pass_conflict` (T4), `not_started` (T5),
+`quality` (T6), `excluded` (T7), `dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
+`account_locked` (S1), `failed_logins` (S2), `audit_integrity` (S3), `email_index` (S4), `access_denied` (S5),
+`backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), and `rate_capped` (above the hourly cap).
+The policy itself is the setting `notify.policy` (`PUT /settings`). The live stream `/events` also sends
+`notif_changed` `{unread, top_severity}` to the user's own streams when their alerts change (no content).
+
+## Devices — `/devices` (1.9.0)
+| Method | Path | Description |
+|---|---|---|
+| POST | `/pair-code` | (signed in; `{password, code? \| recovery_code?}` — re-authentication as for 2FA changes; login rate limit) → `{code, expires_at, payload}`; `payload` is the QR text: `{"v":1,"url":"<PUBLIC_BASE_URL or the request's address>","code":"<code>","cert_sha256":"<64 hex or null>"}`. Errors: `wrong_password`, `mfa_code_required`, `invalid_code`, 429 |
+| POST | `/pair` | **no session, no X-Requested-With**: `{code, device_name (1–80), platform:"android", app_version?}` → `201 {device_id, token, user:{full_name, lang}}` (token shown once). `400 invalid_code` (unknown, used, expired, or account unavailable), `400 missing_fields`, `400 invalid_value`, `409 too_many_devices {max:10}`, `429 too_many_attempts` (`PAIR_RATE_LIMIT`/15 min/IP) |
+| GET | `/` | (signed in) own devices `{devices:[{id, name, platform, app_version, created_at, last_seen_at, revoked_at, revoke_reason}]}` (active, and revoked in the last 30 days) |
+| DELETE | `/:id` | (signed in) revoke one of one's own devices → `{ok:true, revoked:0\|1}`; another user's device → 404 |
+
+Administrators (`/users`, `usr` + admin role): `GET /users/:id` includes `devices` (with `last_ip`) and
+`notify_blocks`; `DELETE /users/:id/devices/:deviceId` → `{revoked}`; `PUT /users/:id/notify-blocks`
+`{blocks:[{type|'*', channel:'all'|'mobile'}]}` → `{blocks}` (`400 cannot_change_own_permissions`, `400 mandatory_type`).
+Deactivating (`PATCH is_active:false`), deleting and `reset-password` revoke the user's devices in the same transaction
+(`DELETE` answers `devices_revoked`).
+
+## Android app — `/m` (device token, 1.9.0)
+Header `Authorization: Bearer <token>` on every request; no cookie, no CSRF header. The token is refused by every other
+API route, and `/m` ignores session cookies. `401 invalid_token` when the token is missing, malformed, unknown or
+revoked, or the account is inactive, deleted, paused or must change its password; 30 refusals per IP per 15 min → 429.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/m/me` | `{full_name, lang, server_version}` |
+| GET | `/m/notifications` | `?after_id=<id>&limit=1..100` (default 20) → `{items:[{id, type, severity, title, body, link, created_at, read}], unread}`. **With `after_id` (0 included): alerts with `id > after_id`, oldest first (ascending id)** — the app pages forward from the last id it has. Without `after_id`: the newest `limit` alerts, newest first. Only types allowed on the phone; a mandatory type kept off the phone appears as `title` «لديك تنبيه جديد» / “You have a new alert”, `body: null`, `link: "/notifications"`; security / system alerts have `body: null`. `title` / `body` in the user's language. A summary that grows while unread keeps its id (announced by the stream) |
+| POST | `/m/notifications/:id/read` | → `204`; `404` when not the user's or not shown on the phone |
+| GET | `/m/events` | `text/event-stream` (`Cache-Control: no-cache, no-store`, `X-Accel-Buffering: no`): `retry: 10000`; `event: unread` `{"unread":n}` on connect; for each new alert the phone may show `event: notification` `{"id":n}` followed by `event: unread`; a comment line `: hb` every `LIVE_HEARTBEAT_SECONDS` (25 s), on which the device and account are re-checked. One stream per device (a new one replaces the old). The server ends the stream when the device is revoked or the account may no longer be used; reconnecting then gets 401 |
+| DELETE | `/m/device` | the phone unpairs itself → `204`; the device is revoked (reason `unpaired`, `revoke:device` + `mobile_device_revoked`), the token stops working at once |
 
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |

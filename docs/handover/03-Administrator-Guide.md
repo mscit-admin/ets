@@ -269,6 +269,67 @@ background. Images are stored in the database and included in backups. SVG files
 Branding images are public (the login screen shows them), so on upload the system removes their metadata
 (camera, GPS position, author, comments) and anything after the end of the image; the picture itself is unchanged.
 
+## 3a. Notifications (Settings → «الإشعارات») and phones — 1.9.0
+
+Alerts reach users through the **bell** in the top bar, the **«التنبيهات»** history page and, for those who pair
+an Android phone, the **ETS app**. Who receives what is decided in three layers, each of which can only narrow the
+one before it:
+
+1. **Eligibility (in the code, cannot be changed):** the permission of the alert type (e.g. `pct` for «وظائف
+   عالقة», `tst` for «مكتملة ولم تُختبر», `apv_dept` for «طلب بانتظار اعتمادي») and its scope rule (the
+   application in the user's scope, the whole department, or full scope for project-wide alerts). Security and
+   system alerts (S1–S8) are for the **System Administrator role only**, whatever any setting says. Deactivated,
+   deleted users and users who must change their password receive nothing.
+2. **The policy (this screen):** the matrix *type × role*. ☑ = the role receives it; — = not eligible (cannot be
+   turned on); 🔒 = mandatory in the code (cannot be turned off). Column **«الجوال»**: the type may be sent to the
+   phone app. Column **«إلزامي»**: the type becomes mandatory for every role it is on for (users can then no longer
+   mute it). Saving writes one change-history row with the whole matrix before / after; the Logs screen reads it
+   as a sentence, e.g. «تعديل سياسة الإشعارات: «وظائف عالقة» أُوقف لدور «عضو فريق»».
+3. **Restrictions on one user (Users → the user's page → «قيود التنبيهات»):** block a type on every channel or on
+   the phone only (block only, never a grant; not on your own account; a type mandatory in the code for the user's
+   role can only be blocked on the phone). Audited («تعديل قيود التنبيهات للمستخدم …»). Then each user may mute
+   non-mandatory types and the periodic summaries on their profile page.
+
+Every alert is checked **again when it is read**: when a permission, scope or policy cell is removed, existing
+alerts are **hidden, not deleted**, and come back if the right comes back while they are kept.
+
+**Defaults the administrator can change** (decided with the owner, see CHANGELOG 1.9.0): the matrix of the proposal
+(§3.1); mandatory types A1, A4 (approvers), A2 and A6 (team lead), S3, S6, S7 (administrator); per-user blocks set
+by administrators only; alerts hidden, not deleted, when a right is removed; phones revoked when the password is
+reset by an administrator; phones unused for 90 days revoked automatically.
+
+| Setting | Default | Range |
+|---|---|---|
+| Notifications on | on | — |
+| Daily summary hour / work days / time zone | 08:00 / Sun–Thu / `Africa/Tripoli` | 0–23 / any days / an IANA zone |
+| Stuck: days without progress (0 < % < 100; critical after twice as long) | 14 | 3–90 |
+| Done (100 %) and not tested: days | 7 | 1–60 |
+| Failed and not re-tested: days | 7 | 1–60 |
+| Not started (0 %) after: days (once the project has started) | 30 | 7–180 |
+| Approval reminder after (hours) / escalation to PM, TM after (days) | 48 / 5 | 4–168 / 1–30 (escalation after the reminder) |
+| Import file waiting: days | 3 | 1–30 |
+| Department at risk / delayed: points behind the plan | 5 / 15 | 1–50 (at risk < delayed); also used by the project status page |
+| Department stalled: 30-day change at most (points) | 0.5 | 0–10 |
+| Close date approaching: days | 30 | 1–180 |
+| Failed sign-ins in 15 minutes / refused requests per hour / server errors per hour | 20 / 30 / 10 | 5–500 / 5–1000 / 1–1000 |
+| Maximum backup age (hours) | 26 | 2–168 |
+| New alerts per user per hour (more are folded into one «تنبيهات كثيرة»; mandatory ones never) | 50 | 5–500 |
+| Keep read alerts (days; unread: twice as long) | 180 | 30–730 |
+| Revoke phones unused for (days) | 90 | 7–365 |
+
+**When alerts are made.** Immediately (after the change is saved): an edit request waiting (A1), a decision on a
+request (A3), a result file waiting / its outcome (A4, A5), functions excluded or removed (T7), an account paused
+(S1), a log retention lowered (S7). Every 15 minutes the API checks failed sign-ins, refused requests and server
+errors (S2, S5, S8); every day from the summary hour: the audit-log hash chains (S3), the e-mail index (S4), the
+backup age (S6); on work days the summaries (T1–T5, A2, A6, P1, P3, P4); weekly T6 and P2. Summaries are one alert per
+user and application (scoped users) or department (full-scope users), updated in place while unread.
+
+**Phones.** Users pair their own phone from *Profile → «أجهزتي»* (password and 2FA code asked again; one-time QR
+code valid 10 minutes). On a user's page an administrator sees that user's phones (last use, address) and can
+revoke them. Phones are revoked automatically when the account is deactivated, deleted, or its password is reset
+by an administrator, and after 90 days without use. Phones outside the building connect **over the VPN** — see
+10-Operations-Runbook §1b.
+
 ## 4. Logs (Administration → Logs) — permission `log`
 
 Tabs: **Login & security**, **Audit trail**, **Request log**, **Errors**, **System**.

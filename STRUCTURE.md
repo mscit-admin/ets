@@ -23,11 +23,12 @@ ets/
 │   ├── .npmrc                     engine-strict=true (refuses an unsupported Node.js)
 │   ├── .env.example               All configuration variables, documented (copy to .env / /etc/ets/ets.env)
 │   ├── src/
-│   │   ├── server.js              Entry point: migrate + seed, start HTTP server, schedule log purge, graceful shutdown
+│   │   ├── server.js              Entry point: migrate + seed, start HTTP server, schedule log purge and notification
+│   │   │                          checks, graceful shutdown
 │   │   ├── app.js                 Express app: security headers, JSON, sessions, access log, CSRF, routes, static UI
 │   │   ├── config.js              Reads environment variables into one config object
 │   │   ├── db/
-│   │   │   ├── pool.js            PostgreSQL connection pool + transaction helper
+│   │   │   ├── pool.js            PostgreSQL connection pool + transaction helper (onCommit: work after COMMIT)
 │   │   │   ├── migrate.js         Applies migrations/*.sql in order (tracked in schema_migrations)
 │   │   │   ├── seed.js            Roles, default settings, catalog, report rows, schedule row (idempotent)
 │   │   │   ├── migrations/
@@ -45,8 +46,11 @@ ets/
 │   │   │   │   │                  edit_request_items.meta (010 and 011 are not used)
 │   │   │   │   ├── 014_login_email.sql  Unique lower(email) for sign-in by e-mail; skipped (NOTICE + system_log) while
 │   │   │   │   │                  addresses are shared, created by a later migrate run
-│   │   │   │   └── 015_user_delete.sql  Soft delete of users (deleted_at/by/reason); username and e-mail unique only
-│   │   │   │                      among accounts not deleted (partial indexes, e-mail function of 014 replaced)
+│   │   │   │   ├── 015_user_delete.sql  Soft delete of users (deleted_at/by/reason); username and e-mail unique only
+│   │   │   │   │                  among accounts not deleted (partial indexes, e-mail function of 014 replaced)
+│   │   │   │   ├── 016_item_type.sql  functions.item_type: function or report
+│   │   │   │   └── 017_notifications.sql  Notifications, preferences, per-user blocks, check state, phones and
+│   │   │   │                      pairing codes; functions.progress_changed_at / test_changed_at (trigger, backfill)
 │   │   │   └── seed/
 │   │   │       └── catalog.json   4 departments, 30 applications, 513 functions
 │   │   ├── middleware/
@@ -65,6 +69,9 @@ ets/
 │   │   │   ├── approvals.js       /api/approvals — data-entry edit requests: list, approve, reject, withdraw
 │   │   │   ├── export.js          /api/export/<report>.xlsx — Excel exports of the screens (exp, scope, strict audit)
 │   │   │   ├── events.js          /api/events — live updates (Server-Sent Events): auth, per-user cap, heartbeat
+│   │   │   ├── notifications.js   /api/notifications — bell list / count, read / unread, preferences, policy matrix meta
+│   │   │   ├── devices.js         /api/devices — own phones: pairing code (re-auth), list, revoke
+│   │   │   ├── mobile.js          Android app: POST /api/devices/pair (no session), /api/m/* with the Bearer device token
 │   │   │   ├── branding.js        /api/branding — logo / favicon / login background (public GET, admin upload/reset)
 │   │   │   └── system.js          /api/health (public) and /api/system/info
 │   │   ├── services/
@@ -90,7 +97,17 @@ ets/
 │   │   │   ├── functions.js       Add / remove (soft) / restore functions
 │   │   │   ├── disable.js         Exclusion reason: validation, duplicate checks, store / clear, links for the screens
 │   │   │   ├── live.js            Live updates hub: pg_notify after commit, one LISTEN connection per process (reconnects),
-│   │   │   │                      scope-filtered "tracker_changed" events, session re-check on heartbeat / sign-out
+│   │   │   │                      scope-filtered "tracker_changed" events, session re-check on heartbeat / sign-out;
+│   │   │   │                      "notif_changed" to web streams, phone streams (/api/m/events) closed on revocation
+│   │   │   ├── notify-catalog.js  Alert types (T1–T7, A1–A6, P1–P4, S1–S8), default policy matrix, notify.* settings
+│   │   │   ├── notify.js          Who receives an alert (eligibility ∧ policy ∧ restrictions), storing (summaries,
+│   │   │   │                      de-duplication, hourly cap), reading with every rule checked again, the phone's view
+│   │   │   ├── notify-events.js   Alerts created after COMMIT (requests, imports, exclusions, paused account, retention)
+│   │   │   ├── notify-scan.js     Periodic checks every 15 min under an advisory lock (summaries, plan, security, system)
+│   │   │   ├── notify-text.js     Alert titles and bodies in Arabic / English (rendered by the server)
+│   │   │   ├── devices.js         Pairing codes, device tokens (HMAC), revocation with audit rows
+│   │   │   ├── health.js          Project health (schedule model, delay, pace, department status) — identical copy of
+│   │   │   │                      frontend/src/lib/health.js
 │   │   │   └── imports.js         Diff of one department / reports vs approved data, impact, apply after approval
 │   │   └── utils/
 │   │       ├── http.js            HttpError and input validation helpers (ids, dates, own keys, JSON depth)
@@ -121,6 +138,10 @@ ets/
 │       │                          history kept, pending requests closed, bulk all-or-nothing, reuse, restore
 │       ├── live.test.js           /api/events: auth, tracker_changed after commit without values, scope, sign-out /
 │       │                          expiry close the stream, per-user cap, access log (needs TEST_DATABASE_URL)
+│       ├── notifications.test.js  Alert rules of each family, scope / permission at creation and read, policy matrix,
+│       │                          mandatory types, blocks, de-duplication, hourly cap, advisory lock, settings, audit
+│       ├── devices.test.js        Pairing code and pairing (one-time, TTL, rate limit), Bearer on /api/m only, phone view,
+│       │                          phone stream, revocation (user, phone, admin, account changes, idle), audit
 │       └── api.test.js            API integration tests (needs TEST_DATABASE_URL)
 │
 ├── frontend/                      Web UI — React 19 + Vite
@@ -138,15 +159,22 @@ ets/
 │       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
-│       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback
+│       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback;
+│       │   │                      "notif_changed" for the bell
 │       │   ├── erpModules.js      ERP module wheel: standard modules and the department → module mapping (edit here)
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
-│       │   ├── health.js          Project health indicators and recommendations (status page)
+│       │   ├── health.js          Project health indicators and recommendations (status page); identical copy of
+│       │   │                      backend/src/services/health.js (also the schedule model)
 │       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
 │       │   ├── importMatch.js     Import values (ids or names) → ids; identical copy of backend/src/utils/importMatch.js
 │       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient)
 │       ├── components/
-│       │   ├── Layout.jsx         Navbar (search, language, user menu) + sidebar
+│       │   ├── Layout.jsx         Navbar (search, bell, language, user menu) + sidebar
+│       │   ├── NotificationBell.jsx  The bell: unread badge, dropdown with tabs, read / unread, mark all read
+│       │   ├── NotifySettings.jsx Settings → «الإشعارات»: schedule, thresholds, type × role policy matrix
+│       │   ├── ProfileNotify.jsx  Profile: notification preferences and «أجهزتي» (pairing QR, list, revoke)
+│       │   ├── UserNotify.jsx     User page: notification blocks and the user's phones
+│       │   ├── QrCode.jsx         QR code as SVG (qrcode-generator, MIT)
 │       │   ├── ErrorBoundary.jsx  Message instead of a blank page if a screen fails
 │       │   ├── ExportButton.jsx   «Export to Excel» button (exp only) with the screen's filters
 │       │   ├── MultiSelect.jsx    Searchable multi-select (combobox + listbox, chips, keyboard, aria)
@@ -156,7 +184,7 @@ ets/
 │       │   ├── LiveBadge.jsx      «تحديث مباشر» / "Live" status badge
 │       │   ├── Icon.jsx           SVG icon set
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
-│       │   ├── SCurve.jsx         S-curve model, chart and KPI cards (dashboard + curve page)
+│       │   ├── SCurve.jsx         S-curve chart and KPI cards (dashboard + curve page); the model is in lib/health.js
 │       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/
 │       │   ├── Login.jsx          Login, 2FA verify/enrol, recovery codes, password forms
@@ -171,8 +199,9 @@ ets/
 │       │   ├── Users.jsx          Users list, bulk 2FA, user form (role, permissions, scope, actions)
 │       │   ├── UserImport.jsx     Import users dialog: template, preview with per-row errors, one-time passwords
 │       │   ├── Logs.jsx           Log viewer with tabs, filters, detail, CSV
-│       │   ├── Settings.jsx       2FA policy, general, security, retention, import/export, system info
-│       │   ├── Profile.jsx        My account: language, 2FA, password
+│       │   ├── Settings.jsx       2FA policy, notifications, general, security, retention, import/export, system info
+│       │   ├── Profile.jsx        My account: language, 2FA, password, notification preferences, my devices
+│       │   ├── Notifications.jsx  Alert history: filters, paging, mark read
 │       │   ├── Approvals.jsx      Edit approvals: requests with before/after, approve / reject / withdraw
 │       │   └── Imports.jsx        Imports & approvals: list, import window, batch page with signatures
 │       └── styles/app.css         ERPNext-style design system (RTL/LTR aware)

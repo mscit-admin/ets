@@ -45,6 +45,18 @@ users may report "my correct password does not work". Check *Users* (status *Loc
 or use **Unlock** (clears the count and the pause; logged `account_unlocked_by_admin`). Many failures for one
 account from different IPs, or `rate_limited` events, point to an attack rather than a forgetful user.
 
+## 1b. Notifications and phones (1.9.0)
+
+| Task | Command / action |
+|---|---|
+| Is the periodic check running? | *Logs → System*: a `notify_scan` row with the jobs and duration (every day from the summary hour, and whenever a security check found something); journald: `journalctl -u ets-backend \| grep notify` (failures are logged `notify: scan job failed`). Several API processes are fine: one runs the check at a time (advisory lock) |
+| Users get no alerts | Settings → «الإشعارات»: «تشغيل التنبيهات», the policy cell of their role, work days / hour / time zone; their profile (muted types, summaries off) and their user page (blocks). Alerts only reach users with the permission and scope (03 §3a) |
+| «لا توجد نسخة احتياطية» (S6) | `ets-backup` writes a `backup` row to the system log only when it succeeds: check `/var/log/ets-backup.log` and the cron job (08) |
+| Phones: server address and certificate in the QR | `PUBLIC_BASE_URL` and `TLS_CERT_SHA256` in `/etc/ets/ets.env`, filled by `install.sh` / `update.sh` from the nginx address and certificate (`openssl x509 -in <cert> -noout -fingerprint -sha256`, colons removed; empty for Let's Encrypt). After **renewing or replacing the certificate** run `update.sh` (or set `TLS_CERT_SHA256` by hand and `systemctl restart ets-backend`): paired phones that pin the old fingerprint must be paired again |
+| Phones from outside the building (VPN) | The phones reach the server only inside the network or **over the organisation's VPN** — never open the HTTPS port to the internet. Nothing else is needed on the server: `/api/m/*` goes through nginx like the web API, and `/api/m/events` streams like `/api/events` (`proxy_buffering off`, 1 h timeouts). If the phones use another name / address over the VPN than the browsers, set `PUBLIC_BASE_URL` to it by hand (`update.sh` keeps a value that is already set); with a self-signed certificate the name must be in the certificate (`subjectAltName`) |
+| A phone is lost | The user revokes it in *Profile → «أجهزتي»*, or an administrator on the user's page (*Users → user → «الأجهزة المرتبطة»*). Deactivating the account or resetting its password also revokes every phone |
+| List / revoke phones in SQL | `SELECT d.id, u.username, d.name, d.last_seen_at FROM mobile_devices d JOIN users u ON u.id=d.user_id WHERE d.revoked_at IS NULL;` — revoke through the screens (audited) rather than SQL |
+
 ## 2. Troubleshooting
 
 | Symptom | Check | Fix |
@@ -92,7 +104,8 @@ migrated, `sudo ets-restore <backup taken by update.sh>`.
 
 | Frequency | Task |
 |---|---|
-| Daily | Glance at *Logs* cards: failed attempts and errors |
+| Daily | Glance at *Logs* cards: failed attempts and errors; the administrators' bell (security / system alerts) |
+| Every 15 min (automatic) | Notification checks in the API (`notify_scan`); daily from the summary hour: hash chains, backup age, idle phones, alert retention |
 | Weekly | Review the *Login & security* log (administrators); confirm the backups exist (`sudo ls -lt /var/backups/ets \| head`); run *Logs → Verify log integrity* and keep the chain heads off the server |
 | Monthly | `sudo apt update && sudo apt upgrade`; check disk space; review user accounts (disable leavers) |
 | Quarterly | Restore test (doc 08 §6); review the 2FA policy and exemptions |
