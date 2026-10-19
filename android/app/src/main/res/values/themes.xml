@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EtsAlerts" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorPrimary">@color/ets_navy</item>
+        <item name="colorPrimaryDark">@color/ets_navy_dark</item>
+        <item name="colorAccent">@color/ets_blue</item>
+        <item name="android:windowBackground">@color/screen_bg</item>
+    </style>
+
+    <style name="EtsHeading">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ets_navy</item>
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+
+    <style name="EtsBody">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:lineSpacingMultiplier">1.15</item>
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+
+    <style name="EtsLabel">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ets_blue</item>
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+
+    <style name="EtsValue">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+
+    <style name="EtsHint">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+
+    <style name="EtsPrimaryButton" parent="Widget.AppCompat.Button.Colored">
+        <item name="android:backgroundTint">@color/ets_navy</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:minHeight">52dp</item>
+    </style>
+
+    <style name="EtsSecondaryButton" parent="Widget.AppCompat.Button">
+        <item name="android:backgroundTint">@color/ets_blue_light</item>
+        <item name="android:textColor">@color/ets_navy</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
+    <style name="EtsDangerButton" parent="Widget.AppCompat.Button.Colored">
+        <item name="android:backgroundTint">@color/danger</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+</resources>
