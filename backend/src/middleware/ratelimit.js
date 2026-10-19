@@ -29,8 +29,10 @@ const authHandler = scope => (req, res) => {
 // Every endpoint that checks a password, 2FA code or recovery code (login, 2FA verify / setup / enable /
 // disable, recovery-code regeneration, change password) shares one budget per client IP …
 const perIp = rateLimit({ ...common, windowMs: AUTH_WINDOW, limit: config.security.loginRateLimit, handler: authHandler('ip') });
-// … and one per account: the signed-in user, or the username typed at login whether or not it exists (so the
-// answer reveals nothing). Only failed requests count here, so a user's own successful sign-ins do not.
+// … and one per account: the signed-in user, or the name typed at login (username or e-mail address, trimmed and
+// in lower case) whether or not it exists (so the answer reveals nothing). Only failed requests count here, so a
+// user's own successful sign-ins do not. A username and an e-mail address of the same account are two names here;
+// the account's own failure counter (services/lockout.js) adds both up.
 const perAccount = rateLimit({
   ...common, windowMs: AUTH_WINDOW, limit: config.security.loginRateLimit, skipSuccessfulRequests: true,
   keyGenerator: req => 'acct:' + String(req.path !== '/login' && req.user ? req.user.username : str(req.body?.username, 100)).toLowerCase(),

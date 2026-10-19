@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009, 012 and 013).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–014).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -66,6 +66,33 @@ CREATE FUNCTION public.ets_chain_hash(prev text, body text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT encode(sha256(convert_to(prev || '|' || body, 'UTF8')), 'hex') $$;
+-- Name: ets_ensure_email_unique_index(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_ensure_email_unique_index() RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  dups  jsonb;
+  ats   jsonb;
+BEGIN
+  IF to_regclass('users_email_lower_uniq') IS NOT NULL THEN
+    RETURN true;
+  END IF;
+  SELECT jsonb_agg(jsonb_build_object('email', e, 'accounts', n) ORDER BY e) INTO dups
+    FROM (SELECT lower(email::text) AS e, count(*) AS n FROM users
+          WHERE email IS NOT NULL AND email <> '' GROUP BY 1 HAVING count(*) > 1) d;
+  IF dups IS NOT NULL THEN
+    SELECT jsonb_agg(username::text ORDER BY username) INTO ats FROM users WHERE position('@' IN username) > 0;
+    RAISE NOTICE 'ETS: % e-mail address(es) are used by more than one account; the unique e-mail index was not created. Signing in by e-mail is refused for these addresses until each account has its own address (Users screen), then run npm run migrate again. Addresses: %',
+      jsonb_array_length(dups), (SELECT string_agg(x->>'email', ', ') FROM jsonb_array_elements(dups) x);
+    INSERT INTO system_log(level, event, message, detail)
+    VALUES ('warn', 'email_index_skipped',
+            'Unique e-mail index not created: some e-mail addresses are used by more than one account',
+            jsonb_build_object('duplicates', dups, 'usernames_with_at', COALESCE(ats, '[]'::jsonb)));
+    RETURN false;
+  END IF;
+  CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text)) WHERE email IS NOT NULL AND email <> '';
+  RETURN true;
+END $$;
 -- Name: ets_log_append_only(); Type: FUNCTION; Schema: public; Owner: -
 CREATE FUNCTION public.ets_log_append_only() RETURNS trigger
     LANGUAGE plpgsql
@@ -758,6 +785,8 @@ CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE INDEX system_log_ts_idx ON public.system_log USING btree (ts DESC);
 -- Name: user_recovery_codes_user_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX user_recovery_codes_user_id_idx ON public.user_recovery_codes USING btree (user_id);
+-- Name: users_email_lower_uniq; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX users_email_lower_uniq ON public.users USING btree (lower((email)::text)) WHERE ((email IS NOT NULL) AND (email OPERATOR(public.<>) ''::public.citext));
 -- Name: audit_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_append_only();
 -- Name: auth_log ets_append_only; Type: TRIGGER; Schema: public; Owner: -

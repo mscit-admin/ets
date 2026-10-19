@@ -9,6 +9,10 @@ const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations'
 
 export async function migrate({ log = console.log } = {}) {
   const client = await pool.connect();
+  // A migration's own notices ("ETS: …", e.g. 014 skipping an index on existing data) are shown to whoever runs it;
+  // PostgreSQL's "already exists, skipping" notices are not.
+  const onNotice = n => { if (String(n.message).startsWith('ETS:')) log(`notice: ${n.message}`); };
+  client.on('notice', onNotice);
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
@@ -31,8 +35,17 @@ export async function migrate({ log = console.log } = {}) {
       }
     }
     if (!applied.length) log('database is up to date');
+    // The unique e-mail index of migration 014 is skipped while several accounts share an address; every later run
+    // creates it once the duplicates are gone (a no-op when it exists).
+    if (!applied.includes('014_login_email.sql') &&
+        (await client.query(`SELECT to_regprocedure('ets_ensure_email_unique_index()') IS NOT NULL AS ok`)).rows[0].ok) {
+      const made = (await client.query(`SELECT to_regclass('users_email_lower_uniq') IS NULL AS missing`)).rows[0].missing &&
+        (await client.query('SELECT ets_ensure_email_unique_index() AS ok')).rows[0].ok;
+      if (made) log('created the unique e-mail index (users_email_lower_uniq)');
+    }
     return applied;
   } finally {
+    client.off('notice', onNotice);
     client.release();
   }
 }

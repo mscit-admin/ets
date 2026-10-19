@@ -5,7 +5,7 @@ import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordCha
 import { authLimiter } from '../middleware/ratelimit.js';
 import { hashPassword, verifyPassword, needsRehash, getDummyHash, checkPolicy, generateRecoveryCodes,
   hashRecoveryCode, recoveryCodeHashes } from '../services/passwords.js';
-import { serialize, accountKey, isDelayed, tooManyAttempts, registerFailure, clearFailures } from '../services/lockout.js';
+import { serialize, accountKey, userKey, isDelayed, tooManyAttempts, registerFailure, clearFailures } from '../services/lockout.js';
 import { encrypt, decrypt } from '../services/crypto.js';
 import { generateSecret, verifyTotp, otpauthUri } from '../services/totp.js';
 import { getSetting, allSettings } from '../services/settings.js';
@@ -57,32 +57,59 @@ async function useSecondFactor(u, body) {
   return q.rowCount ? 'totp' : 'replay';
 }
 
-r.post('/login', authLimiter, async (req, res) => {
-  const username = str(req.body?.username, 100);
-  const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (!username || !password) throw bad('missing_credentials');
+// The sign-in name is a username or, when it contains "@", an e-mail address (1.6.0). Both are compared without
+// regard to case; the value is trimmed (str) and kept in lower case for the logs and the per-name keys.
+// → { id, via: 'email' | 'username', ambiguous? }. An address shared by several accounts (possible only while the
+// unique index of migration 014 is missing) signs nobody in. Usernames cannot contain "@" (routes/users.js); an
+// older account whose username does is still found by it when no e-mail matches.
+async function findLoginUser(ident) {
+  if (ident.includes('@')) {
+    const byEmail = (await query('SELECT id FROM users WHERE lower(email::text) = lower($1) LIMIT 2', [ident])).rows;
+    if (byEmail.length > 1) return { via: 'email', ambiguous: true };
+    if (byEmail.length === 1) return { id: byEmail[0].id, via: 'email' };
+    const legacy = (await query('SELECT id FROM users WHERE username=$1', [ident])).rows[0];
+    return legacy ? { id: legacy.id, via: 'username' } : { via: 'email' };
+  }
+  const byName = (await query('SELECT id FROM users WHERE username=$1', [ident])).rows[0];
+  return { id: byName?.id, via: 'username' };
+}
 
-  const stage = await serialize(accountKey(username), async () => {
-    const u = (await query('SELECT * FROM users WHERE username=$1', [username])).rows[0];
-    // Unknown user, paused account, wrong password and disabled account all get the same answer (ETS-SEC-014);
-    // the first two still run a bcrypt check of the same cost, so the timing matches too.
+r.post('/login', authLimiter, async (req, res) => {
+  const ident = str(req.body?.username, 100).toLowerCase();
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!ident || !password) throw bad('missing_credentials');
+
+  const found = await findLoginUser(ident);
+  // One queue per account (user id), whichever name was typed, so concurrent guesses through the username and the
+  // e-mail address still see each other's failures (ETS-SEC-021); a name of no account is queued by the name.
+  const stage = await serialize(found.id ? userKey(found.id) : accountKey(ident), async () => {
+    const u = found.id ? (await query('SELECT * FROM users WHERE id=$1', [found.id])).rows[0] : undefined;
+    // how the account was named: written with every auth_log row of this sign-in
+    const via = { via: found.via, identifier: ident };
+    // Unknown name, e-mail of several accounts, paused account, wrong password and disabled account all get the same
+    // answer (ETS-SEC-014); the first three still run a bcrypt check of the same cost, so the timing matches too.
     if (!u) {
       await verifyPassword(password, await getDummyHash());
-      // the typed name is masked: it may be a password typed into the wrong field (ETS-SEC-051)
-      await logAuth(req, { username: maskUsername(username), event: 'login_unknown_user', success: false });
+      if (found.ambiguous) {
+        await logAuth(req, { username: ident, event: 'login_ambiguous_email', success: false, detail: via });
+      } else {
+        // the typed name is masked: it may be a password typed into the wrong field (ETS-SEC-051)
+        await logAuth(req, { username: maskUsername(ident), event: 'login_unknown_user', success: false, detail: { via: found.via } });
+      }
       throw new HttpError(401, 'invalid_credentials');
     }
     if (isDelayed(u)) {
       await verifyPassword(password, await getDummyHash());
-      await logAuth(req, { userId: u.id, username: u.username, event: 'login_while_locked', success: false, detail: { until: u.locked_until } });
+      await logAuth(req, { userId: u.id, username: u.username, event: 'login_while_locked', success: false,
+        detail: { ...via, until: u.locked_until } });
       throw new HttpError(401, 'invalid_credentials');
     }
     if (!(await verifyPassword(password, u.password_hash))) {
-      await registerFailure(req, u, 'login_bad_password');
+      await registerFailure(req, u, 'login_bad_password', via);
       throw new HttpError(401, 'invalid_credentials');
     }
     if (!u.is_active) {
-      await logAuth(req, { userId: u.id, username: u.username, event: 'login_inactive_user', success: false });
+      await logAuth(req, { userId: u.id, username: u.username, event: 'login_inactive_user', success: false, detail: via });
       throw new HttpError(401, 'invalid_credentials');
     }
     if (needsRehash(u.password_hash)) await query('UPDATE users SET password_hash=$2 WHERE id=$1', [u.id, await hashPassword(password)]);
@@ -92,8 +119,8 @@ r.post('/login', authLimiter, async (req, res) => {
     // so wrong codes keep adding up across logins (ETS-SEC-001).
     // No session without its auth_log row: the row is written first and a failed write fails the sign-in (ETS-SEC-049).
     await logAuth(req, st
-      ? { userId: u.id, username: u.username, event: 'password_ok_mfa_pending', success: true, detail: { stage: st }, strict: true }
-      : { userId: u.id, username: u.username, event: 'login', success: true, strict: true });
+      ? { userId: u.id, username: u.username, event: 'password_ok_mfa_pending', success: true, detail: { ...via, stage: st }, strict: true }
+      : { userId: u.id, username: u.username, event: 'login', success: true, detail: via, strict: true });
     if (!st) await clearFailures(u.id);
     await createSession(res, req, u.id, { mfaPassed: !st, mfaStage: st, replaces: 'relogin' });
     if (!st) await query('UPDATE users SET last_login_at=now(), last_login_ip=$2 WHERE id=$1', [u.id, req.ip]);
@@ -115,7 +142,7 @@ async function completeMfa(req, res, event) {
 
 r.post('/2fa/verify', authLimiter, requirePartial, async (req, res) => {
   if (req.session.mfa_stage !== 'verify') throw bad('mfa_not_pending');
-  await serialize(accountKey(req.user.username), async () => {
+  await serialize(userKey(req.user.id), async () => {
     const u = (await query('SELECT id, username, totp_enabled, totp_secret, locked_until FROM users WHERE id=$1', [req.user.id])).rows[0];
     // 2FA was removed (e.g. admin reset) while this sign-in was pending: sign in again (ETS-SEC-055).
     if (!u.totp_enabled || !u.totp_secret) throw bad('mfa_not_pending');
@@ -148,7 +175,7 @@ async function reauthFailure(req, u, event) {
 // secondFactor while 2FA is on, a current authenticator code or an unused recovery code (ETS-SEC-016).
 // Failures count towards the account's sign-in pause like failed logins (ETS-SEC-003).
 function reauth(req, { password, secondFactor = false, events }) {
-  return serialize(accountKey(req.user.username), async () => {
+  return serialize(userKey(req.user.id), async () => {
     const u = (await query('SELECT id, username, password_hash, totp_enabled, totp_secret, locked_until FROM users WHERE id=$1',
       [req.user.id])).rows[0];
     if (isDelayed(u)) {
@@ -192,7 +219,7 @@ r.post('/2fa/enable', authLimiter, requirePartial, async (req, res) => {
   const enrolling = req.session.mfa_stage === 'enroll';
   if (!enrolling && !req.session.mfa_passed) throw new HttpError(401, 'mfa_required');
   if (!enrolling && req.user.must_change_password) throw new HttpError(403, 'password_change_required');
-  const codes = await serialize(accountKey(req.user.username), async () => {
+  const codes = await serialize(userKey(req.user.id), async () => {
     const u = (await query('SELECT id, username, totp_secret, totp_enabled FROM users WHERE id=$1', [req.user.id])).rows[0];
     if (u.totp_enabled) throw bad('mfa_already_enabled');
     if (!u.totp_secret) throw bad('mfa_setup_first');

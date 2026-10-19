@@ -1,4 +1,5 @@
 // Per-account sign-in throttling (owner decision: progressive delay per account plus a per-IP limit).
+//  - The counter lives on the account (users row), whichever sign-in name was typed: username or e-mail (1.6.0).
 //  - Every failed password, 2FA code or recovery-code check on an account counts (login, 2FA verify and the
 //    re-authentication checks on the profile page).
 //  - From MAX_FAILED_LOGINS failures on, the account is paused for 1, 2, 4 … minutes (at most LOCK_MINUTES).
@@ -21,15 +22,19 @@ export function serialize(key, fn) {
   tail.then(() => { if (chains.get(key) === tail) chains.delete(key); });
   return run;
 }
-// Keyed by the (case-insensitive) username — also for usernames that do not exist.
-export const accountKey = username => 'acct:' + String(username || '').toLowerCase();
+// Keyed by the account (user id) once it is known, so a username and an e-mail address naming the same account
+// share one queue (1.6.0); a sign-in name that matches no account is keyed by the name itself, trimmed and in
+// lower case.
+export const userKey = id => 'user:' + id;
+export const accountKey = name => 'acct:' + String(name || '').trim().toLowerCase();
 
 export const isDelayed = u => !!u.locked_until && new Date(u.locked_until) > new Date();
 export const retryAfter = u => Math.max(1, Math.ceil((new Date(u.locked_until) - Date.now()) / 1000));
 export const tooManyAttempts = u => new HttpError(429, 'too_many_attempts', { retry_after: retryAfter(u) });
 
 // Counts one failure atomically and returns { attempts, locked_until, delayed }.
-export async function registerFailure(req, u, event) {
+// extra: more auth_log detail (e.g. { via, identifier } at login).
+export async function registerFailure(req, u, event, extra = {}) {
   const max = config.security.maxFailedLogins;
   const q = await query(`WITH c AS (
       SELECT id, CASE WHEN last_failed_at IS NULL OR last_failed_at < now() - make_interval(mins => $3)
@@ -42,11 +47,11 @@ export async function registerFailure(req, u, event) {
     FROM c WHERE u.id = c.id RETURNING u.failed_attempts, u.locked_until`,
   [u.id, max, config.security.lockoutResetMinutes, config.security.lockMinutes]);
   const row = q.rows[0];
-  await logAuth(req, { userId: u.id, username: u.username, event, success: false, detail: { attempts: row.failed_attempts } });
+  await logAuth(req, { userId: u.id, username: u.username, event, success: false, detail: { ...extra, attempts: row.failed_attempts } });
   const delayed = row.failed_attempts >= max;
   if (delayed) {
     await logAuth(req, { userId: u.id, username: u.username, event: 'account_locked', success: false,
-      detail: { until: row.locked_until, attempts: row.failed_attempts } });
+      detail: { ...extra, until: row.locked_until, attempts: row.failed_attempts } });
   }
   return { attempts: row.failed_attempts, locked_until: row.locked_until, delayed };
 }

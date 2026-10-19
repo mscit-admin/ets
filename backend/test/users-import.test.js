@@ -200,7 +200,8 @@ test('import creates every row once, with one-time passwords, forced change and 
 
   // the same file again: every row is now taken
   const again = await root.post('/users/import/preview', { rows });
-  assert.deepEqual(errorsOf(again), [['username_taken'], ['username_taken'], ['username_taken'], ['username_taken']]);
+  // imp.ali's address is now an account's too (1.6.0: one account per e-mail address)
+  assert.deepEqual(errorsOf(again), [['username_taken', 'email_taken'], ['username_taken'], ['username_taken'], ['username_taken']]);
 
   // sign in with the temporary password: the change is forced before anything else
   const c = client();

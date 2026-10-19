@@ -39,6 +39,8 @@ result and a screenshot to the defect list (§4).
 |---|---|---|---|
 | A-01 | Open the site over `http://` (when an HTTP port was configured) | Redirected to `https://`; there is no plain-HTTP mode | |
 | A-02 | Sign in with a correct username and password (2FA policy *Optional*, user not enrolled) | Dashboard opens; *Logs → Login & security* shows `login` success | |
+| A-02b | Sign in with the user's **e-mail address** instead of the username (try upper case and spaces around it) | Dashboard opens; the `login` row shows `detail.via = email`. A 2FA user still gets the code step | |
+| A-02c | Wrong password by e-mail, then by username, then an unknown address | Same message each time; the account's failure counter counts both names (Users → the user) | |
 | A-03 | Sign in with a wrong password | "Incorrect username or password"; log shows `login_bad_password` | |
 | A-04 | Sign in with a non-existent username | Same message as A-03 (does not reveal that the user does not exist); log `login_unknown_user` | |
 | A-05 | Enter a wrong password 5 times, then the correct one at once | Every answer is the same "Incorrect username or password. After several failed attempts, sign-in to the account pauses for a few minutes and then resumes by itself" — the correct password is not accepted during the pause and the screen does not say the account is locked; log `account_locked`, then `login_while_locked`; the admin sees the user as *Locked* | |
