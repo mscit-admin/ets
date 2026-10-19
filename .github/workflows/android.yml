@@ -56,6 +56,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default package list includes the legacy 'tools' package, which
+          # current cmdline-tools no longer provide ("Failed to find package 'tools'").
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
+          log-accepted-android-sdk-licenses: false
 
       - name: Compute version
         id: version
