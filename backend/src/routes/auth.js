@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { query, tx } from '../db/pool.js';
-import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial } from '../middleware/auth.js';
+import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial, wantsReadonly } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/ratelimit.js';
 import { hashPassword, verifyPassword, needsRehash, getDummyHash, checkPolicy, generateRecoveryCodes,
   hashRecoveryCode, recoveryCodeHashes } from '../services/passwords.js';
@@ -75,6 +75,9 @@ async function findLoginUser(ident) {
   return { id: byName?.id, via: 'username' };
 }
 
+// auth_log detail of a sign-in by the Android app (read-only session, 1.11.0); nothing for a browser
+const clientDetail = req => (wantsReadonly(req) ? { client: 'mobile', readonly: true } : {});
+
 r.post('/login', authLimiter, async (req, res) => {
   const ident = str(req.body?.username, 100).toLowerCase();
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -85,8 +88,9 @@ r.post('/login', authLimiter, async (req, res) => {
   // e-mail address still see each other's failures (ETS-SEC-021); a name of no account is queued by the name.
   const stage = await serialize(found.id ? userKey(found.id) : accountKey(ident), async () => {
     const u = found.id ? (await query('SELECT * FROM users WHERE id=$1', [found.id])).rows[0] : undefined;
-    // how the account was named: written with every auth_log row of this sign-in
-    const via = { via: found.via, identifier: ident };
+    // how the account was named, and client 'mobile' for the Android app's read-only sign-in (1.11.0):
+    // written with every auth_log row of this sign-in
+    const via = { via: found.via, identifier: ident, ...clientDetail(req) };
     // Unknown name, e-mail of several accounts, paused account, wrong password and disabled account all get the same
     // answer (ETS-SEC-014); the first three still run a bcrypt check of the same cost, so the timing matches too.
     if (!u) {
@@ -134,7 +138,8 @@ r.post('/login', authLimiter, async (req, res) => {
 async function completeMfa(req, res, event) {
   await tx(async c => {
     await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event, success: true });
-    await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event: 'login', success: true, detail: { mfa: true } });
+    await logAuth(req, { db: c, userId: req.user.id, username: req.user.username, event: 'login', success: true,
+      detail: { mfa: true, ...clientDetail(req) } });
   });
   await createSession(res, req, req.user.id, { mfaPassed: true, replaces: 'mfa_completed' });
   await clearFailures(req.user.id);
@@ -274,8 +279,10 @@ r.get('/me', async (req, res) => {
   const s = await allSettings();
   const org = { org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], branding: await brandingVersions() };
   // Password accepted but 2FA pending: only what the 2FA screen needs (ETS-SEC-017).
+  // readonly: a session of the Android app (1.11.0) — the pages hide every editing control, the API refuses changes
+  const readonly = !!req.session.readonly;
   if (!req.session.mfa_passed) {
-    return res.json({ authenticated: true, stage: req.session.mfa_stage,
+    return res.json({ authenticated: true, stage: req.session.mfa_stage, readonly,
       user: { username: req.user.username, language: req.user.language }, ...org });
   }
   const codes = req.user.totp_enabled
@@ -285,6 +292,8 @@ r.get('/me', async (req, res) => {
   res.json({
     authenticated: true,
     stage: 'done',
+    readonly,
+    client: req.session.client,
     // recovery_codes_outdated: unused codes made before 1.0.0 (weaker format); the profile page suggests new ones
     user: { ...req.user, recovery_codes_left: codes.n, recovery_codes_outdated: codes.old > 0 },
     mfa_mode: s['mfa.mode'],

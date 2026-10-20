@@ -21,6 +21,11 @@ const appOf = (rq, apps) => apps.find(a => a.id === rq.app_id);
 const targetOf = (rq, apps) => (rq.target_app_id ? apps.find(a => a.id === rq.target_app_id) : null);
 const isMove = rq => rq.kind === 'move_function';
 
+// What the reader's buttons offer: nothing from a read-only session (the Android app, 1.11.0 — the API refuses the
+// action anyway, middleware/auth.js readonlyGuard); the counts of what awaits the user still use abilities().
+const viewerAbilities = (user, rq, apps) => (user.readonly
+  ? { approve: false, reject: false, withdraw: false, stage: null, approve_as: null } : abilities(user, rq, apps));
+
 function abilities(user, rq, apps) {
   const pending = rq.status === 'pending';
   const notMine = rq.requested_by !== user.id;
@@ -72,7 +77,7 @@ export async function listRequests(user, qs = {}, { limit = 300 } = {}) {
   const list = rows.filter(x => visible(user, x, apps));
   const its = await items(list.map(x => x.id));
   for (const x of list) {
-    x.can = abilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id);
+    x.can = viewerAbilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id);
     // a pending move: the weight share as it would be now (applied at approval) next to the one when it was requested
     if (isMove(x) && x.status === 'pending') x.move_now = await currentShare({ query }, x.app_id, x.items.map(i => i.function_id).filter(Boolean));
   }

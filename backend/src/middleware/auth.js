@@ -25,18 +25,31 @@ export function assertCookieConfig() {
   }
 }
 
+// ---- the Android app's read-only sessions (1.11.0, migration 020) ----
+// «ETS Alerts» 1.1.0 shows this web application in a WebView whose User-Agent ends with "ETSAlerts/<version> (Android)".
+// A sign-in carrying that marker creates a session with client 'mobile' and readonly = true: it can read everything the
+// account may read, and change nothing (readonlyGuard below). The marker can be spoofed, but it only ever takes rights
+// away — a browser that sends it gets a read-only session, and leaving it out gives nothing a normal sign-in does not.
+const MOBILE_UA = /\bETSAlerts\/[0-9A-Za-z.+_-]{1,40} \(Android\)/;
+export const isMobileClient = req => MOBILE_UA.test(req.get('user-agent') || '');
+// The session being created is read-only when the request comes from the app, or when it replaces a read-only one
+// (the 2FA step): read-only is kept for the whole sign-in, never dropped.
+export const wantsReadonly = req => isMobileClient(req) || !!req.session?.readonly;
+
 // Always issues a new token; the session the browser presented (if any) is revoked, so a token captured
 // before sign-in or before 2FA never becomes a full session (ETS-SEC-015).
 export async function createSession(res, req, userId, { mfaPassed, mfaStage = null, replaces = 'replaced' }) {
+  const readonly = wantsReadonly(req);
   const old = req.cookies?.[cookieName()];
   if (old) {
     const q = await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL RETURNING user_id', [sha256(old), replaces]);
     if (q.rows[0]) publishSessionCheck(q.rows[0].user_id);
   }
   const token = randomToken();
-  await query(`INSERT INTO sessions(id,user_id,mfa_passed,mfa_stage,ip,user_agent,expires_at)
-    VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' hours')::interval)`,
-    [sha256(token), userId, mfaPassed, mfaStage, req.ip, req.get('user-agent')?.slice(0, 500) || null, String(config.session.ttlHours)]);
+  await query(`INSERT INTO sessions(id,user_id,mfa_passed,mfa_stage,ip,user_agent,expires_at,client,readonly)
+    VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' hours')::interval, $8, $9)`,
+    [sha256(token), userId, mfaPassed, mfaStage, req.ip, req.get('user-agent')?.slice(0, 500) || null, String(config.session.ttlHours),
+      readonly ? 'mobile' : 'web', readonly]);
   res.cookie(cookieName(), token, cookieOpts());
 }
 
@@ -83,7 +96,7 @@ export async function sessionMiddleware(req, res, next) {
   const t = req.cookies?.[cookieName()];
   if (!t) return next();
   const id = sha256(t);
-  const r = await query(`SELECT id, user_id, mfa_passed, mfa_stage, last_seen_at, expires_at, revoked_at, revoke_reason,
+  const r = await query(`SELECT id, user_id, mfa_passed, mfa_stage, last_seen_at, expires_at, revoked_at, revoke_reason, client, readonly,
       (SELECT username FROM users WHERE id=sessions.user_id) AS username,
       (last_seen_at < now() - ($2 || ' minutes')::interval) AS idle
     FROM sessions WHERE id=$1`, [id, String(config.session.idleMinutes)]);
@@ -107,6 +120,8 @@ export async function sessionMiddleware(req, res, next) {
   const user = await loadUserContext(s.user_id);
   if (!user || !user.is_active) return next();
   req.session = s;
+  // readonly: the abilities the API reports (the "can" flags of the pages) are all off for an app session
+  user.readonly = !!s.readonly;
   req.user = user;
   // Automatic requests do not count as activity for the idle timeout: the live-updates stream itself and the
   // reloads it triggers (header X-ETS-Live: 1, frontend lib/live.js) — an open screen alone never keeps a session alive.
@@ -115,6 +130,33 @@ export async function sessionMiddleware(req, res, next) {
     query('UPDATE sessions SET last_seen_at=now() WHERE id=$1', [id]).catch(() => {});
   }
   next();
+}
+
+// A read-only session (the Android app) may not change anything: any request other than GET / HEAD / OPTIONS is
+// refused with 403 readonly_session, except the few a reader needs:
+//   POST /auth/login, /auth/logout, /auth/2fa/verify        signing in again / out, the 2FA step
+//   POST /auth/2fa/setup, /auth/2fa/enable                    only while 2FA enrolment is the pending sign-in step
+//   POST /auth/change-password                               only while the password must be changed (forced)
+//   PUT  /auth/language                                      the display language
+//   POST /notifications/read-all, /notifications/:id/read|unread, PUT /notifications/prefs   the user's own alerts
+// Everything else — data, approvals, imports, users, settings, weights, schedule, own 2FA / password / devices
+// changes — is done from a browser. Paths are compared in lower case without a trailing slash, as Express routes them.
+const READONLY_ALLOW = [
+  ['POST', /^\/auth\/(login|logout|2fa\/verify)$/],
+  ['PUT', /^\/auth\/language$/],
+  ['POST', /^\/notifications\/(read-all|[0-9]{1,10}\/(read|unread))$/],
+  ['PUT', /^\/notifications\/prefs$/],
+];
+export function readonlyAllowed(req) {
+  const p = req.path.toLowerCase().replace(/\/+$/, '');
+  if (READONLY_ALLOW.some(([m, re]) => m === req.method && re.test(p))) return true;
+  if (req.method === 'POST' && /^\/auth\/2fa\/(setup|enable)$/.test(p)) return req.session.mfa_stage === 'enroll' && !req.session.mfa_passed;
+  if (req.method === 'POST' && p === '/auth/change-password') return !!req.user?.must_change_password;
+  return false;
+}
+export function readonlyGuard(req, res, next) {
+  if (!req.session?.readonly || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || readonlyAllowed(req)) return next();
+  throw new HttpError(403, 'readonly_session');
 }
 
 // Fully authenticated (password + 2FA when required).

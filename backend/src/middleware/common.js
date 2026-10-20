@@ -25,7 +25,10 @@ export function notFoundHandler(req, res) {
   res.status(404).json({ error: 'not_found' });
 }
 
-const DENIAL_EVENTS = { csrf_rejected: 'csrf_rejected', password_change_required: 'password_change_required' };
+// readonly_rejected: a change sent from a read-only session (the Android app, 1.11.0) — the app's screens never send
+// one, so a row means a client that went around them
+const DENIAL_EVENTS = { csrf_rejected: 'csrf_rejected', password_change_required: 'password_change_required',
+  readonly_session: 'readonly_rejected' };
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
