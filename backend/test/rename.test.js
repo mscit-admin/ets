@@ -14,12 +14,15 @@ const PW = 'Passw0rd-123';
 let server, base, pool, live;
 const ids = {};
 
-// [username, role, scopes ([kind, ref])]
+// [username, role, scopes ([kind, ref]), overrides ([permission, granted])]
 const USERS = [
   ['root', 'admin'],
   ['lead_hr', 'lead', [['department', 'hr']]],
   ['member_hr', 'member', [['department', 'hr']]],
-  ['ed_hr', 'ed', [['department', 'hr']]],          // no 'tog'
+  ['member2_hr', 'member', [['department', 'hr']]],
+  ['ed_hr', 'ed', [['department', 'hr']]],          // neither 'tog' nor 'ren'
+  ['tog_hr', 'lead', [['department', 'hr']], [['ren', false]]],   // 'tog' without 'ren' (1.9.2)
+  ['ren_hr', 'ed', [['department', 'hr']], [['ren', true]]],      // 'ren' without 'tog' (1.9.2)
 ];
 
 before(async () => {
@@ -35,11 +38,12 @@ before(async () => {
   await (await import('../src/db/seed.js')).seed({ log: () => {} });
   const { hashPassword } = await import('../src/services/passwords.js');
   const h = await hashPassword(PW);
-  for (const [u, role, scopes = []] of USERS) {
+  for (const [u, role, scopes = [], overrides = []] of USERS) {
     const id = (await pool.query(`INSERT INTO users(username,full_name,password_hash,role_id,must_change_password)
       VALUES ($1,$2,$3,$4,false) RETURNING id`, [u, 'Full ' + u, h, role])).rows[0].id;
     ids[u] = id;
     for (const [k, r] of scopes) await pool.query('INSERT INTO user_scopes(user_id,kind,ref_id) VALUES ($1,$2,$3)', [id, k, r]);
+    for (const [p, g] of overrides) await pool.query('INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,$2,$3)', [id, p, g]);
   }
   live = await import('../src/services/live.js');
   const { createApp } = await import('../src/app.js');
@@ -137,12 +141,12 @@ test('renaming a removed item is refused (409)', { skip }, async () => {
   assert.equal((await fn('per', 'D9')).name_ar, f.name_ar);
 });
 
-test('no "tog" permission → 403; an application out of scope → 403', { skip }, async () => {
+test('no "ren" permission → 403; an application out of scope → 403', { skip }, async () => {
   const ed = await as('ed_hr');
   const f = await fn('per', 'D0');
   let r = await ed.patch('/tracker/functions/' + f.id, { name_ar: 'اسم جديد', rename_reason: REASON });
   assert.equal(r.status, 403);
-  assert.equal(r.data.permission, 'tog');
+  assert.equal(r.data.permission, 'ren');
   r = await ed.patch('/tracker/functions/' + f.id, { name_en: 'New', rename_reason: REASON });
   assert.equal(r.status, 403);
   const lead = await as('lead_hr');
@@ -152,6 +156,76 @@ test('no "tog" permission → 403; an application out of scope → 403', { skip 
   assert.equal(r.data.error, 'out_of_scope');
   assert.equal((await fn('acc', 'D0')).name_ar, fin.name_ar);
   assert.equal((await fn('per', 'D0')).name_ar, f.name_ar);
+});
+
+test('roles with "tog" have "ren" (seed); the application page tells the client who may rename', { skip }, async () => {
+  const roles = Object.fromEntries((await pool.query('SELECT id, permissions FROM roles')).rows.map(x => [x.id, x.permissions]));
+  for (const [id, perms] of Object.entries(roles)) assert.equal(perms.includes('ren'), perms.includes('tog'), id);
+  assert.ok(roles.admin.includes('ren') && roles.member.includes('ren') && !roles.ed.includes('ren'));
+  const seen = async u => (await (await as(u)).get('/tracker/applications/per')).data.can;
+  assert.deepEqual([(await seen('lead_hr')).ren, (await seen('lead_hr')).tog], [true, true]);
+  assert.deepEqual([(await seen('tog_hr')).ren, (await seen('tog_hr')).tog], [false, true]);
+  assert.deepEqual([(await seen('ren_hr')).ren, (await seen('ren_hr')).tog], [true, false]);
+  // the key is offered for per-user overrides (Users → Permissions)
+  const meta = await (await as('root')).get('/users/meta');
+  assert.ok(meta.data.permissions.includes('ren'));
+});
+
+test('"tog" without "ren" → rename 403, while adding an item still works', { skip }, async () => {
+  const c = await as('tog_hr');
+  const f = await fn('per', 'D7');
+  for (const body of [{ name_ar: 'اسم جديد', rename_reason: REASON }, { name_en: 'New', rename_reason: REASON }]) {
+    const r = await c.patch('/tracker/functions/' + f.id, body);
+    assert.deepEqual([r.status, r.data.error, r.data.permission], [403, 'forbidden', 'ren']);
+  }
+  assert.equal((await fn('per', 'D7')).name_ar, f.name_ar);
+  const add = await c.post('/tracker/applications/per/functions', { name_ar: 'بند يضيفه رئيس فريق بلا ren' });
+  assert.equal(add.status, 201, JSON.stringify(add.data));
+});
+
+test('"ren" without "tog" → rename allowed (sent to the team lead), add / remove / exclude / type still 403', { skip }, async () => {
+  const c = await as('ren_hr'), lead = await as('lead_hr');
+  const f = await fn('per', 'D8');
+  const r = await c.patch('/tracker/functions/' + f.id, { name_ar: 'اسم من صاحب ren', rename_reason: REASON });
+  assert.equal(r.status, 202, JSON.stringify(r.data));
+  const ap = await lead.post(`/approvals/${r.data.request_id}/approve`);
+  assert.equal(ap.status, 200, JSON.stringify(ap.data));
+  assert.equal((await fn('per', 'D8')).name_ar, 'اسم من صاحب ren');
+  const denied = [
+    await c.post('/tracker/applications/per/functions', { name_ar: 'بند جديد' }),
+    await c.post(`/tracker/functions/${f.id}/remove`, { reason: 'سبب' }),
+    await c.patch('/tracker/functions/' + f.id, { enabled: false, disabled_reason: 'other', disabled_note: 'ملاحظة' }),
+    await c.patch('/tracker/functions/' + f.id, { item_type: 'report' }),
+    await c.post('/tracker/applications/per/bulk', { field: 'enabled', value: false, function_ids: [f.id], disabled_reason: 'other', disabled_note: 'ملاحظة' }),
+  ];
+  for (const d of denied) assert.deepEqual([d.status, d.data.permission], [403, 'tog'], JSON.stringify(d.data));
+  const row = await fn('per', 'D8');
+  assert.deepEqual([row.enabled, row.removed_at, row.item_type], [f.enabled, null, f.item_type]);
+});
+
+test('approving a member\'s rename re-checks "ren": revoked since the request → 409, the request stays pending', { skip }, async () => {
+  const member = await as('member2_hr'), lead = await as('lead_hr');
+  const f = await fn('per', 'D11');
+  const r = await member.patch('/tracker/functions/' + f.id, { name_ar: 'اسم ينتظر', rename_reason: REASON });
+  assert.equal(r.status, 202, JSON.stringify(r.data));
+  await pool.query(`INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,'ren',false)`, [ids.member2_hr]);
+  try {
+    const ap = await lead.post(`/approvals/${r.data.request_id}/approve`);
+    assert.deepEqual([ap.status, ap.data.error, ap.data.reason], [409, 'requester_not_allowed', 'requester_lacks_permission']);
+    assert.equal((await fn('per', 'D11')).name_ar, f.name_ar);
+    assert.equal((await one('SELECT status FROM edit_requests WHERE id=$1', [r.data.request_id])).status, 'pending');
+    // without 'ren' the member cannot propose a rename at all, but can still propose adding an item ('tog')
+    const again = await member.patch('/tracker/functions/' + f.id, { name_ar: 'اسم آخر', rename_reason: REASON });
+    assert.deepEqual([again.status, again.data.permission], [403, 'ren']);
+    const add = await member.post('/tracker/applications/per/functions', { name_ar: 'بند يقترحه عضو' });
+    assert.equal(add.status, 202, JSON.stringify(add.data));
+  } finally {
+    await pool.query(`DELETE FROM user_permissions WHERE user_id=$1 AND permission='ren'`, [ids.member2_hr]);
+  }
+  // 'ren' back: the same request can be approved
+  const ap = await lead.post(`/approvals/${r.data.request_id}/approve`);
+  assert.equal(ap.status, 200, JSON.stringify(ap.data));
+  assert.equal((await fn('per', 'D11')).name_ar, 'اسم ينتظر');
 });
 
 test('a direct rename updates the name, keeps the code and writes an audit row with old / new / reason', { skip }, async () => {

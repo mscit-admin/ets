@@ -29,7 +29,7 @@ export async function needsLeadApproval(user, app) {
 
 // Permission an edit-request item needs (same rules as the direct edit in routes/tracker.js).
 const ITEM_PERM = {
-  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_ar: 'tog', name_en: 'tog', create: 'tog', removed: 'tog',
+  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_ar: 'ren', name_en: 'ren', create: 'tog', removed: 'tog',
     test_status: 'tst', review_status: 'tst', note: 'tst', item_type: 'tog' },
   report: { progress: 'rep', status: 'rep', note: 'rep' },
 };
