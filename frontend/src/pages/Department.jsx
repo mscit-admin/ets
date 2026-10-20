@@ -25,6 +25,8 @@ export default function Department() {
         <div className="head-pct"><Pct value={d.pct} /></div>
       </PageHeader>
       <Card>
+        {/* the table scrolls inside its card, never the page (phones, 1.11.0) */}
+        <div className="table-wrap">
         <table className="table list-view">
           <thead>
             <tr>
@@ -70,6 +72,7 @@ export default function Department() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );

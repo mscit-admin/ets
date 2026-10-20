@@ -80,6 +80,8 @@ const UI = {
   megaphone: "<path d=\"M3.5 10v4a1 1 0 0 0 1 1H7l7 4.5v-15L7 9H4.5a1 1 0 0 0-1 1z\"/><path d=\"M17.5 9a4 4 0 0 1 0 6M7.5 15.2l1.2 4.6h2.6l-1-4\"/>",
   // moving an item to another application (1.10.0): two opposite arrows
   move: "<path d=\"M4 8h12.5M13 4.5 16.5 8 13 11.5\"/><path d=\"M20 16H7.5M11 12.5 7.5 16l3.5 3.5\"/>",
+  // read-only session of the Android app (1.11.0)
+  eye: "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
 };
 
 const ALL = { ...APP, ...UI };

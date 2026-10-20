@@ -9,7 +9,7 @@ import { useLiveUpdates } from '../lib/live.js';
 
 export default function Weights() {
   const { t, nm, errText } = useI18n();
-  const { can, user } = useAuth();
+  const { can, user, readonly } = useAuth();
   const { data, error, loading, reload, refresh } = useLoad(o => api.get('/tracker/weights', o), []);
   const [w, setW] = useState({});
   const [s, setS] = useState(null);
@@ -84,19 +84,23 @@ export default function Weights() {
         const dw = apps.reduce((acc, a) => acc + (auto ? a.fnWeight : +w[a.id] || 0), 0);
         return (
           <Card key={d.id} title={nm(d)} actions={<span className="muted small">{t('weight')} <b className="num">{pc(dw)}</b> · <b className="num">{pc(total ? (dw / total) * 100 : 0)}%</b></span>}>
+            {/* phones: the table scrolls inside its card, never the page; the two reference columns are left out */}
+            <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>{t('application')}</th><th className="num-col">{t('default_weight')}</th><th className="num-col">{t('fn_weight_sum')}</th><th className="num-col">{t('weight')}</th><th className="num-col">{t('share')}</th></tr></thead>
+              <thead><tr><th>{t('application')}</th><th className="num-col hide-mobile">{t('default_weight')}</th><th className="num-col hide-mobile">{t('fn_weight_sum')}</th><th className="num-col">{t('weight')}</th><th className="num-col">{t('share')}</th></tr></thead>
               <tbody>
                 {apps.map(a => {
                   const val = auto ? a.fnWeight : +w[a.id] || 0;
                   return (
                     <tr key={a.id}>
                       <td>{nm(a)}</td>
-                      <td className="num-col num muted">{pc(a.default_weight)}</td>
-                      <td className="num-col num muted">{pc(a.fnWeight)}</td>
+                      <td className="num-col num muted hide-mobile">{pc(a.default_weight)}</td>
+                      <td className="num-col num muted hide-mobile">{pc(a.fnWeight)}</td>
                       <td className="num-col">
+                        {/* read-only session (the Android app, 1.11.0): the value as text */}
+                        {readonly ? <b className="num">{pc(val)}</b> : (
                         <input className="input input-sm num-input" type="number" min={0} max={1000} step={0.5} value={w[a.id] ?? ''}
-                          disabled={!editable || auto} aria-label={t('weight')} onChange={e => setW({ ...w, [a.id]: e.target.value })} />
+                          disabled={!editable || auto} aria-label={t('weight')} onChange={e => setW({ ...w, [a.id]: e.target.value })} />)}
                       </td>
                       <td className="num-col num">{pc(total ? (val / total) * 100 : 0)}%</td>
                     </tr>
@@ -104,6 +108,7 @@ export default function Weights() {
                 })}
               </tbody>
             </table>
+            </div>
           </Card>
         );
       })}

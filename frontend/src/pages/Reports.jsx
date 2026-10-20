@@ -52,10 +52,12 @@ export default function Reports() {
       </div>
       {departments.map(d => (
         <Card key={d.id} title={nm(d)}>
+          {/* phones: the table scrolls inside its card, never the page; the bar and the note are left out */}
+          <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30">{t('progress')}</th><th className="num-col">%</th>
+            <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30 hide-mobile">{t('progress')}</th><th className="num-col">%</th>
               <th className="num-col hide-mobile">{t('report_items')}</th><th className="num-col" title={t('reports_combined_hint')}>{t('reports_combined')}</th>
-              <th>{t('note')}</th>{can.rep && <th />}</tr></thead>
+              <th className="hide-mobile">{t('note')}</th>{can.rep && <th />}</tr></thead>
             <tbody>
               {applications.filter(a => a.department_id === d.id).map(a => {
                 const r = a.report || { progress: 0, status: 0, note: '' };
@@ -64,17 +66,18 @@ export default function Reports() {
                     <td><Link to={'/app/' + a.id} className="link-row"><Icon name={a.icon} size={15} /> {nm(a)}</Link></td>
                     <td><Indicator color={REPORT_COLORS[r.status]}>{t('rs_' + r.status)}</Indicator>
                       {a.pending?.length > 0 && <Link to="/approvals" className="pending-chip" title={a.pending.map(p => p.requested_by_name).join(', ')}>⏳ {t('awaiting_approval')}</Link>}</td>
-                    <td><ProgressBar value={r.progress} /></td>
+                    <td className="hide-mobile"><ProgressBar value={r.progress} /></td>
                     <td className="num-col"><Pct value={r.progress} /></td>
                     <td className="num-col num hide-mobile">{a.report_items > 0 ? <span className="it-count-rep"><Icon name="item_report" size={12} /> {a.report_items}</span> : '—'}</td>
                     <td className="num-col"><Pct value={repPct(a)} /></td>
-                    <td className="muted small ellipsis" title={r.note}>{r.note}</td>
+                    <td className="muted small ellipsis hide-mobile" title={r.note}>{r.note}</td>
                     {can.rep && <td className="end"><button className="btn btn-default btn-xs" onClick={() => setEdit(a)}>{t('edit')}</button></td>}
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       ))}
       {edit && <ReportModal a={edit} onClose={() => setEdit(null)} onSave={b => save(edit, b)} />}

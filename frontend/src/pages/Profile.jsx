@@ -8,7 +8,7 @@ import { DevicesCard, NotifyPrefsCard } from '../components/ProfileNotify.jsx';
 
 export default function Profile() {
   const { t, nm, lang, setLang, errText } = useI18n();
-  const { user, me, refresh } = useAuth();
+  const { user, me, refresh, readonly } = useAuth();
   const [enrolling, setEnrolling] = useState(null);  // setup data (QR) once the password was confirmed
   const [codes, setCodes] = useState(null);
   const [confirm, setConfirm] = useState(null); // 'enable' | 'disable' | 'codes'
@@ -35,6 +35,8 @@ export default function Profile() {
   return (
     <div>
       <PageHeader title={t('profile_title')} sub={`${user.full_name} · ${nm(user, 'role_name')}`} icon="user" />
+      {/* the Android app (read-only session, 1.11.0): password, 2FA and phones are changed from a browser */}
+      {readonly && <Alert kind="blue">{t('readonly_profile_note')}</Alert>}
       <div className="grid-2">
         <Card title={t('details')}>
           <div className="kv">
@@ -58,22 +60,24 @@ export default function Profile() {
               <p>{user.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>}
                 {user.totp_enabled && <span className="muted small"> · {t('codes_left', { n: user.recovery_codes_left })}</span>}</p>
               {user.recovery_codes_outdated && <Alert kind="orange">{t('recovery_codes_outdated')}</Alert>}
-              <div className="row gap wrap">
+              {!readonly && <div className="row gap wrap">
                 {!user.totp_enabled && mode !== 'off' && <button className="btn btn-primary btn-sm" onClick={() => setConfirm('enable')}>{t('enable_2fa')}</button>}
                 {user.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setConfirm('codes')}>{t('regenerate_codes')}</button>}
                 {user.totp_enabled && (mode !== 'required' || user.totp_exempt) && <button className="btn btn-default btn-sm" onClick={() => setConfirm('disable')}>{t('disable_2fa')}</button>}
-              </div>
+              </div>}
             </div>
           )}
         </Card>
       </div>
 
-      <Card title={t('change_password')}>
-        <div className="narrow"><PasswordForm /></div>
-      </Card>
+      {!readonly && (
+        <Card title={t('change_password')}>
+          <div className="narrow"><PasswordForm /></div>
+        </Card>
+      )}
 
       <NotifyPrefsCard />
-      <DevicesCard />
+      {!readonly && <DevicesCard />}
 
       {confirm && (
         <Modal title={t(needsCode ? 'confirm_with_password_code' : 'confirm_with_password')} onClose={closeConfirm}
