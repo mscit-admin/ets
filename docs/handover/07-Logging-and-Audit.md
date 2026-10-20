@@ -53,6 +53,8 @@ fill the table without signing in.
 | `access_denied` | Request refused for lack of permission or scope (`detail` has the path and permission) |
 | `csrf_rejected` | State-changing request without the application's header (a forged cross-site request) |
 | `password_change_required` | Request refused because the user must first change the password |
+| `readonly_rejected` | A change (POST / PUT / PATCH / DELETE) sent from a read-only session of the Android app (1.11.0), refused with `403 readonly_session` (`detail` has the path and method). The app's pages never send one |
+| *(sign-in rows from the Android app, 1.11.0)* | `detail.client = 'mobile'`, `detail.readonly = true` on `login`, `password_ok_mfa_pending` and the failures of a known account |
 
 Fields: time, user id, username, event, success, IP, browser (user agent, first 300 characters), detail (JSON).
 
