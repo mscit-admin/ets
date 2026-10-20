@@ -14,9 +14,11 @@ A small native Android app that delivers ETS notifications to the phone.
 ### ما الذي يفعله التطبيق؟
 
 - يُربط الهاتف بحسابك في ETS عن طريق رمز QR من صفحة **الملف الشخصي ← أجهزتي**.
+- **الشاشة الرئيسية هي نظام ETS نفسه** (منذ 1.1.0) بنفس تصميم المتصفح: عجلة وحدات ERP ونسبة الإنجاز الكلية، وتحتها **التنبيهات والإشعارات**. الضغط على وحدة يفتح صفحة الإدارة، والضغط على تطبيق يفتح حلقات النسب وقائمة الوظائف. كل مستخدم يرى ما تسمح به صلاحياته ونطاقه فقط.
+- **للعرض فقط:** لا يمكن التعديل أو الاعتماد من الهاتف، وتظهر شارة «وضع العرض فقط». التعديلات والاعتمادات تتم من المتصفح.
 - يستقبل تنبيهات ETS ويعرضها كإشعارات على الهاتف، مصنّفة حسب الخطورة: **حرج** و**تحذير** و**معلومة**.
-- عند الضغط على الإشعار يفتح الرابط في المتصفح، ويُعلَّم التنبيه كمقروء.
-- تعرض الشاشة الرئيسية آخر 50 تنبيهاً مع لون الخطورة والوقت وحالة القراءة.
+- عند الضغط على الإشعار تُفتح صفحته داخل التطبيق، ويُعلَّم التنبيه كمقروء.
+- قائمة آخر 50 تنبيهاً (لون الخطورة والوقت وحالة القراءة) متاحة من قائمة الشاشة الرئيسية: **قائمة التنبيهات**.
 - لا يحتوي التطبيق على أي تحليلات ولا خدمات Google. ولا يتصل إلا بخادم ETS الذي رُبط به.
 - على شاشة القفل يظهر فقط «تنبيه جديد من ETS»، ولا يظهر العنوان ولا النص.
 
@@ -51,9 +53,19 @@ A small native Android app that delivers ETS notifications to the phone.
 لإلغاء الربط اضغط **فصل** في شاشة «الجهاز والربط». يطلب التطبيق من الخادم حذف الجهاز ثم يمسح بياناته من الهاتف في كل الأحوال. إذا تعذّر الوصول إلى الخادم (مثلاً الـ VPN غير متصل) ينبّهك التطبيق لحذف الجهاز يدوياً من **أجهزتي** على الموقع.
 إذا أُلغي الجهاز من الموقع يمسح التطبيق بياناته تلقائياً، ويظهر إشعار «تم إلغاء ربط الجهاز».
 
+### تسجيل الدخول داخل التطبيق
+
+1. بعد الربط تفتح الشاشة الرئيسية صفحة الدخول إلى ETS على الخادم المربوط.
+2. سجّل الدخول كالمعتاد: اسم المستخدم أو البريد الإلكتروني، وكلمة المرور، ثم رمز التحقق بخطوتين إن كان مفعّلاً.
+3. يبقى الدخول محفوظاً في التطبيق، فلا يُطلب في كل مرة. ينتهي حسب قواعد النظام المعتادة: عدم النشاط، أو انتهاء مدة الجلسة، أو تسجيل الخروج، أو تغيير كلمة المرور.
+4. الجلسة من الهاتف **للعرض فقط** ويفرض الخادم ذلك: أي محاولة تعديل تُرفض. لتغيير كلمة المرور أو التحقق بخطوتين أو الأجهزة استخدم المتصفح.
+5. من قائمة الشاشة الرئيسية: **تحديث**، و**الصفحة الرئيسية لـ ETS**، و**قائمة التنبيهات**، و**الجهاز والربط**. زر الرجوع يعود للصفحة السابقة.
+6. تصدير ملفات Excel غير متاح داخل التطبيق؛ صدّر من المتصفح.
+7. عند **فصل** الهاتف تُمسح أيضاً بيانات الدخول (ملفات تعريف الارتباط) وذاكرة التصفح داخل التطبيق.
+
 ### الـ VPN
 
-خادم ETS داخلي. **يجب أن يكون الهاتف متصلاً بشبكة VPN الخاصة بالشركة** حتى يصل إلى الخادم، سواء عند الربط أو لاستقبال التنبيهات.
+خادم ETS داخلي. **يجب أن يكون الهاتف متصلاً بشبكة VPN الخاصة بالشركة** حتى يصل إلى الخادم، سواء عند الربط أو لاستقبال التنبيهات أو لفتح صفحات ETS داخل التطبيق. إذا تعذّر الوصول تظهر رسالة «تعذّر الوصول إلى ETS» مع زر **إعادة المحاولة**.
 عند انقطاع الـ VPN تتأخر التنبيهات، ثم تصل تلقائياً بعد عودة الاتصال.
 
 ### البطارية والاتصال الدائم
@@ -113,9 +125,11 @@ gh secret set ANDROID_KEY_PASSWORD
 ### What the app does
 
 - Pairs the phone with your ETS account via a QR code from **Profile → My devices (أجهزتي)**.
+- **The main screen is ETS itself** (since 1.1.0), with the same design as in the browser: the ERP module wheel and the overall progress, with **alerts and notifications** right below. Tapping a module opens its department page; tapping an application opens its rings and its list of functions. Each user sees only what their permissions and scope allow.
+- **View only:** nothing can be edited or approved from the phone, and a «وضع العرض فقط» (View only) badge is shown. Changes and approvals are made in a browser.
 - Receives ETS alerts and shows them as phone notifications, in three channels by severity: **critical**, **warning** and **info**.
-- Tapping a notification opens the alert's page in the browser and marks it read.
-- The main screen lists the last 50 alerts with severity colour, time and read state.
+- Tapping a notification opens its page inside the app and marks it read.
+- The list of the last 50 alerts (severity colour, time, read state) is in the main screen's menu: **Alerts list**.
 - No analytics and no Google services. The app talks only to the paired ETS server.
 - The lock screen shows only "New ETS alert", never the title or body.
 
@@ -151,9 +165,21 @@ gh secret set ANDROID_KEY_PASSWORD
 
 **Revoked on the web:** if the device is revoked there, the app wipes its data automatically and shows "Device unpaired".
 
+### Sign in inside the app
+
+1. Once paired, the main screen opens the ETS sign-in page of the paired server.
+2. Sign in as usual: username or e-mail, password, then the two-step code if 2FA is on.
+3. The app keeps you signed in, so it does not ask every time. The session ends under the server's usual rules: inactivity, the session lifetime, signing out or a password change.
+4. A session from the phone is **view only**, enforced by the server: any change is refused. Change the password, 2FA or devices in a browser.
+5. The main screen's menu: **Refresh**, **ETS home**, **Alerts list** and **Device & pairing**. The back button goes to the previous page.
+6. Excel exports are not available inside the app; export from a browser.
+7. **Unpairing** also wipes the in-app browser's sign-in (cookies) and cache.
+
+**TLS:** with a pinned pairing, the in-app browser accepts the server's certificate only when its SHA-256 equals the pin from the QR code and the page is on the paired host; anything else is refused. Without a pin, the phone's trusted certificates decide.
+
 ### VPN
 
-The ETS server is internal. **The phone must be connected to the company VPN** to reach it, both for pairing and for receiving alerts. While the VPN is down, alerts are delayed. They arrive automatically once it reconnects.
+The ETS server is internal. **The phone must be connected to the company VPN** to reach it, for pairing, for receiving alerts and for the ETS pages inside the app. When the server cannot be reached, the app shows "ETS cannot be reached" with **Try again**. While the VPN is down, alerts are delayed. They arrive automatically once it reconnects.
 
 ### Battery and persistent connection
 
@@ -277,7 +303,19 @@ Debug builds use the application id `ly.ets.alerts.debug`, so they install side 
   2. Notifies at most 10 new unread alerts per sync.
   3. The first sync after pairing only records a baseline and does not ring the phone.
 - **Refresh button:** also re-reads the cached range, so read flags changed on the web show up.
-- **Notification taps** go through a non-exported trampoline activity, as Android 12+ requires. It opens `{url}{link}` with `ACTION_VIEW` and queues `POST …/read` through WorkManager, which retries while offline.
+- **Notification taps** go through a non-exported trampoline activity, as Android 12+ requires. It opens `{url}{link}` in the app's WebView (`ui/WebActivity.kt`; the external browser before 1.1.0) and queues `POST …/read` through WorkManager, which retries while offline.
+
+### The in-app browser (1.1.0)
+
+`ui/WebActivity.kt` (the launcher activity) shows `{PUBLIC_BASE_URL}` of the pairing in a plain `android.webkit.WebView`; the rules it applies are pure Kotlin in `core/WebRules.kt` and unit-tested in `WebRulesTest`.
+
+- **User-Agent:** the WebView's default string plus ` ETSAlerts/<versionName> (Android)`. The server (1.11.0+) recognises the marker at sign-in and makes the session read-only (`client='mobile'`, `readonly=true`): every change is refused with `403 readonly_session`. The marker only ever removes rights, so it needs no secret. The native API calls (`/api/m/*`) keep their own `ETS-Alerts/…` agent and the device token.
+- **Sign-in:** the normal web sign-in (password + 2FA). The session cookie lives in the WebView's `CookieManager`; the server's idle / absolute expiry applies. The device token is not used by the WebView.
+- **Navigation:** only URLs on the paired origin (https, host, port, and the base path when ETS is served under one) load in the WebView; others open in the external browser (`http`, `https`, `mailto` only). Back = WebView history.
+- **Settings:** JavaScript and DOM storage on; file access, content access, file-URL access, geolocation, multiple windows and mixed content off; third-party cookies off; no `addJavascriptInterface`.
+- **TLS:** `onReceivedSslError` calls `proceed()` only when the pairing has a pin, the failing URL is on the paired host and port, and SHA-256(DER of the leaf) equals the pin. The leaf comes from `SslCertificate.getX509Certificate()` on API 29+ and from the `"x509-certificate"` key of `SslCertificate.saveState()` on API 26–28. Everything else is `cancel()` plus the error screen. Without a pin there is no override (system trust). A page that loaded without a TLS error is still compared with the pin in `onPageFinished` (when the WebView exposes its certificate).
+- **Unpair / revocation** wipes cookies, web storage and the WebView cache (`ui/WebData.kt`).
+- **Downloads:** Excel exports are blob downloads made in the page; the WebView cannot save them, so the app shows a hint to export from a browser.
 
 ### TLS and storage
 
@@ -302,6 +340,7 @@ Run them with `./gradlew testDebugUnitTest`. They run on the JVM and cover:
 - payload parsing and validation
 - URL and link rules
 - fingerprint matching
+- the in-app browser's rules: the pinned-certificate override, the paired-origin check and the User-Agent marker
 - backoff
 - alert parsing
 - MockWebServer tests of the real TLS pinning, the hostname fallback and the 401 handling, against self-signed certificates
