@@ -6,6 +6,10 @@ Releases are tagged `android-vX.Y.Z`.
 
 ## [Unreleased]
 
+### Changed
+
+- CI: build workflow actions updated to their Node 24 majors; runner pinned to `ubuntu-24.04`. No app change.
+
 ## [1.0.0] - 2026-10-19
 
 ### Added
