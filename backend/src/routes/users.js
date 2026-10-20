@@ -19,7 +19,7 @@ const r = Router();
 // User administration = system administrators only (owner decision, ETS-SEC-004): 'usr' AND the admin role.
 r.use(requireAuth, requirePerm('usr'), requireAdmin);
 
-const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
+const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
 
 // Never includes secrets (password hash, TOTP secret), so rows can be returned as-is.
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,
@@ -416,7 +416,9 @@ r.patch('/:id', async (req, res) => {
   // open live-updates streams of this user: closed when deactivated, new scope / permissions otherwise
   publishSessionCheck(id);
   publishNotif(id, []);                         // the bell recounts with the new permissions / scope
-  if (v.is_active === false) for (const a of (await query(`SELECT DISTINCT app_id FROM edit_requests WHERE requested_by=$1 AND status='withdrawn'`, [id])).rows) await requestsSettled(a.app_id);
+  // (a move request, 1.10.0, also waited for its destination application)
+  if (v.is_active === false) for (const a of (await query(`SELECT DISTINCT unnest(array[app_id, target_app_id]) AS app_id FROM edit_requests
+    WHERE requested_by=$1 AND status='withdrawn'`, [id])).rows.filter(x => x.app_id)) await requestsSettled(a.app_id);
   res.json({ user: await loadUser(id) });
 });
 
@@ -672,7 +674,7 @@ async function deleteUsers(req, ids, reason, { bulk }) {
     publishApps((await query('SELECT id, department_id FROM applications WHERE id = ANY($1)', [out.reqs.map(x => x.app_id)])).rows);
   }
   for (const b of out.batches) for (const d of (b.departments?.length ? b.departments : [b.department_id]).filter(Boolean)) publishChange({ dept_id: d });
-  for (const appId of new Set(out.reqs.map(x => x.app_id))) await requestsSettled(appId);
+  for (const appId of new Set(out.reqs.flatMap(x => [x.app_id, x.target_app_id]).filter(Boolean))) await requestsSettled(appId);
   return { deleted: out.users.map(u => ({ id: u.id, username: u.username })), requests_withdrawn: out.reqs.length,
     imports_rejected: out.batches.length, devices_revoked: out.devices.length };
 }

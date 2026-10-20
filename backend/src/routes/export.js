@@ -39,6 +39,8 @@ function fmtValue(L, kind, field, v) {
   if (field === 'create') return [v.name_ar, `${t('weight')} ${v.weight}`, `${t('progress')} ${v.progress}%`, v.enabled ? t('yes') : t('no'),
     v.item_type === 'report' ? t('it_report') : null].filter(Boolean).join(' · ');
   if (field === 'removed') return v.removed ? t('fn_removed') + (v.reason ? ' — ' + v.reason : '') : t('fn_present');
+  // a move (1.10.0): before = application / code of origin, after = the destination application
+  if (field === 'move') return v.code ? `${v.app_id}/${v.code}` : [L.nm(v), v.app_id].filter(Boolean).join(' — ');
   const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
   if (P[field]) return t(P[field] + v);
   if (kind === 'report' && field === 'status') return t('rs_' + v);
@@ -56,7 +58,7 @@ function reasonText(L, m, appId) {
   const dup = dupCodes(m.duplicate_of, appId, L.lang);
   return [dup ? `${r}: ${dup}` : r, m.disabled_note].filter(Boolean).join(' — ');
 }
-const FIELD_KEY = { status: 'report_status', create: 'fn_add', removed: 'removed', name_en: 'name_en', item_type: 'item_type' };
+const FIELD_KEY = { status: 'report_status', create: 'fn_add', removed: 'removed', name_en: 'name_en', item_type: 'item_type', move: 'move' };
 const fieldLabel = (t, f) => t(FIELD_KEY[f] || f);
 const itemLabel = (L, x) => (x.kind === 'report' ? L.t('kind_report') : x.kind === 'weight' ? L.t('kind_weight')
   : x.field === 'create' ? L.t('fn_add') : [x.code, x.fn_name_ar].filter(Boolean).join(' '));
@@ -144,14 +146,17 @@ const REPORTS = {
         // why it is excluded (migration 013); excluded before 1.5.0 → "no reason recorded"
         dreason: !x.enabled && !x.removed_at ? (x.disabled_reason ? t('dr_' + x.disabled_reason) : t('dr_none')) : '',
         dups: !x.enabled && !x.removed_at ? dupCodes(x.duplicate_of, a0.id, L.lang) : '',
-        dnote: !x.enabled && !x.removed_at ? x.disabled_note || '' : '', type: t('it_' + (x.item_type || 'function')) }));
+        dnote: !x.enabled && !x.removed_at ? x.disabled_note || '' : '', type: t('it_' + (x.item_type || 'function')),
+        // moved here from another application (1.10.0): «application / old code» (the name only within the reader's scope)
+        moved: x.moved_from ? `${L.nm(x.moved_from, 'from_app_name') || x.moved_from.from_app_id}/${x.moved_from.from_code}` : '' }));
       const columns = [['code', 'code'], ['name_ar', 'name_ar'], ['name_en', 'name_en'], ['source', 'source'], ['reference', 'reference'],
         ['enabled', 'enabled'], ['weight', 'weight', 'number'], ['share', 'share', 'pct'], ['progress', 'progress', 'pct'],
         ['test', 'test_status'], ['notif', 'notif_status'], ['review', 'review_status'], ['vendor', 'vendor_status'], ['note', 'note'],
         ['by', 'updated_by'], ['at', 'updated_at', 'datetime'],
         // after the existing columns, so their positions stay as before 1.5.0
         ['dreason', 'disabled_reason'], ['dups', 'duplicate_of'], ['dnote', 'disabled_note'],
-        ['type', 'item_type']];                                         // 1.8.0
+        ['type', 'item_type'],                                          // 1.8.0
+        ['moved', 'moved_from']];                                       // 1.10.0
       if (on('show_removed')) columns.push(['removed', 'removed'], ['reason', 'removed_reason']);
       const a = d.application;
       return { rows, columns, filters: f, id: a.id, name: L.nm(a), target: { id: a.id, name_ar: a.name_ar, name_en: a.name_en }, context: { app_id: a.id } };
@@ -211,16 +216,19 @@ const REPORTS = {
       const list = await listRequests(req.user, f, { limit: EXPORT_CAP });
       const rows = list.flatMap(rq => {
         const base = { id: rq.id, status: t('rq_' + rq.status), dept: L.nm(rq, 'dept_name'), app: L.nm(rq, 'app_name'), kind: t('rk_' + rq.kind),
-          summary: rq.summary, by: rq.requested_by_name, at: rq.requested_at, dby: rq.decided_by_name, dat: rq.decided_at, reason: rq.reason };
+          summary: rq.summary, by: rq.requested_by_name, at: rq.requested_at, dby: rq.decided_by_name, dat: rq.decided_at, reason: rq.reason,
+          to: rq.target_app_id ? `${L.nm(rq, 'target_app_name')} — ${L.nm(rq, 'target_dept_name')}` : '' };
         if (!rq.items.length) return [base];
         return rq.items.map(i => ({ ...base, item: itemLabel(L, i), field: fieldLabel(t, i.field), before: fmtValue(L, i.kind, i.field, i.old_value),
           after: fmtValue(L, i.kind, i.field, i.new_value) + (i.field === 'enabled' && i.new_value === false ? ' — ' + reasonText(L, i.meta || {}, rq.app_id) : '')
-            + (i.meta?.rename_reason ? ' — ' + t('rename_reason') + ': ' + i.meta.rename_reason : ''),
+            + (i.meta?.rename_reason ? ' — ' + t('rename_reason') + ': ' + i.meta.rename_reason : '')
+            + (i.field === 'move' ? ' — ' + t('move_share') + ': ' + (i.meta?.weight_share ?? 0) + (i.meta?.reason ? ' — ' + t('move_reason') + ': ' + i.meta.reason : '') : ''),
           applied: i.applied === undefined || i.applied === null ? '' : yesNo(t, i.applied) }));
       });
       return { rows, filters: f, columns: [['id', 'request', 'int'], ['status', 'status'], ['dept', 'department'], ['app', 'application'],
         ['kind', 'kind'], ['by', 'requested_by'], ['at', 'requested_at', 'datetime'], ['dby', 'decided_by'], ['dat', 'decided_at', 'datetime'],
-        ['reason', 'reason'], ['item', 'item'], ['field', 'field'], ['before', 'before'], ['after', 'after'], ['applied', 'applied_col']] };
+        ['reason', 'reason'], ['item', 'item'], ['field', 'field'], ['before', 'before'], ['after', 'after'], ['applied', 'applied_col'],
+        ['to', 'move_to_app']] };                                       // 1.10.0: the destination of a move
     },
   },
 

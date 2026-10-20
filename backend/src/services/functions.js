@@ -18,10 +18,13 @@ export function newFunctionData(body = {}) {
     weight, progress, enabled: body.enabled !== false, item_type };
 }
 
-// Next free "C<n>" code of the application (never reuses a code, even of a removed function).
-async function nextCode(c, appId) {
-  return 'C' + (await c.query(`SELECT COALESCE(max(substring(code from 2)::int), -1) + 1 AS n
-    FROM functions WHERE app_id=$1 AND code ~ '^C[0-9]+$'`, [appId])).rows[0].n;
+// Next free "C<n>" code of the application: never reuses a code, even of a removed function, nor one of an item that
+// was moved out of it (1.10.0: function_moves.from_code). Callers lock the application row first (FOR UPDATE).
+export async function nextCode(c, appId) {
+  return 'C' + (await c.query(`SELECT GREATEST(
+      (SELECT COALESCE(max(substring(code from 2)::int), -1) FROM functions WHERE app_id=$1 AND code ~ '^C[0-9]+$'),
+      (SELECT COALESCE(max(substring(from_code from 2)::int), -1) FROM function_moves WHERE from_app_id=$1 AND from_code ~ '^C[0-9]+$')
+    ) + 1 AS n`, [appId])).rows[0].n;
 }
 
 export async function createFunction(c, appId, d, userId) {

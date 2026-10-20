@@ -13,11 +13,11 @@ const ROLES = [
   { id: 'admin', name_ar: 'مسؤول النظام', name_en: 'System Administrator', full_scope: true,
     description_ar: 'كل الشاشات والصلاحيات، وإدارة المستخدمين والسجلات',
     description_en: 'All screens and permissions, user and log administration',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg'] },
   { id: 'mgr', name_ar: 'مسؤول إدارة', name_en: 'Department Manager', full_scope: false,
     description_ar: 'كل تطبيقات إدارته: النسب والأوزان والاختبار والسجل',
     description_en: 'All applications of the department: progress, weights, testing, logs',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'sch', 'rep', 'exp', 'log'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'log'] },
   { id: 'ed', name_ar: 'محرّر تطبيق', name_en: 'Application Editor', full_scope: false,
     description_ar: 'نسب الإنجاز وحالة الاختبار داخل تطبيقاته، دون الأوزان',
     description_en: 'Progress and test status inside assigned applications, no weights',
@@ -29,15 +29,15 @@ const ROLES = [
   { id: 'pm', name_ar: 'مدير المشروع', name_en: 'Project Manager', full_scope: true,
     description_ar: 'كل الإدارات: متابعة وتعديل واستيراد، والاعتماد النهائي لنتائج الإدارات',
     description_en: 'All departments: tracking, editing, imports, and final approval of department results',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
   { id: 'tm', name_ar: 'المدير الفني للمشروع', name_en: 'Technical Project Manager', full_scope: true,
     description_ar: 'كل الإدارات: متابعة وتعديل واستيراد، والاعتماد النهائي لنتائج الإدارات',
     description_en: 'All departments: tracking, editing, imports, and final approval of department results',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
   { id: 'lead', name_ar: 'رئيس فريق إدارة', name_en: 'Department Team Lead', full_scope: false,
     description_ar: 'إدارته فقط: التعديل والاستيراد واعتماد نتائج فريقه (الاعتماد الأول)',
     description_en: "Own department: editing, imports and first approval of the team's results",
-    permissions: ['pct', 'tst', 'tog', 'ren', 'rep', 'exp', 'imp', 'log', 'apv_dept'] },
+    permissions: ['pct', 'tst', 'tog', 'ren', 'mov', 'rep', 'exp', 'imp', 'log', 'apv_dept'] },
   { id: 'member', name_ar: 'عضو فريق', name_en: 'Team Member', full_scope: false,
     description_ar: 'إدارته فقط: تحديث الإنجاز والاختبار والتقارير، واقتراح إضافة/إزالة/تضمين الوظائف، ورفع ملفات النتائج — كلها باعتماد رئيس الفريق',
     description_en: 'Own department: progress, testing, reports, proposing to add / remove / include functions, and uploading result files — all approved by the team lead',
@@ -100,15 +100,19 @@ export async function seed({ log = console.log } = {}) {
         [a.id, a.department_id, a.name_ar, a.name_en, a.sub_ar, a.icon, a.weight, a.note_ar,
           a.addendum, a.scope_cut, a.extra_module, a.sort]);
     }
-    let added = 0;
+    let added = 0, movedOut = 0;
     for (const f of cat.functions) {
+      // A catalog item moved to another application (1.10.0, migration 019) keeps its id there under a new code: its
+      // (application, code) of origin is in function_moves and is never re-created here.
       const r = await c.query(`INSERT INTO functions(app_id,code,source,name_ar,reference,vendor_status,enabled,sort)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        SELECT $1,$2,$3,$4,$5,$6,$7,$8
+        WHERE NOT EXISTS (SELECT 1 FROM function_moves m WHERE m.from_app_id=$1 AND m.from_code=$2)
         ON CONFLICT (app_id,code) DO UPDATE SET name_ar=EXCLUDED.name_ar, reference=EXCLUDED.reference,
           vendor_status=EXCLUDED.vendor_status, source=EXCLUDED.source, sort=EXCLUDED.sort
         RETURNING (xmax = 0) AS inserted`,
         [f.app_id, f.code, f.source, f.name_ar, f.reference, f.vendor_status, f.enabled, f.sort]);
-      if (r.rows[0].inserted) added++;
+      if (!r.rows.length) movedOut++;
+      else if (r.rows[0].inserted) added++;
     }
     await c.query(`INSERT INTO app_reports(app_id)
       SELECT a.id FROM applications a JOIN departments d ON d.id=a.department_id
@@ -116,7 +120,7 @@ export async function seed({ log = console.log } = {}) {
     await c.query('INSERT INTO schedule(id) VALUES (1) ON CONFLICT DO NOTHING');
     await c.query(`INSERT INTO system_log(event,message,detail) VALUES ('seed','catalog seeded',$1)`,
       [JSON.stringify({ departments: cat.departments.length, applications: cat.applications.length,
-        functions: cat.functions.length, newFunctions: added })]);
+        functions: cat.functions.length, newFunctions: added, movedOut })]);
     log(`seeded: ${cat.departments.length} departments, ${cat.applications.length} applications, ` +
       `${cat.functions.length} functions (${added} new)`);
   });

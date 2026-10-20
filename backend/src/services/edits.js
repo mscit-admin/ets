@@ -30,7 +30,7 @@ export async function needsLeadApproval(user, app) {
 // Permission an edit-request item needs (same rules as the direct edit in routes/tracker.js).
 const ITEM_PERM = {
   function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_ar: 'ren', name_en: 'ren', create: 'tog', removed: 'tog',
-    test_status: 'tst', review_status: 'tst', note: 'tst', item_type: 'tog' },
+    test_status: 'tst', review_status: 'tst', note: 'tst', item_type: 'tog', move: 'mov' },
   report: { progress: 'rep', status: 'rep', note: 'rep' },
 };
 
@@ -43,6 +43,11 @@ export async function requesterBlocked(c, rq) {
   if (!u || !u.is_active) return 'requester_inactive';
   const app = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.app_id])).rows[0];
   if (!app || !canSeeApp(u, app)) return 'requester_out_of_scope';
+  // a move (1.10.0): the destination application must be in the author's scope too
+  if (rq.target_app_id) {
+    const dst = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.target_app_id])).rows[0];
+    if (!dst || !canSeeApp(u, dst)) return 'requester_out_of_scope';
+  }
   const items = (await c.query('SELECT kind, function_id, field, new_value, meta FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
   // the note that goes with a "with notes" status the author may set, and only while the function still has no
   // note — checked again now, as a note may have been written since the request (see routes/tracker.js, ETS-SEC-056)
@@ -65,10 +70,11 @@ export async function requesterBlocked(c, rq) {
 // Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value, meta?}] — meta: the reason of an
 // exclusion ({disabled_reason, disabled_note, duplicate_of: [{id, app_id, code}]}), applied with it on approval, or
 // of a rename ({rename_reason}, 1.9.1), written into the audit row on approval.
-export async function createRequest(c, req, { deptId, appId, kind, summary, items }) {
+// target: the destination { appId, deptId } of a move (1.10.0); meta: the request's own data (a move's reason and impact).
+export async function createRequest(c, req, { deptId, appId, kind, summary, items, target = null, meta = null }) {
   // The same user editing the same value again replaces the earlier pending value.
   for (const it of items) {
-    if (it.field === 'create' || it.field === 'removed') continue;      // each addition / removal is its own request
+    if (it.field === 'create' || it.field === 'removed' || it.field === 'move') continue;      // each addition / removal / move is its own request
     await c.query(`DELETE FROM edit_request_items i USING edit_requests r
       WHERE i.request_id=r.id AND r.status='pending' AND r.requested_by=$1 AND i.kind=$2 AND i.app_id=$3
         AND i.field=$4 AND i.function_id IS NOT DISTINCT FROM $5`,
@@ -76,8 +82,9 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
   }
   await c.query(`UPDATE edit_requests r SET status='superseded', decided_at=now()
     WHERE r.status='pending' AND r.requested_by=$1 AND NOT EXISTS (SELECT 1 FROM edit_request_items i WHERE i.request_id=r.id)`, [req.user.id]);
-  const r = (await c.query(`INSERT INTO edit_requests(department_id, app_id, kind, summary, requested_by)
-    VALUES ($1,$2,$3,$4,$5) RETURNING *`, [deptId, appId, kind, summary, req.user.id])).rows[0];
+  const r = (await c.query(`INSERT INTO edit_requests(department_id, app_id, kind, summary, requested_by, target_app_id, target_department_id, meta)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+  [deptId, appId, kind, summary, req.user.id, target?.appId ?? null, target?.deptId ?? null, meta ? JSON.stringify(meta) : null])).rows[0];
   for (const it of items) {
     await c.query(`INSERT INTO edit_request_items(request_id, kind, app_id, function_id, field, old_value, new_value, meta)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -86,8 +93,9 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
   }
   await logAudit(req, { db: c, action: 'edit_request', entity: 'edit_request', entityId: r.id,
     summary: `${appId}: ${summary}`, newValue: { items: items.length },
-    context: { app_id: appId, department_id: deptId, kind, items: await namedItems(c, items) } });
-  onCommit(c, () => requestCreated(r));          // A1: the application's approvers (after COMMIT)
+    context: { app_id: appId, department_id: deptId, kind, ...(target ? { to_app_id: target.appId, to_department_id: target.deptId } : {}),
+      ...(meta?.reason ? { reason: meta.reason } : {}), items: await namedItems(c, items) } });
+  onCommit(c, () => requestCreated(r));          // A1: the application's approvers (after COMMIT); a move: of both applications
   return r;
 }
 
@@ -95,6 +103,7 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
 export async function requestContext(c, rq, req, extra = {}) {
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
   return { via: 'edit_request', request_id: rq.id, app_id: rq.app_id, department_id: rq.department_id,
+    ...(rq.target_app_id ? { kind: rq.kind, to_app_id: rq.target_app_id, to_department_id: rq.target_department_id, move_reason: rq.meta?.reason ?? null } : {}),
     requested_by: userRef(await loadUser(c, rq.requested_by)), decided_by: userRef(req.user), ...extra, items: await namedItems(c, items) };
 }
 

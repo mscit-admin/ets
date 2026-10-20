@@ -105,6 +105,10 @@ const T = {
   excluded: (l, p, n) => ({
     title: l === 'ar' ? `استُبعد أو أزيل ${items(l, p, n)} من تطبيق ${name(l, p, 'app')}` : `${items(l, p, n)} excluded or removed in ${name(l, p, 'app')}`,
     body: p.by_name ? (l === 'ar' ? `بواسطة: ${p.by_name}` : `By: ${p.by_name}`) : null }),
+  moved_in: (l, p, n) => ({
+    title: l === 'ar' ? `نُقل ${cnt(l, n, 'item')} إلى تطبيق ${name(l, p, 'app')}` : `${en(n, 'item')} moved to ${name(l, p, 'app')}`,
+    body: [p.from_app_ar || p.from_app_en ? (l === 'ar' ? `من تطبيق ${name(l, p, 'from_app')}` : `From ${name(l, p, 'from_app')}`) : null,
+      p.by_name ? (l === 'ar' ? `بواسطة: ${p.by_name}` : `By: ${p.by_name}`) : null].filter(Boolean).join(' · ') || null }),
   dept_behind: (l, p) => (p.status === 'on_track'
     ? { title: l === 'ar' ? `إدارة ${name(l, p, 'dept')} عادت ضمن الخطة` : `${name(l, p, 'dept')} is back on track`, body: null }
     : { title: l === 'ar' ? `إدارة ${name(l, p, 'dept')} ${STATUS.ar[p.status] || p.status} عن الخطة (−${pts(p.gap)} نقطة)` : `${name(l, p, 'dept')} is ${STATUS.en[p.status] || p.status} (${pts(p.gap)} points behind plan)`,

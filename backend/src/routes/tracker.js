@@ -11,7 +11,9 @@ import { createFunction, newFunctionData, removeFunction, restoreFunction } from
 import { PASS, passConflict, passRuleError, itemList } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
-import { functionsExcluded } from '../services/notify-events.js';
+import { functionsExcluded, itemsMovedIn } from '../services/notify-events.js';
+import { MOVE_MAX, parseMoveReason, moveNeedsApproval, weightTransfer, destinationWeight, checkMovable, applyMove, movesOf }
+  from '../services/move.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
@@ -108,15 +110,20 @@ export async function applicationData(user, id) {
   const u = user;
   // the functions each excluded duplicate points at (names only within the reader's scope)
   const dups = await duplicatesOf(query, user, fns.rows.filter(f => !f.enabled).map(f => f.id));
+  // items moved here from another application (1.10.0): their moves, oldest first; moved_from = the move that brought
+  // the item here (the badge «منقول من …»)
+  const moves = await movesOf({ query }, user, fns.rows.map(f => f.id));
+  const movedFrom = f => [...(moves.get(f.id) || [])].reverse().find(m => m.to_app_id === a.id) || null;
   return {
     application: { ...a, calc: v.calc.applications.find(x => x.id === a.id) },
     department: dept.rows[0],
-    functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [] })),
+    functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [],
+      ...(moves.has(f.id) ? { moves: moves.get(f.id), moved_from: movedFrom(f) } : {}) })),
     report: rep.rows[0] || null,
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
-    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), rep: hasPerm(u, 'rep') },
+    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep') },
   };
 }
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
@@ -415,14 +422,15 @@ r.get('/function-options', async (req, res) => {
   if (!all) await getApp(req.user, appId);
   const apps = all ? (await query('SELECT id, department_id FROM applications')).rows.filter(x => canSeeApp(req.user, x)).map(x => x.id) : [appId];
   const params = [exclude, apps];
-  let where = 'f.removed_at IS NULL AND f.enabled AND NOT (f.id = ANY($1)) AND f.app_id = ANY($2)';
+  // with_off=1: excluded items too (choosing the items of a bulk move, 1.10.0); never removed ones
+  let where = `f.removed_at IS NULL ${req.query.with_off === '1' ? '' : 'AND f.enabled'} AND NOT (f.id = ANY($1)) AND f.app_id = ANY($2)`;
   if (q) {
     params.push('%' + q.replace(/[%_\\]/g, '\\$&') + '%');
     where += ` AND (f.code ILIKE $${params.length} OR f.name_ar ILIKE $${params.length} OR f.name_en ILIKE $${params.length}
       OR a.name_ar ILIKE $${params.length} OR a.name_en ILIKE $${params.length} OR a.id ILIKE $${params.length})`;
   }
   const limit = 200;
-  const rows = (await query(`SELECT f.id, f.app_id, f.code, f.name_ar, f.name_en, a.name_ar AS app_name_ar, a.name_en AS app_name_en
+  const rows = (await query(`SELECT f.id, f.app_id, f.code, f.name_ar, f.name_en, f.enabled, a.name_ar AS app_name_ar, a.name_en AS app_name_en
     FROM functions f JOIN applications a ON a.id=f.app_id WHERE ${where} ORDER BY a.sort, f.sort, f.id LIMIT ${limit + 1}`, params)).rows;
   res.json({ options: rows.slice(0, limit), more: rows.length > limit });
 });
@@ -531,6 +539,132 @@ r.post('/functions/:id/restore', requirePerm('tog'), async (req, res) => {
       await logAudit(req, { db: c, action: 'restore', entity: 'function', entityId: cur.id, summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}` });
       return f;
     } });
+});
+
+// ---- moving items to another application (1.10.0, services/move.js) ----
+// Applications and departments a user may move items to: every application in scope but the current one, grouped by
+// department (the dialog picks the department — "module" — first, then the application).
+r.get('/move-targets', requirePerm('mov'), async (req, res) => {
+  let appId = str(req.query.app_id, 40);
+  if (req.query.function_id !== undefined) {
+    const f = (await query('SELECT app_id FROM functions WHERE id=$1', [idParam(String(req.query.function_id), 'function_id')])).rows[0];
+    if (!f) throw notFound();
+    appId = f.app_id;
+  }
+  if (!appId) throw bad('invalid_value', { field: 'app_id' });
+  const cur = await getApp(req.user, appId);
+  const [d, a] = await Promise.all([query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments ORDER BY sort'),
+    query('SELECT id, department_id, name_ar, name_en, icon, sort FROM applications ORDER BY sort')]);
+  const apps = a.rows.filter(x => x.id !== cur.id && canSeeApp(req.user, x));
+  res.json({ current: { app_id: cur.id, department_id: cur.department_id },
+    departments: d.rows.map(x => ({ ...x, applications: apps.filter(y => y.department_id === x.id).map(({ sort: _s, ...y }) => y) }))
+      .filter(x => x.applications.length) });
+});
+
+// Before → after of the source and destination applications, their department(s) and the project (reader's scope),
+// with the application weight that goes with the items (same calculation as the move itself, services/move.js).
+async function moveImpact(user, src, dst, ids) {
+  const v = await loadVisible(user);
+  const mode = v.settings['calc.weight_mode'] === 'auto' ? 'auto' : 'fixed';
+  const srcApp = v.apps.find(x => x.id === src.id), dstApp = v.apps.find(x => x.id === dst.id);
+  const tr = weightTransfer({ mode, srcWeight: srcApp.weight, srcFunctions: v.functions.filter(f => f.app_id === src.id), ids });
+  let dstAfter = +dstApp.weight, overflow = false;
+  try { if (tr.share > 0) dstAfter = destinationWeight(dstApp.weight, tr.share); } catch { overflow = true; }
+  const set = new Set(ids);
+  const functions = v.functions.map(f => (set.has(f.id) ? { ...f, app_id: dst.id } : f));
+  const applications = v.apps.map(a => (a.id === src.id ? { ...a, weight: tr.src_after } : a.id === dst.id ? { ...a, weight: dstAfter } : a));
+  const after = summarize({ departments: v.departments, applications, functions, reports: v.reports, settings: v.settings });
+  const pair = (b, x, k) => ({ before: b?.[k] ?? 0, after: x?.[k] ?? 0 });
+  const appRow = (a, role) => {
+    const b = v.calc.applications.find(x => x.id === a.id), x = after.applications.find(y => y.id === a.id);
+    return { id: a.id, role, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en,
+      pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight'), count: pair(b, x, 'count') };
+  };
+  const deptRow = id => {
+    const d = v.departments.find(x => x.id === id);
+    const b = v.calc.departments.find(x => x.id === id), x = after.departments.find(y => y.id === id);
+    return { id, name_ar: d.name_ar, name_en: d.name_en, is_base: d.is_base, pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight') };
+  };
+  const moved = v.functions.filter(f => set.has(f.id));
+  return { mode, items: ids.length, counted: moved.filter(f => f.enabled).length,
+    weight: { share: tr.share, moved_weight: tr.moved_weight, src_items_weight: tr.denominator, overflow,
+      src: { before: +srcApp.weight, after: tr.src_after }, dst: { before: +dstApp.weight, after: dstAfter } },
+    apps: [appRow(srcApp, 'source'), appRow(dstApp, 'destination')],
+    departments: [...new Set([src.department_id, dst.department_id])].map(deptRow),
+    total: pair(v.calc.total, after.total, 'pct') };
+}
+
+// The common checks of a move (single or bulk) → { src, dst, rows }: 'mov' (route), both applications in scope,
+// a different destination, items of the source application, not removed, no pending request / import about them.
+async function movePlan(req, src, ids, { needReason }) {
+  const toId = str(req.body?.to_app_id, 40);
+  if (!toId) throw bad('invalid_value', { field: 'to_app_id' });
+  const dst = (await query('SELECT * FROM applications WHERE id=$1', [toId])).rows[0];
+  if (!dst) throw bad('unknown_application', { id: toId });
+  if (!canSeeApp(req.user, dst)) throw new HttpError(403, 'out_of_scope', { application: toId });
+  if (dst.id === src.id) throw bad('move_same_app');
+  const reason = needReason ? parseMoveReason(req.body?.reason) : null;
+  const rows = (await query('SELECT id, app_id, code, name_ar, name_en, enabled, weight, removed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id',
+    [src.id, ids])).rows;
+  if (rows.length !== ids.length) throw bad('invalid_value', { field: 'function_ids' });      // only items of this application
+  await checkMovable({ query }, rows);
+  return { dst, rows, reason };
+}
+
+const moveIds = raw => {
+  if (!Array.isArray(raw) || !raw.length || raw.length > MOVE_MAX || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids', max: MOVE_MAX });
+  return [...new Set(raw)];
+};
+
+// Direct move, or a 'move_function' request for the team leads (202). Live changes and the T8 alert after COMMIT.
+async function doMove(req, res, src, ids) {
+  const { dst, rows, reason } = await movePlan(req, src, ids, { needReason: true });
+  const impact = await moveImpact(req.user, src, dst, ids);
+  if (impact.weight.overflow) throw new HttpError(409, 'move_weight_out_of_range', { max: 1000, after: impact.weight.dst.before + impact.weight.share });
+  if (await moveNeedsApproval(req.user, src, dst)) {
+    const tr = weightTransfer({ mode: impact.mode, srcWeight: src.weight,
+      srcFunctions: (await query(CALC_FUNCTIONS_SQL + ' AND app_id=$1', [src.id])).rows, ids: rows.map(f => f.id) });
+    const rq = await tx(c => createRequest(c, req, { deptId: src.department_id, appId: src.id, kind: 'move_function',
+      summary: `${rows.map(f => f.code).join(', ').slice(0, 120)} → ${dst.id}`,
+      target: { appId: dst.id, deptId: dst.department_id },
+      meta: { reason, weight_mode: impact.mode, weight_share: impact.weight.share, impact },
+      items: rows.map(f => ({ kind: 'function', app_id: src.id, function_id: f.id, field: 'move',
+        old_value: { app_id: src.id, department_id: src.department_id, code: f.code },
+        new_value: { app_id: dst.id, department_id: dst.department_id, name_ar: dst.name_ar, name_en: dst.name_en },
+        meta: { reason, weight_share: tr.per.get(f.id) || 0 } })) }));
+    publishApps([src, dst]);                               // "awaiting approval" badges
+    return res.status(202).json({ pending: true, request_id: rq.id, impact });
+  }
+  const out = await tx(c => applyMove(c, req, { srcId: src.id, dstId: dst.id, ids: rows.map(f => f.id), reason }));
+  await publishApps([src, dst]);                           // after COMMIT: both applications / departments
+  await itemsMovedIn(src.id, dst.id, out.items.length, [req.user.id]);      // T8
+  res.json({ moved: out.items, weight: out.weight, impact });
+}
+
+r.post('/functions/:id/move/preview', requirePerm('mov'), async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: undefined });
+  if (cur.removed_at) throw new HttpError(409, 'move_function_removed', { items: [{ function_id: cur.id, code: cur.code }] });
+  const { dst } = await movePlan(req, a, [cur.id], { needReason: false });
+  res.json({ ...await moveImpact(req.user, a, dst, [cur.id]), needs_approval: await moveNeedsApproval(req.user, a, dst) });
+});
+
+r.post('/functions/:id/move', requirePerm('mov'), async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: undefined });
+  if (cur.removed_at) throw new HttpError(409, 'move_function_removed', { items: [{ function_id: cur.id, code: cur.code }] });
+  await doMove(req, res, a, [cur.id]);
+});
+
+r.post('/applications/:id/bulk-move/preview', requirePerm('mov'), async (req, res) => {
+  const a = await getApp(req.user, req.params.id);
+  const ids = moveIds(req.body?.function_ids);
+  const { dst } = await movePlan(req, a, ids, { needReason: false });
+  res.json({ ...await moveImpact(req.user, a, dst, ids), needs_approval: await moveNeedsApproval(req.user, a, dst) });
+});
+
+// All or nothing: every chosen item moves in one transaction, or none does.
+r.post('/applications/:id/bulk-move', requirePerm('mov'), async (req, res) => {
+  const a = await getApp(req.user, req.params.id);
+  await doMove(req, res, a, moveIds(req.body?.function_ids));
 });
 
 // ---- weights & calculation parameters ----

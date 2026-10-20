@@ -5,6 +5,7 @@
 //   A4 import_pending     a result file waits for a signature → whoever can sign the stage that is missing
 //   A5 import_result      a file was applied / rejected / replaced → its uploader and the first-stage signer
 //   T7 excluded           functions excluded or removed → users of the application (not the people who did it)
+//   T8 moved_in           items moved into an application (1.10.0) → users of that application (not who moved / approved)
 //   S1 account_locked     an account's sign-in was paused → administrators
 //   S7 retention_reduced  a log retention setting was lowered → administrators
 import { query } from '../db/pool.js';
@@ -20,21 +21,32 @@ const fullName = async id => (id ? (await query('SELECT full_name FROM users WHE
 const admins = async () => (await activeUsers()).filter(u => u.role === 'admin');
 
 // ---- A1: a new edit request (rq: edit_requests row)
+// A move (1.10.0) waits for the approvers of both applications: each is told under the application they approve for
+// (the source first when they approve both).
 export const requestCreated = safe('request_created', async rq => {
   if (rq.status !== 'pending') return;
   const apps = await appMap();
   const app = apps.get(rq.app_id);
   if (!app) return;
+  const dst = rq.target_app_id ? apps.get(rq.target_app_id) : null;
   const by = await fullName(rq.requested_by);
-  const users = (await activeUsers()).filter(u => u.id !== rq.requested_by && hasPerm(u, 'apv_dept') && canSeeApp(u, app));
-  await deliver('approval_pending', users.map(user => ({ user, dedupeKey: `approval_pending:app=${app.id}`, mode: 'add',
-    appId: app.id, deptId: app.department_id, link: '/approvals', params: { ...appParams(app), by_name: by, request_id: rq.id } })));
+  const approver = (u, a) => !!a && hasPerm(u, 'apv_dept') && canSeeApp(u, a);
+  const entries = [];
+  for (const user of (await activeUsers()).filter(u => u.id !== rq.requested_by)) {
+    const a = approver(user, app) ? app : approver(user, dst) ? dst : null;
+    if (!a) continue;
+    entries.push({ user, dedupeKey: `approval_pending:app=${a.id}`, mode: 'add', appId: a.id, deptId: a.department_id, link: '/approvals',
+      params: { ...appParams(a), by_name: by, request_id: rq.id } });
+  }
+  await deliver('approval_pending', entries);
 });
 
 // After a request is decided (any way): the approvers' open «waiting for you» alert of that application closes when
 // nothing is pending there any more.
 export const requestsSettled = safe('requests_settled', async appId => {
-  const pending = (await query(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending' AND app_id=$1`, [appId])).rows[0].n;
+  // a move (1.10.0) waits for its source application until the source lead approved it, then for its destination
+  const pending = (await query(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending'
+    AND ((app_id=$1 AND (kind <> 'move_function' OR source_approved_by IS NULL)) OR (target_app_id=$1 AND source_approved_by IS NOT NULL))`, [appId])).rows[0].n;
   if (!pending) await resolveExcept('approval_pending', [], { onlyKey: `approval_pending:app=${appId}` });
 });
 
@@ -86,6 +98,20 @@ export const functionsExcluded = safe('functions_excluded', async (appId, n, exc
   const users = (await activeUsers()).filter(u => !exclude.includes(u.id) && canSeeApp(u, app));
   await deliver('excluded', users.map(user => ({ user, dedupeKey: `excluded:app=${appId}`, mode: 'add', count: n,
     appId, deptId: app.department_id, link: `/app/${appId}`, params: { ...appParams(app), by_name: by } })));
+});
+
+// ---- T8: items moved into an application (1.10.0). src / dst: { id }; n: how many; exclude: who moved / approved.
+// The source application is named only to readers who have it in scope.
+export const itemsMovedIn = safe('items_moved_in', async (srcId, dstId, n, exclude = []) => {
+  if (!(n > 0)) return;
+  const apps = await appMap();
+  const dst = apps.get(dstId), src = apps.get(srcId);
+  if (!dst) return;
+  const by = exclude[0] ? await fullName(exclude[0]) : null;
+  const users = (await activeUsers()).filter(u => !exclude.includes(u.id) && canSeeApp(u, dst));
+  await deliver('moved_in', users.map(user => ({ user, dedupeKey: `moved_in:app=${dstId}`, mode: 'add', count: n,
+    appId: dstId, deptId: dst.department_id, link: `/app/${dstId}`,
+    params: { ...appParams(dst), by_name: by, ...(src && canSeeApp(user, src) ? { from_app_id: src.id, from_app_ar: src.name_ar, from_app_en: src.name_en } : {}) } })));
 });
 
 // ---- S1: an account's sign-in was paused (services/lockout.js)
