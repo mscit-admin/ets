@@ -58,7 +58,7 @@
 
 ## 4. Authorisation
 
-- Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `ren`, `sch`, `rep`, `exp`, `imp`,
+- Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `ren`, `mov`, `sch`, `rep`, `exp`, `imp`,
   `usr`, `log`, `cfg`, `apv_dept`, `apv_final`) **and**, for tracker data, the data scope (departments/applications) on
   the server. The UI only hides what the
   server would refuse anyway.
@@ -67,6 +67,17 @@
   role and per-user override that had `tog` (same value), so the upgrade changed nobody's rights. When a team
   member's rename is approved, the server re-checks the member's `ren` (ETS-SEC-027); the approving team lead needs
   `apv_dept` and the scope, as for every other field.
+- Moving an item to another application (1.10.0) needs `mov` **and both applications in scope** (403 otherwise), so
+  a user can never move an item into or out of an application they cannot see. `mov` is a new capability: migration
+  019 gives it to admin, pm, tm, mgr and lead and copies it from no override (members, editors, testers, observers do
+  not get it). A move is direct only for an approver of both applications (`apv_dept` with both in scope), `cfg` /
+  `apv_final` holders, or when approvals are off; otherwise it needs the source application's team lead and then
+  the destination's — never its author. Each approval re-checks the author (active, `mov`, both applications in
+  scope — ETS-SEC-027) and the items (still in the source, not removed, nothing else pending), and the weight share
+  is recomputed then. The two applications are locked in a fixed order (by id) so concurrent moves cannot deadlock.
+  Every move writes a strict audit row per item and per application weight; the old department keeps read access
+  to the item's audit history up to the move only. Names of an application outside the reader's scope are not shown
+  in the «منقول من» badge or the T8 alert.
 - Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`. A user without
   `tst` who sets a «with notes» status may write its note only while the function has no note yet; changing an
   existing note always needs `tst` (also re-checked when such a request is approved).

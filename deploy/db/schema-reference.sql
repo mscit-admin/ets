@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–017).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–019).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -320,7 +320,15 @@ CREATE TABLE public.edit_requests (
     decided_at timestamp with time zone,
     reason text,
     apply_result jsonb,
-    CONSTRAINT edit_requests_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'bulk'::text, 'report'::text, 'add_function'::text, 'remove_function'::text, 'restore_function'::text]))),
+    target_app_id text,
+    target_department_id text,
+    source_approved_by integer,
+    source_approved_at timestamp with time zone,
+    target_approved_by integer,
+    target_approved_at timestamp with time zone,
+    meta jsonb,
+    CONSTRAINT edit_requests_kind_check CHECK ((kind = ANY (ARRAY['function'::text, 'bulk'::text, 'report'::text, 'add_function'::text, 'remove_function'::text, 'restore_function'::text, 'move_function'::text]))),
+    CONSTRAINT edit_requests_move_target_check CHECK (((kind = 'move_function'::text) = ((target_app_id IS NOT NULL) AND (target_department_id IS NOT NULL)))),
     CONSTRAINT edit_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'rejected'::text, 'superseded'::text, 'withdrawn'::text])))
 );
 -- Name: edit_requests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -360,6 +368,36 @@ CREATE TABLE public.function_duplicates (
     duplicate_of_id integer NOT NULL,
     CONSTRAINT function_duplicates_check CHECK ((function_id <> duplicate_of_id))
 );
+-- Name: function_moves; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.function_moves (
+    id bigint NOT NULL,
+    function_id integer NOT NULL,
+    from_app_id text NOT NULL,
+    to_app_id text NOT NULL,
+    from_code text NOT NULL,
+    to_code text NOT NULL,
+    from_dept_id text NOT NULL,
+    to_dept_id text NOT NULL,
+    weight_mode text NOT NULL,
+    weight_share numeric(6,2) DEFAULT 0 NOT NULL,
+    reason text NOT NULL,
+    moved_by integer,
+    moved_at timestamp with time zone DEFAULT now() NOT NULL,
+    request_id integer,
+    CONSTRAINT function_moves_check CHECK ((from_app_id <> to_app_id)),
+    CONSTRAINT function_moves_reason_check CHECK (((char_length(reason) >= 1) AND (char_length(reason) <= 500))),
+    CONSTRAINT function_moves_weight_mode_check CHECK ((weight_mode = ANY (ARRAY['fixed'::text, 'auto'::text]))),
+    CONSTRAINT function_moves_weight_share_check CHECK ((weight_share >= (0)::numeric))
+);
+-- Name: function_moves_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.function_moves_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: function_moves_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.function_moves_id_seq OWNED BY public.function_moves.id;
 -- Name: functions; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.functions (
     id integer NOT NULL,
@@ -754,6 +792,8 @@ ALTER TABLE ONLY public.edit_request_items ALTER COLUMN id SET DEFAULT nextval('
 ALTER TABLE ONLY public.edit_requests ALTER COLUMN id SET DEFAULT nextval('public.edit_requests_id_seq'::regclass);
 -- Name: error_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log ALTER COLUMN id SET DEFAULT nextval('public.error_log_id_seq'::regclass);
+-- Name: function_moves id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves ALTER COLUMN id SET DEFAULT nextval('public.function_moves_id_seq'::regclass);
 -- Name: functions id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions ALTER COLUMN id SET DEFAULT nextval('public.functions_id_seq'::regclass);
 -- Name: import_batches id; Type: DEFAULT; Schema: public; Owner: -
@@ -808,6 +848,9 @@ ALTER TABLE ONLY public.error_log
 -- Name: function_duplicates function_duplicates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.function_duplicates
     ADD CONSTRAINT function_duplicates_pkey PRIMARY KEY (function_id, duplicate_of_id);
+-- Name: function_moves function_moves_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_pkey PRIMARY KEY (id);
 -- Name: functions functions_app_id_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_code_key UNIQUE (app_id, code);
@@ -911,10 +954,18 @@ CREATE INDEX edit_request_items_request_id_idx ON public.edit_request_items USIN
 CREATE INDEX edit_requests_requested_by_status_idx ON public.edit_requests USING btree (requested_by, status);
 -- Name: edit_requests_status_department_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX edit_requests_status_department_id_idx ON public.edit_requests USING btree (status, department_id);
+-- Name: edit_requests_target_pending; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX edit_requests_target_pending ON public.edit_requests USING btree (target_app_id) WHERE (status = 'pending'::text);
 -- Name: error_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX error_log_ts_idx ON public.error_log USING btree (ts DESC);
 -- Name: function_duplicates_target; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX function_duplicates_target ON public.function_duplicates USING btree (duplicate_of_id);
+-- Name: function_moves_from; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX function_moves_from ON public.function_moves USING btree (from_app_id, from_code);
+-- Name: function_moves_function; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX function_moves_function ON public.function_moves USING btree (function_id, moved_at);
+-- Name: function_moves_to; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX function_moves_to ON public.function_moves USING btree (to_app_id);
 -- Name: functions_app_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX functions_app_id_idx ON public.functions USING btree (app_id);
 -- Name: import_batches_status_target_department_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -1018,6 +1069,18 @@ ALTER TABLE ONLY public.edit_requests
 -- Name: edit_requests edit_requests_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.edit_requests
     ADD CONSTRAINT edit_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: edit_requests edit_requests_source_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_source_approved_by_fkey FOREIGN KEY (source_approved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: edit_requests edit_requests_target_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_target_app_id_fkey FOREIGN KEY (target_app_id) REFERENCES public.applications(id);
+-- Name: edit_requests edit_requests_target_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_target_approved_by_fkey FOREIGN KEY (target_approved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: edit_requests edit_requests_target_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.edit_requests
+    ADD CONSTRAINT edit_requests_target_department_id_fkey FOREIGN KEY (target_department_id) REFERENCES public.departments(id);
 -- Name: error_log error_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.error_log
     ADD CONSTRAINT error_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
@@ -1027,6 +1090,27 @@ ALTER TABLE ONLY public.function_duplicates
 -- Name: function_duplicates function_duplicates_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.function_duplicates
     ADD CONSTRAINT function_duplicates_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: function_moves function_moves_from_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_from_app_id_fkey FOREIGN KEY (from_app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
+-- Name: function_moves function_moves_from_dept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_from_dept_id_fkey FOREIGN KEY (from_dept_id) REFERENCES public.departments(id);
+-- Name: function_moves function_moves_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: function_moves function_moves_moved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_moved_by_fkey FOREIGN KEY (moved_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: function_moves function_moves_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.edit_requests(id) ON DELETE SET NULL;
+-- Name: function_moves function_moves_to_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_to_app_id_fkey FOREIGN KEY (to_app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
+-- Name: function_moves function_moves_to_dept_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.function_moves
+    ADD CONSTRAINT function_moves_to_dept_id_fkey FOREIGN KEY (to_dept_id) REFERENCES public.departments(id);
 -- Name: functions functions_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.functions
     ADD CONSTRAINT functions_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id) ON DELETE CASCADE;
