@@ -12,6 +12,7 @@ import { MultiSelect } from '../components/MultiSelect.jsx';
 import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
 import { ITEM_TYPES, ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
 import { RenameDialog } from '../components/RenameDialog.jsx';
+import { MoveDialog, MoveFields, emptyMove, moveReady, MOVE_MAX } from '../components/MoveDialog.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
@@ -19,7 +20,7 @@ const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v
 
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
   notif_status: 'notif_status', review_status: 'review_status', note: 'note', item_type: 'item_type',
-  name_ar: 'au_f_name_ar', name_en: 'au_f_name_en' };
+  name_ar: 'au_f_name_ar', name_en: 'au_f_name_en', move: 'mv_field' };
 const NAME_FIELDS = new Set(['name_ar', 'name_en']);      // a pending rename (1.9.1)
 
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
@@ -164,6 +165,8 @@ export default function Application() {
   const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState(null);   // {f, mode: 'remove' | 'restore' | 'toggle', enabled?}
   const [renaming, setRenaming] = useState(null);  // the item being renamed (1.9.1)
+  const [moving, setMoving] = useState(null);      // the item being moved to another application (1.10.0)
+  const [history, setHistory] = useState(null);    // the item whose move history is open
 
   useEffect(() => {
     if (!data) return;
@@ -266,6 +269,7 @@ export default function Application() {
     if (field === 'item_type') return t('it_' + v);
     if (field === 'note') return '✎';
     if (NAME_FIELDS.has(field)) return v ? '«' + v + '»' : t('rn_cleared');
+    if (field === 'move') return t('mv_pending', { app: nm(v) || v?.app_id || '' });
     return String(v);
   };
 
@@ -294,7 +298,7 @@ export default function Application() {
       </div>
       {data.needs_approval && <Alert kind="blue">{t('edits_need_lead_notice')}</Alert>}
       <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
-        {(can.pct || can.tst || can.tog) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
+        {(can.pct || can.tst || can.tog || can.mov) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
         <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test, reason: filter.reason,
           item_type: filter.type, show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
@@ -395,6 +399,10 @@ export default function Application() {
                         <button type="button" className="btn-icon btn-rename" onClick={() => setRenaming(f)}
                           aria-label={t('rn_button')} title={t('rn_button')}><Icon name="edit" size={15} /></button>
                       )}
+                      {can.mov && !f.removed_at && (
+                        <button type="button" className="btn-icon btn-move" onClick={() => setMoving(f)}
+                          aria-label={t('mv_button') + ' — ' + f.code} title={t('mv_button')}><Icon name="move" size={15} /></button>
+                      )}
                     </div>
                     <div className="fn-meta">
                       <span className="code">{f.code}</span>
@@ -407,9 +415,11 @@ export default function Application() {
                         <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)}${p.meta?.rename_reason ? ' — ' + t('rn_reason') + ': ' + p.meta.rename_reason : ''} — ${p.requested_by_name}`).join('\n')}>
                           ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => (NAME_FIELDS.has(p.field)
                             ? t(p.field === 'name_ar' ? 'rn_pending' : 'rn_pending_en', { name: fmtPending(p.field, p.new_value) })
-                            : `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`)).join(' · ')}
+                            : p.field === 'move' ? fmtPending(p.field, p.new_value)
+                              : `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`)).join(' · ')}
                         </Link>
                       )}
+                      {f.moved_from && <MovedBadge m={f.moved_from} onOpen={() => setHistory(f)} />}
                       {!f.enabled && !f.removed_at && <DisabledReason f={f} appId={a.id} />}
                       {f.removed_at && <Indicator color="red" title={f.removed_reason}>{t('removed_by_on', { name: f.removed_by_name || '—', date: fmtDate(f.removed_at) })}</Indicator>}
                       {f.removed_at && <span className="muted">{t('reason')}: {f.removed_reason}</span>}
@@ -455,6 +465,8 @@ export default function Application() {
       {bulk && <BulkModal app={a} can={can} onClose={() => setBulk(false)} onDone={() => { setBulk(false); reload(); }} />}
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {renaming && <RenameDialog f={renaming} others={fns} onClose={() => setRenaming(null)} onDone={() => { setRenaming(null); reload(); }} />}
+      {moving && <MoveDialog app={a} f={moving} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />}
+      {history && <MoveHistory f={history} onClose={() => setHistory(null)} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {
           // including again needs no reason: saved like the other cells; an exclusion is saved by the dialog itself
@@ -493,7 +505,7 @@ function NoteModal({ f, pending, canEdit, onClose, onSave }) {
 // type (function / report) of chosen items.
 function BulkModal({ app, can, onClose, onDone }) {
   const { t, errText } = useI18n();
-  const [field, setField] = useState(can.pct ? 'progress' : can.tst ? 'test_status' : 'exclude');
+  const [field, setField] = useState(can.pct ? 'progress' : can.tst ? 'test_status' : can.tog ? 'exclude' : 'move');
   const [value, setValue] = useState(field === 'progress' ? 100 : 2);
   const [chosen, setChosen] = useState([]);              // functions to exclude / items to retype
   const [toType, setToType] = useState('report');
@@ -501,8 +513,21 @@ function BulkModal({ app, can, onClose, onDone }) {
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const exclude = field === 'exclude', retype = field === 'item_type';
+  const exclude = field === 'exclude', retype = field === 'item_type', move = field === 'move';
+  const [mv, setMv] = useState(emptyMove);               // move (1.10.0): module, application, reason
+  const [mvPreview, setMvPreview] = useState(null);
+  const moveIds = useMemo(() => chosen.map(x => x.id), [chosen]);
   const run = async () => {
+    if (move) {
+      setTried(true);
+      if (!chosen.length || !moveReady(mv, mvPreview)) return;
+      setBusy(true); setErr(null);
+      try {
+        const r = await api.post(path`/tracker/applications/${app.id}/bulk-move`, { to_app_id: mv.app, function_ids: moveIds, reason: mv.reason.trim() });
+        toast(r.pending ? t('sent_for_approval') : t('mv_done_n', { n: r.moved?.length ?? chosen.length }), r.pending ? 'blue' : 'green'); onDone();
+      } catch (e) { setErr(e); setBusy(false); }
+      return;
+    }
     let body = { field, value: +value };
     if (exclude) {
       setTried(true);
@@ -521,11 +546,15 @@ function BulkModal({ app, can, onClose, onDone }) {
     } catch (e) { setErr(e); setBusy(false); }
   };
   const loadOwn = q => api.get('/tracker/function-options' + qs({ app_id: app.id, q })).then(r => r.options);
+  // a move may take excluded items too (they carry no weight)
+  const loadAll = q => api.get('/tracker/function-options' + qs({ app_id: app.id, q, with_off: 1 })).then(r => r.options);
   return (
-    <Modal title={t('bulk_set')} onClose={onClose} wide={exclude || retype}
+    <Modal title={move ? t('mv_title_bulk') : t('bulk_set')} onClose={onClose} wide={exclude || retype || move}
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')} disabled={busy || (exclude && !!noteProblem(why))} onClick={run}>
-          {exclude ? t('confirm_exclude_n', { n: chosen.length }) : retype ? t('confirm_type_n', { n: chosen.length }) : t('apply')}</button></>}>
+        <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')}
+          disabled={busy || (exclude && !!noteProblem(why)) || (move && (!chosen.length || chosen.length > MOVE_MAX || !moveReady(mv, mvPreview)))} onClick={run}>
+          {exclude ? t('confirm_exclude_n', { n: chosen.length }) : retype ? t('confirm_type_n', { n: chosen.length })
+            : move ? t('mv_confirm_n', { n: chosen.length }) : t('apply')}</button></>}>
       {err && <Alert>{errText(err)}
         {blockedItems(err).length > 0 && <>
           <div className="mt-s"><b>{t('bulk_blocked_items', { n: err.data.count ?? blockedItems(err).length })}</b></div>
@@ -541,6 +570,7 @@ function BulkModal({ app, can, onClose, onDone }) {
           {can.tst && <option value="test_status">{t('bulk_test')}</option>}
           {can.tog && <option value="exclude">{t('bulk_exclude')}</option>}
           {can.tog && <option value="item_type">{t('bulk_type')}</option>}
+          {can.mov && <option value="move">{t('bulk_move')}</option>}
         </select>
       </Field>
       {field === 'progress' && <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>}
@@ -564,6 +594,16 @@ function BulkModal({ app, can, onClose, onDone }) {
             renderOption={o => <><span className="code">{o.code}</span> <span lang="ar" dir="rtl">{o.name_ar}</span></>} />
           {tried && !chosen.length && <span className="field-hint red-text">{t('bulk_type_none')}</span>}
         </div>
+      </>}
+      {move && <>
+        <Alert kind="blue">{t('bulk_move_msg', { max: MOVE_MAX })}</Alert>
+        <div className="field">
+          <MultiSelect value={chosen} onChange={setChosen} load={loadAll} label={t('bulk_move_pick') + ' *'} placeholder={t('dr_duplicates_placeholder')}
+            invalid={tried && !chosen.length} chipLabel={o => o.code}
+            renderOption={o => <><span className="code">{o.code}</span> <span lang="ar" dir="rtl">{o.name_ar}</span>{o.enabled === false && <span className="muted small"> ({t('mv_not_counted')})</span>}</>} />
+          {tried && !chosen.length && <span className="field-hint red-text">{t('bulk_move_none')}</span>}
+        </div>
+        <MoveFields appId={app.id} ids={moveIds} value={mv} onChange={setMv} onPreview={setMvPreview} showErrors={tried} />
       </>}
     </Modal>
   );
@@ -709,6 +749,47 @@ function ConfirmModal({ app, f, mode, enabled, onClose, onDone }) {
       {excluding && <DisableReasonForm appId={app.id} excludeIds={[f.id]} value={why} onChange={setWhy} showErrors={tried} />}
       {mode === 'remove' && <Field label={t('remove_reason') + ' *'}><textarea className="input" rows={3} maxLength={1000} value={reason} autoFocus onChange={e => setReason(e.target.value)} /></Field>}
       <ImpactTable impact={impact} />
+    </Modal>
+  );
+}
+
+// «منقول من <application> / <old code>» (1.10.0): the move that brought the item here; the tooltip gives the reason, who
+// and when; the button opens the item's whole move history. The application's name is shown only within the reader's
+// scope («تطبيق آخر» otherwise).
+function MovedBadge({ m, onOpen }) {
+  const { t, nm, fmtDate } = useI18n();
+  const app = nm(m, 'from_app_name') || t('mv_badge_other');
+  const tip = t('mv_badge_tip', { date: fmtDate(m.moved_at), name: m.moved_by_name || '—', reason: m.reason });
+  return (
+    <button type="button" className="moved-chip" onClick={onOpen} title={tip} aria-label={t('mv_badge', { app, code: m.from_code }) + ' — ' + tip}>
+      <Icon name="move" size={12} /> {t('mv_badge', { app, code: m.from_code })}
+    </button>
+  );
+}
+
+function MoveHistory({ f, onClose }) {
+  const { t, nm, fmtDate } = useI18n();
+  const place = (m, side) => `${nm(m, side + '_app_name') || m[side + '_app_id']}${nm(m, side + '_dept_name') ? ' (' + nm(m, side + '_dept_name') + ')' : ''}`;
+  return (
+    <Modal title={t('mv_history_title')} onClose={onClose} wide footer={<button className="btn btn-default" onClick={onClose}>{t('close')}</button>}>
+      <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>{t('date')}</th><th>{t('mv_history_from')}</th><th>{t('mv_history_to')}</th><th className="num-col">{t('mv_history_share')}</th><th>{t('mv_history_by')}</th><th>{t('reason')}</th></tr></thead>
+          <tbody>
+            {(f.moves || []).map(m => (
+              <tr key={m.id}>
+                <td className="nowrap">{fmtDate(m.moved_at)}</td>
+                <td>{place(m, 'from')} <span className="code">{m.from_code}</span></td>
+                <td>{place(m, 'to')} <span className="code">{m.to_code}</span></td>
+                <td className="num-col num">{m.weight_mode === 'auto' ? '—' : (+m.weight_share).toFixed(2)}</td>
+                <td>{m.moved_by_name || '—'}{m.request_id && <div className="muted small">{t('mv_history_request', { id: m.request_id })}</div>}</td>
+                <td className="rn-reason-text">{m.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Modal>
   );
 }

@@ -907,3 +907,21 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 .rn-current dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 520px) { .rn-current > div { grid-template-columns: 1fr; gap: 2px; } }
 .req-reason .rn-reason-text { white-space: pre-wrap; }
+
+/* moving items to another application (1.10.0) */
+.fn-title .btn-move { flex: none; width: 26px; height: 26px; margin-top: -1px; opacity: .7; }
+.fn-title .btn-move:hover, .fn-title .btn-move:focus-visible { opacity: 1; }
+.moved-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid transparent;
+  background: var(--purple-bg); color: var(--purple-text); font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.moved-chip:hover { border-color: var(--purple-text); }
+.moved-chip:focus-visible { outline: 2px solid var(--primary-blue); outline-offset: 2px; }
+.mv-impact .mv-row-label { font-weight: 400; text-align: start; }
+.mv-impact .mv-sep th { font-size: 12px; color: var(--text-muted); font-weight: 600; text-align: start; padding-top: 10px; }
+.mv-impact .mv-moved th, .mv-impact .mv-moved td { border-top: 1px solid var(--border); }
+.mv-note { margin: 6px 0 0; }
+.mv-route { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mv-stage { display: grid; gap: 2px; margin-bottom: 8px; font-size: 12.5px; }
+.mv-shares { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; margin: 6px 0; }
+/* the impact table scrolls inside the dialog on a phone instead of widening it */
+.modal:has(.mv-impact) { min-width: 0; max-width: min(760px, 100%); }
+.mv-impact .table-wrap { max-width: 100%; }
