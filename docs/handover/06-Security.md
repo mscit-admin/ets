@@ -58,10 +58,15 @@
 
 ## 4. Authorisation
 
-- Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `sch`, `rep`, `exp`, `imp`, `usr`,
-  `log`, `cfg`, `apv_dept`, `apv_final`) **and**, for tracker data, the data scope (departments/applications) on
+- Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `ren`, `sch`, `rep`, `exp`, `imp`,
+  `usr`, `log`, `cfg`, `apv_dept`, `apv_final`) **and**, for tracker data, the data scope (departments/applications) on
   the server. The UI only hides what the
   server would refuse anyway.
+- Renaming an item (`name_ar` / `name_en` with its reason) needs `ren` (1.9.2), not `tog`: an administrator can
+  let a user add / remove / include items without renaming them, or the reverse. Migration 018 gave `ren` to every
+  role and per-user override that had `tog` (same value), so the upgrade changed nobody's rights. When a team
+  member's rename is approved, the server re-checks the member's `ren` (ETS-SEC-027); the approving team lead needs
+  `apv_dept` and the scope, as for every other field.
 - Field-level checks: for example, a tester can change `test_status`/`note` but not `progress`. A user without
   `tst` who sets a «with notes» status may write its note only while the function has no note yet; changing an
   existing note always needs `tst` (also re-checked when such a request is approved).
