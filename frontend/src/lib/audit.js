@@ -67,7 +67,7 @@ export function makeAudit({ t, lang }) {
     if (typeof v === 'number') return num(v);
     if (Array.isArray(v)) {
       if (field === 'scopes') return v.map(s => s.ref_id || s).join('، ') || t('au_empty');
-      if (field === 'overrides') return v.map(o => `${o.permission}${o.granted ? '+' : '−'}`).join(', ') || t('au_empty');
+      if (field === 'overrides') return v.map(o => `${tx('perm_' + o.permission) || o.permission} ${o.granted ? '+' : '−'}`).join(listSep) || t('au_empty');
       return t('au_values_n', { n: v.length });
     }
     return short(JSON.stringify(v));

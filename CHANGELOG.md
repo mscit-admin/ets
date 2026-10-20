@@ -30,6 +30,43 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.9.2] — 2026-10-20 — Renaming items is its own permission
+
+### Added
+- **Backend:** permission key `ren` («تعديل اسم البند» / "Rename items") in `PERMISSIONS`
+  (`backend/src/routes/users.js`), offered for per-user overrides and listed by `GET /api/users/meta`. The seed
+  (`backend/src/db/seed.js`) gives it to every role that has `tog`: admin, pm, tm, mgr, lead, member.
+- **Backend:** `GET /api/tracker/applications/:id` adds `can.ren`.
+- **Frontend:** `perm_ren` labels (ar / en). The permissions list of a user (Users → user) shows the new row
+  and its grant / revoke selector. Roles have no edit screen; they are defined in the seed.
+- **Tests:** `backend/test/rename.test.js` (+4): `tog` without `ren` → 403 on rename while adding still works;
+  `ren` without `tog` → rename allowed (sent to the team lead, then approved) while add / remove / exclude / item type
+  / bulk exclude stay 403 `tog`; approving a member's rename after `ren` was revoked → 409
+  `requester_not_allowed` (`requester_lacks_permission`), then approved once `ren` is back; seed roles and `can.ren`.
+  `backend/test/ren-permission.test.js` (3): migration 018 on a 1.9.1 fixture (roles, copied overrides, audit
+  rows, intact audit chain).
+
+### Changed
+- **Backend:** renaming an item (`PATCH /api/tracker/functions/:id` with `name_ar` / `name_en` and
+  `rename_reason`) needs `ren` instead of `tog`: without it 403 `forbidden` with `permission: "ren"`. The scope check,
+  the reason rules and the team-lead approval for members are unchanged. `tog` still covers include / exclude, add,
+  remove, restore and the item type.
+- **Backend:** `services/edits.js` — request items `name_ar` / `name_en` need `ren`, so approving a member's rename
+  re-checks the member's `ren` (ETS-SEC-027). The approving team lead needs `apv_dept` and the scope, as for any field.
+- **Frontend:** the rename pencil on the functions page shows only with `ren`.
+- **Frontend:** Logs — permission overrides in a user's change history read with their labels
+  («تعديل اسم البند +، تفعيل البنود وإضافتها −») instead of raw keys.
+- **Docs:** handover 01, 03 (permission table by role), 04 (Arabic user guide), 05 (migration 018), 06 (permission
+  list), 11 (API).
+
+### Upgrade notes
+- **Migration `018_rename_permission.sql`** (data only, applied by `update.sh` / at API start): every role with `tog`
+  gets `ren`, and every per-user override of `tog` is copied to `ren` with the same value (one `audit_log` row per
+  user concerned). **Nothing changes for anyone** until an administrator grants or revokes `ren` for a user in Users.
+  No schema change (`deploy/db/schema-reference.sql` unchanged). Restart the API after updating.
+
+---
+
 ## [1.9.1] — 2026-10-20 — Rename an item with a mandatory reason
 
 ### Added
@@ -1535,7 +1572,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/80f9472...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/1ff9138...HEAD
+[1.9.2]: https://github.com/mscit-admin/ets/compare/80f9472...1ff9138
 [1.9.1]: https://github.com/mscit-admin/ets/compare/b5eb9e2...80f9472
 [1.9.0]: https://github.com/mscit-admin/ets/compare/261ea0b...b5eb9e2
 [1.8.1]: https://github.com/mscit-admin/ets/compare/4d4a7f0...261ea0b

@@ -97,6 +97,7 @@ Users with a limited scope see totals calculated over their own scope only.
 | Team Member (`member`) | Own department: progress, testing, items, reports, and uploading result files — all approved by the team lead |
 
 Permission keys: `pct` progress · `wgt` weights · `tst` test status/notes · `tog` enable/add items ·
+`ren` rename items (1.9.2) ·
 `sch` schedule · `rep` reports · `exp` export · `imp` import · `usr` users · `log` logs · `cfg` settings ·
 `apv_dept` team-lead approval · `apv_final` project/technical-manager approval.
 

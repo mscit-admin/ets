@@ -391,7 +391,7 @@ export default function Application() {
                     <div className="fn-title">
                       <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at} onChange={v => patch(f, { item_type: v })} />
                       <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
-                      {can.tog && !f.removed_at && (
+                      {can.ren && !f.removed_at && (
                         <button type="button" className="btn-icon btn-rename" onClick={() => setRenaming(f)}
                           aria-label={t('rn_button')} title={t('rn_button')}><Icon name="edit" size={15} /></button>
                       )}

@@ -18,7 +18,9 @@ from 2FA in bulk.
 2. Keep **Must change password at first login** ticked. The user then picks their own password.
 3. Choose a **role** (see the table below).
 4. Optionally adjust **permissions**. Each permission follows the role, or can be explicitly **granted** or
-   **revoked** for this user (except *Manage users*, see above).
+   **revoked** for this user (except *Manage users*, see above). Roles themselves are fixed (defined in
+   `backend/src/db/seed.js`, refreshed at every start); there is no screen to edit a role, so per-user overrides
+   are the way to adjust one user (see the permission table below).
 5. Set the **scope**: tick departments (all their applications) and/or single applications. Full scope comes
    from the role only (System Administrator, Project Manager, Technical Project Manager). **A user of any other
    role with nothing ticked sees no data at all** — the form shows a warning and the user list shows
@@ -38,6 +40,31 @@ from 2FA in bulk.
 | Observer | Management / auditors (read only) | what they may see |
 
 Roles other than the three full-scope roles **must** be given a scope, otherwise the user sees nothing.
+
+**Permissions** (Users → user → «الصلاحيات»; ✓ = given by the role):
+
+| Key | Label (ar / en) | admin | pm / tm | mgr | lead | member | ed | qa | obs |
+|---|---|---|---|---|---|---|---|---|---|
+| `pct` | تعديل نسب الإنجاز / Edit progress | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
+| `wgt` | تعديل الأوزان / Edit weights | ✓ | ✓ | ✓ | | | | | |
+| `tst` | حالة الاختبار والملاحظات / Test status & notes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| `tog` | تفعيل البنود وإضافتها / Enable / add items — include / exclude, add, remove, restore, item type | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
+| `ren` | تعديل اسم البند / Rename items (1.9.2) | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
+| `sch` | تعديل الجدول والمنحنى / Edit schedule & curve | ✓ | ✓ | ✓ | | | | | |
+| `rep` | تعديل التقارير / Edit reports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
+| `exp` | التصدير / Export | ✓ | ✓ | ✓ | ✓ | | | | |
+| `imp` | الاستيراد / Import | ✓ | ✓ | | ✓ | ✓ | | | |
+| `usr` | إدارة المستخدمين / Manage users (admin role only) | ✓ | | | | | | | |
+| `log` | الاطلاع على السجلات / View logs | ✓ | ✓ | ✓ | ✓ | | | | |
+| `cfg` | إعدادات النظام / System settings | ✓ | | | | | | | |
+| `apv_dept` | اعتماد نتائج الإدارة (رئيس الفريق) / Approve department results (team lead) | | | | ✓ | | | | |
+| `apv_final` | الاعتماد النهائي (مدير المشروع / الفني) / Final approval (project / technical manager) | | ✓ | | | | | | |
+
+`ren` (1.9.2) is separate from `tog`: revoke it to stop a user renaming items while they still add, remove and
+include them, or grant it alone to let someone correct names without changing the list of items. On upgrade,
+migration 018 gave `ren` to every role that has `tog` and copied every per-user `tog` override to `ren` with the
+same value, so nobody gained or lost anything until an administrator changes it. A team member's rename still
+waits for the team lead.
 
 ### Import users from a file (1.1.0, drop-down lists and names since 1.1.1)
 To create many accounts at once: **Users → Import users** (استيراد مستخدمين).
@@ -194,6 +221,7 @@ approve its members' edits — give someone the Team Lead role with that departm
 
 ## 1d. Adding and removing functions
 - Permission `tog` (include / exclude) also allows adding, removing and restoring functions in the user's scope.
+  Renaming an item needs `ren` instead (1.9.2, see the permission table in section 1).
   Team members now have it; their additions, removals and restores wait for the department team lead.
 - Removal is a soft removal with a mandatory reason: the row is kept (`removed_at`), counts in no calculation and
   never comes back through the catalog seed, a JSON import or a team file. Restore re-includes it.

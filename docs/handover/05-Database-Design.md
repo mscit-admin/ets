@@ -208,6 +208,18 @@ SELECT app_id, count(*) FROM functions WHERE enabled AND removed_at IS NULL AND 
 SELECT u.username, d.name, d.last_seen_at FROM mobile_devices d JOIN users u ON u.id = d.user_id WHERE d.revoked_at IS NULL;
 ```
 
+### 3f. Migration 018 — permission `ren`, rename items (1.9.2)
+
+Data only, no schema change. Renaming an item gets its own permission key `ren` (until 1.9.1 it used `tog`):
+`roles.permissions` gains `ren` wherever it has `tog`, and every `user_permissions` row for `tog` is copied to a
+`ren` row with the same `granted` value (one `audit_log` row per user concerned, `username = 'system'`, overrides
+before / after). Effective rights are therefore unchanged after the upgrade. Re-runnable without side effects.
+
+```sql
+-- users whose rename right differs from their role (overrides of 'ren')
+SELECT u.username, u.role_id, p.granted FROM user_permissions p JOIN users u ON u.id = p.user_id WHERE p.permission = 'ren';
+```
+
 ## 4. Code values
 
 | Column | 0 | 1 | 2 | 3 |

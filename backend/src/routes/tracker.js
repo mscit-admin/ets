@@ -116,7 +116,7 @@ export async function applicationData(user, id) {
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
-    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), rep: hasPerm(u, 'rep') },
+    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), rep: hasPerm(u, 'rep') },
   };
 }
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
@@ -225,7 +225,8 @@ r.patch('/functions/:id', async (req, res) => {
 // clearly belongs to the rename. The code stays. A member's rename waits for the team lead like any other edit; the
 // reason goes with the request (edit_request_items.meta) and into the audit row (new_value.rename_reason).
 async function renameFunction(req, res, cur, body) {
-  if (!hasPerm(req.user, 'tog')) throw new HttpError(403, 'forbidden', { permission: 'tog', field: 'name_ar' });
+  // its own permission since 1.9.2 ('ren'), apart from adding / removing / including items ('tog')
+  if (!hasPerm(req.user, 'ren')) throw new HttpError(403, 'forbidden', { permission: 'ren', field: 'name_ar' });
   const others = Object.keys(body).filter(k => !RENAME_KEYS.includes(k));
   if (others.length) throw bad('rename_must_be_separate', { fields: others });
   if (cur.removed_at) throw new HttpError(409, 'function_removed');
