@@ -11,7 +11,7 @@ import { TypeBadge } from '../components/ItemType.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_en: 'name',
+  notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_ar: 'au_f_name_ar', name_en: 'au_f_name_en',
   create: 'fn_add', removed: 'fn_remove', item_type: 'item_type' };
 
 function useFmt() {
@@ -104,6 +104,9 @@ export default function Approvals() {
                           <span className="muted small">{t('dr_reason')}:</span> <DisabledReason f={i.meta || {}} appId={rq.app_id} />
                           {i.meta?.disabled_note && <div className="small">{t('dr_note')}: <span className="muted">{i.meta.disabled_note}</span></div>}
                         </div>
+                      )}
+                      {i.meta?.rename_reason && (i.field === 'name_ar' || !rq.items.some(x => x.function_id === i.function_id && x.field === 'name_ar')) && (
+                        <div className="req-reason small">{t('rn_reason')}: <span className="muted rn-reason-text">{i.meta.rename_reason}</span></div>
                       )}</td>
                   </tr>
                 ))}

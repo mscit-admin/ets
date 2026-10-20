@@ -13,6 +13,7 @@ import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
 import { functionsExcluded } from '../services/notify-events.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
+import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
   duplicatesOf } from '../services/disable.js';
 
@@ -123,13 +124,13 @@ r.get('/applications/:id', async (req, res) => res.json(await applicationData(re
 // Field → permission needed to change it.
 const FIELD_PERM = {
   progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog',
-  test_status: 'tst', review_status: 'tst', note: 'tst', name_en: 'tog',
+  test_status: 'tst', review_status: 'tst', note: 'tst',
   item_type: 'tog',          // function / report (1.8.0): whoever adds and removes items sets their type
 };
 const FIELD_OK = {
   progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
   test_status: v => intIn(v, 0, 3), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 3),
-  note: v => typeof v === 'string' && v.length <= 2000, name_en: v => typeof v === 'string' && v.length <= 500,
+  note: v => typeof v === 'string' && v.length <= 2000,
   item_type: v => ITEM_TYPES.includes(v),
 };
 
@@ -142,8 +143,10 @@ r.patch('/functions/:id', async (req, res) => {
   const cur = (await query('SELECT * FROM functions WHERE id=$1', [id])).rows[0];
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
-  if (cur.removed_at) throw bad('function_removed');
   const body = { ...(req.body || {}) };
+  // the names (Arabic / English) change only with a reason, in a request of their own (1.9.1)
+  if (RENAME_KEYS.some(k => Object.hasOwn(body, k))) return renameFunction(req, res, cur, body);
+  if (cur.removed_at) throw bad('function_removed');
   // the reason that goes with an exclusion (enabled: false) is not a column edited directly (migration 013)
   const reasonBody = {};
   for (const k of REASON_KEYS) if (Object.hasOwn(body, k)) { reasonBody[k] = body[k]; delete body[k]; }
@@ -217,6 +220,43 @@ r.patch('/functions/:id', async (req, res) => {
   if (changes.enabled === false) await functionsExcluded(cur.app_id, 1, [req.user.id]);     // T7
   res.json({ function: updated });
 });
+
+// Rename of an item (1.9.1): name_ar and / or name_en with rename_reason, nothing else in the request, so the reason
+// clearly belongs to the rename. The code stays. A member's rename waits for the team lead like any other edit; the
+// reason goes with the request (edit_request_items.meta) and into the audit row (new_value.rename_reason).
+async function renameFunction(req, res, cur, body) {
+  if (!hasPerm(req.user, 'tog')) throw new HttpError(403, 'forbidden', { permission: 'tog', field: 'name_ar' });
+  const others = Object.keys(body).filter(k => !RENAME_KEYS.includes(k));
+  if (others.length) throw bad('rename_must_be_separate', { fields: others });
+  if (cur.removed_at) throw new HttpError(409, 'function_removed');
+  const reason = parseRenameReason(body.rename_reason);
+  const changes = parseRename(body, cur);
+  const id = cur.id, keys = Object.keys(changes);
+  const warning = 'name_ar' in changes && await duplicateName({ query }, cur.app_id, id, changes.name_ar) ? { warning: 'duplicate_name' } : {};
+  const app = (await query('SELECT id, department_id FROM applications WHERE id=$1', [cur.app_id])).rows[0];
+  if (await needsLeadApproval(req.user, app)) {
+    const rq = await tx(c => createRequest(c, req, { deptId: app.department_id, appId: cur.app_id, kind: 'function',
+      summary: `${cur.code} ${cur.name_ar.slice(0, 80)}`,
+      items: keys.map(k => ({ kind: 'function', app_id: cur.app_id, function_id: id, field: k, old_value: cur[k], new_value: changes[k],
+        meta: { rename_reason: reason } })) }));
+    publishChange({ dept_id: app.department_id, app_id: cur.app_id });     // "awaiting approval" badges
+    return res.status(202).json({ pending: true, request_id: rq.id, function: cur, ...warning });
+  }
+  const updated = await tx(async c => {
+    // the names as they are now: a rename made by someone else at the same moment is not overwritten
+    const now = (await c.query('SELECT name_ar, name_en, removed_at FROM functions WHERE id=$1 FOR UPDATE', [id])).rows[0];
+    if (now.removed_at) throw new HttpError(409, 'function_removed');
+    if (keys.some(k => now[k] !== cur[k])) throw new HttpError(409, 'name_changed');
+    const u = (await c.query(`UPDATE functions SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')}, updated_at=now(),
+      updated_by=$${keys.length + 2} WHERE id=$1 RETURNING *`, [id, ...keys.map(k => changes[k]), req.user.id])).rows[0];
+    await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: id,
+      summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`,
+      oldValue: Object.fromEntries(keys.map(k => [k, cur[k]])), newValue: { ...changes, rename_reason: reason } });
+    return u;
+  });
+  publishChange({ dept_id: app.department_id, app_id: cur.app_id });      // after COMMIT
+  res.json({ function: updated, ...warning });
+}
 
 // Set the same value on every enabled function of an application.
 r.post('/applications/:id/bulk', async (req, res) => {

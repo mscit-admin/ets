@@ -20,6 +20,7 @@ const notifyLabel = k => (k.startsWith('notify.') ? 'ns_' + k.slice(7) : null);
 // Reports that can be exported to Excel (backend routes/export.js); the audit entity of an export is the report key.
 const EXPORT_REPORTS = new Set(['summary', 'project_status', 'department', 'functions', 'weights', 'reports', 'schedule', 'approvals',
   'imports', 'import_detail', 'users']);
+const NAME_FIELDS = new Set(['name_ar', 'name_en']);      // a rename (1.9.1)
 const MAX_INLINE = 3;      // change lines shown under the sentence in the list; the rest are in the details
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -97,7 +98,9 @@ export function makeAudit({ t, lang }) {
       return { item: what, label: fieldLabel('removed'), from: fmt('removed', i.old?.removed), to: fmt('removed', i.new?.removed) + (i.new?.reason ? ' — ' + t('au_reason', { reason: i.new.reason }) : ''), applied: i.applied };
     }
     const f = i.kind === 'weight' ? 'weight' : i.field;
-    return { item: what, label: fieldLabel(f), from: fmt(f, i.old), to: fmt(f, i.new), applied: i.applied };
+    // a rename carries its reason (1.9.1)
+    const why = i.meta?.rename_reason ? ' — ' + t('au_reason', { reason: quote(short(i.meta.rename_reason)) }) : '';
+    return { item: what, label: fieldLabel(f), from: fmt(f, i.old), to: fmt(f, i.new) + why, applied: i.applied };
   });
 
   // Main sentence of a change to one function / report, choosing a clearer wording for a single change.
@@ -175,6 +178,15 @@ export function makeAudit({ t, lang }) {
           text = t('au_enable_function', { ...vars, who });
           if ('disabled_reason' in o) notes.push(t('au_enable_was', { reason: reasonPhrase(o, appId) + (o.disabled_note ? ': ' + quote(short(o.disabled_note)) : '') }));
           if (ctx.bulk) notes.push(t('au_disable_bulk', { n: ctx.count ?? '' }));
+        } else if (lines.some(l => NAME_FIELDS.has(l.field)) && lines.every(l => NAME_FIELDS.has(l.field) || l.field === 'rename_reason')) {
+          // «غيّر أحمد اسم البند D7 من «…» إلى «…» — السبب: «…»» (1.9.1); the English name as a line when both changed
+          const code = r.fn_code || /^[^/]+\/(\S+)/.exec(r.summary || '')?.[1] || '#' + r.entity_id;
+          const ar = lines.find(l => l.field === 'name_ar'), en = lines.find(l => l.field === 'name_en');
+          const main = ar || en;
+          const reason = n.rename_reason ? quote(short(String(n.rename_reason), 200)) : null;
+          const key = (ar ? 'au_rename' : 'au_rename_en') + (reason ? '' : '_noreason');
+          text = t(key, { ...vars, who, code, from: main.from, to: main.to, reason });
+          lines = ar && en ? [en] : [];
         } else if (lines.length === 1 && lines[0].field === 'item_type') {
           // «غيّر أحمد نوع البند D7 من وظيفة إلى تقرير» (1.8.0)
           text = t('au_item_type', { ...vars, who, from: lines[0].from, to: lines[0].to });

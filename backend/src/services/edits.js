@@ -10,7 +10,8 @@ import { HttpError } from '../utils/http.js';
 import { onCommit } from '../db/pool.js';
 import { requestCreated, functionsExcluded } from './notify-events.js';
 
-const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_en', 'item_type']);
+const FN_COLS = new Set(['progress', 'weight', 'enabled', 'test_status', 'notif_status', 'review_status', 'note', 'name_ar', 'name_en', 'item_type']);
+const NAME_COLS = new Set(['name_ar', 'name_en']);       // a rename (1.9.1): carries its reason in meta.rename_reason
 const REP_COLS = new Set(['progress', 'status', 'note']);
 const same = (a, b) => (typeof a === 'number' || typeof b === 'number' ? Number(a) === Number(b) : a === b);
 
@@ -28,7 +29,7 @@ export async function needsLeadApproval(user, app) {
 
 // Permission an edit-request item needs (same rules as the direct edit in routes/tracker.js).
 const ITEM_PERM = {
-  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_en: 'tog', create: 'tog', removed: 'tog',
+  function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_ar: 'tog', name_en: 'tog', create: 'tog', removed: 'tog',
     test_status: 'tst', review_status: 'tst', note: 'tst', item_type: 'tog' },
   report: { progress: 'rep', status: 'rep', note: 'rep' },
 };
@@ -62,7 +63,8 @@ export async function requesterBlocked(c, rq) {
 }
 
 // Stores a request. items: [{kind, app_id, function_id?, field, old_value, new_value, meta?}] — meta: the reason of an
-// exclusion ({disabled_reason, disabled_note, duplicate_of: [{id, app_id, code}]}), applied with it on approval.
+// exclusion ({disabled_reason, disabled_note, duplicate_of: [{id, app_id, code}]}), applied with it on approval, or
+// of a rename ({rename_reason}, 1.9.1), written into the audit row on approval.
 export async function createRequest(c, req, { deptId, appId, kind, summary, items }) {
   // The same user editing the same value again replaces the earlier pending value.
   for (const it of items) {
@@ -124,6 +126,11 @@ export async function applyRequest(c, rq, req) {
       : (await c.query(`SELECT ${it.field} AS v FROM app_reports WHERE app_id=$1 FOR UPDATE`, [it.app_id])).rows[0];
     let ok = !!cur && same(cur.v, it.old_value);
     let why = ok ? null : 'value changed after the request';
+    const rename = it.kind === 'function' && NAME_COLS.has(it.field);
+    // a name renamed by someone else since the request: refused (409), the request stays pending (rolled back)
+    if (rename && cur && !ok) {
+      throw new HttpError(409, 'name_changed', { function_id: it.function_id, field: it.field, expected: it.old_value, current: cur.v });
+    }
     const toggle = it.kind === 'function' && it.field === 'enabled';
     // an exclusion carries its reason; the functions it names as duplicated must still be there
     const reason = toggle && it.new_value === false ? await requestReason(c, it) : null;
@@ -134,6 +141,9 @@ export async function applyRequest(c, rq, req) {
       else await c.query(`UPDATE app_reports SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1`, [it.app_id, it.new_value, userId]);
       applied++;
       done.push(it);
+      if (rename && it.meta?.rename_reason && !done.some(x => x.function_id === it.function_id && x.field === 'rename_reason')) {
+        done.push({ kind: 'function', app_id: it.app_id, function_id: it.function_id, field: 'rename_reason', old_value: null, new_value: it.meta.rename_reason });
+      }
       if (reason) {
         await setDisabled(c, [it.function_id], reason, userId);
         done.push(...reasonItems(it, null, reason));

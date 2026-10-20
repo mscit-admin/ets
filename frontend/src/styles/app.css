@@ -896,3 +896,14 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
   .notif-bell { position: static; }
   .notif-menu { position: fixed; inset-inline: 8px; top: calc(var(--navbar-h) + 4px); width: auto; }
 }
+
+/* Rename of an item (1.9.1): pencil next to the title, the dialog's read-only code / current name */
+.toast.orange { background: #b35410; }
+.fn-title .btn-rename { flex: none; width: 26px; height: 26px; margin-top: -1px; opacity: .7; }
+.fn-title .btn-rename:hover, .fn-title .btn-rename:focus-visible { opacity: 1; }
+.rn-current { display: grid; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: var(--radius); background: var(--gray-50); }
+.rn-current > div { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: baseline; }
+.rn-current dt { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.rn-current dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .rn-current > div { grid-template-columns: 1fr; gap: 2px; } }
+.req-reason .rn-reason-text { white-space: pre-wrap; }

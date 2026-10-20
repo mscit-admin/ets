@@ -117,7 +117,7 @@ r.post('/approve-all', async (req, res) => {
     .filter(x => abilities(req.user, x, apps).approve);
   let applied = 0, skipped = 0, blocked = 0;
   for (const rq of rows) {
-    // a request the «نجح» = 100 % rule now refuses (1.8.1) is left pending, like a blocked one
+    // a request the «نجح» = 100 % rule now refuses (1.8.1), or a rename of a name changed since (1.9.1), is left pending
     const refused = await tx(async c => {
       const cur = (await c.query('SELECT status FROM edit_requests WHERE id=$1 FOR UPDATE', [rq.id])).rows[0];
       if (cur.status !== 'pending') return;
@@ -128,7 +128,7 @@ r.post('/approve-all', async (req, res) => {
         [rq.id, req.user.id, JSON.stringify(result)]);
       await logAudit(req, { db: c, action: 'edit_approve', entity: 'edit_request', entityId: rq.id, summary: `bulk approval`, newValue: result,
         context: await requestContext(c, rq, req, { bulk: true }) });
-    }).then(() => false, e => { if (PASS_RULE_CODES.includes(e.code)) return true; throw e; });
+    }).then(() => false, e => { if (PASS_RULE_CODES.includes(e.code) || e.code === 'name_changed') return true; throw e; });
     if (refused) { blocked++; continue; }
     publishChange({ dept_id: rq.department_id, app_id: rq.app_id });   // this request's transaction has committed
     if ((await query('SELECT status FROM edit_requests WHERE id=$1', [rq.id])).rows[0]?.status === 'applied') {
