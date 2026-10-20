@@ -30,6 +30,45 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.9.1] — 2026-10-20 — Rename an item with a mandatory reason
+
+### Added
+- **Backend:** rename of a function / report item — `PATCH /api/tracker/functions/:id` with `name_ar` and / or
+  `name_en` and a required `rename_reason` (permission `tog`; `backend/src/services/rename.js`). The reason follows the
+  exclusion-note rule: trimmed, 3–500 characters, whitespace not counted. `name_ar` is trimmed, not empty, ≤ 500
+  characters; `name_en` may be cleared (`null` / empty). The `code` never changes. The rename is sent on its own.
+  Errors: 400 `rename_reason_required` (`min: 3`), `invalid_value` (`field`), `name_unchanged`,
+  `rename_must_be_separate` (`fields`); 409 `function_removed` for a removed item; 403 without `tog` or out of scope.
+  A name already used by another item of the application is allowed and answered with `warning: "duplicate_name"`.
+- **Backend:** a data-entry user's rename waits for the team lead (202): one request item per changed name, the reason
+  in `edit_request_items.meta.rename_reason` (the column of migration 013). On approval the current name must still be
+  the name the request was made against, else 409 `name_changed` — nothing applied, the request stays pending;
+  `approve-all` counts it in `blocked_requests`. `name_ar` added to the columns an approved request may set.
+- **Backend:** strict audit row `update` / `function` with `old_value: {name_ar?, name_en?}` and
+  `new_value: {name_ar?, name_en?, rename_reason}`; an approved rename is audited in the author's name with the
+  reason. Live update `tracker_changed` after commit. The approvals Excel export adds «سبب تعديل الاسم: …» to the
+  «بعد» cell of a rename.
+- **Frontend:** functions page — a pencil button «تعديل الاسم» next to each item's title (with `tog`, not removed)
+  opens «تعديل اسم البند» (`frontend/src/components/RenameDialog.jsx`): read-only code, current name, new Arabic name
+  (required), English name, required reason with a counter; «حفظ الاسم» stays disabled until a name changes and the
+  reason is valid; a non-blocking notice when another item already has the name. A pending rename shows on the row
+  as «بانتظار الاعتماد: تعديل الاسم إلى «…»»; the Approvals page shows «الاسم: قديم ← جديد» and «سبب التعديل».
+- **Frontend:** Logs — «غيّر أحمد اسم البند D7 في تطبيق … من «…» إلى «…» — السبب: «…»» (ar / en), field labels
+  `au_f_name_ar` / `au_f_rename_reason`.
+- **Tests:** `backend/test/rename.test.js` (12) — reason rules, empty / long / unchanged names, mixing fields, removed
+  item, no `tog`, out of scope, direct rename and its audit row, clearing `name_en`, the duplicate-name warning, a
+  member's request with its reason and its approval, the stale-name 409 (approve and approve-all), the live event.
+- **Docs:** handover 04 (Arabic user guide: renaming an item) and 11 (API: the rename fields and errors).
+
+### Changed
+- **Backend:** `name_en` is no longer a plain field of the PATCH: changing it needs `rename_reason` like `name_ar`.
+- Screens, search and the Excel exports already read the current name: they show the new name with no change.
+
+### Upgrade notes
+- No migration (the reason uses `edit_request_items.meta` from migration 013). Restart the API after updating.
+
+---
+
 ## [1.9.0] — 2026-10-19 — Notifications, the bell and the phone API
 
 ### Added
