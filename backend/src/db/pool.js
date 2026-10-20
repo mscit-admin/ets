@@ -14,18 +14,36 @@ export const pool = new pg.Pool(dbPoolConfig());
 
 export const query = (text, params) => pool.query(text, params);
 
-// Runs fn(client) inside a transaction.
+// Runs fn(client) inside a transaction. Work registered with onCommit(client, fn) runs after COMMIT (and is
+// dropped on ROLLBACK): notifications and live-update hints about the transaction's changes.
 export async function tx(fn) {
   const client = await pool.connect();
+  const after = [];
+  client.etsAfterCommit = after;
+  let r;
   try {
     await client.query('BEGIN');
-    const r = await fn(client);
+    r = await fn(client);
     await client.query('COMMIT');
-    return r;
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
+    client.etsAfterCommit = null;
     client.release();
   }
+  // after the connection is back in the pool: these tasks use their own queries
+  for (const f of after) {
+    try { await f(); } catch (e) { afterCommitError(e); }
+  }
+  return r;
+}
+
+// Runs fn after the transaction of client c commits; outside a transaction (c = pool / { query }) right away.
+// A failure is reported, never thrown: the change it follows is already saved.
+let afterCommitError = e => console.error('after-commit task failed:', e?.message);
+export const setAfterCommitErrorHandler = fn => { afterCommitError = fn; };
+export function onCommit(c, fn) {
+  if (Array.isArray(c?.etsAfterCommit)) { c.etsAfterCommit.push(fn); return; }
+  Promise.resolve().then(fn).catch(e => afterCommitError(e));
 }

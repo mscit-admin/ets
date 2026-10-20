@@ -77,6 +77,16 @@ export const config = {
     maxStreamsPerUser: Math.max(1, int('LIVE_MAX_STREAMS_PER_USER', 5)),
   },
   staticDir: env('STATIC_DIR', ''), // serve the built frontend from here (optional; nginx usually does it)
+  // Phones (Android app, 1.9.0): written into the pairing QR code. PUBLIC_BASE_URL = the address the phones use
+  // (e.g. https://ets.example.ly, reached over the organisation's VPN from outside); empty → the address of the
+  // browser that asks for the code. TLS_CERT_SHA256 = SHA-256 of the server's TLS certificate (DER, 64 hex digits,
+  // colons allowed), filled by deploy/install.sh / update.sh from the nginx certificate; empty → null in the QR
+  // (a publicly trusted certificate). PAIR_RATE_LIMIT = pairing attempts per IP per 15 minutes.
+  mobile: {
+    publicBaseUrl: env('PUBLIC_BASE_URL', '').trim().replace(/\/+$/, ''),
+    certSha256: env('TLS_CERT_SHA256', '').replace(/:/g, '').trim().toLowerCase(),
+    pairRateLimit: Math.max(1, int('PAIR_RATE_LIMIT', 5)),
+  },
 };
 
 // Known example / placeholder values (e.g. backend/.env.example) and obviously non-random strings.
@@ -192,4 +202,21 @@ export function assertConfig() {
       `so the connection is encrypted`);
   }
   dbSslOptions();   // fails early on an unknown mode or an unreadable certificate file
+  const m = mobileConfigProblem(config.mobile);
+  if (m) throw new Error(m);
+}
+
+// PUBLIC_BASE_URL / TLS_CERT_SHA256 (see config.mobile): → why a value is unusable, or null.
+export function mobileConfigProblem({ publicBaseUrl, certSha256 }) {
+  if (publicBaseUrl) {
+    let u; try { u = new URL(publicBaseUrl); } catch { u = null; }
+    if (!u || !['https:', 'http:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) {
+      return `PUBLIC_BASE_URL "${publicBaseUrl}" must be an address such as https://ets.example.ly (no user, query or fragment)`;
+    }
+  }
+  if (certSha256 && !/^[0-9a-f]{64}$/.test(certSha256)) {
+    return 'TLS_CERT_SHA256 must be the SHA-256 fingerprint of the certificate: 64 hexadecimal digits (colons allowed), ' +
+      'e.g. from: openssl x509 -in <cert> -noout -fingerprint -sha256';
+  }
+  return null;
 }

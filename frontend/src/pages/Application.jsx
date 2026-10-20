@@ -11,13 +11,16 @@ import { useLiveUpdates } from '../lib/live.js';
 import { MultiSelect } from '../components/MultiSelect.jsx';
 import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
 import { ITEM_TYPES, ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
+import { RenameDialog } from '../components/RenameDialog.jsx';
 
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
 const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
 
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note', item_type: 'item_type' };
+  notif_status: 'notif_status', review_status: 'review_status', note: 'note', item_type: 'item_type',
+  name_ar: 'au_f_name_ar', name_en: 'au_f_name_en' };
+const NAME_FIELDS = new Set(['name_ar', 'name_en']);      // a pending rename (1.9.1)
 
 const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
 // "reason" filter values: the reasons a user picks, 'import', and 'none' (excluded before 1.5.0, no reason recorded)
@@ -160,6 +163,7 @@ export default function Application() {
   const [bulk, setBulk] = useState(false);
   const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState(null);   // {f, mode: 'remove' | 'restore' | 'toggle', enabled?}
+  const [renaming, setRenaming] = useState(null);  // the item being renamed (1.9.1)
 
   useEffect(() => {
     if (!data) return;
@@ -261,6 +265,7 @@ export default function Application() {
     if (field === 'enabled') return v ? '✓' : '✗' + (meta ? ' (' + reasonText(t, lang, meta, id) + ')' : '');
     if (field === 'item_type') return t('it_' + v);
     if (field === 'note') return '✎';
+    if (NAME_FIELDS.has(field)) return v ? '«' + v + '»' : t('rn_cleared');
     return String(v);
   };
 
@@ -386,6 +391,10 @@ export default function Application() {
                     <div className="fn-title">
                       <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at} onChange={v => patch(f, { item_type: v })} />
                       <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
+                      {can.tog && !f.removed_at && (
+                        <button type="button" className="btn-icon btn-rename" onClick={() => setRenaming(f)}
+                          aria-label={t('rn_button')} title={t('rn_button')}><Icon name="edit" size={15} /></button>
+                      )}
                     </div>
                     <div className="fn-meta">
                       <span className="code">{f.code}</span>
@@ -395,8 +404,10 @@ export default function Application() {
                       {f.enabled && partW(f) > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / partW(f)) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
                       {pendingByFn[f.id] && (
-                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)} — ${p.requested_by_name}`).join('\n')}>
-                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`).join(' · ')}
+                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)}${p.meta?.rename_reason ? ' — ' + t('rn_reason') + ': ' + p.meta.rename_reason : ''} — ${p.requested_by_name}`).join('\n')}>
+                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => (NAME_FIELDS.has(p.field)
+                            ? t(p.field === 'name_ar' ? 'rn_pending' : 'rn_pending_en', { name: fmtPending(p.field, p.new_value) })
+                            : `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`)).join(' · ')}
                         </Link>
                       )}
                       {!f.enabled && !f.removed_at && <DisabledReason f={f} appId={a.id} />}
@@ -443,6 +454,7 @@ export default function Application() {
         onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor.f, { ...(noteFor.pending || {}), note }); setNoteFor(null); }} />}
       {bulk && <BulkModal app={a} can={can} onClose={() => setBulk(false)} onDone={() => { setBulk(false); reload(); }} />}
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
+      {renaming && <RenameDialog f={renaming} others={fns} onClose={() => setRenaming(null)} onDone={() => { setRenaming(null); reload(); }} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {
           // including again needs no reason: saved like the other cells; an exclusion is saved by the dialog itself

@@ -11,6 +11,7 @@ import { config } from '../config.js';
 import { query } from '../db/pool.js';
 import { HttpError } from '../utils/http.js';
 import { logAuth } from './logs.js';
+import { accountLocked } from './notify-events.js';
 
 // One check at a time per account (the API runs as a single Node process): concurrent guesses for the same
 // account wait for each other, so each one sees the counter left by the previous one (ETS-SEC-021).
@@ -52,6 +53,7 @@ export async function registerFailure(req, u, event, extra = {}) {
   if (delayed) {
     await logAuth(req, { userId: u.id, username: u.username, event: 'account_locked', success: false,
       detail: { ...extra, until: row.locked_until, attempts: row.failed_attempts } });
+    await accountLocked(u);                // S1: administrators (merged per account while unread)
   }
   return { attempts: row.failed_attempts, locked_until: row.locked_until, delayed };
 }

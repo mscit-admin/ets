@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–016).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–017).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -98,6 +98,20 @@ BEGIN
   CREATE UNIQUE INDEX users_email_lower_uniq ON users (lower(email::text))
     WHERE email IS NOT NULL AND email <> '' AND deleted_at IS NULL;
   RETURN true;
+END $$;
+-- Name: ets_function_change_times(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_function_change_times() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.progress_changed_at := COALESCE(NEW.progress_changed_at, now());
+    NEW.test_changed_at := COALESCE(NEW.test_changed_at, now());
+  ELSE
+    IF NEW.progress IS DISTINCT FROM OLD.progress THEN NEW.progress_changed_at := now(); END IF;
+    IF NEW.test_status IS DISTINCT FROM OLD.test_status THEN NEW.test_changed_at := now(); END IF;
+  END IF;
+  RETURN NEW;
 END $$;
 -- Name: ets_log_append_only(); Type: FUNCTION; Schema: public; Owner: -
 CREATE FUNCTION public.ets_log_append_only() RETURNS trigger
@@ -259,6 +273,15 @@ CREATE TABLE public.departments (
     is_base boolean DEFAULT false NOT NULL,
     sort integer DEFAULT 0 NOT NULL
 );
+-- Name: device_pair_codes; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.device_pair_codes (
+    code_hash text NOT NULL,
+    user_id integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    device_id integer
+);
 -- Name: edit_request_items; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.edit_request_items (
     id bigint NOT NULL,
@@ -367,6 +390,8 @@ CREATE TABLE public.functions (
     disabled_by integer,
     disabled_at timestamp with time zone,
     item_type text DEFAULT 'function'::text NOT NULL,
+    progress_changed_at timestamp with time zone,
+    test_changed_at timestamp with time zone,
     CONSTRAINT functions_disabled_note_check CHECK (((disabled_note IS NULL) OR (char_length(disabled_note) <= 500))),
     CONSTRAINT functions_disabled_reason_check CHECK (((disabled_reason IS NULL) OR (disabled_reason = ANY (ARRAY['duplicate'::text, 'out_of_scope'::text, 'not_required'::text, 'other'::text, 'import'::text])))),
     CONSTRAINT functions_item_type_check CHECK ((item_type = ANY (ARRAY['function'::text, 'report'::text]))),
@@ -380,6 +405,10 @@ CREATE TABLE public.functions (
 );
 -- Name: COLUMN functions.item_type; Type: COMMENT; Schema: public; Owner: -
 COMMENT ON COLUMN public.functions.item_type IS 'function | report (1.8.0): which part of the application % the item counts in';
+-- Name: COLUMN functions.progress_changed_at; Type: COMMENT; Schema: public; Owner: -
+COMMENT ON COLUMN public.functions.progress_changed_at IS 'last change of progress (trigger ets_function_change_times, 1.9.0)';
+-- Name: COLUMN functions.test_changed_at; Type: COMMENT; Schema: public; Owner: -
+COMMENT ON COLUMN public.functions.test_changed_at IS 'last change of test_status (trigger ets_function_change_times, 1.9.0)';
 -- Name: functions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 CREATE SEQUENCE public.functions_id_seq
     AS integer
@@ -476,6 +505,87 @@ CREATE TABLE public.log_chain_head (
     tbl text NOT NULL,
     last_seq bigint DEFAULT 0 NOT NULL,
     last_hash text DEFAULT ''::text NOT NULL
+);
+-- Name: mobile_devices; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.mobile_devices (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name text NOT NULL,
+    platform text NOT NULL,
+    app_version text,
+    token_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_ip inet,
+    last_seen_at timestamp with time zone,
+    last_ip inet,
+    revoked_at timestamp with time zone,
+    revoked_by integer,
+    revoke_reason text,
+    CONSTRAINT mobile_devices_app_version_check CHECK (((app_version IS NULL) OR (char_length(app_version) <= 40))),
+    CONSTRAINT mobile_devices_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 80))),
+    CONSTRAINT mobile_devices_platform_check CHECK ((platform = 'android'::text)),
+    CONSTRAINT mobile_devices_revoke_reason_check CHECK (((revoke_reason IS NULL) OR (revoke_reason = ANY (ARRAY['user'::text, 'unpaired'::text, 'admin'::text, 'user_disabled'::text, 'user_deleted'::text, 'password_reset'::text, 'inactive'::text]))))
+);
+-- Name: mobile_devices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.mobile_devices_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: mobile_devices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.mobile_devices_id_seq OWNED BY public.mobile_devices.id;
+-- Name: notification_prefs; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.notification_prefs (
+    user_id integer NOT NULL,
+    prefs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+-- Name: notification_user_blocks; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.notification_user_blocks (
+    user_id integer NOT NULL,
+    type text NOT NULL,
+    channel text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by integer,
+    CONSTRAINT notification_user_blocks_channel_check CHECK ((channel = ANY (ARRAY['all'::text, 'mobile'::text])))
+);
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.notifications (
+    id bigint NOT NULL,
+    user_id integer NOT NULL,
+    type text NOT NULL,
+    category text NOT NULL,
+    severity text NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    link text,
+    dept_id text,
+    app_id text,
+    dedupe_key text NOT NULL,
+    count integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    read_at timestamp with time zone,
+    resolved_at timestamp with time zone,
+    CONSTRAINT notifications_category_check CHECK ((category = ANY (ARRAY['tracking'::text, 'approvals'::text, 'plan'::text, 'security'::text, 'system'::text]))),
+    CONSTRAINT notifications_link_check CHECK (((link IS NULL) OR (link ~ '^/[A-Za-z0-9/_?=&.-]*$'::text))),
+    CONSTRAINT notifications_severity_check CHECK ((severity = ANY (ARRAY['info'::text, 'warning'::text, 'critical'::text])))
+);
+-- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+CREATE SEQUENCE public.notifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+-- Name: notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+-- Name: notify_state; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.notify_state (
+    key text NOT NULL,
+    value jsonb,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 -- Name: progress_snapshots; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.progress_snapshots (
@@ -652,6 +762,10 @@ ALTER TABLE ONLY public.import_batches ALTER COLUMN id SET DEFAULT nextval('publ
 ALTER TABLE ONLY public.import_changes ALTER COLUMN id SET DEFAULT nextval('public.import_changes_id_seq'::regclass);
 -- Name: log_chain_anchor id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.log_chain_anchor ALTER COLUMN id SET DEFAULT nextval('public.log_chain_anchor_id_seq'::regclass);
+-- Name: mobile_devices id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.mobile_devices ALTER COLUMN id SET DEFAULT nextval('public.mobile_devices_id_seq'::regclass);
+-- Name: notifications id; Type: DEFAULT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
 -- Name: system_log id; Type: DEFAULT; Schema: public; Owner: -
 ALTER TABLE ONLY public.system_log ALTER COLUMN id SET DEFAULT nextval('public.system_log_id_seq'::regclass);
 -- Name: user_recovery_codes id; Type: DEFAULT; Schema: public; Owner: -
@@ -679,6 +793,9 @@ ALTER TABLE ONLY public.branding_assets
 -- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.departments
     ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
+-- Name: device_pair_codes device_pair_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.device_pair_codes
+    ADD CONSTRAINT device_pair_codes_pkey PRIMARY KEY (code_hash);
 -- Name: edit_request_items edit_request_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.edit_request_items
     ADD CONSTRAINT edit_request_items_pkey PRIMARY KEY (id);
@@ -709,6 +826,24 @@ ALTER TABLE ONLY public.log_chain_anchor
 -- Name: log_chain_head log_chain_head_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.log_chain_head
     ADD CONSTRAINT log_chain_head_pkey PRIMARY KEY (tbl);
+-- Name: mobile_devices mobile_devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.mobile_devices
+    ADD CONSTRAINT mobile_devices_pkey PRIMARY KEY (id);
+-- Name: mobile_devices mobile_devices_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.mobile_devices
+    ADD CONSTRAINT mobile_devices_token_hash_key UNIQUE (token_hash);
+-- Name: notification_prefs notification_prefs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notification_prefs
+    ADD CONSTRAINT notification_prefs_pkey PRIMARY KEY (user_id);
+-- Name: notification_user_blocks notification_user_blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notification_user_blocks
+    ADD CONSTRAINT notification_user_blocks_pkey PRIMARY KEY (user_id, type, channel);
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+-- Name: notify_state notify_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notify_state
+    ADD CONSTRAINT notify_state_pkey PRIMARY KEY (key);
 -- Name: progress_snapshots progress_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.progress_snapshots
     ADD CONSTRAINT progress_snapshots_pkey PRIMARY KEY (day);
@@ -766,6 +901,8 @@ CREATE INDEX auth_log_event_idx ON public.auth_log USING btree (event);
 CREATE INDEX auth_log_ts_idx ON public.auth_log USING btree (ts DESC);
 -- Name: auth_log_user_id_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX auth_log_user_id_ts_idx ON public.auth_log USING btree (user_id, ts DESC);
+-- Name: device_pair_codes_user; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX device_pair_codes_user ON public.device_pair_codes USING btree (user_id);
 -- Name: edit_request_items_function_id_field_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX edit_request_items_function_id_field_idx ON public.edit_request_items USING btree (function_id, field);
 -- Name: edit_request_items_request_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -788,6 +925,16 @@ CREATE INDEX import_batches_uploaded_at_idx ON public.import_batches USING btree
 CREATE INDEX import_changes_batch_id_idx ON public.import_changes USING btree (batch_id);
 -- Name: log_chain_anchor_tbl; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX log_chain_anchor_tbl ON public.log_chain_anchor USING btree (tbl, next_seq);
+-- Name: mobile_devices_user; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX mobile_devices_user ON public.mobile_devices USING btree (user_id) WHERE (revoked_at IS NULL);
+-- Name: notifications_dedupe; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX notifications_dedupe ON public.notifications USING btree (dedupe_key, user_id, updated_at DESC);
+-- Name: notifications_open_dedupe; Type: INDEX; Schema: public; Owner: -
+CREATE UNIQUE INDEX notifications_open_dedupe ON public.notifications USING btree (user_id, dedupe_key) WHERE (read_at IS NULL);
+-- Name: notifications_user_time; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX notifications_user_time ON public.notifications USING btree (user_id, created_at DESC, id DESC);
+-- Name: notifications_user_unread; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX notifications_user_unread ON public.notifications USING btree (user_id) WHERE (read_at IS NULL);
 -- Name: sessions_expires_at_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX sessions_expires_at_idx ON public.sessions USING btree (expires_at);
 -- Name: sessions_user_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -812,6 +959,8 @@ CREATE TRIGGER ets_append_only BEFORE DELETE OR UPDATE ON public.log_chain_ancho
 CREATE TRIGGER ets_chain BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_chain_insert();
 -- Name: auth_log ets_chain; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_chain BEFORE INSERT ON public.auth_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_chain_insert();
+-- Name: functions ets_function_change_times; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER ets_function_change_times BEFORE INSERT OR UPDATE ON public.functions FOR EACH ROW EXECUTE FUNCTION public.ets_function_change_times();
 -- Name: audit_log ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EACH STATEMENT EXECUTE FUNCTION public.ets_log_append_only();
 -- Name: auth_log ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
@@ -842,6 +991,12 @@ ALTER TABLE ONLY public.auth_log
 -- Name: branding_assets branding_assets_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.branding_assets
     ADD CONSTRAINT branding_assets_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: device_pair_codes device_pair_codes_device_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.device_pair_codes
+    ADD CONSTRAINT device_pair_codes_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.mobile_devices(id) ON DELETE SET NULL;
+-- Name: device_pair_codes device_pair_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.device_pair_codes
+    ADD CONSTRAINT device_pair_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 -- Name: edit_request_items edit_request_items_app_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.edit_request_items
     ADD CONSTRAINT edit_request_items_app_id_fkey FOREIGN KEY (app_id) REFERENCES public.applications(id);
@@ -911,6 +1066,24 @@ ALTER TABLE ONLY public.import_changes
 -- Name: import_changes import_changes_function_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.import_changes
     ADD CONSTRAINT import_changes_function_id_fkey FOREIGN KEY (function_id) REFERENCES public.functions(id) ON DELETE CASCADE;
+-- Name: mobile_devices mobile_devices_revoked_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.mobile_devices
+    ADD CONSTRAINT mobile_devices_revoked_by_fkey FOREIGN KEY (revoked_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: mobile_devices mobile_devices_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.mobile_devices
+    ADD CONSTRAINT mobile_devices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+-- Name: notification_prefs notification_prefs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notification_prefs
+    ADD CONSTRAINT notification_prefs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+-- Name: notification_user_blocks notification_user_blocks_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notification_user_blocks
+    ADD CONSTRAINT notification_user_blocks_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: notification_user_blocks notification_user_blocks_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notification_user_blocks
+    ADD CONSTRAINT notification_user_blocks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+-- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 -- Name: schedule schedule_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.schedule
     ADD CONSTRAINT schedule_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;

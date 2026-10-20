@@ -17,6 +17,7 @@ import Settings from './pages/Settings.jsx';
 import Profile from './pages/Profile.jsx';
 import { ImportDetail, ImportList } from './pages/Imports.jsx';
 import Approvals from './pages/Approvals.jsx';
+import Notifications from './pages/Notifications.jsx';
 
 function Guard({ perm, children }) {
   const { can } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="logs" element={<Guard perm="log"><Logs /></Guard>} />
             <Route path="settings" element={<Guard perm="cfg"><Settings /></Guard>} />
             <Route path="profile" element={<Profile />} />
+            <Route path="notifications" element={<Notifications />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

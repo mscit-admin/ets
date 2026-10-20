@@ -9,6 +9,8 @@
 //     screens also reload every POLL_MS until the stream works again;
 //   - "session_ended" (signed out, expired, revoked) → the app's sign-in check runs.
 // Reloads send X-ETS-Live: 1 so they do not count as user activity for the idle timeout.
+// Notifications (1.9.0): "notif_changed" { unread, top_severity } goes to useNotifStream() listeners (the bell);
+// the bell keeps the stream open on every screen while signed in.
 import { useEffect, useRef, useState } from 'react';
 import { notifyUnauthorized } from './api.js';
 
@@ -19,6 +21,7 @@ const MAX_BACKOFF_MS = 60_000;
 const IDLE_CLOSE_MS = 3000;
 
 const listeners = new Set();        // fn({ reason, dept_id?, app_id? })
+const notifListeners = new Set();   // fn({ unread, top_severity })
 const statusListeners = new Set();
 let es = null, status = 'off';      // off | connecting | live | polling
 let failures = 0, retryTimer = null, pollTimer = null, idleTimer = null, connectedOnce = false;
@@ -54,6 +57,11 @@ function open() {
     let d = {};
     try { d = JSON.parse(e.data); } catch { /* hint only */ }
     emit({ reason: 'change', dept_id: d.dept_id, app_id: d.app_id });
+  });
+  s.addEventListener('notif_changed', e => {
+    let d = null;
+    try { d = JSON.parse(e.data); } catch { /* ignored */ }
+    if (d && typeof d.unread === 'number') notifListeners.forEach(f => { try { f(d); } catch { /* a handler */ } });
   });
   s.addEventListener('session_ended', () => { close(); setStatus('off'); notifyUnauthorized(); });
   // The browser's own retry is replaced by ours (backoff, fallback to polling, 401/429 answers).
@@ -110,6 +118,22 @@ export function useLiveUpdates(onChange, { filter, enabled = true } = {}) {
       t = setTimeout(() => fn.current(msg), DEBOUNCE_MS);
     });
     return () => { clearTimeout(t); off(); };
+  }, [enabled]);
+}
+
+/**
+ * The bell: onCount({ unread, top_severity }) on every "notif_changed" event; onResync() when events may have been
+ * missed (reconnection, tab visible again, polling) so the bell asks the API for the count.
+ */
+export function useNotifStream(onCount, onResync, { enabled = true } = {}) {
+  const c = useRef(onCount), r = useRef(onResync);
+  c.current = onCount; r.current = onResync;
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const fn = d => c.current(d);
+    notifListeners.add(fn);
+    const off = subscribe(msg => { if (msg.reason !== 'change') r.current(); });
+    return () => { notifListeners.delete(fn); off(); };
   }, [enabled]);
 }
 

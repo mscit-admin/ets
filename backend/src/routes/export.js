@@ -214,7 +214,8 @@ const REPORTS = {
           summary: rq.summary, by: rq.requested_by_name, at: rq.requested_at, dby: rq.decided_by_name, dat: rq.decided_at, reason: rq.reason };
         if (!rq.items.length) return [base];
         return rq.items.map(i => ({ ...base, item: itemLabel(L, i), field: fieldLabel(t, i.field), before: fmtValue(L, i.kind, i.field, i.old_value),
-          after: fmtValue(L, i.kind, i.field, i.new_value) + (i.field === 'enabled' && i.new_value === false ? ' — ' + reasonText(L, i.meta || {}, rq.app_id) : ''),
+          after: fmtValue(L, i.kind, i.field, i.new_value) + (i.field === 'enabled' && i.new_value === false ? ' — ' + reasonText(L, i.meta || {}, rq.app_id) : '')
+            + (i.meta?.rename_reason ? ' — ' + t('rename_reason') + ': ' + i.meta.rename_reason : ''),
           applied: i.applied === undefined || i.applied === null ? '' : yesNo(t, i.applied) }));
       });
       return { rows, filters: f, columns: [['id', 'request', 'int'], ['status', 'status'], ['dept', 'department'], ['app', 'application'],

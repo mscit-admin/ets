@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">تنبيهات ETS</string>
+
+    <!-- الشاشة الرئيسية -->
+    <string name="action_refresh">تحديث</string>
+    <string name="action_device">الجهاز والربط</string>
+    <string name="status_line">%1$d غير مقروء · %2$s</string>
+    <string name="empty_list">لا توجد تنبيهات بعد. ستظهر تنبيهات ETS الجديدة هنا.</string>
+    <string name="severity_critical">حرج</string>
+    <string name="severity_warning">تحذير</string>
+    <string name="severity_info">معلومة</string>
+    <string name="state_read">مقروء</string>
+    <string name="state_unread">غير مقروء</string>
+    <string name="error_unreachable">تعذّر الوصول إلى خادم ETS. تأكد من اتصال الـ VPN.</string>
+    <string name="no_browser">لا يوجد متصفح لفتح هذا التنبيه.</string>
+
+    <!-- الإشعارات -->
+    <string name="public_alert_title">تنبيه جديد من ETS</string>
+    <string name="channel_critical">تنبيهات حرجة</string>
+    <string name="channel_critical_desc">تنبيهات ETS العاجلة، مع صوت وإظهار فوري.</string>
+    <string name="channel_warning">تحذيرات</string>
+    <string name="channel_warning_desc">تنبيهات ETS التي تحتاج إلى متابعة.</string>
+    <string name="channel_info">معلومات</string>
+    <string name="channel_info_desc">تنبيهات ETS المعلوماتية، تصل بهدوء.</string>
+    <string name="channel_service">الاتصال</string>
+    <string name="channel_service_desc">يظهر أثناء تشغيل الاتصال الدائم.</string>
+    <string name="channel_account">الحساب</string>
+    <string name="service_title">تنبيهات ETS متصل</string>
+    <string name="service_text">بانتظار تنبيهات جديدة</string>
+    <string name="revoked_title">تم إلغاء ربط الجهاز</string>
+    <string name="revoked_body">أُزيل هذا الهاتف من ETS. أعد الربط من الملف الشخصي ← أجهزتي.</string>
+
+    <!-- شاشة الربط -->
+    <string name="pair_title">ربط هذا الهاتف</string>
+    <string name="pair_instructions">من موقع ETS افتح الملف الشخصي ← أجهزتي وأنشئ رمز QR للربط، ثم امسحه هنا.</string>
+    <string name="scan_qr">مسح رمز QR</string>
+    <string name="scan_prompt">وجّه الكاميرا نحو رمز QR الخاص بربط ETS</string>
+    <string name="or_paste">أو الصق رمز الربط (JSON)</string>
+    <string name="pair">ربط</string>
+    <string name="vpn_hint">يجب أن يكون الهاتف متصلاً بشبكة VPN الخاصة بالشركة للوصول إلى خادم ETS.</string>
+    <string name="confirm_pair_title">الربط مع هذا الخادم؟</string>
+    <string name="confirm_pair_message">%1$s\n\n%2$s</string>
+    <string name="paired_as">تم الربط باسم %1$s</string>
+    <string name="pair_failed">فشل الربط</string>
+
+    <string name="label_server">الخادم</string>
+    <string name="label_user">المستخدم</string>
+    <string name="label_certificate">الشهادة</string>
+    <string name="trust_pinned">شهادة مثبّتة SHA-256:\n%1$s</string>
+    <string name="trust_system">شهادة موثوقة من النظام</string>
+    <string name="persistent">اتصال دائم</string>
+    <string name="persistent_desc">يُبقي اتصالاً مباشراً لوصول التنبيهات فوراً مع إشعار صغير دائم. عند إيقافه يتحقق التطبيق من التنبيهات كل 15 دقيقة تقريباً.</string>
+    <string name="battery">إعدادات تحسين البطارية</string>
+    <string name="battery_desc">لضمان وصول التنبيهات اجعل تطبيق تنبيهات ETS «غير محسَّن» / «غير مقيّد».</string>
+    <string name="battery_settings_missing">إعدادات البطارية غير متاحة على هذا الجهاز.</string>
+    <string name="open_alerts">عرض التنبيهات</string>
+    <string name="unpair">فصل</string>
+    <string name="confirm_unpair_message">فصل هذا الهاتف؟ سيتوقف عن استقبال تنبيهات ETS وسيُطلب من الخادم حذفه.</string>
+    <string name="unpair_remote_failed">تم الفصل على هذا الهاتف، لكن تعذّر الوصول إلى خادم ETS للتأكيد. يُرجى أيضاً حذف الجهاز من الموقع في الملف الشخصي ← أجهزتي.</string>
+    <string name="app_version">الإصدار %1$s</string>
+    <string name="app_and_server_version">التطبيق %1$s · الخادم %2$s</string>
+
+    <!-- الأخطاء -->
+    <string name="err_payload_empty">امسح رمز QR أو الصق رمز الربط أولاً.</string>
+    <string name="err_payload_not_json">هذا ليس رمز ربط ETS. الصق نص JSON الكامل الظاهر أسفل رمز QR.</string>
+    <string name="err_payload_version">رمز الربط هذا يتطلب إصداراً أحدث من التطبيق.</string>
+    <string name="err_payload_url">عنوان الخادم في الرمز غير صالح. يُسمح فقط بعناوين https://.</string>
+    <string name="err_payload_code">رمز الربط مفقود أو غير صالح.</string>
+    <string name="err_payload_fingerprint">بصمة الشهادة في الرمز غير صالحة.</string>
+    <string name="err_code_rejected">رفض الخادم رمز الربط. ربما انتهت صلاحيته؛ أنشئ رمز QR جديداً وحاول مرة أخرى.</string>
+    <string name="err_server_status">أعاد الخادم خطأً (HTTP %1$d).</string>
+    <string name="err_tls">فشل الاتصال الآمن: شهادة الخادم لا تطابق رمز الربط.</string>
+    <string name="err_unreachable_vpn">تعذّر الوصول إلى الخادم. تأكد من اتصال الـ VPN ثم حاول مرة أخرى.</string>
+    <string name="err_generic">حدث خطأ ما. يُرجى المحاولة مرة أخرى.</string>
+</resources>

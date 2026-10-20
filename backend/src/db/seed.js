@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pool, tx } from './pool.js';
+import { NOTIFY_DEFAULTS } from '../services/notify-catalog.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +63,8 @@ export const DEFAULT_SETTINGS = {
   'approval.edits_need_lead': true,    // data-entry edits wait for the department team lead
   'app.logo_height': 28,               // logo height in the top bar (px)
   'app.login_logo_height': 64,         // logo height on the login screen (px)
+  // notifications (1.9.0): thresholds, schedule, rate cap, retention, policy matrix — services/notify-catalog.js
+  ...NOTIFY_DEFAULTS,
 };
 
 export async function seed({ log = console.log } = {}) {

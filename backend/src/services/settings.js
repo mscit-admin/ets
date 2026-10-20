@@ -1,5 +1,6 @@
 import { query } from '../db/pool.js';
 import { DEFAULT_SETTINGS } from '../db/seed.js';
+import { NOTIFY_RULES } from './notify-catalog.js';
 
 let cache = null, cachedAt = 0;
 const TTL = 10_000;
@@ -37,4 +38,6 @@ export const SETTING_RULES = {
   'approval.edits_need_lead': v => typeof v === 'boolean',
   'app.logo_height': v => Number.isInteger(v) && v >= 20 && v <= 80,
   'app.login_logo_height': v => Number.isInteger(v) && v >= 40 && v <= 200,
+  // notifications (1.9.0): Settings → «الإشعارات»; cross-key rules in notify-catalog.js crossProblem()
+  ...NOTIFY_RULES,
 };

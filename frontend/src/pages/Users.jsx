@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
+import { UserNotifyCard } from '../components/UserNotify.jsx';
 import { UserImport } from './UserImport.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { DeleteUsersDialog, RestoreUserDialog, undeletable } from '../components/DeleteUsers.jsx';
@@ -335,6 +336,8 @@ function UserFormInner({ id }) {
           ))}
         </div>
       </Card>
+
+      {!isNew && <UserNotifyCard u={u} self={self} onChanged={usr.reload} />}
 
       {pwModal && <ResetPassword id={id} onClose={() => setPwModal(false)} onDone={() => { setPwModal(false); usr.reload(); }} />}
       {deleting && <DeleteUsersDialog users={[u]} onClose={() => setDeleting(false)} onDone={() => nav('/users', { replace: true })} />}

@@ -42,6 +42,35 @@ location = /api/events {
     proxy_send_timeout 1h;
 }
 
+# Live alerts of the Android app (1.9.0, backend/src/routes/mobile.js): the same streaming settings as /api/events
+# (Bearer device token instead of the cookie). Phones outside the building reach it over the organisation's VPN —
+# never by opening the port to the internet (docs/handover/10-Operations-Runbook.md).
+location = /api/m/events {
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+
+# Phone pairing (no session): the login rate zone on top of the API's own limit (PAIR_RATE_LIMIT per 15 minutes).
+location = /api/devices/pair {
+    limit_req zone=ets_login burst=5 nodelay;
+    limit_req_status 429;
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 # File uploads (team result imports, full tracker import, branding images): larger bodies.
 # The API itself only reads them after authentication (backend/src/middleware/body.js).
 location ~ ^/api/(imports|imports/preview|tracker/import|branding/[a-z_]+)$ {

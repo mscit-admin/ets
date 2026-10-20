@@ -6,60 +6,10 @@ import { useI18n } from '../i18n/index.jsx';
 import { pc } from '../lib/format.js';
 import { NumberCard } from './ui.jsx';
 
-const sCurve = n => Array.from({ length: n }, (_, i) => { const t = (i + 1) / n; return +(100 * t * t * (3 - 2 * t)).toFixed(1); });
-
-// Start date + k periods. Months keep the day of month, clamped to the month's length (31 Jan + 1 → 28/29 Feb).
-export function addPeriods(start, unit, k) {
-  const d = new Date(start + 'T00:00:00');
-  if (unit === 'month') {
-    const day = d.getDate();
-    d.setDate(1); d.setMonth(d.getMonth() + k);
-    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
-  } else d.setDate(d.getDate() + 14 * k);
-  return d;
-}
+// The schedule model is shared with the server (lib/health.js ⇄ backend/src/services/health.js).
+export { addPeriods, scheduleModel } from '../lib/health.js';
 
 const iso = x => '\u2066' + x + '\u2069';                 // keep '-10.1' / '57.2%' intact inside Arabic text
-const num = v => (v === null || v === undefined || v === '' ? null : +v);
-
-export function scheduleModel(s, now = new Date()) {
-  const n = s.periods;
-  const plan = s.plan && s.plan.length === n ? s.plan.map(Number) : sCurve(n);
-  const actual = Array.from({ length: n }, (_, i) => num(s.actual?.[i]));
-  const P = [0, ...plan];                                    // P[k] = planned at the end of period k
-  const bounds = s.start_date ? Array.from({ length: n + 1 }, (_, k) => addPeriods(s.start_date, s.unit, k)) : null;
-  if (bounds && s.end_date) bounds[n] = new Date(s.end_date + 'T00:00:00');   // the last period ends on the close date
-  // date ↔ x (periods from the start, fractional between period ends)
-  const xOf = date => {
-    const tt = date.getTime();
-    if (tt <= bounds[0].getTime()) return 0;
-    if (tt >= bounds[n].getTime()) return n;
-    let k = 0; while (tt >= bounds[k + 1].getTime()) k++;
-    return k + (tt - bounds[k]) / (bounds[k + 1] - bounds[k]);
-  };
-  const dateOf = x => {
-    const k = Math.min(n - 1, Math.max(0, Math.floor(x)));
-    return new Date(bounds[k].getTime() + (bounds[k + 1] - bounds[k]) * (x - k));
-  };
-  const xNow = bounds ? xOf(now) : null;
-  const plannedAt = x => { const k = Math.floor(x); return k >= n ? P[n] : P[k] + (P[k + 1] - P[k]) * (x - k); };
-  let lastActual = -1;
-  actual.forEach((v, i) => { if (v !== null) lastActual = i; });
-  const current = +s.current_pct || 0;
-  const plannedNow = xNow === null ? null : plannedAt(xNow);
-  const deviation = plannedNow === null ? null : current - plannedNow;
-  const spi = plannedNow ? current / plannedNow : null;
-  // Row of the period in progress (schedule table highlight).
-  const curIdx = xNow === null ? Math.max(0, lastActual) : Math.min(n - 1, Math.max(0, Math.ceil(xNow) - 1));
-  // x at which the plan reached a given %: the inverse of the planned curve (earned schedule)
-  const xAtPlanned = v => {
-    if (v <= 0) return 0;
-    for (let k = 0; k < n; k++) if (P[k + 1] >= v) return P[k + 1] === P[k] ? k + 1 : k + (v - P[k]) / (P[k + 1] - P[k]);
-    return n;
-  };
-  return { n, plan, actual, P, bounds, xNow, plannedNow, current, deviation, spi, curIdx,
-    xOf: bounds ? xOf : null, dateOf: bounds ? dateOf : null, xAtPlanned };
-}
 
 function useShortDate() {
   const { lang } = useI18n();

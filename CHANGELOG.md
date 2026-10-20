@@ -30,6 +30,157 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.9.1] — 2026-10-20 — Rename an item with a mandatory reason
+
+### Added
+- **Backend:** rename of a function / report item — `PATCH /api/tracker/functions/:id` with `name_ar` and / or
+  `name_en` and a required `rename_reason` (permission `tog`; `backend/src/services/rename.js`). The reason follows the
+  exclusion-note rule: trimmed, 3–500 characters, whitespace not counted. `name_ar` is trimmed, not empty, ≤ 500
+  characters; `name_en` may be cleared (`null` / empty). The `code` never changes. The rename is sent on its own.
+  Errors: 400 `rename_reason_required` (`min: 3`), `invalid_value` (`field`), `name_unchanged`,
+  `rename_must_be_separate` (`fields`); 409 `function_removed` for a removed item; 403 without `tog` or out of scope.
+  A name already used by another item of the application is allowed and answered with `warning: "duplicate_name"`.
+- **Backend:** a data-entry user's rename waits for the team lead (202): one request item per changed name, the reason
+  in `edit_request_items.meta.rename_reason` (the column of migration 013). On approval the current name must still be
+  the name the request was made against, else 409 `name_changed` — nothing applied, the request stays pending;
+  `approve-all` counts it in `blocked_requests`. `name_ar` added to the columns an approved request may set.
+- **Backend:** strict audit row `update` / `function` with `old_value: {name_ar?, name_en?}` and
+  `new_value: {name_ar?, name_en?, rename_reason}`; an approved rename is audited in the author's name with the
+  reason. Live update `tracker_changed` after commit. The approvals Excel export adds «سبب تعديل الاسم: …» to the
+  «بعد» cell of a rename.
+- **Frontend:** functions page — a pencil button «تعديل الاسم» next to each item's title (with `tog`, not removed)
+  opens «تعديل اسم البند» (`frontend/src/components/RenameDialog.jsx`): read-only code, current name, new Arabic name
+  (required), English name, required reason with a counter; «حفظ الاسم» stays disabled until a name changes and the
+  reason is valid; a non-blocking notice when another item already has the name. A pending rename shows on the row
+  as «بانتظار الاعتماد: تعديل الاسم إلى «…»»; the Approvals page shows «الاسم: قديم ← جديد» and «سبب التعديل».
+- **Frontend:** Logs — «غيّر أحمد اسم البند D7 في تطبيق … من «…» إلى «…» — السبب: «…»» (ar / en), field labels
+  `au_f_name_ar` / `au_f_rename_reason`.
+- **Tests:** `backend/test/rename.test.js` (12) — reason rules, empty / long / unchanged names, mixing fields, removed
+  item, no `tog`, out of scope, direct rename and its audit row, clearing `name_en`, the duplicate-name warning, a
+  member's request with its reason and its approval, the stale-name 409 (approve and approve-all), the live event.
+- **Docs:** handover 04 (Arabic user guide: renaming an item) and 11 (API: the rename fields and errors).
+
+### Changed
+- **Backend:** `name_en` is no longer a plain field of the PATCH: changing it needs `rename_reason` like `name_ar`.
+- Screens, search and the Excel exports already read the current name: they show the new name with no change.
+
+### Upgrade notes
+- No migration (the reason uses `edit_request_items.meta` from migration 013). Restart the API after updating.
+
+---
+
+## [1.9.0] — 2026-10-19 — Notifications, the bell and the phone API
+
+### Added
+- **Backend:** notifications (`backend/src/services/notify*.js`): the alert catalogue of the approved proposal —
+  approvals A1 `approval_pending`, A2 `approval_overdue` (reminder after 48 h, escalation to PM / TM after 5 days),
+  A3 `request_decided`, A4 `import_pending`, A5 `import_result`, A6 `import_overdue`; tracking T1 `stuck` (0 < % < 100,
+  no progress change for N days, critical after 2N), T2 `untested` (100 %, not tested), T3 `failed_retest`, T4
+  `pass_conflict`, T5 `not_started`, T6 `quality` (weekly), T7 `excluded`; plan P1 `dept_behind` (on a status change
+  only), P2 `dept_stalled` (weekly), P3 `project_status`, P4 `close_approaching`; security / system S1
+  `account_locked`, S2 `failed_logins`, S3 `audit_integrity`, S4 `email_index`, S5 `access_denied`, S6
+  `backup_missing` (no `backup` row in `system_log` for 26 h), S7 `retention_reduced`, S8 `server_errors`.
+  Stuck / untested / failed are three types with their own thresholds. Team members get the summaries of every
+  application in their scope (full-scope users one per department).
+- **Backend:** receiving = eligibility in code (effective permission + `canSeeApp` / `coversDept` / full scope /
+  approver rules; security and system types for the `admin` role only) ∧ the policy `notify.policy` (type × role,
+  phone allowed, mandatory) ∧ per-user restrictions (administrator blocks, then the user's muting) ∧ an active
+  account. Checked when an alert is created **and whenever it is read** (list, count, phone).
+- **Backend:** event alerts are created after `COMMIT` (`onCommit` in `db/pool.js` `tx`), never failing the action;
+  periodic checks every 15 minutes in the API under a PostgreSQL advisory lock (`services/notify-scan.js`:
+  security every run; system daily from the summary hour; summaries on work days; weekly T6 / P2), written to
+  `system_log` (`notify_scan`). Summaries are one open row per user and key, updated in place; a read summary comes
+  back only when it grows or gets worse, or after 7 days (1 day when critical); a summary whose condition is gone
+  is closed. At most `notify.rate_cap_per_hour` new alerts per user per hour, the rest folded into one
+  `rate_capped` alert (mandatory types are never held back). Read alerts are deleted after
+  `notify.retention_days`, unread ones after twice as long.
+- **Backend:** `GET /api/notifications` (filters, paging, `lang`), `/count`, `POST /:id/read`, `/:id/unread`,
+  `/read-all`, `GET|PUT /prefs`, `GET /policy-meta`; titles and bodies rendered by the server in Arabic / English
+  (`services/notify-text.js`). The live stream sends `notif_changed` `{unread, top_severity}` (no content).
+- **Backend:** phones (Android app): `POST /api/devices/pair-code` (session + re-authentication; 10-character
+  one-time code valid 10 minutes, stored as HMAC; QR payload `{"v":1,"url","code","cert_sha256"}`),
+  `POST /api/devices/pair` (no session; `PAIR_RATE_LIMIT` per IP per 15 min; token of 32 random bytes returned once,
+  stored as HMAC), `GET /api/devices`, `DELETE /api/devices/:id`; with the Bearer device token only:
+  `GET /api/m/me`, `GET /api/m/notifications` (`after_id` → ascending, oldest first; without it the newest first),
+  `POST /api/m/notifications/:id/read` (204), `GET /api/m/events` (SSE: `notification` `{id}`, `unread`
+  `{unread}`, heartbeat every 25 s; closes when the device is revoked), `DELETE /api/m/device` (the phone unpairs
+  itself, 204). Administrators: `DELETE /api/users/:id/devices/:deviceId`, `PUT /api/users/:id/notify-blocks`;
+  `GET /api/users/:id` lists the user's devices and blocks.
+- **Backend:** the project-health calculation moved to `backend/src/services/health.js` (schedule model and health,
+  also used for P1–P4) — the browser uses an identical copy (`frontend/src/lib/health.js`, compared by a test);
+  department thresholds come from `notify.dept_risk_gap` / `notify.dept_delay_gap` (`health_gaps` in
+  `GET /api/tracker/project-status`), so the status page and the alerts agree.
+- **Frontend:** the bell in the top bar (unread badge, «99+», red when a critical alert is unread; dropdown with the
+  latest 20, category tabs, read / unread, mark all read, click to open; Escape / arrow keys; live count); the
+  `/notifications` history page; Profile → «التنبيهات» (mute non-mandatory types in the app / on the phone, periodic
+  summaries on / off; mandatory types locked) and «أجهزتي» (pairing QR drawn in the browser with
+  `qrcode-generator` 2.0.4 — MIT, pinned exactly —, list, revoke); Settings → «الإشعارات» (on / off, summary hour,
+  work days, time zone, every threshold, the type × role matrix with «الجوال» and «إلزامي»); the user page:
+  notification blocks and the user's phones. Readable change-history sentences for the policy, blocks, device
+  pairing and revocation. ar / en messages with identical key sets.
+- **Database:** migration `017_notifications.sql` (see Upgrade notes).
+- **Deployment:** nginx `location = /api/m/events` (streaming like `/api/events`) and `location = /api/devices/pair`
+  (login rate zone); `install.sh` / `update.sh` write `PUBLIC_BASE_URL` and `TLS_CERT_SHA256` into `ets.env`
+  (`set_mobile_env` in `deploy-lib.sh`).
+- **Tests:** `backend/test/notifications.test.js` (22) and `backend/test/devices.test.js` (11).
+- **Docs:** handover 03 (§3a notification policy), 04 (§6هـ the bell, preferences, pairing a phone), 05 (§3e
+  migration 017, settings), 06 (§4b notification policy and phone devices), 10 (§1b notifications, phones, VPN),
+  11 (`/notifications`, `/devices`, `/m/*`); `deploy/db/schema-reference.sql` regenerated.
+
+### Changed
+- **Backend:** settings `notify.*` added to `DEFAULT_SETTINGS` / `SETTING_RULES` with validation (ranges, work days,
+  IANA time zone, risk gap < delay gap, escalation after the reminder, policy cells); `notify.policy` is stored and
+  audited complete (old and new matrix).
+- **Backend:** `routes/imports.js` exports `importAbilities`, `loadImportMeta`, `batchApps`; `routes/auth.js` exports
+  `reauth`. `services/lockout.js` alerts the administrators when an account is paused; lowering a log retention
+  also creates an S7 alert.
+- **Frontend:** `components/SCurve.jsx` re-exports the schedule model from `lib/health.js`; the live stream stays
+  open on every screen while signed in (the bell listens to it).
+
+### Security
+- Device tokens are valid **only** on `/api/m/*` (Bearer, no cookie) and never on the web API; session cookies are
+  ignored on `/api/m/*`. Unknown / revoked tokens, and accounts that are inactive, deleted, paused or must change
+  their password are refused (401 `invalid_token`, `mobile_token_rejected` in `auth_log`, 429 after 30 refusals per
+  IP per 15 min). Pairing and revocation are recorded in `auth_log` (`mobile_device_paired`,
+  `mobile_device_revoked`, `mobile_pair_code_issued`, `mobile_pair_rejected`) and the change history (`pair:device`,
+  `revoke:device`). Phones are revoked in the same transaction as deactivation, deletion and an administrator
+  password reset (06 §4b).
+- Security / system alerts are for the `admin` role only; on phones they carry no body (no names or IP addresses),
+  and S1, S2, S5, S8 are in-app only by default. A mandatory type kept off the phone appears there only as
+  «لديك تنبيه جديد».
+
+### Upgrade notes
+- **Migration 017** (`017_notifications.sql`, applied by `update.sh`): new tables `notifications`,
+  `notification_prefs`, `notification_user_blocks`, `notify_state`, `mobile_devices`, `device_pair_codes`; columns
+  `functions.progress_changed_at` / `test_changed_at` with the trigger `ets_function_change_times`, filled once from
+  the change history (newest `audit_log` row carrying the value, or a bulk-set row listing the function), otherwise
+  from `updated_at`. No existing data changes. Checked on a copy of a 1.8.1 database: every function filled, audit
+  chains intact.
+- **New settings** (Settings → «الإشعارات»), with these defaults the administrator can change: thresholds stuck
+  14 days, done-untested 7, failed-not-retested 7, not started 30, approval reminder 48 h / escalation 5 days, import
+  waiting 3 days, department −5 / −15 points, stalled 0.5 point / 30 days, close date 30 days, failed sign-ins 20 /
+  15 min, refusals 30 / h, server errors 10 / h, backup 26 h; summaries at 08:00 Sunday–Thursday, time zone
+  `Africa/Tripoli` (the application had no time-zone setting; the installer only sets the server clock);
+  50 new alerts per user per hour; read alerts kept 180 days; phones unused for 90 days revoked.
+- **Other defaults the administrator can change:** the policy matrix of the proposal (§3.1); mandatory types A1 and
+  A4 (approvers), A2 and A6 (team lead), S3, S6 and S7 (administrator); per-user blocks set by administrators only;
+  alerts **hidden, not deleted,** when a permission or scope is removed; phones **revoked on an administrator
+  password reset** (and on deactivation / deletion); **automatic revocation after 90 days** without use.
+- **New environment variables** (`/etc/ets/ets.env`, `backend/.env.example`): `PUBLIC_BASE_URL` (the address in the
+  pairing QR; default: the browser's address) and `TLS_CERT_SHA256` (SHA-256 of the server certificate, 64 hex
+  digits, colons allowed; `null` in the QR when empty), both filled by `update.sh` from the nginx address and
+  certificate (a hand-set `PUBLIC_BASE_URL` is kept; empty fingerprint for Let's Encrypt); `PAIR_RATE_LIMIT`
+  (default 5). An invalid value stops the API at start with a message. After renewing the certificate run
+  `update.sh` again; paired phones then pair again.
+- **nginx:** `update.sh` re-renders the site with `location = /api/m/events` (`proxy_buffering off`, 1 h timeouts) and
+  `location = /api/devices/pair`.
+- **VPN:** phones reach the server inside the network or over the organisation's VPN — never open the HTTPS port to
+  the internet. Nothing else is needed on the server; if the phones use another name over the VPN, set
+  `PUBLIC_BASE_URL` to it (with a self-signed certificate that name must be in the certificate) — 10 §1b.
+- The Android app itself is built and distributed separately (GitHub Actions).
+
+---
+
 ## [1.8.1] — 2026-10-19 — «نجح» requires 100% progress
 
 ### Changed
@@ -1384,7 +1535,9 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/261ea0b...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/80f9472...HEAD
+[1.9.1]: https://github.com/mscit-admin/ets/compare/b5eb9e2...80f9472
+[1.9.0]: https://github.com/mscit-admin/ets/compare/261ea0b...b5eb9e2
 [1.8.1]: https://github.com/mscit-admin/ets/compare/4d4a7f0...261ea0b
 [1.8.0]: https://github.com/mscit-admin/ets/compare/f7544d0...4d4a7f0
 [1.7.0]: https://github.com/mscit-admin/ets/compare/abd37eb...f7544d0

@@ -133,6 +133,40 @@ Every file that leaves the system through the screens follows one policy, enforc
 | Logs, Excel (`log`) and CSV | Logs | `log` + `exp` | security logs (auth, access, error, system) for administrators only; others the audit trail of their applications, without IP / device | **security-sensitive** | `log` / log type |
 | Tracker data, JSON | Settings | `exp` | applications in scope; schedule for full scope only | internal | `tracker` / — |
 
+## 4b. Notification policy and phone devices / سياسة الإشعارات والأجهزة (1.9.0)
+
+**Receiving = eligibility ∧ policy ∧ user restrictions ∧ active account**, each layer only narrowing
+(`backend/src/services/notify.js`, `notify-catalog.js`):
+
+1. **Eligibility in code** — the type's permission from the *effective* permissions (role + overrides) and its scope
+   rule: `canSeeApp` (application), `coversDept` (whole department — an application scope is not enough), full scope
+   (project alerts), `apv_dept` + application in scope (approvals, the same rule as the Approvals screen), an
+   approval permission + every department of the batch (imports), the user the alert is about (own request / file).
+   Security and system alerts: `role = admin` only, never from a setting or override (same rule as the security
+   logs, ETS-SEC-047). A scoped role without scope rows receives nothing (ETS-SEC-005).
+2. **Policy** `notify.policy` (Settings, `cfg` + full scope): a cell outside eligibility cannot be enabled and a
+   mandatory cell cannot be disabled (`SETTING_RULES`, 400 `invalid_value`); audited complete before / after.
+3. **Restrictions** — administrator blocks per user (`usr` + admin role; never on oneself; not on a type mandatory in
+   code for the user's role on every channel; audited), then the user's own muting of non-mandatory types.
+
+**Checked twice**: when an alert is created and whenever it is read (list, count, phone list, phone stream). Removing a
+permission, scope or policy cell hides existing alerts at once. **Content**: counts and names are computed per
+recipient within their scope; links are internal paths (`^/[A-Za-z0-9/_?=&.-]*$`, else dropped); the live stream
+carries only `{unread, top_severity}`; alerts are not audit data. **Flood control**: one open summary per key, at most
+`notify.rate_cap_per_hour` (50) new alerts per user per hour (mandatory ones exempt), retention `notify.retention_days`.
+
+**Phones (Android app).**
+
+| Item | Rule |
+|---|---|
+| Pairing code | issued by `POST /api/devices/pair-code` from a full session after re-authentication (password, plus a TOTP / recovery code when 2FA is on; failures count towards the account pause); 10 characters (~49 bits), one-time, 10 minutes, HMAC-SHA-256 stored (key from `APP_SECRET`); a new code replaces unused ones; `mobile_pair_code_issued` in `auth_log` |
+| Pairing | `POST /api/devices/pair` without a session: `PAIR_RATE_LIMIT` (5) attempts per IP per 15 min in the API, plus the nginx login zone; refused for an account that is inactive, deleted, paused or must change its password; at most 10 active phones per account; `mobile_device_paired` (auth_log, with the certificate fingerprint) and `pair:device` (audit_log) in the same transaction |
+| Device token | 32 random bytes (base64url), returned once, stored as HMAC-SHA-256 with a key derived from `APP_SECRET` (previous secrets in `APP_SECRET_OLD` accepted and the hash moved to the current key). `Authorization: Bearer` only, on `/api/m/*` only: the web API reads only the session cookie and `/api/m` never reads it, so a stolen token cannot act in the web application and a session cookie cannot reach `/api/m`. Read-only scope: own alerts, mark read, live stream, own name / language, self-unpair |
+| Refusal | 401 `invalid_token` for an unknown / revoked token or an account that is inactive, deleted, paused after failed sign-ins or must change its password; `mobile_token_rejected` in auth_log (once per minute per address and reason); 30 refusals per address per 15 min → 429 |
+| Revocation | by the user (profile, or the phone: `DELETE /api/m/device`), an administrator (user page), and **in the same transaction** as deactivation, deletion and an administrator password reset; after `notify.device_idle_days` (90) without use by the daily check. Open phone streams close at once (and on every heartbeat re-check). `mobile_device_revoked` (auth_log) + `revoke:device` (audit_log, readable sentence) |
+| Phone content | only types whose policy allows the phone and that the user / an administrator did not take off the phone; a mandatory type kept off the phone appears as «لديك تنبيه جديد» without title or body; security and system alerts reach the phone without their body (no user names or IP addresses); S1, S2, S5, S8 are in-app only by default |
+| Transport | HTTPS through nginx; the QR carries `cert_sha256` (`TLS_CERT_SHA256`, the SHA-256 of the server certificate filled by install / update) for the app to pin; outside the organisation network only through the VPN — never expose the port to the internet |
+
 ## 5. Web protections
 
 | Threat | Control |

@@ -65,6 +65,7 @@ const UI = {
   info: "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5.5M12 7.8h.01\"/>",
   flag: "<path d=\"M5 21V4\"/><path d=\"M5 4h12l-2.5 4.5L17 13H5\"/>",
   note: "<path d=\"M5 4h14v11l-5 5H5z\"/><path d=\"M14 20v-5h5M8.5 9h7M8.5 12.5h4\"/>",
+  edit: "<path d=\"M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5z\"/><path d=\"m14.2 7.8 3 3M13 19.5h6.5\"/>",
   filter: "<path d=\"M4 5h16l-6 7.5V19l-4 1.5v-8z\"/>",
   // ERP module wheel (dashboard): standard modules that have no department of their own
   factory: "<path d=\"M3 20.5V10l5 3V10l5 3V10l5 3V4h3v16.5z\"/><path d=\"M3 20.5h18M7 17h2M11.5 17h2M16 17h2\"/>",
@@ -74,6 +75,8 @@ const UI = {
   // item types (1.8.0): a cog for a function, a document with a chart for a report
   item_function: "<circle cx=\"12\" cy=\"12\" r=\"2.8\"/><circle cx=\"12\" cy=\"12\" r=\"6.3\"/><path d=\"M12 2.8v2.9M12 18.3v2.9M2.8 12h2.9M18.3 12h2.9M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2\"/>",
   item_report: "<path d=\"M6 2.8h8l4 4v14.4H6z\"/><path d=\"M14 2.8v4h4\"/><path d=\"M9 18v-3.2M12 18v-6M15 18v-4.4\"/>",
+  // notifications (1.9.0)
+  bell: "<path d=\"M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4z\"/><path d=\"M10 20.5a2.2 2.2 0 0 0 4 0\"/>",
   megaphone: "<path d=\"M3.5 10v4a1 1 0 0 0 1 1H7l7 4.5v-15L7 9H4.5a1 1 0 0 0-1 1z\"/><path d=\"M17.5 9a4 4 0 0 1 0 6M7.5 15.2l1.2 4.6h2.6l-1-4\"/>",
 };
 

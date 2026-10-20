@@ -18,6 +18,9 @@ import approvalRoutes from './routes/approvals.js';
 import exportRoutes from './routes/export.js';
 import eventRoutes from './routes/events.js';
 import systemRoutes, { health } from './routes/system.js';
+import notificationRoutes from './routes/notifications.js';
+import deviceRoutes from './routes/devices.js';
+import { pairRouter, mobileRouter } from './routes/mobile.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
 export function createApp() {
@@ -35,6 +38,12 @@ export function createApp() {
   }));
   app.get('/api/health', health);
   app.use('/api', apiLimiter);   // general per-IP request ceiling (ETS-SEC-003)
+
+  // The Android app (1.9.0, routes/mobile.js): pairing without a session, and /api/m/* with a device token
+  // (Authorization: Bearer) only. Mounted before the web API: no cookie is read there, and the web API never
+  // accepts a device token (it reads only the session cookie).
+  app.use('/api/devices/pair', pairRouter);
+  app.use('/api/m', mobileRouter);
 
   const api = express.Router();
   api.use(jsonBody);       // 100 kB; file uploads are parsed inside their routes after auth (middleware/body.js)
@@ -54,6 +63,8 @@ export function createApp() {
   api.use('/export', exportRoutes);
   api.use('/system', systemRoutes);
   api.use('/events', eventRoutes);   // live updates (Server-Sent Events)
+  api.use('/notifications', notificationRoutes);   // the bell, history, preferences (1.9.0)
+  api.use('/devices', deviceRoutes);               // own phones: pairing code, list, revoke (1.9.0)
   api.use(notFoundHandler);
   app.use('/api', api);
 

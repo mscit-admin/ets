@@ -180,6 +180,34 @@ A type change is an ordinary edit: `edit_request_items.field = 'item_type'` (`ol
 SELECT app_id, code, name_ar FROM functions WHERE item_type = 'report' AND removed_at IS NULL ORDER BY app_id, sort;
 ```
 
+### 3e. Migration 017 — notifications and phones (1.9.0)
+
+| Table | Purpose |
+|---|---|
+| `notifications` | one row per alert and recipient: `type`, `category` (approvals / tracking / plan / security / system), `severity` (info / warning / critical), `params` (ids, names in both languages, numbers — computed for that recipient's scope), `link` (internal path only, CHECK), `app_id` / `dept_id` (re-checked when read), `dedupe_key`, `count`, `created_at`, `updated_at`, `read_at`, `resolved_at` (a summary whose condition is gone). Unique open row per `(user_id, dedupe_key) WHERE read_at IS NULL` (`notifications_open_dedupe`). Not audit data |
+| `notification_prefs` | `user_id` → `prefs` `{muted:[type], mobile_muted:[type], digest:bool}` (personal choice, not audited) |
+| `notification_user_blocks` | `(user_id, type \| '*', channel 'all' \| 'mobile')` — administrator restrictions, block only |
+| `notify_state` | last run of each periodic job (`job:daily`, `job:digest`, `job:weekly`), last department / project status, close-date alert |
+| `mobile_devices` | phones: `name`, `platform` ('android'), `app_version`, `token_hash` (HMAC, unique), `created_at` / `created_ip`, `last_seen_at` / `last_ip` (every 5 minutes), `revoked_at` / `revoked_by` / `revoke_reason` (user, unpaired, admin, user_disabled, user_deleted, password_reset, inactive) |
+| `device_pair_codes` | one-time pairing codes: `code_hash` (HMAC), `user_id`, `expires_at` (10 minutes), `used_at`, `device_id` |
+
+`functions.progress_changed_at` / `test_changed_at`: when the progress / test status last changed (the trigger
+`ets_function_change_times` sets them on INSERT and when the value changes; a note or notification-status edit does
+not touch them). The migration filled them once from the change history — the newest `audit_log` row of the
+function carrying `progress` / `test_status` (direct edits, approved requests, imports) or a bulk-set row listing it
+— otherwise from `updated_at`.
+
+Settings added (seed, `ON CONFLICT DO NOTHING`): every `notify.*` key of §5; `notify.policy` is stored complete
+(the matrix in force) once an administrator saves it, `{}` (= defaults) until then.
+
+```sql
+-- functions without progress for 14 days, per application
+SELECT app_id, count(*) FROM functions WHERE enabled AND removed_at IS NULL AND progress > 0 AND progress < 100
+  AND progress_changed_at < now() - interval '14 days' GROUP BY 1 ORDER BY 2 DESC;
+-- active phones per user
+SELECT u.username, d.name, d.last_seen_at FROM mobile_devices d JOIN users u ON u.id = d.user_id WHERE d.revoked_at IS NULL;
+```
+
 ## 4. Code values
 
 | Column | 0 | 1 | 2 | 3 |
@@ -211,6 +239,13 @@ the same keys as the original tracker page, which is what makes import possible.
 | `logs.access_retention_days` | `90` (allowed 7–3650) |
 | `app.org_name_ar` / `app.org_name_en` | System names |
 | `app.default_language` | `"ar"` — login screen / new browsers and new users without a chosen language |
+| `notify.enabled` / `notify.timezone` / `notify.digest_hour` / `notify.work_days` | `true` / `"Africa/Tripoli"` / `8` / `[0,1,2,3,4]` (Sun–Thu) |
+| `notify.stuck_days` / `untested_days` / `failed_retest_days` / `not_started_days` | `14` / `7` / `7` / `30` |
+| `notify.approval_remind_hours` / `approval_escalate_days` / `import_overdue_days` | `48` / `5` / `3` |
+| `notify.dept_risk_gap` / `dept_delay_gap` / `dept_stalled_points` / `close_warning_days` | `5` / `15` / `0.5` / `30` |
+| `notify.failed_logins_threshold` / `access_denied_threshold` / `server_errors_threshold` / `backup_max_age_hours` | `20` / `30` / `10` / `26` |
+| `notify.rate_cap_per_hour` / `retention_days` / `device_idle_days` | `50` / `180` / `90` |
+| `notify.policy` | `{}` = the default matrix (03 §3a); validated: no ineligible cell on, no mandatory cell off |
 
 ## 6. Useful queries
 
