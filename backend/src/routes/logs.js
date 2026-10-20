@@ -34,13 +34,17 @@ const TYPES = {
   // Names of the person, function and application, so each row reads as a sentence in the Logs screen.
   audit: { table: 'audit_log',
     cols: `l.id, l.ts, l.user_id, l.username, u.full_name, (u.deleted_at IS NOT NULL) AS user_deleted, l.action, l.entity, l.entity_id, l.summary, l.old_value, l.new_value, l.context,
-      f.code AS fn_code, f.name_ar AS fn_name_ar, f.name_en AS fn_name_en, a.id AS app_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en,
+      COALESCE(mv.from_code, f.code) AS fn_code, f.name_ar AS fn_name_ar, f.name_en AS fn_name_en, a.id AS app_id, a.name_ar AS app_name_ar, a.name_en AS app_name_en,
       host(l.ip) AS ip`,
     search: ['l.username', 'u.full_name', 'l.entity', 'l.entity_id', 'l.summary', 'l.action', 'f.code', 'f.name_ar', 'f.name_en', 'a.name_ar', 'a.name_en'],
     event: 'l.action',
+    // an item moved since the row was written (1.10.0) reads with the application and code it had then: the first
+    // move after the row (function_moves), else its current ones
     join: `LEFT JOIN users u ON u.id=l.user_id
       LEFT JOIN functions f ON l.entity='function' AND f.id::text=l.entity_id
-      LEFT JOIN applications a ON a.id = COALESCE(f.app_id, CASE WHEN l.entity IN ('application','report') THEN l.entity_id END, l.context->>'app_id')` },
+      LEFT JOIN LATERAL (SELECT m.from_app_id, m.from_code FROM function_moves m
+        WHERE f.id IS NOT NULL AND m.function_id=f.id AND m.moved_at > l.ts ORDER BY m.moved_at, m.id LIMIT 1) mv ON true
+      LEFT JOIN applications a ON a.id = COALESCE(mv.from_app_id, f.app_id, CASE WHEN l.entity IN ('application','report') THEN l.entity_id END, l.context->>'app_id')` },
   access: { table: 'access_log', cols: 'l.id, l.ts, l.user_id, u.username, l.method, l.path, l.status, l.duration_ms, host(l.ip) AS ip, l.user_agent',
     search: ['l.path', 'u.username', 'host(l.ip)'], event: 'l.method', join: 'LEFT JOIN users u ON u.id=l.user_id' },
   error: { table: 'error_log', cols: 'l.id, l.ts, l.user_id, u.username, l.level, l.message, l.stack, l.method, l.path, l.context',
@@ -49,7 +53,9 @@ const TYPES = {
     search: ['l.event', 'l.message'], event: 'l.event' },
 };
 
-// Users limited to some departments only see the audit trail of their own applications.
+// Users limited to some departments only see the audit trail of their own applications. An item moved out of one of
+// them (1.10.0) stays readable there up to its move, the move row included (function_moves: from an application in
+// scope, at or after the row); a move request is seen from both applications.
 async function scopeFilter(user, type, where, params) {
   if (user.fullScope) return;
   if (type !== 'audit') throw new HttpError(403, 'out_of_scope', { log: type });
@@ -57,8 +63,10 @@ async function scopeFilter(user, type, where, params) {
   params.push(apps);
   const p = '$' + params.length;
   where.push(`((l.entity='function' AND l.entity_id ~ '^[0-9]+$' AND l.entity_id::int IN (SELECT id FROM functions WHERE app_id = ANY(${p})))
+    OR (l.entity='function' AND EXISTS (SELECT 1 FROM function_moves m
+      WHERE m.function_id = CASE WHEN l.entity_id ~ '^[0-9]{1,9}$' THEN l.entity_id::int END AND m.from_app_id = ANY(${p}) AND m.moved_at >= l.ts))
     OR (l.entity IN ('application','report') AND l.entity_id = ANY(${p}))
-    OR (l.entity='edit_request' AND l.context->>'app_id' = ANY(${p})))`);
+    OR (l.entity='edit_request' AND (l.context->>'app_id' = ANY(${p}) OR l.context->>'to_app_id' = ANY(${p}))))`);
 }
 
 function buildQuery(t, qs) {

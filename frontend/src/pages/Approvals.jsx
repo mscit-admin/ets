@@ -8,16 +8,19 @@ import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHea
 import { ExportButton } from '../components/ExportButton.jsx';
 import { DisabledReason } from '../components/DisableReason.jsx';
 import { TypeBadge } from '../components/ItemType.jsx';
+import { MoveImpact } from '../components/MoveDialog.jsx';
 
 const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
   notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_ar: 'au_f_name_ar', name_en: 'au_f_name_en',
-  create: 'fn_add', removed: 'fn_remove', item_type: 'item_type' };
+  create: 'fn_add', removed: 'fn_remove', item_type: 'item_type', move: 'mv_field' };
 
 function useFmt() {
-  const { t } = useI18n();
+  const { t, nm } = useI18n();
   return (kind, field, v) => {
     if (v === null || v === undefined || v === '') return '—';
+    // a move (1.10.0): before = «application/code», after = the destination application
+    if (field === 'move') return v.code ? `${v.app_id}/${v.code}` : nm(v) || v.app_id;
     if (field === 'create') return `${v.name_ar} · ${t('weight')} \u2066${v.weight}\u2069 · \u2066${pc(v.progress)}%\u2069 · ${v.enabled ? t('include_in_calc') : t('exclude_hint')}`
       + (v.item_type === 'report' ? ' · ' + t('it_report') : '');
     if (field === 'item_type') return t('it_' + v);
@@ -42,7 +45,7 @@ export default function Approvals() {
   const act = async (rq, action, body = {}) => {
     try {
       const r = await api.post(path`/approvals/${rq.id}/${action}`, body);
-      toast(r.applied ? t('applied_result', { a: r.applied_changes, s: r.skipped_changes }) : t('saved'));
+      toast(r.applied ? t('applied_result', { a: r.applied_changes, s: r.skipped_changes }) : r.stage === 'source' ? t('mv_source_approved') : t('saved'));
       setDlg(null); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
@@ -76,18 +79,23 @@ export default function Approvals() {
       </div>
       {!data.requests.length ? <Card><Empty>{t('no_requests')}</Empty></Card> : data.requests.map(rq => (
         <Card key={rq.id} className="req-card"
-          title={<span className="link-row"><Icon name={rq.icon} size={15} /> <Link to={'/app/' + rq.app_id}>{nm(rq, 'app_name')}</Link>
+          title={rq.kind === 'move_function'
+            ? <span className="link-row mv-route"><Icon name="move" size={15} /> {t('mv_rq_title', {
+              from: `${nm(rq, 'app_name')} (${nm(rq, 'dept_name')})`, to: `${nm(rq, 'target_app_name')} (${nm(rq, 'target_dept_name')})` })}
+            <Indicator color="purple">{t('rq_kind_move_function')}</Indicator></span>
+            : <span className="link-row"><Icon name={rq.icon} size={15} /> <Link to={'/app/' + rq.app_id}>{nm(rq, 'app_name')}</Link>
             <span className="muted small">· {nm(rq, 'dept_name')}</span>
             {rq.kind.endsWith('_function') && <Indicator color={rq.kind === 'remove_function' ? 'red' : 'blue'}>{t('rq_kind_' + rq.kind)}</Indicator>}</span>}
           actions={<>
             <span className="muted small">{rq.requested_by_name} · {fmtDate(rq.requested_at)}</span>
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
-            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t('approve')}</button>}
+            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t(rq.can.approve_as ? 'approve_' + rq.can.approve_as : 'approve')}</button>}
             {rq.can.reject && <button className="btn btn-default btn-xs" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
             {rq.can.withdraw && <button className="btn btn-default btn-xs" onClick={() => act(rq, 'withdraw')}>{t('withdraw')}</button>}
           </>}>
           {rq.status === 'rejected' && <Alert kind="red">{t('rejected_by', { name: rq.decided_by_name })}: {rq.reason}</Alert>}
           {rq.status === 'applied' && <Alert kind="green">{t('approved_by', { name: rq.decided_by_name })} · {fmtDate(rq.decided_at)}</Alert>}
+          {rq.kind === 'move_function' && <MoveRequest rq={rq} />}
           <div className="table-wrap">
             <table className="table req-items">
               <thead><tr><th>{t('functions')}</th><th>{t('field')}</th><th>{t('before')}</th><th>{t('after')}</th></tr></thead>
@@ -105,6 +113,7 @@ export default function Approvals() {
                           {i.meta?.disabled_note && <div className="small">{t('dr_note')}: <span className="muted">{i.meta.disabled_note}</span></div>}
                         </div>
                       )}
+                      {i.field === 'move' && <div className="req-reason small">{t('mv_weight_moved')}: <span className="num">{(+(i.meta?.weight_share || 0)).toFixed(2)}</span></div>}
                       {i.meta?.rename_reason && (i.field === 'name_ar' || !rq.items.some(x => x.function_id === i.function_id && x.field === 'name_ar')) && (
                         <div className="req-reason small">{t('rn_reason')}: <span className="muted rn-reason-text">{i.meta.rename_reason}</span></div>
                       )}</td>
@@ -129,5 +138,31 @@ function RejectModal({ onClose, onSubmit }) {
         <button className="btn btn-primary" disabled={!v.trim()} onClick={() => onSubmit(v)}>{t('reject')}</button></>}>
       <Field label={t('reject_reason') + ' *'}><textarea className="input" rows={4} maxLength={1000} value={v} onChange={e => setV(e.target.value)} /></Field>
     </Modal>
+  );
+}
+
+// A move request (1.10.0): its reason, which approval is done / awaited, the weight share when it was requested and as
+// it would be now (applied at approval), and the impact computed when it was requested.
+function MoveRequest({ rq }) {
+  const { t, fmtDate } = useI18n();
+  const m = rq.meta || {};
+  const now = rq.move_now;
+  const share = v => (Number.isFinite(+v) ? (+v).toFixed(2) : '—');
+  return (
+    <div className="mv-request">
+      {m.reason && <div className="req-reason"><span><b>{t('mv_reason')}:</b> <span className="rn-reason-text">{m.reason}</span></span></div>}
+      <div className="mv-stage" role="status">
+        {rq.source_approved_by_name && <span className="green-text">✓ {t('mv_rq_source_done', { name: rq.source_approved_by_name, date: fmtDate(rq.source_approved_at) })}</span>}
+        {rq.target_approved_by_name && <span className="green-text">✓ {t('mv_rq_target_done', { name: rq.target_approved_by_name, date: fmtDate(rq.target_approved_at) })}</span>}
+        {rq.status === 'pending' && <b>⏳ {t(rq.source_approved_by ? 'mv_rq_wait_target' : 'mv_rq_wait_source')}</b>}
+      </div>
+      <div className="mv-shares">
+        <span>{t('mv_rq_share_then')}: <b className="num">{share(m.weight_share)}</b></span>
+        {rq.status === 'pending' && now && <span>{t('mv_rq_share_now')}: <b className="num">{share(now.share)}</b></span>}
+        {rq.status === 'applied' && rq.apply_result?.weight && <span>{t('mv_weight_moved')}: <b className="num">{share(rq.apply_result.weight.share)}</b></span>}
+      </div>
+      {rq.status === 'pending' && now && now.still_in_source === false && <Alert kind="red">{t('mv_rq_moved_out')}</Alert>}
+      {m.impact && <MoveImpact impact={m.impact} />}
+    </div>
   );
 }

@@ -72,7 +72,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 ### Edit requests (migration 004)
 | Table | Purpose | Key columns |
 |---|---|---|
-| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result` |
+| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`, `add_function`, `remove_function`, `restore_function`, `move_function` — 1.10.0), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result`; a move (1.10.0): `target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta` (see 3g) |
 | `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied`, `meta` (jsonb, migration 013: the reason of a pending exclusion — `disabled_reason`, `disabled_note`, `duplicate_of: [{id, app_id, code}]` — applied on approval) |
 
 ### Branding (migration 003)
@@ -218,6 +218,46 @@ before / after). Effective rights are therefore unchanged after the upgrade. Re-
 ```sql
 -- users whose rename right differs from their role (overrides of 'ren')
 SELECT u.username, u.role_id, p.granted FROM user_permissions p JOIN users u ON u.id = p.user_id WHERE p.permission = 'ren';
+```
+
+### 3g. Migration 019 — moving items to another application (1.10.0)
+
+- `roles.permissions` gains `mov` («نقل البنود») for `admin`, `mgr`, `pm`, `tm`, `lead` (data; the seed lists the same
+  roles). No `user_permissions` row is created: a new capability, nothing to carry over.
+- **`function_moves`** — one row per item moved, kept with the item (`function_id` → `functions`, CASCADE):
+
+| Column | Meaning |
+|---|---|
+| `from_app_id`, `from_code`, `from_dept_id` | where the item was (application, code, department) |
+| `to_app_id`, `to_code`, `to_dept_id` | where it went and the new `C<n>` code it got there |
+| `weight_mode` | `fixed` \| `auto` at the time of the move |
+| `weight_share` | `numeric(6,2)`, ≥ 0: application weight moved with the item (fixed mode; 0 for an excluded item, in auto mode, or a zero sum) |
+| `reason` | 1–500 characters |
+| `moved_by`, `moved_at`, `request_id` | who moved it (the requester when it was approved), when, and the `move_function` request if any |
+
+  `CHECK (from_app_id <> to_app_id)`. Indexes: `(function_id, moved_at)` (history, logs), `(from_app_id, from_code)`
+  (seed guard, code numbering), `(to_app_id)`. Uses: the seed never re-creates a catalog item in the application it
+  was moved out of; `C<n>` numbering of an application continues after the codes that left it; the Logs keep the
+  history of a moved item visible to its old department up to the move and show the application / code it had then.
+- **`edit_requests`**: `kind` may be `move_function`; `target_app_id` / `target_department_id` (the destination,
+  required exactly for a move: `edit_requests_move_target_check`), `source_approved_by/at` (first approval, a team
+  lead of the source), `target_approved_by/at` (second, of the destination; both set by one lead of both), `meta`
+  (jsonb: `{reason, weight_mode, weight_share, impact}` when requested). Partial index on `target_app_id` of pending
+  requests. Items: one per function, `kind 'function'`, `field 'move'`, `meta: {reason, weight_share}`.
+
+Weight share (fixed mode), computed when the move is applied: `weight(src) × weight(item) ÷ Σ weight of the
+source's counted items` (the denominator is the source's weight in auto mode), rounded to 0.01 and never above
+`weight(src)`; the source loses exactly what the destination gains, so `weight(src) + weight(dst)` is unchanged.
+For several items, each is measured against the source before the move and the rounding remainder goes to the last
+one.
+
+```sql
+-- items moved, newest first
+SELECT m.moved_at, m.from_app_id || '/' || m.from_code AS was, m.to_app_id || '/' || m.to_code AS now, m.weight_share, m.reason
+FROM function_moves m ORDER BY m.moved_at DESC;
+-- move requests still waiting, and for whom
+SELECT id, app_id, target_app_id, CASE WHEN source_approved_by IS NULL THEN 'source lead' ELSE 'destination lead' END AS waits_for
+FROM edit_requests WHERE kind = 'move_function' AND status = 'pending';
 ```
 
 ## 4. Code values

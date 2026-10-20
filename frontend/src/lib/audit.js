@@ -97,6 +97,10 @@ export function makeAudit({ t, lang }) {
     if (i.field === 'removed') {
       return { item: what, label: fieldLabel('removed'), from: fmt('removed', i.old?.removed), to: fmt('removed', i.new?.removed) + (i.new?.reason ? ' — ' + t('au_reason', { reason: i.new.reason }) : ''), applied: i.applied };
     }
+    if (i.field === 'move') {          // a move (1.10.0): «app/D7» → «destination application»
+      return { item: what, label: fieldLabel('move'), from: i.old ? `${i.old.app_id}/${i.old.code}` : '',
+        to: ((lang === 'en' && i.new?.name_en) || i.new?.name_ar || i.new?.app_id || '') + (i.meta?.reason ? ' — ' + t('au_reason', { reason: quote(short(i.meta.reason)) }) : ''), applied: i.applied };
+    }
     const f = i.kind === 'weight' ? 'weight' : i.field;
     // a rename carries its reason (1.9.1)
     const why = i.meta?.rename_reason ? ' — ' + t('au_reason', { reason: quote(short(i.meta.rename_reason)) }) : '';
@@ -116,6 +120,11 @@ export function makeAudit({ t, lang }) {
     }
     return t(many, { ...vars, n: ch.length });
   }
+
+  // A move (1.10.0): «"application" (department)» from the names stored in the row's context.
+  const nmc = (ctx, k) => (lang === 'en' && ctx[k + '_name_en']) || ctx[k + '_name_ar'] || ctx[k + '_name_en'] || '';
+  const place = (ctx, side) => t('au_move_place', { app: nmc(ctx, side + '_app') || ctx[side + '_app_id'] || '', dept: nmc(ctx, side + '_dept') || ctx[side + '_dept_id'] || '' });
+  const share2 = v => (Number.isFinite(+v) ? (+v).toFixed(2) : String(v));
 
   // Filters an export was made with, as a reader would say them.
   function filterValue(report, k, v) {
@@ -195,6 +204,20 @@ export function makeAudit({ t, lang }) {
         } else text = lines.length ? changeSentence(r, lines, { one: 'au_update_function_one', many: 'au_update_function', vars }) : null;
         break;
       }
+      case 'move:function': {
+        // «نقل أحمد البند D7 من «شؤون العاملين» (الموارد البشرية) إلى «الحسابات» (المالية) برمز C12 — نُقل وزن 0.20 — السبب: «…»»
+        const o = r.old_value || {}, n = r.new_value || {};
+        const share = +n.weight_share || 0;
+        const weight = share > 0 ? t('au_move_weight', { share: share2(share) }) : t(ctx.weight_mode === 'auto' ? 'au_move_weight_auto' : 'au_move_weight_none');
+        text = t('au_move', { who: person({ full_name: r.full_name, username: r.username }), code: o.code || ctx.code_before || '', from: place(ctx, 'from'),
+          to: place(ctx, 'to'), new: n.code || ctx.code_after || '', weight, reason: quote(short(String(n.reason ?? ''), 200)) });
+        if (ctx.src_weight && ctx.dst_weight && ctx.total_share > 0) {
+          notes.push(t('au_move_weights', { src: nmc(ctx, 'from_app') || ctx.from_app_id, src_from: num(ctx.src_weight.before), src_to: num(ctx.src_weight.after),
+            dst: nmc(ctx, 'to_app') || ctx.to_app_id, dst_from: num(ctx.dst_weight.before), dst_to: num(ctx.dst_weight.after) }));
+        }
+        if (ctx.bulk) notes.push(t('au_move_bulk', { n: ctx.count ?? '' }));
+        break;
+      }
       case 'create:function': text = t('au_create_function', { ...vars, fn: r.fn_code ? fn : fnName(r.new_value || {}) });
         lines = ['item_type', 'weight', 'progress', 'enabled', 'reference', 'name_en'].filter(k => r.new_value?.[k] != null && r.new_value[k] !== '')
           .map(k => ({ field: k, label: fieldLabel(k), from: '', to: fmt(k, r.new_value[k]) }));
@@ -212,6 +235,7 @@ export function makeAudit({ t, lang }) {
       case 'update:application':
         lines = diff(r.old_value, r.new_value);
         text = lines.length === 1 && lines[0].field === 'weight' ? t('au_update_app_weight', { ...vars, from: lines[0].from, to: lines[0].to }) : null;
+        if (ctx.move && ctx.reason) notes.push(t('au_weight_move', { reason: ctx.reason }) + (ctx.move_reason ? ' — ' + quote(short(String(ctx.move_reason), 200)) : ''));
         break;
       case 'reset:application': text = t('au_reset_weights'); break;
       case 'update:report':
@@ -288,6 +312,14 @@ export function makeAudit({ t, lang }) {
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);
         const only = ctx.items?.length === 1 ? ctx.items[0] : null;
+        if (ctx.to_app_id && ctx.items?.every(i => i.field === 'move')) {
+          // a move request (1.10.0): «طلب نقل «D7 …» من ess إلى acc — السبب: «…»»
+          const first = ctx.items[0];
+          text = t('au_edit_request_move', { n: ctx.items.length === 1 ? items[0].item : ctx.items.length, from: app || ctx.app_id,
+            to: (lang === 'en' && first?.new?.name_en) || first?.new?.name_ar || ctx.to_app_id, reason: quote(short(String(ctx.reason ?? first?.meta?.reason ?? ''), 200)) });
+          if (ctx.items.length === 1) items = null;
+          break;
+        }
         if (only?.field === 'create') text = t('au_edit_request_add', { ...vars, fn: items[0].item });
         else if (only?.field === 'removed') text = t(only.new?.removed ? 'au_edit_request_remove' : 'au_edit_request_restore', { ...vars, fn: items[0].item });
         else if (only) text = t(only.kind === 'report' ? 'au_edit_request_report_one' : 'au_edit_request_one',
@@ -299,6 +331,12 @@ export function makeAudit({ t, lang }) {
         if (only) items = null;          // already said in the sentence
         break;
       }
+      case 'edit_approve_source:edit_request':
+        // the first of the two approvals of a move (1.10.0)
+        text = t('au_edit_approve_source', { ...vars, req: person(ctx.requested_by) });
+        if (ctx.reason) notes.push(t('au_approval_note', { note: ctx.reason }));
+        items = itemLines(ctx.items);
+        break;
       case 'edit_approve:edit_request': case 'edit_reject:edit_request': case 'edit_withdraw:edit_request': {
         if (!ctx.via) break;
         const res = r.new_value || {};

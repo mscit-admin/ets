@@ -50,6 +50,7 @@ Roles other than the three full-scope roles **must** be given a scope, otherwise
 | `tst` | حالة الاختبار والملاحظات / Test status & notes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `tog` | تفعيل البنود وإضافتها / Enable / add items — include / exclude, add, remove, restore, item type | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
 | `ren` | تعديل اسم البند / Rename items (1.9.2) | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
+| `mov` | نقل البنود / Move items to another application (1.10.0) | ✓ | ✓ | ✓ | ✓ | | | | |
 | `sch` | تعديل الجدول والمنحنى / Edit schedule & curve | ✓ | ✓ | ✓ | | | | | |
 | `rep` | تعديل التقارير / Edit reports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | | |
 | `exp` | التصدير / Export | ✓ | ✓ | ✓ | ✓ | | | | |
@@ -65,6 +66,11 @@ include them, or grant it alone to let someone correct names without changing th
 migration 018 gave `ren` to every role that has `tog` and copied every per-user `tog` override to `ren` with the
 same value, so nobody gained or lost anything until an administrator changes it. A team member's rename still
 waits for the team lead.
+
+`mov` (1.10.0) moves an item to another application, possibly of another department (section 1e). It is a new
+capability: migration 019 gives it to admin, pm, tm, mgr and lead only, and copies it from no per-user override —
+team members, editors, testers and observers do not get it. Grant it per user (Users → user → «نقل البنود») to
+let someone else request moves; revoke it to stop a lead or manager moving items.
 
 ### Import users from a file (1.1.0, drop-down lists and names since 1.1.1)
 To create many accounts at once: **Users → Import users** (استيراد مستخدمين).
@@ -227,6 +233,38 @@ approve its members' edits — give someone the Team Lead role with that departm
   never comes back through the catalog seed, a JSON import or a team file. Restore re-includes it.
 - Every addition, removal, restore and include/exclude is in the audit log (`create`, `remove`, `restore`, `update`).
 
+## 1e. Moving items to another application (1.10.0) — permission `mov`
+
+An item (function or report) can be moved to another application, also of another department: the «نقل» button
+on its row, or several at once from «تعيين جماعي» → «نقل بنود إلى تطبيق آخر» (up to 200, all or nothing). The
+user picks the module (department), then the application, and writes a reason (3–500 characters). Both
+applications must be in the user's scope. The dialog shows before → after for both applications, their
+department(s), the project, and the weight that moves.
+
+- **What moves:** the item keeps its id, values, history, exclusion reason and duplicate links. It gets a new code
+  `C<n>` in the destination (its old code is never reused in the source) and the badge «منقول من <app> / <code>».
+  The catalog seed never re-creates it in its old application.
+- **Weights (fixed mode):** the item takes its share of the source application's weight:
+  `share = source weight × item weight ÷ sum of the source's counted item weights` (rounded to 0.01; the source
+  loses exactly what the destination gains, so the total is unchanged). An excluded item carries 0. In automatic
+  mode no weight is transferred — an application's weight is the sum of its items. Both weight changes appear in
+  the Weights history with the reason «نقل البند …».
+- **Blocked (409):** a removed item; an item with an edit request or a result file waiting for approval
+  (approve or reject it first).
+- **Approval:** direct for an approver of both applications (a team lead with both in scope), for `cfg` /
+  `apv_final` holders, or when *Settings → Approvals* is off. Otherwise (e.g. a department manager, or a user
+  granted `mov`) it becomes a request that needs **two approvals**: the source application's team lead, then
+  the destination's («اعتماد (المصدر)», «اعتماد (الوجهة)»); one approval when the same lead covers both; never the
+  requester. Either lead may reject. On approval everything is checked again (requester's rights and scope on
+  both applications, the item still in the source and not removed, nothing else pending on it) and the weight
+  share is computed from the source **as it is at approval**; the approval screen shows the share when requested
+  and the share now. A department without a team lead cannot approve its side: give someone that role first, or
+  have a project / technical manager move the item directly.
+- **Logs:** one `move` audit row per item («نقل أحمد البند D7 من «…» (…) إلى «…» (…) برمز C12 — نُقل وزن 0.20 —
+  السبب: «…»»), plus the two application weight rows. The old department keeps seeing the item's history up to and
+  including the move; the new department sees all of it. Destination users get the alert «نقل بنود إلى تطبيقات في
+  نطاقي» (T8).
+
 ## 2. Two-factor authentication (2FA)
 
 ETS uses time-based one-time codes (TOTP). These work with Google Authenticator, Microsoft Authenticator,
@@ -346,7 +384,8 @@ reset by an administrator; phones unused for 90 days revoked automatically.
 | Revoke phones unused for (days) | 90 | 7–365 |
 
 **When alerts are made.** Immediately (after the change is saved): an edit request waiting (A1), a decision on a
-request (A3), a result file waiting / its outcome (A4, A5), functions excluded or removed (T7), an account paused
+request (A3), a result file waiting / its outcome (A4, A5), functions excluded or removed (T7), items moved into
+an application (T8, 1.10.0 — same roles and policy defaults as T7), an account paused
 (S1), a log retention lowered (S7). Every 15 minutes the API checks failed sign-ins, refused requests and server
 errors (S2, S5, S8); every day from the summary hour: the audit-log hash chains (S3), the e-mail index (S4), the
 backup age (S6); on work days the summaries (T1–T5, A2, A6, P1, P3, P4); weekly T6 and P2. Summaries are one alert per

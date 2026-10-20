@@ -30,6 +30,97 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.10.0] — 2026-10-20 — Moving items to another application
+
+### Added
+- **Backend:** moving a function / report item to another application, also of another department
+  (`backend/src/services/move.js`). Endpoints (`/api/tracker`): `GET /move-targets?function_id=` (departments →
+  applications in the reader's scope, the current one left out), `POST /functions/:id/move/preview`,
+  `POST /functions/:id/move` `{to_app_id, reason}`, `POST /applications/:id/bulk-move/preview`,
+  `POST /applications/:id/bulk-move` `{function_ids, to_app_id, reason}` (1–200 items, one transaction, all or none).
+  200 when direct, 202 `{pending, request_id, impact}` when it needs approval. The item keeps its id, values,
+  exclusion reason and duplicate links; it gets the next `C<n>` code of the destination and goes to the end of its
+  list. The preview / answer carries before → after for both applications, their department(s) and the project,
+  and the weight that moves.
+- **Backend:** permission `mov` («نقل البنود» / "Move items") in `PERMISSIONS` (`backend/src/routes/users.js`),
+  offered for per-user overrides; `can.mov` in `GET /api/tracker/applications/:id`.
+- **Backend:** edit request kind `move_function` with **two approvals**: a team lead of the source application
+  («اعتماد (المصدر)»), then one of the destination («اعتماد (الوجهة)»); one approval when the same lead covers both;
+  never the requester; either lead may reject. `GET /api/approvals` adds the destination, both approvals, `meta`
+  (reason, weight share and impact when requested), `move_now` (the share if approved now) and
+  `can.stage` / `can.approve_as`; audit action `edit_approve_source` for the first approval. *Approve all* signs the
+  stage the user may approve.
+- **Backend:** `GET /api/tracker/applications/:id` — a moved item carries `moves` (its history) and `moved_from`
+  (names only within the reader's scope). `GET /function-options` takes `with_off=1` (excluded items too).
+- **Backend:** notification type `moved_in` (T8, «نقل بنود إلى تطبيقات في نطاقي»): items moved into an application →
+  its users with `pct` / `tst` / `tog` (not who moved / approved them); same roles, policy defaults and phone rule as
+  T7. A move request's A1 alert goes to the approvers of both applications.
+- **Backend:** Excel exports — the functions sheet ends with «منقول من» (`application/old code`); the approvals sheet
+  lists move requests (kind «نقل بنود», field «نقل», «الوزن المنقول», «سبب النقل») and ends with «التطبيق المنقول إليه».
+- **Database:** migration `019_move_items.sql` — table `function_moves`, the `edit_requests` move columns
+  (`target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta`), the kind
+  `move_function`, and `mov` for admin, mgr, pm, tm, lead.
+- **Frontend:** «نقل» (two arrows) on each item row with `mov` (not on removed items): module (department, with
+  its ERP module name), then application, a required reason with a counter (3–500 characters, spaces not counted),
+  the impact table (both applications, department(s), project, both weights and «الوزن المنقول») and «تأكيد النقل»,
+  disabled until all is valid (`components/MoveDialog.jsx`). «تعيين جماعي» → «نقل بنود إلى تطبيق آخر». The badge
+  «منقول من <app> / <code>» (tooltip: reason, who, when) opens the item's move history. A pending move shows on the
+  row («⏳ بانتظار الاعتماد: نقل إلى …»). The Approvals screen shows «نقل: من … ← إلى …», the reason, which
+  approval is done / pending, the share when requested and now, and the impact. RTL / LTR, keyboard accessible,
+  phone width.
+- **Frontend:** Logs sentences — «نقل أحمد البند D7 من «شؤون العاملين» (…) إلى «المحاسبة» (…) برمز C12 — نُقل
+  وزن 0.20 — السبب: «…»» (and «لم يُنقل وزن» for an excluded item / automatic weights), the two weight rows with the
+  reason «نقل البند …», the move request and its source approval.
+- **Tests:** `backend/test/move.test.js` (21) — `mov` 403, scope of source and destination 403, reason / destination
+  400, direct move with exact numbers (share 2.00: 7 → 5 and 10.5 → 12.5, total conserved), new code and
+  `function_moves`, excluded item (share 0, reason and duplicate link kept), auto mode, 409 blocks (pending request,
+  pending import, removed), the two-lead flow (wrong stage / requester 403, share recomputed at approval, alerts),
+  one approval by a lead of both, re-checks at approval (`mov` revoked, destination out of scope, item removed) and
+  rejection, bulk all-or-nothing / shares / 200 limit / order independence, bulk request, seed guard, no code reuse,
+  Logs of the old department, audit sentences (ar / en), badge data and scope, live events for both applications,
+  both exports, approvals off. `backend/test/mov-permission.test.js` (2) — migration 019 on a 1.9.2 fixture.
+
+### Changed
+- **Backend:** the catalog seed no longer re-creates a catalog item in the application it was moved out of
+  (`function_moves.from_app_id / from_code`); the seed's system-log row counts them (`movedOut`).
+- **Backend:** `nextCode` (`services/functions.js`) also skips the `C<n>` codes of items moved out of the
+  application, so a code is never reused after the item with the highest code leaves.
+- **Backend:** Logs (`routes/logs.js`) — an audit row of a moved item shows the application and code the item had
+  when the row was written; a scoped reader keeps the rows of an item moved out of their application up to and
+  including the move, and sees move requests of either application.
+- **Backend:** `requestsSettled` and the A2 reminder count a move request for its source until the source lead
+  approved it, then for its destination.
+- **Docs:** handover 01, 03 (permission table, section 1e), 04 (Arabic guide: moving items, weights with an
+  example), 05 (migration 019, `function_moves`, request columns), 06 (authorisation), 11 (API); schema reference
+  regenerated (`deploy/db/schema-reference.sql`).
+
+### Security
+- A move needs `mov` **and both applications in scope** on the server; nobody moves an item into or out of an
+  application they cannot see. It is direct only for an approver of both applications, `cfg` / `apv_final`
+  holders, or with approvals off. Each approval re-checks the requester (active, `mov`, both applications in
+  scope — ETS-SEC-027) and the items (still in the source, not removed, nothing else pending), so a request cannot
+  be used after the requester's rights changed. The two applications are locked in id order (no deadlock), every
+  move writes strict audit rows, and an application outside the reader's scope is never named in the badge or the
+  T8 alert.
+
+### Upgrade notes
+- Run the migrations (`update.sh` does it): **`019_move_items.sql`** creates `function_moves`, adds the move columns
+  and the kind `move_function` to `edit_requests`, and gives `mov` to admin, mgr, pm, tm and lead. Existing requests
+  are untouched.
+- **`mov` defaults:** admin, mgr (department manager), pm, tm and lead get it; member, ed, qa and obs do not. It is
+  a new capability, so — unlike `ren` in 1.9.2 — no per-user override is copied from another permission: nobody
+  gains anything through an override, and an administrator grants it per user where wanted (Users → «نقل البنود»).
+- **Weight share rule (fixed mode):** the item takes `weight(source) × item weight ÷ Σ weight of the source's counted
+  items` of the source application's weight (0 for an excluded item; rounded to 0.01; never more than the source
+  weight; the sum of the two weights is unchanged). Automatic mode transfers nothing. Check the Weights screen after
+  large moves if the fixed weights were tuned by hand.
+- **Seed guard:** after a move the seed (run at every start) no longer re-creates the item in its old application;
+  nothing to do.
+- A department without a team lead cannot sign its side of a move request: have a project / technical manager or an
+  administrator move the item directly, or give the department a team lead.
+
+---
+
 ## [1.9.2] — 2026-10-20 — Renaming items is its own permission
 
 ### Added
@@ -1572,7 +1663,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/1ff9138...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/dd41f54...HEAD
+[1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54
 [1.9.2]: https://github.com/mscit-admin/ets/compare/80f9472...1ff9138
 [1.9.1]: https://github.com/mscit-admin/ets/compare/b5eb9e2...80f9472
 [1.9.0]: https://github.com/mscit-admin/ets/compare/261ea0b...b5eb9e2

@@ -185,11 +185,13 @@ async function qualityWeekly(ctx) {
 async function approvalsDigest(ctx) {
   const { now, s, lp } = ctx;
   const remind = s['notify.approval_remind_hours'] * 3600e3, escalate = s['notify.approval_escalate_days'] * DAY;
-  const reqs = (await query(`SELECT id, app_id, requested_by, requested_at FROM edit_requests WHERE status='pending'`)).rows
-    .map(r => ({ ...r, age: now - new Date(r.requested_at) })).filter(r => r.age >= remind);
+  // a move (1.10.0) waits for the approvers of the application whose approval is missing: the source, then the destination
+  const reqs = (await query(`SELECT id, app_id, requested_by, requested_at, kind, target_app_id, source_approved_by FROM edit_requests WHERE status='pending'`)).rows
+    .map(r => ({ ...r, age: now - new Date(r.requested_at), waits: r.kind === 'move_function' && r.source_approved_by ? r.target_app_id : r.app_id }))
+    .filter(r => r.age >= remind);
   const entries = [];
   for (const user of reach(ctx, 'approval_overdue')) {
-    const mine = reqs.filter(r => r.requested_by !== user.id && hasPerm(user, 'apv_dept') && ctx.apps.get(r.app_id) && canSeeApp(user, ctx.apps.get(r.app_id)));
+    const mine = reqs.filter(r => r.requested_by !== user.id && hasPerm(user, 'apv_dept') && ctx.apps.get(r.waits) && canSeeApp(user, ctx.apps.get(r.waits)));
     const esc = user.fullScope && hasPerm(user, 'apv_final') ? reqs.filter(r => r.age >= escalate && r.requested_by !== user.id) : mine.filter(r => r.age >= escalate);
     const stage = esc.length ? 'escalate' : mine.length ? 'remind' : null;
     if (!stage) continue;
