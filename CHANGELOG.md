@@ -28,6 +28,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Added
+- **Mobile:** new cross-platform app in `mobile/` (React Native 0.88 / Expo SDK 58, TypeScript, `ly.ets.mobile`), phase 1:
+  server address (https only), sign-in with 2FA, forced password change, dashboard with the ERP wheel, departments,
+  read-only applications, alerts, profile; Arabic / English with RTL; built by `.github/workflows/mobile.yml` (APK
+  artifact). No server change: it uses the web session cookie. See [mobile/README.md](mobile/README.md) and
+  [mobile/CHANGELOG.md](mobile/CHANGELOG.md).
+
 ### Changed
 - **Frontend:** small dependency-free pieces moved out of components so the mobile app can import them:
   `lib/iconPaths.js` (from `Icon.jsx`), `lib/wheelGeometry.js` (from `ErpWheel.jsx`), `lib/equation.js` (from

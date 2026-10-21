@@ -10,6 +10,9 @@ ets/
 ├── STRUCTURE.md                   This file
 ├── .gitignore
 ├── .github/dependabot.yml         Weekly npm (backend, frontend) and GitHub Actions update proposals (7-day cooldown)
+├── .github/workflows/
+│   ├── android.yml                ETS Alerts (android/): build, tests, lint, APK, signed release on android-v* tags
+│   └── mobile.yml                 Mobile app (mobile/): typecheck, lint, jest, expo prebuild, debug-signed APK artifact
 │
 ├── reference/
 │   └── erp-tracker-original.html  The original single-file tracker (source of the catalog and legacy data)
@@ -209,6 +212,31 @@ ets/
 │       │   ├── Approvals.jsx      Edit approvals: requests with before/after, approve / reject / withdraw
 │       │   └── Imports.jsx        Imports & approvals: list, import window, batch page with signatures
 │       └── styles/app.css         ERPNext-style design system (RTL/LTR aware)
+│
+├── mobile/                        Phone app (Android now, iOS-ready) — React Native 0.88 + Expo SDK 58, TypeScript strict
+│   ├── README.md                  Arabic / English: phases, installing the APK, server address and certificate, building
+│   ├── CHANGELOG.md               Release notes of the app (0.1.0 = phase 1)
+│   ├── package.json / package-lock.json   Exact dependency versions; scripts: start, android, ios, lint, typecheck, test,
+│   │                              export:web, preview:web
+│   ├── app.json                   Expo config: «ETS», ly.ets.mobile, plugins (router, splash, secure store, localization
+│   │                              with RTL, network security), expo-updates off
+│   ├── metro.config.js            Watch folder ../frontend/src (shared modules), node_modules lookup for them
+│   ├── tsconfig.json              strict; @/* → src/*, @web/* → ../frontend/src/*
+│   ├── eslint.config.js · jest.config.js
+│   ├── plugins/withAndroidNetworkSecurity.js  network_security_config: system + user CAs, no cleartext (debug: Metro)
+│   ├── scripts/web-preview.mjs    Development only: HTTPS server for the web export with an /api proxy
+│   ├── assets/images/             Launcher / adaptive / splash icons and favicon (the ETS mark)
+│   ├── __tests__/                 Jest: api, server address, theme vs app.css, wheel, RTL, i18n, shared files, plugin
+│   └── src/
+│       ├── app/                   Screens (expo-router): _layout (guards), setup, login (2FA), change-password,
+│       │                          (tabs)/home (dashboard, department/[id], app/[id]), (tabs)/notifications, (tabs)/profile
+│       ├── components/            ErpWheel, PctEquation, Ring, ToneLegend, ItemCard, AppTags, Icon, TopBar, AuthCard,
+│       │                          Logo, ui (Card, Pill, ProgressBar, Button, Field, Alert…)
+│       ├── lib/                   api (fetch, cookie, errors), session, i18n, rtl, server (https URL), storage(.web),
+│       │                          useLoad (refresh + 60 s polling), notifCount, links, items, iconElements, types
+│       ├── shared/web.ts          Typed entry point to the shared frontend modules
+│       ├── i18n/mobileMessages.ts App-only strings (m_*, app error codes)
+│       └── theme/                 tokens (app.css variables), fonts (Cairo), tone (pctTone scale)
 │
 ├── deploy/                        Ubuntu Server deployment
 │   ├── install.sh                 Interactive installation wizard (asks address, ports, certificate, DB credentials,
