@@ -76,16 +76,16 @@ const timeZone = async () => (await getSetting('notify.timezone')) || 'Africa/Tr
 // Upsert of the session's row (only while the session is valid) and the user's active seconds today.
 async function write(r) {
   const { screen, ref } = await checkRef(r.screen, r.ref);
-  const q = await query(`INSERT INTO user_presence(session_id,user_id,client,current_path,current_screen,screen_ref,user_agent,ip)
-    SELECT s.id, s.user_id, $3, $4, $5, $6, $7, $8 FROM sessions s
+  const q = await query(`INSERT INTO user_presence(session_id,user_id,client,current_path,current_screen,screen_ref,user_agent,ip,screen_since)
+    SELECT s.id, s.user_id, $3, $4, $5, $6, $7, $8, $9::timestamptz FROM sessions s
      WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at > now() AND s.mfa_passed
     ON CONFLICT (session_id) DO UPDATE SET
       screen_since = CASE WHEN user_presence.current_screen IS DISTINCT FROM EXCLUDED.current_screen
                             OR user_presence.screen_ref IS DISTINCT FROM EXCLUDED.screen_ref
-                          THEN now() ELSE user_presence.screen_since END,
+                          THEN $9::timestamptz ELSE user_presence.screen_since END,
       current_path=EXCLUDED.current_path, current_screen=EXCLUDED.current_screen, screen_ref=EXCLUDED.screen_ref,
       client=EXCLUDED.client, user_agent=EXCLUDED.user_agent, ip=EXCLUDED.ip, last_seen=now()
-    RETURNING session_id`, [r.sessionId, r.userId, r.client, r.path, screen, ref, r.userAgent, r.ip]);
+    RETURNING session_id`, [r.sessionId, r.userId, r.client, r.path, screen, ref, r.userAgent, r.ip, r.at]);
   if (!q.rowCount) return false;
   // the time since the user's previous report (any session) when at most ACTIVE_GAP_SECONDS: tabs never count twice
   await query(`INSERT INTO user_activity_daily(user_id, day) VALUES ($1, (now() AT TIME ZONE $2)::date)
@@ -106,6 +106,7 @@ export async function report(req) {
     ...p, sessionId: req.session.id, userId: req.user.id, ip: req.ip || null,
     client: req.get('x-ets-client') === 'mobile' ? 'mobile' : 'web',
     userAgent: (req.get('user-agent') || '').slice(0, 160) || null,
+    at: new Date(),             // when the screen was reported (a coalesced write is up to 10 s later)
   };
   const every = config.presence.minIntervalMs;
   const now = Date.now();
@@ -116,7 +117,8 @@ export async function report(req) {
     await write(r);
     return { stored: true };
   }
-  s.pending = r;
+  // a report of the screen already waiting keeps the earlier time: screen_since is when the screen was opened
+  s.pending = s.pending && s.pending.screen === r.screen && s.pending.ref === r.ref ? { ...r, at: s.pending.at } : r;
   if (!s.timer) {
     s.timer = setTimeout(() => {
       s.timer = null;

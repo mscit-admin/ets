@@ -137,7 +137,10 @@ test('reports are rate-limited per session and coalesced (latest one written whe
   assert.deepEqual(r3.data, { stored: false, coalesced: true });
   assert.equal((await row(c.sessionId)).current_screen, 'dashboard', 'nothing written inside the interval');
   await wait(1400);                                                        // PRESENCE_MIN_INTERVAL_SECONDS=1
-  assert.equal((await row(c.sessionId)).current_screen, 'schedule', 'the latest report is written afterwards');
+  const p = await row(c.sessionId);
+  assert.equal(p.current_screen, 'schedule', 'the latest report is written afterwards');
+  // screen_since is when the screen was reported, not when the coalesced write ran
+  assert.ok(p.last_seen.getTime() - p.screen_since.getTime() > 500, `${p.screen_since.toISOString()} ${p.last_seen.toISOString()}`);
   // another session has its own budget
   const d = await signedIn('capper');
   assert.equal((await d.report('dashboard')).status, 200);
