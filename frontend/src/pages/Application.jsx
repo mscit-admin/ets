@@ -9,34 +9,23 @@ import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, to
 import { ExportButton } from '../components/ExportButton.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 import { MultiSelect } from '../components/MultiSelect.jsx';
-import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
-import { ITEM_TYPES, ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
+import { DisableReasonForm, DisabledReason } from '../components/DisableReason.jsx';
+import { ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
 import { RenameDialog } from '../components/RenameDialog.jsx';
-import { MoveDialog, MoveFields, emptyMove, moveReady, MOVE_MAX } from '../components/MoveDialog.jsx';
+import { MoveDialog, MoveFields } from '../components/MoveDialog.jsx';
+import {
+  DISABLE_REASONS, ITEM_TYPES, MOVE_MAX, SOURCES, SRC_COLOR, blockedItemKey, blockedItems,
+  countDelta, emptyMove, emptyReason, moveReady, needsNote, noteProblem, noteReasons, passConflict, pctDelta, pctText, pendingByFunction,
+  pendingDetails, pendingLifecycle, pendingSummary, progressPassProblem, reasonBody, reasonProblem, statusPassProblem, typeOf,
+} from '../lib/itemRules.js';
 
-// "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
-const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
-const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+// The rules of an edit — required notes, «نجح» = 100 % (1.8.1, also enforced by the server: nothing is filled in
+// automatically, the user enters 100 % first, then picks «نجح»), reasons, pending values — are in lib/itemRules.js,
+// shared with the mobile app.
 
-const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note', item_type: 'item_type',
-  name_ar: 'au_f_name_ar', name_en: 'au_f_name_en', move: 'mv_field' };
-const NAME_FIELDS = new Set(['name_ar', 'name_en']);      // a pending rename (1.9.1)
-
-const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'purple', custom: 'gray' };
 // "reason" filter values: the reasons a user picks, 'import', and 'none' (excluded before 1.5.0, no reason recorded)
 const REASON_FILTER = [...DISABLE_REASONS, 'import', 'none'];
 const DEFAULT_FILTER = { q: '', source: '', test: '', reason: '', type: '', showOff: false, showRemoved: false };
-const typeOf = f => (f.item_type === 'report' ? 'report' : 'function');
-// «نجح» needs 100 % (1.8.1, also enforced by the server): the test status «نجح» (2) only at 100 %, and no progress
-// below 100 on a passed item. «نجح مع ملاحظة» (1) has no progress rule. Nothing is filled in automatically: the user
-// enters 100 % first, then picks «نجح». Items passed below 100 % before 1.8.1 are flagged (passConflict).
-const PASS = 2;
-const passConflict = f => f.test_status === PASS && +f.progress < 100;
-// readable list of the items a bulk set refused (server answer of pass_requires_100 / progress_below_100_while_passed)
-const pctText = v => String(Math.round((+v || 0) * 100) / 100);     // 80 → "80", 82.5 → "82.5" (alerts)
-const blockedItems = e => (Array.isArray(e?.data?.items) ? e.data.items : []);
-
 // Functions table pagination: rows per page (remembered per browser, default 10).
 const PAGE_SIZES = [5, 10, 15, 20, 25];
 const PAGE_SIZE_KEY = 'ets.fnPageSize';
@@ -235,10 +224,7 @@ export default function Application() {
   const { application: a, department: d, can, settings } = data;
   // values waiting for the team lead, per function: { [function_id]: [{field, new_value, requested_by_name}] }
   // (add/remove/restore requests are listed in the lifecycle box above the table instead)
-  const pendingByFn = {};
-  for (const p of data.pending || []) {
-    if (p.function_id && p.field !== 'removed' && p.field !== 'create') (pendingByFn[p.function_id] ||= []).push(p);
-  }
+  const pendingByFn = pendingByFunction(data.pending);
   const calc = a.calc;
   // share of an item in its part of the application %: a function among the functions, a report among the reports
   // (the reports track counts as one more item of weight 1) — same as the Excel export
@@ -261,24 +247,15 @@ export default function Application() {
     }
   };
 
-  const fmtPending = (field, v, meta) => {
-    const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
-    if (P[field]) return t(P[field] + v);
-    if (field === 'progress') return '\u2066' + pc(v) + '%\u2069';   // keep "80.0%" in Arabic text
-    if (field === 'enabled') return v ? '✓' : '✗' + (meta ? ' (' + reasonText(t, lang, meta, id) + ')' : '');
-    if (field === 'item_type') return t('it_' + v);
-    if (field === 'note') return '✎';
-    if (NAME_FIELDS.has(field)) return v ? '«' + v + '»' : t('rn_cleared');
-    if (field === 'move') return t('mv_pending', { app: nm(v) || v?.app_id || '' });
-    return String(v);
-  };
+  const ph = { t, nm, lang, pc, appId: id };
 
   // A "with notes" status on an item without a note opens the note window first;
   // status and note are then saved together (cancel = no change).
   const setStatus = (f, field, v) => {
     // «نجح» below 100 %: not saved, the list goes back to its value (controlled select), and the alert says why
-    if (field === 'test_status' && v === PASS && +f.progress < 100) {
-      toast(t('pass_needs_100_now', { progress: pctText(f.progress) }), 'red');
+    const problem = statusPassProblem(f, field, v);
+    if (problem) {
+      toast(t(problem.key, problem.vars), 'red');
       return;
     }
     const after = { ...f, [field]: v };
@@ -287,7 +264,7 @@ export default function Application() {
   };
 
   const removedCount = fns.filter(f => f.removed_at).length;
-  const pendingLife = (data.pending || []).filter(p => p.field === 'create' || p.field === 'removed');
+  const pendingLife = pendingLifecycle(data.pending);
 
   return (
     <div>
@@ -339,7 +316,7 @@ export default function Application() {
           <input className="input input-sm" placeholder={t('filter') + '…'} value={filter.q} onChange={e => setFilter({ ...filter, q: e.target.value })} />
           <select className="input input-sm" value={filter.source} onChange={e => setFilter({ ...filter, source: e.target.value })} aria-label={t('source')}>
             <option value="">{t('source')}: {t('all')}</option>
-            {['design', 'vendor_list', 'experience', 'custom'].map(s => <option key={s} value={s}>{t('src_' + s)}</option>)}
+            {SOURCES.map(s => <option key={s} value={s}>{t('src_' + s)}</option>)}
           </select>
           <select className={'input input-sm it-filter' + (filter.type ? ' it-filter-' + filter.type : '')} value={filter.type}
             onChange={e => setFilter({ ...filter, type: e.target.value })} aria-label={t('item_type')}>
@@ -412,11 +389,8 @@ export default function Application() {
                       {f.enabled && partW(f) > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / partW(f)) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
                       {pendingByFn[f.id] && (
-                        <Link to="/approvals" className="pending-chip" title={pendingByFn[f.id].map(p => `${t(FIELD_LABEL[p.field] || p.field)}: ${fmtPending(p.field, p.new_value, p.meta)}${p.meta?.rename_reason ? ' — ' + t('rn_reason') + ': ' + p.meta.rename_reason : ''} — ${p.requested_by_name}`).join('\n')}>
-                          ⏳ {t('awaiting_approval')}: {pendingByFn[f.id].map(p => (NAME_FIELDS.has(p.field)
-                            ? t(p.field === 'name_ar' ? 'rn_pending' : 'rn_pending_en', { name: fmtPending(p.field, p.new_value) })
-                            : p.field === 'move' ? fmtPending(p.field, p.new_value)
-                              : `${t(FIELD_LABEL[p.field] || p.field)} ${fmtPending(p.field, p.new_value, p.meta)}`)).join(' · ')}
+                        <Link to="/approvals" className="pending-chip" title={pendingDetails(ph, pendingByFn[f.id]).join('\n')}>
+                          ⏳ {t('awaiting_approval')}: {pendingSummary(ph, pendingByFn[f.id])}
                         </Link>
                       )}
                       {f.moved_from && <MovedBadge m={f.moved_from} onOpen={() => setHistory(f)} />}
@@ -430,7 +404,7 @@ export default function Application() {
                   <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
                   <td className="num-col">
                     <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })}
-                      check={v => (f.test_status === PASS && v < 100 ? t('pass_lower_blocked', { progress: pctText(v) }) : null)} />
+                      check={v => { const p = progressPassProblem(f, v); return p ? t(p.key, p.vars) : null; }} />
                     <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
                   </td>
                   <td>
@@ -484,8 +458,7 @@ function NoteModal({ f, pending, canEdit, onClose, onSave }) {
   const required = needsNote(after);
   const empty = !v.trim();
   // which "with notes" status(es) make the note mandatory, e.g. "حالة الاختبار: نجح مع ملاحظة"
-  const reasons = Object.entries(NOTE_REQUIRED).filter(([k, val]) => after[k] === val)
-    .map(([k, val]) => `${t({ test_status: 'test_status', notif_status: 'notif_status', review_status: 'review_status' }[k])}: ${t({ test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' }[k] + val)}`);
+  const reasons = noteReasons(t, after);
   return (
     <Modal title={required ? t('note_required_title') : t('edit_note')} onClose={onClose}
       footer={canEdit && <>
@@ -560,7 +533,7 @@ function BulkModal({ app, can, onClose, onDone }) {
           <div className="mt-s"><b>{t('bulk_blocked_items', { n: err.data.count ?? blockedItems(err).length })}</b></div>
           <ul className="imp-errors bulk-blocked">
             {blockedItems(err).map(x => <li key={x.function_id}><span className="code">{x.code}</span> <span lang="ar" dir="rtl">{x.name_ar}</span>
-              {' — '}{t(x.error === 'pass_requires_100' ? 'bulk_item_below_100' : 'bulk_item_passed', { progress: pctText(x.current_progress) })}</li>)}
+              {' — '}{t(blockedItemKey(x), { progress: pctText(x.current_progress) })}</li>)}
           </ul>
         </>}
       </Alert>}
@@ -652,18 +625,18 @@ function ImpactTable({ impact }) {
         <thead><tr><th /><th className="num-col">{t('before')}</th><th className="num-col">{t('after')}</th><th className="num-col">{t('change')}</th></tr></thead>
         <tbody>
           {rows.map(([k, label]) => {
-            const d = impact[k].after - impact[k].before;
+            const d = pctDelta(impact[k].before, impact[k].after, pc);
             return (
               <tr key={k}>
                 <td>{label}</td>
                 <td className="num-col num">{pc(impact[k].before)}%</td>
                 <td className="num-col num"><b>{pc(impact[k].after)}%</b></td>
-                <td className={'num-col num ' + (Math.abs(d) < 0.05 ? 'muted' : d > 0 ? 'green-text' : 'red-text')}>{Math.abs(d) < 0.05 ? '—' : (d > 0 ? '+' : '') + pc(d)}</td>
+                <td className={'num-col num ' + (d.tone === 'muted' ? 'muted' : d.tone + '-text')}>{d.text}</td>
               </tr>
             );
           })}
           <tr><td>{t('included_functions')}</td><td className="num-col num">{impact.included.before}</td><td className="num-col num"><b>{impact.included.after}</b></td>
-            <td className="num-col num muted">{(d => (d > 0 ? '+' + d : d || '—'))(impact.included.after - impact.included.before)}</td></tr>
+            <td className="num-col num muted">{countDelta(impact.included.after - impact.included.before)}</td></tr>
         </tbody>
       </table>
     </div>

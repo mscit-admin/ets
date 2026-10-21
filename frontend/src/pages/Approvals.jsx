@@ -9,29 +9,13 @@ import { ExportButton } from '../components/ExportButton.jsx';
 import { DisabledReason } from '../components/DisableReason.jsx';
 import { TypeBadge } from '../components/ItemType.jsx';
 import { MoveImpact } from '../components/MoveDialog.jsx';
+import { RQ_FIELD_LABEL as FIELD_LABEL, RQ_STATUSES, RQ_STATUS_COLOR as STATUS_COLOR, REJECT_MAX, approveAllToasts, approveLabelKey, canApproveAny as anyApprovable,
+  decisionToast, fmtChange, moveStage, rejectProblem, showRenameReason } from '../lib/approvalRules.js';
 
-const STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
-const FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
-  notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_ar: 'au_f_name_ar', name_en: 'au_f_name_en',
-  create: 'fn_add', removed: 'fn_remove', item_type: 'item_type', move: 'mv_field' };
-
+// How a change reads, the stages of a move and the toasts of a decision: lib/approvalRules.js (shared with the mobile app).
 function useFmt() {
   const { t, nm } = useI18n();
-  return (kind, field, v) => {
-    if (v === null || v === undefined || v === '') return '—';
-    // a move (1.10.0): before = «application/code», after = the destination application
-    if (field === 'move') return v.code ? `${v.app_id}/${v.code}` : nm(v) || v.app_id;
-    if (field === 'create') return `${v.name_ar} · ${t('weight')} \u2066${v.weight}\u2069 · \u2066${pc(v.progress)}%\u2069 · ${v.enabled ? t('include_in_calc') : t('exclude_hint')}`
-      + (v.item_type === 'report' ? ' · ' + t('it_report') : '');
-    if (field === 'item_type') return t('it_' + v);
-    if (field === 'removed') return v.removed ? `${t('fn_state_removed')}${v.reason ? ' — ' + v.reason : ''}` : t('fn_state_present');
-    const P = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
-    if (P[field]) return t(P[field] + v);
-    if (kind === 'report' && field === 'status') return t('rs_' + v);
-    if (field === 'progress') return pc(v) + '%';
-    if (field === 'enabled') return v ? t('yes') : t('no');
-    return String(v);
-  };
+  return (kind, field, v) => fmtChange({ t, nm, pc }, kind, field, v);
 }
 
 export default function Approvals() {
@@ -45,7 +29,8 @@ export default function Approvals() {
   const act = async (rq, action, body = {}) => {
     try {
       const r = await api.post(path`/approvals/${rq.id}/${action}`, body);
-      toast(r.applied ? t('applied_result', { a: r.applied_changes, s: r.skipped_changes }) : r.stage === 'source' ? t('mv_source_approved') : t('saved'));
+      const m = decisionToast(r);
+      toast(t(m.key, m.vars));
       setDlg(null); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
@@ -53,8 +38,7 @@ export default function Approvals() {
     if (!window.confirm(t('are_you_sure'))) return;
     try {
       const r = await api.post('/approvals/approve-all', {});
-      toast(t('applied_result', { a: r.applied_changes, s: r.skipped_changes }));
-      if (r.blocked_requests) toast(t('blocked_requests_n', { n: r.blocked_requests }), 'red');
+      for (const m of approveAllToasts(r)) toast(t(m.key, m.vars), m.kind === 'red' ? 'red' : undefined);
       reload();
     }
     catch (e) { toast(errText(e), 'red'); }
@@ -62,7 +46,7 @@ export default function Approvals() {
 
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
-  const canApproveAny = data.requests.some(r => r.can.approve);
+  const canApproveAny = anyApprovable(data.requests);
 
   return (
     <div>
@@ -73,7 +57,7 @@ export default function Approvals() {
       <div className="filter-bar">
         <select className="input input-sm" value={status} onChange={e => setStatus(e.target.value)} aria-label={t('status')}>
           <option value="">{t('status')}: {t('all')}</option>
-          {Object.keys(STATUS_COLOR).map(s => <option key={s} value={s}>{t('rq_' + s)}</option>)}
+          {RQ_STATUSES.map(s => <option key={s} value={s}>{t('rq_' + s)}</option>)}
         </select>
         <label className="check"><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} /> {t('my_requests')}</label>
       </div>
@@ -89,7 +73,7 @@ export default function Approvals() {
           actions={<>
             <span className="muted small">{rq.requested_by_name} · {fmtDate(rq.requested_at)}</span>
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
-            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t(rq.can.approve_as ? 'approve_' + rq.can.approve_as : 'approve')}</button>}
+            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t(approveLabelKey(rq.can))}</button>}
             {rq.can.reject && <button className="btn btn-default btn-xs" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
             {rq.can.withdraw && <button className="btn btn-default btn-xs" onClick={() => act(rq, 'withdraw')}>{t('withdraw')}</button>}
           </>}>
@@ -114,7 +98,7 @@ export default function Approvals() {
                         </div>
                       )}
                       {i.field === 'move' && <div className="req-reason small">{t('mv_weight_moved')}: <span className="num">{(+(i.meta?.weight_share || 0)).toFixed(2)}</span></div>}
-                      {i.meta?.rename_reason && (i.field === 'name_ar' || !rq.items.some(x => x.function_id === i.function_id && x.field === 'name_ar')) && (
+                      {showRenameReason(i, rq.items) && (
                         <div className="req-reason small">{t('rn_reason')}: <span className="muted rn-reason-text">{i.meta.rename_reason}</span></div>
                       )}</td>
                   </tr>
@@ -135,8 +119,8 @@ function RejectModal({ onClose, onSubmit }) {
   return (
     <Modal title={t('reject')} onClose={onClose}
       footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className="btn btn-primary" disabled={!v.trim()} onClick={() => onSubmit(v)}>{t('reject')}</button></>}>
-      <Field label={t('reject_reason') + ' *'}><textarea className="input" rows={4} maxLength={1000} value={v} onChange={e => setV(e.target.value)} /></Field>
+        <button className="btn btn-primary" disabled={!!rejectProblem(v)} onClick={() => onSubmit(v)}>{t('reject')}</button></>}>
+      <Field label={t('reject_reason') + ' *'}><textarea className="input" rows={4} maxLength={REJECT_MAX} value={v} onChange={e => setV(e.target.value)} /></Field>
     </Modal>
   );
 }
@@ -147,14 +131,15 @@ function MoveRequest({ rq }) {
   const { t, fmtDate } = useI18n();
   const m = rq.meta || {};
   const now = rq.move_now;
+  const st = moveStage(rq);
   const share = v => (Number.isFinite(+v) ? (+v).toFixed(2) : '—');
   return (
     <div className="mv-request">
       {m.reason && <div className="req-reason"><span><b>{t('mv_reason')}:</b> <span className="rn-reason-text">{m.reason}</span></span></div>}
       <div className="mv-stage" role="status">
-        {rq.source_approved_by_name && <span className="green-text">✓ {t('mv_rq_source_done', { name: rq.source_approved_by_name, date: fmtDate(rq.source_approved_at) })}</span>}
-        {rq.target_approved_by_name && <span className="green-text">✓ {t('mv_rq_target_done', { name: rq.target_approved_by_name, date: fmtDate(rq.target_approved_at) })}</span>}
-        {rq.status === 'pending' && <b>⏳ {t(rq.source_approved_by ? 'mv_rq_wait_target' : 'mv_rq_wait_source')}</b>}
+        {st.sourceDone && <span className="green-text">✓ {t('mv_rq_source_done', { name: st.sourceDone.name, date: fmtDate(st.sourceDone.at) })}</span>}
+        {st.targetDone && <span className="green-text">✓ {t('mv_rq_target_done', { name: st.targetDone.name, date: fmtDate(st.targetDone.at) })}</span>}
+        {st.waitKey && <b>⏳ {t(st.waitKey)}</b>}
       </div>
       <div className="mv-shares">
         <span>{t('mv_rq_share_then')}: <b className="num">{share(m.weight_share)}</b></span>

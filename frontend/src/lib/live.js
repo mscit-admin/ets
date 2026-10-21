@@ -13,12 +13,9 @@
 // the bell keeps the stream open on every screen while signed in.
 import { useEffect, useRef, useState } from 'react';
 import { notifyUnauthorized } from './api.js';
+import { DEBOUNCE_MS, FALLBACK_AFTER, IDLE_CLOSE_MS, POLL_MS, backoffMs, eventData, passesFilter } from './liveRules.js';
 
-const DEBOUNCE_MS = 400;
-const POLL_MS = 30_000;
-const FALLBACK_AFTER = 3;
-const MAX_BACKOFF_MS = 60_000;
-const IDLE_CLOSE_MS = 3000;
+// timings and the filter rule are shared with the mobile app (lib/liveRules.js)
 
 const listeners = new Set();        // fn({ reason, dept_id?, app_id? })
 const notifListeners = new Set();   // fn({ unread, top_severity })
@@ -54,13 +51,11 @@ function open() {
     connectedOnce = true;
   });
   s.addEventListener('tracker_changed', e => {
-    let d = {};
-    try { d = JSON.parse(e.data); } catch { /* hint only */ }
+    const d = eventData(e.data) || {};     // hint only
     emit({ reason: 'change', dept_id: d.dept_id, app_id: d.app_id });
   });
   s.addEventListener('notif_changed', e => {
-    let d = null;
-    try { d = JSON.parse(e.data); } catch { /* ignored */ }
+    const d = eventData(e.data);
     if (d && typeof d.unread === 'number') notifListeners.forEach(f => { try { f(d); } catch { /* a handler */ } });
   });
   s.addEventListener('session_ended', () => { close(); setStatus('off'); notifyUnauthorized(); });
@@ -71,8 +66,7 @@ function open() {
     failures++;
     if (failures >= FALLBACK_AFTER) startPolling();
     else setStatus('connecting');
-    const wait = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (failures - 1));
-    retryTimer = setTimeout(() => { retryTimer = null; open(); }, wait);
+    retryTimer = setTimeout(() => { retryTimer = null; open(); }, backoffMs(failures));
   };
 }
 
@@ -113,7 +107,7 @@ export function useLiveUpdates(onChange, { filter, enabled = true } = {}) {
     if (!enabled) return undefined;
     let t = null;
     const off = subscribe(msg => {
-      if (msg.reason === 'change' && (msg.dept_id || msg.app_id) && flt.current && !flt.current(msg)) return;
+      if (!passesFilter(msg, flt.current)) return;
       clearTimeout(t);
       t = setTimeout(() => fn.current(msg), DEBOUNCE_MS);
     });

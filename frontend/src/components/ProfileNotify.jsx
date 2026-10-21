@@ -8,8 +8,8 @@ import { api, path } from '../lib/api.js';
 import { Alert, Card, Field, Indicator, Loading, Modal, toast, useLoad } from './ui.jsx';
 import { Icon } from './Icon.jsx';
 import { QrCode } from './QrCode.jsx';
+import { PREF_CATS as CATS, prefFlip, prefLockKey, prefLocked, prefOn, prefPhoneShown } from '../lib/notifyTabs.js';
 
-const CATS = ['approvals', 'tracking', 'plan', 'security', 'system'];
 
 export function NotifyPrefsCard() {
   const { t, errText } = useI18n();
@@ -26,8 +26,7 @@ export function NotifyPrefsCard() {
     try { await api.put('/notifications/prefs', body); toast(t('saved')); reload(); } catch (e) { toast(errText(e), 'red'); }
     setBusy(false);
   };
-  const list = k => data.types.filter(x => x[k]).map(x => x.type);
-  const flip = (k, type, on) => save({ [k]: on ? list(k).filter(x => x !== type) : [...list(k), type] });
+  const flip = (k, type, on) => save(prefFlip(data.types, k, type, on));
   return (
     <section id="notifications">
       <Card title={t('notifications')} actions={<span className="muted small">{t('notif_prefs_hint')}</span>}>
@@ -41,16 +40,16 @@ export function NotifyPrefsCard() {
                 {CATS.filter(c => data.types.some(x => x.category === c)).map(c => [
                   <tr key={c} className="cat"><td colSpan={3}>{t('ncat_' + c)}</td></tr>,
                   ...data.types.filter(x => x.category === c).map(x => {
-                    const lockedWhy = x.mandatory ? t('notif_mandatory_role') : x.blocked ? t('notif_blocked_admin') : null;
+                    const lockedWhy = prefLockKey(x) && t(prefLockKey(x));
                     return (
                       <tr key={x.type}>
                         <td>{t('nt_' + x.type)}{x.mandatory && <> <Indicator color="gray" title={t('notif_mandatory_role')}><Icon name="lock" size={11} /> {t('notif_mandatory')}</Indicator></>}
                           {x.digest && <span className="muted small"> · {t('notif_summary')}</span>}</td>
                         <td><input type="checkbox" aria-label={t('notif_in_app') + ': ' + t('nt_' + x.type)} title={lockedWhy || ''}
-                          checked={!x.muted && !x.blocked} disabled={busy || x.mandatory || x.blocked} onChange={e => flip('muted', x.type, e.target.checked)} /></td>
-                        <td>{!x.push_allowed || x.mobile_blocked ? <span className="na" title={t('notif_phone_off_policy')}>—</span> : (
-                          <input type="checkbox" aria-label={t('notif_phone') + ': ' + t('nt_' + x.type)} checked={!x.mobile_muted && !x.muted && !x.blocked}
-                            disabled={busy || x.mandatory || x.muted || x.blocked} onChange={e => flip('mobile_muted', x.type, e.target.checked)} />)}</td>
+                          checked={prefOn(x, 'muted')} disabled={busy || prefLocked(x, 'muted')} onChange={e => flip('muted', x.type, e.target.checked)} /></td>
+                        <td>{!prefPhoneShown(x) ? <span className="na" title={t('notif_phone_off_policy')}>—</span> : (
+                          <input type="checkbox" aria-label={t('notif_phone') + ': ' + t('nt_' + x.type)} checked={prefOn(x, 'mobile_muted')}
+                            disabled={busy || prefLocked(x, 'mobile_muted')} onChange={e => flip('mobile_muted', x.type, e.target.checked)} />)}</td>
                       </tr>
                     );
                   }),

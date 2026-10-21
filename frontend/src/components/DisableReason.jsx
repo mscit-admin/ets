@@ -3,32 +3,11 @@ import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api, qs } from '../lib/api.js';
 import { MultiSelect } from './MultiSelect.jsx';
+import { DISABLE_REASONS, NOTE_MAX, NOTE_MIN, dupCode, noteProblem, reasonProblem } from '../lib/itemRules.js';
 
-// Why a function is excluded from the calculation (backend services/disable.js, migration 013).
-export const DISABLE_REASONS = ['duplicate', 'out_of_scope', 'not_required', 'other'];
-export const NOTE_MAX = 500;
-export const NOTE_MIN = 3;           // the note is required for every reason (1.5.1): at least 3 non-whitespace characters
-export const emptyReason = () => ({ reason: '', note: '', duplicates: [] });
-
-// null when the note can be sent, else the message key of the problem (same rule as the server).
-export function noteProblem(v) {
-  const note = v.note.trim();
-  if (note.length > NOTE_MAX) return 'dr_note_too_long';
-  if (note.replace(/\s/gu, '').length < NOTE_MIN) return 'dr_note_required';
-  return null;
-}
-// null when the reason can be sent, else the message key of what is missing.
-export function reasonProblem(v) {
-  if (!DISABLE_REASONS.includes(v.reason)) return 'dr_pick_reason';
-  if (v.reason === 'duplicate' && !v.duplicates.length) return 'dr_pick_duplicates';
-  return noteProblem(v);
-}
-// The request body fields of a reason.
-export const reasonBody = v => ({ disabled_reason: v.reason, disabled_note: v.note.trim(),
-  ...(v.reason === 'duplicate' ? { duplicate_of: v.duplicates.map(d => d.id) } : {}) });
-
-// "D3" for a function of the same application, "att/D3" for one of another application.
-export const dupCode = (d, appId) => (d.app_id && d.app_id !== appId ? `${d.app_id}/${d.code}` : d.code);
+// Why a function is excluded from the calculation (backend services/disable.js, migration 013). The rules — reasons,
+// the note of 3–500 characters, the request body, the duplicate codes — are in lib/itemRules.js (shared with the
+// mobile app).
 
 // The reason form: category (radio group), the duplicated functions (when "duplicate") and the note.
 //   appId: application of the function(s); excludeIds: the function(s) being excluded (never offered).
@@ -128,13 +107,4 @@ export function DisabledReason({ f, appId }) {
       )}
     </span>
   );
-}
-
-// The reason as one line of text (approvals screen, pending badges): «مكررة مع D3، D5 — note».
-export function reasonText(t, lang, m, appId) {
-  if (!m) return '';
-  const sep = lang === 'ar' ? '، ' : ', ';
-  const dups = (m.duplicate_of || []).map(d => dupCode(d, appId)).join(sep);
-  const r = m.disabled_reason === 'duplicate' && dups ? t('dr_duplicate_of_list', { codes: dups }) : m.disabled_reason ? t('dr_' + m.disabled_reason) : t('dr_none');
-  return [r, m.disabled_note].filter(Boolean).join(' — ');
 }
