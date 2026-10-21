@@ -21,6 +21,7 @@ export function UserList() {
   const { user: me } = useAuth();
   const [view, setView] = useState('active');               // 'active' | 'deleted' (1.7.0)
   const { data, error, loading, reload } = useLoad(() => api.get(view === 'deleted' ? '/users?deleted=1' : '/users'), [view]);
+  const online = useLoad(() => api.get('/presence/count'), []);     // «متصل الآن (n)» (1.11.0)
   const [sel, setSel] = useState(new Set());
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState(null);            // users in the delete dialog
@@ -102,6 +103,11 @@ export function UserList() {
   return (
     <div>
       <PageHeader title={t('users_title')} icon="users">
+        {online.data && (
+          <Link to="/online" className="btn btn-ghost btn-sm" title={t('ou_title')}>
+            <Indicator color={online.data.online ? 'green' : 'gray'}>{t('ou_now_online', { n: online.data.online })}</Indicator>
+          </Link>
+        )}
         <ExportButton report="users" adminOnly />
         <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
         <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>

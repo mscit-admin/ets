@@ -34,7 +34,7 @@ async function request(method, url, body, { live = false } = {}) {
 
 export const api = {
   get: (url, opts) => request('GET', url, undefined, opts),
-  post: (url, body = {}) => request('POST', url, body),
+  post: (url, body = {}, opts) => request('POST', url, body, opts),
   put: (url, body = {}) => request('PUT', url, body),
   patch: (url, body = {}) => request('PATCH', url, body),
   del: (url, body) => request('DELETE', url, body),
