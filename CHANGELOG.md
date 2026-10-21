@@ -29,6 +29,9 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 ### Changed
+- **Frontend:** small dependency-free pieces moved out of components so the mobile app can import them:
+  `lib/iconPaths.js` (from `Icon.jsx`), `lib/wheelGeometry.js` (from `ErpWheel.jsx`), `lib/equation.js` (from
+  `PctEquation.jsx`), `lib/notifyTabs.js` (from `NotificationBell.jsx`). No behaviour change.
 - **CI:** Android workflow (`.github/workflows/android.yml`) actions updated to their Node 24 majors (checkout v7,
   setup-java v6, upload-artifact v7, download-artifact v8, setup-android v4, gradle wrapper-validation v6,
   action-gh-release v3); runner pinned to `ubuntu-24.04` instead of `ubuntu-latest`.

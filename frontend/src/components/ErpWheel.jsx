@@ -1,5 +1,5 @@
 // ERP module wheel (dashboard): one segment per module around a hub with the overall progress.
-// Modules and the department → module mapping: lib/erpModules.js. Pure inline SVG.
+// Modules and the department → module mapping: lib/erpModules.js; geometry and fills: lib/wheelGeometry.js. Pure inline SVG.
 //   active segment  — department tracked by the system: icon, name, % (tone of lib/format.js pctTone) and a thin
 //                     progress arc on the outer rim; a link to the department page (keyboard focusable)
 //   faded segment   — module not activated, or outside the reader's scope (no % shown)
@@ -9,12 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { pc, pctGradient, pctTone } from '../lib/format.js';
 import { Icon } from './Icon.jsx';
-
-const SIZE = 560, C = SIZE / 2;
-const R_HUB = 86, R_HUB_RING = 95, R_IN = 108, R_OUT = 236, R_RIM = 248, R_TEXT = 171;
-const GAP = 6;                                       // white gap between segments (px, constant width)
-// Corporate blue / navy fills of the active segments, alternating around the wheel (white text ≥ 4.5:1 on each).
-const FILLS = ['#1b3a66', '#24508a', '#2c62a6'];
+import { C, FILLS, R_HUB, R_HUB_RING, R_RIM, R_TEXT, SIZE, geo, linesOf, rimAngles, segmentAngles } from '../lib/wheelGeometry.js';
 
 const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -53,31 +48,6 @@ function useFlash(value) {
   return on;
 }
 
-// Geometry: angles in degrees clockwise from the top; mirrored (counter-clockwise) in Arabic.
-const geo = mirror => {
-  const pt = (r, a) => {
-    const rad = (a * Math.PI) / 180;
-    return [C + (mirror ? -1 : 1) * r * Math.sin(rad), C - r * Math.cos(rad)];
-  };
-  const sweep = mirror ? 0 : 1;
-  const f = n => n.toFixed(2);
-  const arc = (r, a0, a1) => {
-    const [x0, y0] = pt(r, a0), [x1, y1] = pt(r, a1);
-    return `M${f(x0)} ${f(y0)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} ${sweep} ${f(x1)} ${f(y1)}`;
-  };
-  const wedge = (a0, a1) => {
-    const po = (GAP / 2 / R_OUT) * (180 / Math.PI), pi = (GAP / 2 / R_IN) * (180 / Math.PI);
-    const [ax, ay] = pt(R_OUT, a0 + po), [bx, by] = pt(R_OUT, a1 - po);
-    const [cx, cy] = pt(R_IN, a1 - pi), [dx, dy] = pt(R_IN, a0 + pi);
-    const large = a1 - a0 > 180 ? 1 : 0;
-    return `M${f(ax)} ${f(ay)}A${R_OUT} ${R_OUT} 0 ${large} ${sweep} ${f(bx)} ${f(by)}L${f(cx)} ${f(cy)}` +
-      `A${R_IN} ${R_IN} 0 ${large} ${1 - sweep} ${f(dx)} ${f(dy)}Z`;
-  };
-  return { pt, arc, wedge };
-};
-
-const linesOf = (m, lang) => m[`lines_${lang}`] || [m[`name_${lang}`] || m.name_ar];
-
 function Segment({ m, i, a0, a1, g, lang, t, onOpen }) {
   const active = m.state === 'active';
   const pct = useTween(active ? m.pct : 0);
@@ -87,9 +57,7 @@ function Segment({ m, i, a0, a1, g, lang, t, onOpen }) {
   const lines = linesOf(m, lang);
   const name = m[`name_${lang}`] || m.name_ar;
   const tone = pctTone(pct);
-  const rimPad = (GAP / 2 / R_RIM) * (180 / Math.PI);
-  const rimStart = a0 + rimPad, rimEnd = a1 - rimPad;
-  const rimTo = rimStart + ((rimEnd - rimStart) * Math.max(0, Math.min(100, pct))) / 100;
+  const { rimStart, rimEnd, rimTo } = rimAngles(a0, a1, pct);
   const lineH = 15, nameTop = lines.length > 1 ? -12 : -4;
 
   const body = (
@@ -159,11 +127,10 @@ export function ErpWheel({ segments, total }) {
   const navigate = useNavigate();
   const g = geo(dir === 'rtl');
   const n = segments.length;
-  const step = 360 / n;
   return (
     <svg className="erp-wheel" viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" aria-label={t('erp_wheel_title')}>
       {segments.map((m, i) => (
-        <Segment key={m.key} m={m} i={i} a0={i * step - step / 2} a1={i * step + step / 2} g={g} lang={lang} t={t} onOpen={navigate} />
+        <Segment key={m.key} m={m} i={i} a0={segmentAngles(i, n)[0]} a1={segmentAngles(i, n)[1]} g={g} lang={lang} t={t} onOpen={navigate} />
       ))}
       <Hub total={total} t={t} />
     </svg>

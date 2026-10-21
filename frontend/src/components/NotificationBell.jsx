@@ -9,10 +9,7 @@ import { api, path } from '../lib/api.js';
 import { useNotifStream } from '../lib/live.js';
 import { Icon } from './Icon.jsx';
 
-export const SEV_COLOR = { critical: 'red', warning: 'orange', info: 'blue' };
-export const TABS = ['all', 'approvals', 'tracking', 'plan', 'security'];
-export const inTab = (tab, n) => tab === 'all' || n.category === tab || (tab === 'security' && n.category === 'system');
-const SEV_ICON = { critical: 'alert', warning: 'alert', info: 'info' };
+import { SEV_COLOR, SEV_ICON, TABS, inTab } from '../lib/notifyTabs.js';
 
 export function useTimeAgo() {
   const { lang } = useI18n();

@@ -153,7 +153,7 @@ ets/
 │       ├── main.jsx               Loads Cairo font, styles, providers
 │       ├── App.jsx                Routing: login / forced password change / application screens
 │       ├── i18n/
-│       │   ├── messages.js        All UI strings in Arabic and English
+│       │   ├── messages.js        All UI strings in Arabic and English (also used by the mobile app)
 │       │   └── index.jsx          Language context: t(), nm(), RTL/LTR switch, date formats
 │       ├── lib/
 │       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
@@ -162,12 +162,16 @@ ets/
 │       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback;
 │       │   │                      "notif_changed" for the bell
 │       │   ├── erpModules.js      ERP module wheel: standard modules and the department → module mapping (edit here)
+│       │   ├── wheelGeometry.js   ERP wheel geometry and fills (shared with the mobile app)
+│       │   ├── equation.js        Application equation: functions % + reports % = application % (shared with mobile)
+│       │   ├── notifyTabs.js      Alert categories, severity colours / icons (shared with the mobile app)
+│       │   ├── iconPaths.js       SVG icon set by name (shared with the mobile app)
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   ├── health.js          Project health indicators and recommendations (status page); identical copy of
 │       │   │                      backend/src/services/health.js (also the schedule model)
 │       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
 │       │   ├── importMatch.js     Import values (ids or names) → ids; identical copy of backend/src/utils/importMatch.js
-│       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient)
+│       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient); shared with mobile
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, bell, language, user menu) + sidebar
 │       │   ├── NotificationBell.jsx  The bell: unread badge, dropdown with tabs, read / unread, mark all read
@@ -180,9 +184,9 @@ ets/
 │       │   ├── MultiSelect.jsx    Searchable multi-select (combobox + listbox, chips, keyboard, aria)
 │       │   ├── DisableReason.jsx  Exclusion reason form, reason badge of excluded rows, reason text
 │       │   ├── DeleteUsers.jsx    Delete-users confirmation (names, required reason) and restore dialog
-│       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG) and its legend
+│       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG, geometry in lib/wheelGeometry.js) and its legend
 │       │   ├── LiveBadge.jsx      «تحديث مباشر» / "Live" status badge
-│       │   ├── Icon.jsx           SVG icon set
+│       │   ├── Icon.jsx           SVG icon component (paths in lib/iconPaths.js)
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve chart and KPI cards (dashboard + curve page); the model is in lib/health.js
 │       │   └── ui.jsx             Indicator, ProgressBar, Card, NumberCard, Modal, Field, Toast, useLoad…
