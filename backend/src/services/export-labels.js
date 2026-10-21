@@ -13,7 +13,7 @@ const ar = {
   notif_status: 'الإشعارات', review_status: 'المراجعة', vendor_status: 'حالة المورّد المعلنة', note: 'ملاحظة',
   updated_by: 'آخر تعديل بواسطة', updated_at: 'تاريخ آخر تعديل', removed: 'مُزالة', removed_reason: 'سبب الإزالة',
   disabled_reason: 'سبب الإلغاء', duplicate_of: 'مكررة مع', disabled_note: 'ملاحظة الإلغاء', rename_reason: 'سبب تعديل الاسم',
-  moved_from: 'منقول من', move: 'نقل', move_reason: 'سبب النقل', move_share: 'الوزن المنقول', move_to: 'إلى', move_to_app: 'التطبيق المنقول إليه',
+  moved_from: 'منقول من', move: 'نقل', move_reason: 'سبب النقل', move_share: 'الوزن المنقول', move_to_app: 'التطبيق المنقول إليه',
   dr_duplicate: 'مكررة', dr_out_of_scope: 'خارج النطاق', dr_not_required: 'غير مطلوبة', dr_other: 'أخرى', dr_import: 'استيراد',
   dr_none: 'بدون سبب مسجّل', f_reason: 'سبب الإلغاء',
   item_type: 'النوع', it_function: 'وظيفة', it_report: 'تقرير', f_item_type: 'النوع', report_items: 'بنود التقارير',
@@ -81,7 +81,7 @@ const en = {
   notif_status: 'Notifications', review_status: 'Review', vendor_status: "Vendor's stated status", note: 'Note',
   updated_by: 'Last updated by', updated_at: 'Last updated', removed: 'Removed', removed_reason: 'Removal reason',
   disabled_reason: 'Exclusion reason', duplicate_of: 'Duplicate of', disabled_note: 'Exclusion note', rename_reason: 'Rename reason',
-  moved_from: 'Moved from', move: 'Move', move_reason: 'Move reason', move_share: 'Weight moved', move_to: 'to', move_to_app: 'Moved to application',
+  moved_from: 'Moved from', move: 'Move', move_reason: 'Move reason', move_share: 'Weight moved', move_to_app: 'Moved to application',
   dr_duplicate: 'Duplicate', dr_out_of_scope: 'Out of scope', dr_not_required: 'Not required', dr_other: 'Other', dr_import: 'Import',
   dr_none: 'No reason recorded', f_reason: 'Exclusion reason',
   item_type: 'Type', it_function: 'Function', it_report: 'Report', f_item_type: 'Type', report_items: 'Report items',
@@ -133,8 +133,6 @@ const en = {
   lc_app_id: 'Application code', lc_app_name_ar: 'Application (Arabic)', lc_app_name_en: 'Application (English)', lc_method: 'Method',
   lc_path: 'Path', lc_status: 'Status', lc_duration_ms: 'Duration (ms)', lc_level: 'Level', lc_message: 'Message', lc_stack: 'Stack',
 };
-
-export const EXPORT_LABELS = { ar, en };
 
 // t(key, vars): the label in the language, {name} placeholders filled; the key itself when it is unknown.
 export function labels(lang) {

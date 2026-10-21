@@ -58,7 +58,6 @@ export const TYPES = {
 };
 // Not a policy type: replaces the alerts above the hourly cap (notify.rate_cap_per_hour) of one user.
 export const RATE_CAPPED = 'rate_capped';
-export const ALL_TYPES = [...Object.keys(TYPES), RATE_CAPPED];
 export const typeInfo = t => (t === RATE_CAPPED ? { code: '—', category: 'system', kind: 'event', severity: 'info', scope: 'self', push: true }
   : Object.hasOwn(TYPES, t) ? TYPES[t] : null);
 

@@ -365,7 +365,6 @@ const JOBS = {
   digest: async ctx => ({ ...(await trackingDigest(ctx)), ...(await approvalsDigest(ctx)), ...(await planDigest(ctx)) }),
   weekly: async ctx => ({ ...(await qualityWeekly(ctx)), ...(await stalledWeekly(ctx)) }),
 };
-export const JOB_NAMES = Object.keys(JOBS);
 
 // The scheduler of server.js: every 15 minutes (first run 30 s after start).
 export function startScheduler({ everyMs = 15 * 60_000, firstMs = 30_000 } = {}) {
