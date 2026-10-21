@@ -94,10 +94,18 @@ describe('items list rules', () => {
 describe('alerts', () => {
   it('opens the screens the phone has', () => {
     expect(mobileRoute('/app/per')).toBe('/home/app/per');
-    expect(mobileRoute('/app/per?x=1#fn-3')).toBe('/home/app/per');
+    expect(mobileRoute('/app/per?x=1#fn-3')).toBe('/home/app/per?fn=3');
     expect(mobileRoute('/department/hr')).toBe('/home/department/hr');
     expect(mobileRoute('/')).toBe('/home');
-    expect(mobileRoute('/approvals')).toBeNull();
+    expect(mobileRoute('/approvals')).toBe('/approvals');
+    expect(mobileRoute('/approvals?mine=1')).toBe('/approvals?mine=1');
+    expect(mobileRoute('/app/per#fn-12')).toBe('/home/app/per?fn=12');
+    expect(mobileRoute('/app/per?filter=conflict')).toBe('/home/app/per?filter=conflict');
+    expect(mobileRoute('/app/per?filter=<x>')).toBe('/home/app/per');
+    expect(mobileRoute('/notifications')).toBe('/notifications');
+    expect(mobileRoute('/logs?tab=auth')).toBeNull();
+    expect(mobileRoute('/imports/4')).toBeNull();
+    expect(mobileRoute('//evil.example/app/x')).toBeNull();
     expect(mobileRoute('https://evil.example/app/x')).toBeNull();
     expect(mobileRoute('/app/../../x')).toBeNull();
     expect(mobileRoute(null)).toBeNull();

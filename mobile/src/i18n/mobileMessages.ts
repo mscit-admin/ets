@@ -4,6 +4,7 @@
 export const mobileMessages = {
   ar: {
     m_tab_home: 'الرئيسية',
+    m_tab_approvals: 'الاعتمادات',
     m_server_title: 'عنوان الخادم',
     m_server_sub: 'أدخل عنوان نظام ETS في مؤسستك. يُقبل الاتصال المشفّر (https) فقط.',
     m_server_label: 'عنوان الخادم',
@@ -18,6 +19,7 @@ export const mobileMessages = {
     m_select: 'تحديد',
     m_selected_n: 'المحدَّدة: {n}',
     m_edit_item_hint: 'يفتح البند للتعديل',
+    m_open_details: 'يعرض تفاصيل الطلب',
     m_search_items: 'بحث في البنود…',
     m_items_count: '{shown} من {total} بند',
     m_all: 'الكل',
@@ -40,6 +42,7 @@ export const mobileMessages = {
   },
   en: {
     m_tab_home: 'Home',
+    m_tab_approvals: 'Approvals',
     m_server_title: 'Server address',
     m_server_sub: "Enter your organisation's ETS address. Only encrypted connections (https) are accepted.",
     m_server_label: 'Server address',
@@ -54,6 +57,7 @@ export const mobileMessages = {
     m_select: 'Select',
     m_selected_n: 'Selected: {n}',
     m_edit_item_hint: 'Opens the item for editing',
+    m_open_details: 'Shows the request details',
     m_search_items: 'Search items…',
     m_items_count: '{shown} of {total} items',
     m_all: 'All',
