@@ -1,7 +1,8 @@
 // Bottom tabs of the signed-in app: الرئيسية (dashboard → department → application), الاعتمادات, التنبيهات, حسابي.
 // The alerts tab carries the unread count (lib/notifCount.tsx); the approvals tab — shown to approvers and to users with
 // requests of their own still pending (lib/approvalsCount.tsx) — the requests waiting for this user. The live-updates
-// stream (lib/liveContext.tsx) and the dialogs' host (components/Sheet.tsx) live here, for a signed-in user only.
+// stream (lib/liveContext.tsx), the presence reports (lib/presence.ts) and the dialogs' host (components/Sheet.tsx) live
+// here, for a signed-in user only.
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/Icon';
@@ -10,6 +11,7 @@ import { useI18n } from '@/lib/i18n';
 import { LiveProvider } from '@/lib/liveContext';
 import { NotifCountProvider, badgeText, useNotifCount } from '@/lib/notifCount';
 import { ApprovalsCountProvider, useApprovalsCount } from '@/lib/approvalsCount';
+import { usePresence } from '@/lib/presenceHook';
 import { colors, fontFamily } from '@/theme';
 
 function TabsInner() {
@@ -17,6 +19,7 @@ function TabsInner() {
   const { count } = useNotifCount();
   const approvals = useApprovalsCount();
   const insets = useSafeAreaInsets();
+  usePresence();
   const waiting = approvals.count.awaiting_me;
   return (
     <Tabs
