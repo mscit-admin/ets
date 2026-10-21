@@ -6,6 +6,46 @@ versions: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] — Phase 2: editing and approvals by permission, live updates
+
+### Added
+- **Item editing** on the application screen, gated by the server's `can` flags exactly like the website
+  (`pct`: progress, notification status; `tst`: test / review status, note; `wgt`: weight; `tog`: include / exclude,
+  item type, add / remove / restore; `ren`: rename; `mov`: move). Tapping an item opens its editor (bottom sheet):
+  progress and weight with − / + steppers, statuses as chips, note (required with a "… with notes" status), type.
+- **«نجح» = 100 %:** nothing is filled in automatically; a refused status or progress goes back with the web's toasts
+  (`pass_needs_100_now`, `pass_lower_blocked`; server `pass_requires_100`, `progress_below_100_while_passed`).
+  «نجح مع ملاحظة» stays allowed below 100 %.
+- **Exclude** with the required reason category, the duplicate picker (search, chips, this application by default,
+  «البحث في كل التطبيقات») and a note of 3–500 characters (spaces not counted); **rename** with a required reason
+  and the same-name notice; **move** with module → application pickers, a required reason and the impact (both
+  applications, both departments, the project, the weight transferred); **add / remove / restore** with the impact.
+- **«تعيين جماعي»**: progress, test status, exclude with a reason, item type, move — for the whole application or for
+  items ticked in the list (long press or «تحديد»).
+- **Approval answers:** a 202 shows «أُرسل للاعتماد» and the waiting values on the item («تعديل الاسم إلى …»,
+  «الإنجاز 80%»…); every server error, 409 conflicts included, shows the shared `err_<code>` message.
+- **Approvals tab** («الاعتمادات») for approvers (`apv_dept` / `apv_final`) and users with requests of their own, with
+  the `awaiting_me` badge: status filter, «طلباتي فقط», approve (a move: source / destination / both), reject with a
+  reason, withdraw, approve all; request details (changes old → new, reasons, duplicates, move stage, shares, impact).
+- **Notification preferences** in حسابي (digest, in-app and phone per type; mandatory types locked).
+- **Alert links** open the screen: an application (`#fn-<id>` brings the item into view, `?filter=conflict`), a
+  department, the approvals (`?mine=1`).
+- **Presence** for the «Online users» page: `POST /api/presence` (`X-ETS-Client: mobile`) on screen changes and every
+  60 s in the foreground; off until the next start when the server does not have the endpoint (404).
+- Dialogs as bottom sheets drawn above the tabs (no native modal), toasts, 44 pt touch targets, RTL / LTR.
+- Jest: shared edit / approval rules, dialog validation, `can` flags, server error codes → messages, the live client
+  (reconnect, backoff, debounce, background, fallback) and presence, with fake timers.
+
+### Changed
+- **Live updates** over the server's Server-Sent Events stream `GET /api/events` (session cookie) instead of the
+  60 s polling: debounced reloads, reconnect with backoff, polling every 30 s after 3 failures, paused in the
+  background, `session_ended` → sign-in check. Library: **sse.js 2.8.0** (Apache-2.0, 2026-02-07); react-native-sse
+  was not used because its last release dates from March 2024.
+- A value being saved or typed is never replaced by a reload or a live event (the web's rule).
+- Shared with the web: `frontend/src/lib/itemRules.js`, `approvalRules.js`, `liveRules.js` and the preference rules of
+  `notifyTabs.js` (the CI path filter and `__tests__/shared.test.ts` follow).
+- Version 0.2.0, Android `versionCode` 2.
+
 ## [0.1.0] — Phase 1: sign-in, viewing, alerts
 
 ### Added

@@ -1,8 +1,8 @@
 {
   "name": "ets-mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "ETS mobile app (React Native / Expo): sign-in, dashboard, departments, applications, alerts — Arabic / English",
+  "description": "ETS mobile app (React Native / Expo): sign-in, dashboard, departments, applications with editing and approvals, alerts — Arabic / English",
   "main": "expo-router/entry",
   "engines": {
     "node": "^22.12.0 || >=24"

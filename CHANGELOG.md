@@ -34,11 +34,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   read-only applications, alerts, profile; Arabic / English with RTL; built by `.github/workflows/mobile.yml` (APK
   artifact). No server change: it uses the web session cookie. See [mobile/README.md](mobile/README.md) and
   [mobile/CHANGELOG.md](mobile/CHANGELOG.md).
+- **Mobile:** phase 2 (app 0.2.0): editing of application items by permission (progress, statuses, note, weight,
+  type, include / exclude with reason and duplicates, rename, move with impact, add / remove / restore, bulk set),
+  202 «sent for approval» handling, an approvals screen (approve / reject / withdraw / approve all), live updates over
+  `GET /api/events` (sse.js 2.8.0) instead of polling, notification preferences, alert links, presence reports
+  (`POST /api/presence`, client `mobile`). No server change.
 
 ### Changed
 - **Frontend:** small dependency-free pieces moved out of components so the mobile app can import them:
   `lib/iconPaths.js` (from `Icon.jsx`), `lib/wheelGeometry.js` (from `ErpWheel.jsx`), `lib/equation.js` (from
   `PctEquation.jsx`), `lib/notifyTabs.js` (from `NotificationBell.jsx`). No behaviour change.
+- **Frontend:** the edit, approval and live-update rules shared with the mobile app moved into `lib/itemRules.js`
+  (from `Application.jsx`, `DisableReason.jsx`, `RenameDialog.jsx`, `MoveDialog.jsx`, `ItemType.jsx`),
+  `lib/approvalRules.js` (from `Approvals.jsx`), `lib/liveRules.js` (from `lib/live.js`) and `lib/notifyTabs.js`
+  (preferences, from `ProfileNotify.jsx`). No behaviour change.
 - **CI:** Android workflow (`.github/workflows/android.yml`) actions updated to their Node 24 majors (checkout v7,
   setup-java v6, upload-artifact v7, download-artifact v8, setup-android v4, gradle wrapper-validation v6,
   action-gh-release v3); runner pinned to `ubuntu-24.04` instead of `ubuntu-latest`.
