@@ -4,9 +4,8 @@
 // the error report and the passwords file with write-excel-file — all loaded on demand (not in the main bundle).
 import { languageIndex, matchList, matchOne, normalize, placeIndex, roleIndex } from './importMatch.js';
 
-// The columns sent to the API. The template adds department_2/3 and application_2/3 (one more drop-down each);
+// The template adds department_2/3 and application_2/3 to the seven API columns (one more drop-down each);
 // an older file with the seven columns only is read the same way.
-export const COLUMNS = ['username', 'full_name', 'email', 'role', 'language', 'departments', 'applications'];
 export const EXTRA = { departments: ['department_2', 'department_3'], applications: ['application_2', 'application_3'] };
 export const TEMPLATE_COLUMNS = ['username', 'full_name', 'email', 'role', 'language',
   'departments', ...EXTRA.departments, 'applications', ...EXTRA.applications];

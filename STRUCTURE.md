@@ -185,7 +185,7 @@ ets/
 │       │   ├── Icon.jsx           SVG icon set
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve chart and KPI cards (dashboard + curve page); the model is in lib/health.js
-│       │   └── ui.jsx             Indicator, ProgressBar, Ring, Card, NumberCard, Modal, Field, Toast, useLoad…
+│       │   └── ui.jsx             Indicator, ProgressBar, Card, NumberCard, Modal, Field, Toast, useLoad…
 │       ├── pages/
 │       │   ├── Login.jsx          Login, 2FA verify/enrol, recovery codes, password forms
 │       │   ├── ProjectStatus.jsx  Project health: schedule variance, delay, pace, forecast, departments, recommendations

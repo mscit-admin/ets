@@ -24,7 +24,9 @@ concurrency:
 jobs:
   build:
     name: Build, test, lint
-    runs-on: ubuntu-latest
+    # Pinned image, not ubuntu-latest: that label moves to Ubuntu 26 from 2026-10-19, and the
+    # move should be a deliberate change here rather than an unannounced one. Bump when ready.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     defaults:
       run:
@@ -37,13 +39,13 @@ jobs:
       version_name: ${{ steps.version.outputs.name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -55,7 +57,7 @@ jobs:
             android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           # The default package list includes the legacy 'tools' package, which
           # current cmdline-tools no longer provide ("Failed to find package 'tools'").
@@ -88,7 +90,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest lintDebug
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ets-alerts-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -97,7 +99,7 @@ jobs:
 
       - name: Upload test and lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ets-alerts-reports-${{ github.sha }}
           path: |
@@ -132,7 +134,7 @@ jobs:
 
       - name: Upload release APK
         if: env.HAS_SIGNING == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ets-alerts-release-${{ steps.version.outputs.name }}-${{ github.sha }}
           path: |
@@ -149,19 +151,19 @@ jobs:
     name: GitHub Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/android-v') && needs.build.outputs.signed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, see the build job
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - name: Download release APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ets-alerts-release-${{ needs.build.outputs.version_name }}-${{ github.sha }}
           path: release
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ETS Alerts ${{ needs.build.outputs.version_name }}
           tag_name: ${{ github.ref_name }}

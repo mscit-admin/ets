@@ -21,20 +21,6 @@ export function Pct({ value }) {
   return <span className="num">{pc(value)}%</span>;
 }
 
-// Circular progress used on dashboard cards
-export function Ring({ value, size = 92, stroke = 9, color = 'var(--primary-blue)' }) {
-  const r = (size - stroke) / 2, c = 2 * Math.PI * r;
-  const v = Math.max(0, Math.min(100, +value || 0));
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="ring" aria-hidden="true">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--gray-200)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
-        strokeDasharray={`${(c * v) / 100} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      <text x="50%" y="52%" dominantBaseline="middle" textAnchor="middle" className="ring-text">{pc(v)}%</text>
-    </svg>
-  );
-}
-
 export function PageHeader({ title, sub, children, icon }) {
   return (
     <div className="page-head">

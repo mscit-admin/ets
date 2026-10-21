@@ -336,5 +336,3 @@ export async function prefsFor(user) {
     });
   return { types, digest: rs.prefs.digest };
 }
-
-export const DIGEST_TYPES = Object.keys(TYPES).filter(k => TYPES[k].digest);

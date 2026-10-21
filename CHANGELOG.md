@@ -28,6 +28,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Changed
+- **CI:** Android workflow (`.github/workflows/android.yml`) actions updated to their Node 24 majors (checkout v7,
+  setup-java v6, upload-artifact v7, download-artifact v8, setup-android v4, gradle wrapper-validation v6,
+  action-gh-release v3); runner pinned to `ubuntu-24.04` instead of `ubuntu-latest`.
+
+### Removed
+- **Code:** dead code with no caller: `Ring` (`ui.jsx`) with its `.ring-text` and `.number-card.hero` styles,
+  `COLUMNS` (`userImport.js`), `EXPORT_LABELS` and the `move_to` label (`export-labels.js`), `ALL_TYPES`,
+  `JOB_NAMES`, `DIGEST_TYPES` (notifications), and the unused messages `mv_items_n`, `mv_items_col`. No behaviour
+  change.
+
 ---
 
 ## [1.10.0] — 2026-10-20 — Moving items to another application
