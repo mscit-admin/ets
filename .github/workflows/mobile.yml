@@ -1,0 +1,160 @@
+name: Mobile (ETS app, React Native / Expo)
+
+# Checks and an installable Android APK of the cross-platform app in mobile/ (phase 1: Android only; no Expo EAS).
+# The app imports a few dependency-free files of the web frontend (mobile/src/shared/web.ts): a change there runs
+# this workflow too (the list is checked by mobile/__tests__/shared.test.ts).
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "mobile/**"
+      - "frontend/src/lib/format.js"
+      - "frontend/src/lib/erpModules.js"
+      - "frontend/src/lib/wheelGeometry.js"
+      - "frontend/src/lib/equation.js"
+      - "frontend/src/lib/notifyTabs.js"
+      - "frontend/src/lib/iconPaths.js"
+      - "frontend/src/i18n/messages.js"
+      - "frontend/src/styles/app.css"
+      - ".github/workflows/mobile.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "frontend/src/lib/format.js"
+      - "frontend/src/lib/erpModules.js"
+      - "frontend/src/lib/wheelGeometry.js"
+      - "frontend/src/lib/equation.js"
+      - "frontend/src/lib/notifyTabs.js"
+      - "frontend/src/lib/iconPaths.js"
+      - "frontend/src/i18n/messages.js"
+      - "frontend/src/styles/app.css"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Check and build Android APK
+    # Pinned image, not ubuntu-latest (see android.yml). Bump deliberately.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      # expo install / prebuild must not ask api.expo.dev for anything: versions come from the lockfile
+      EXPO_OFFLINE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install (npm ci, exact versions from the lockfile)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test -- --ci
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          # the android/ folder is generated below: the Gradle cache follows the app's native dependencies
+          cache-dependency-path: |
+            mobile/package-lock.json
+            mobile/app.json
+            mobile/plugins/*.js
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          # Only platform-tools here. The platform, build tools, NDK and CMake that the generated project asks for
+          # (React Native's version catalog: compileSdk 37, buildTools 37.0.0, ndkVersion 27.1.12297006) are installed
+          # by the Android Gradle Plugin on the first build, because this action accepts the SDK licences
+          # (accept-android-sdk-licenses defaults to true). Naming sdkmanager packages here broke the job whenever a
+          # name was missing from the repository ("Failed to find package 'platforms;android-37'"), and it would
+          # silently drift from the versions the next React Native / Expo upgrade requires.
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Generate the native project (expo prebuild)
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Check the network security configuration
+        run: |
+          grep -q 'android:networkSecurityConfig="@xml/network_security_config"' android/app/src/main/AndroidManifest.xml
+          grep -q 'cleartextTrafficPermitted="false"' android/app/src/main/res/xml/network_security_config.xml
+          grep -q '<certificates src="user" />' android/app/src/main/res/xml/network_security_config.xml
+          if grep -q 'cleartextTrafficPermitted="true"' android/app/src/main/res/xml/network_security_config.xml; then
+            echo "::error::The release network security configuration allows cleartext traffic"; exit 1
+          fi
+
+      # A debug variant does not contain the JavaScript bundle (it loads it from Metro on a computer), so it cannot be
+      # installed and used on its own. The release variant bundles it and, until a signing key is configured
+      # (phase 3), is signed with the Android debug key of the generated project: installable for testing, not for a store.
+      - name: Build APK (release variant, debug-signed)
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
+          version=$(node -p "require('../package.json').version")
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/apk/ets-mobile-${version}-${GITHUB_SHA::7}.apk"
+          (cd "$RUNNER_TEMP/apk" && sha256sum ./*.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: ets-mobile-debug-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/apk/*.apk
+            ${{ runner.temp }}/apk/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # iOS (later — needs an Apple Developer account): the same checks, then a build on macOS. Kept disabled until the
+  # account, a bundle id registration (ly.ets.mobile), a distribution certificate and a provisioning profile exist
+  # (as repository secrets). See mobile/README.md → iOS.
+  #
+  # ios:
+  #   name: Build iOS app
+  #   if: false
+  #   runs-on: macos-15
+  #   timeout-minutes: 60
+  #   defaults:
+  #     run:
+  #       working-directory: mobile
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #     - uses: actions/setup-node@v6
+  #       with: { node-version: "22", cache: npm, cache-dependency-path: mobile/package-lock.json }
+  #     - run: npm ci
+  #     - run: npx expo prebuild --platform ios --clean
+  #     - run: cd ios && pod install
+  #     # import the certificate / profile from secrets (e.g. apple-actions/import-codesign-certs), then:
+  #     - run: cd ios && xcodebuild -workspace ETS.xcworkspace -scheme ETS -configuration Release -sdk iphoneos archive -archivePath "$RUNNER_TEMP/ETS.xcarchive"
+  #     - run: xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/ETS.xcarchive" -exportOptionsPlist ios-export.plist -exportPath "$RUNNER_TEMP/ipa"
+  #     - uses: actions/upload-artifact@v7
+  #       with: { name: "ets-mobile-ios-${{ github.sha }}", path: "${{ runner.temp }}/ipa/*.ipa" }

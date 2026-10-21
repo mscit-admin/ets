@@ -2,15 +2,14 @@
 //   functions % × (1 − reports_share)  +  reports % × reports_share  =  application %
 // Two small input rings feed one large result ring; the weights and contributions sit on the connectors.
 // Every number comes from the API (application.calc: fnPct, reportPct and the shares fnShare / reportShare the server
-// used for calc.pct — services/calc.js), nothing is recomputed here. Since 1.8.0 the reports ring is the application's
-// report items with its reports track; an application without reports shows functions × 100 %, one whose counted
-// items are all reports shows reports × 100 %.
+// used for calc.pct — services/calc.js), nothing is recomputed here (lib/equation.js, shared with the mobile app).
+// Since 1.8.0 the reports ring is the application's report items with its reports track; an application without
+// reports shows functions × 100 %, one whose counted items are all reports shows reports × 100 %.
 // All three rings are coloured by pctTone(): a continuous red → orange → amber → green scale.
 import { useI18n } from '../i18n/index.jsx';
 import { pc, pctGradient, pctTone } from '../lib/format.js';
 import { Icon } from './Icon.jsx';
-
-const share = w => Math.round(w * 1000) / 10 + '%';   // 0.15 → "15%", 0.125 → "12.5%"
+import { equation, repParts, share } from '../lib/equation.js';
 
 function EqRing({ value, size, stroke, big }) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r;
@@ -25,22 +24,6 @@ function EqRing({ value, size, stroke, big }) {
         style={{ fontSize: Math.round(size * (big ? 0.2 : 0.19)), fill: big ? tone.text : undefined }}>{pc(v)}%</text>
     </svg>
   );
-}
-
-// The numbers the equation needs, all from the same values the API already used for calc.pct.
-export function equation(calc, settings) {
-  // the shares the server used; an older answer without them: the 1.7.0 rule (reports blended when present)
-  const rwSetting = +settings?.reports_share || 0;
-  const rw = calc.reportShare ?? (calc.reportPct != null ? rwSetting : 0);
-  const fw = calc.fnShare ?? 1 - rw;
-  const withReports = calc.reportPct != null && rw > 0;
-  const withFunctions = fw > 0;
-  return {
-    withReports, withFunctions, both: withReports && withFunctions, fw, rw,
-    fn: calc.fnPct, fnPart: calc.fnPct * fw,
-    rep: withReports ? calc.reportPct : null, repPart: withReports ? calc.reportPct * rw : 0,
-    result: calc.pct,
-  };
 }
 
 function Stats({ calc }) {
@@ -95,14 +78,6 @@ function Legend() {
     </div>
   );
 }
-
-// What the reports ring is made of: «5 بند تقرير + متابعة التقارير».
-const repParts = (t, calc) => {
-  const n = calc.reportItems || 0;
-  if (n && calc.reportTrack) return t('eq_rep_items_track', { n });
-  if (n) return t('eq_rep_items', { n });
-  return calc.reportTrack ? t('eq_rep_track') : null;
-};
 
 export function PctEquation({ calc, settings }) {
   const { t } = useI18n();

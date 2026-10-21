@@ -10,6 +10,9 @@ ets/
 ├── STRUCTURE.md                   This file
 ├── .gitignore
 ├── .github/dependabot.yml         Weekly npm (backend, frontend) and GitHub Actions update proposals (7-day cooldown)
+├── .github/workflows/
+│   ├── android.yml                ETS Alerts (android/): build, tests, lint, APK, signed release on android-v* tags
+│   └── mobile.yml                 Mobile app (mobile/): typecheck, lint, jest, expo prebuild, debug-signed APK artifact
 │
 ├── reference/
 │   └── erp-tracker-original.html  The original single-file tracker (source of the catalog and legacy data)
@@ -153,7 +156,7 @@ ets/
 │       ├── main.jsx               Loads Cairo font, styles, providers
 │       ├── App.jsx                Routing: login / forced password change / application screens
 │       ├── i18n/
-│       │   ├── messages.js        All UI strings in Arabic and English
+│       │   ├── messages.js        All UI strings in Arabic and English (also used by the mobile app)
 │       │   └── index.jsx          Language context: t(), nm(), RTL/LTR switch, date formats
 │       ├── lib/
 │       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
@@ -162,12 +165,16 @@ ets/
 │       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback;
 │       │   │                      "notif_changed" for the bell
 │       │   ├── erpModules.js      ERP module wheel: standard modules and the department → module mapping (edit here)
+│       │   ├── wheelGeometry.js   ERP wheel geometry and fills (shared with the mobile app)
+│       │   ├── equation.js        Application equation: functions % + reports % = application % (shared with mobile)
+│       │   ├── notifyTabs.js      Alert categories, severity colours / icons (shared with the mobile app)
+│       │   ├── iconPaths.js       SVG icon set by name (shared with the mobile app)
 │       │   ├── branding.jsx       Logo, favicon and login background (uploaded or default)
 │       │   ├── health.js          Project health indicators and recommendations (status page); identical copy of
 │       │   │                      backend/src/services/health.js (also the schedule model)
 │       │   ├── userImport.js      Bulk user import: template (exceljs, drop-down lists), .xlsx / .csv reading, error report and password files
 │       │   ├── importMatch.js     Import values (ids or names) → ids; identical copy of backend/src/utils/importMatch.js
-│       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient)
+│       │   └── format.js          Number and colour helpers (pctColor, continuous pctTone / pctGradient); shared with mobile
 │       ├── components/
 │       │   ├── Layout.jsx         Navbar (search, bell, language, user menu) + sidebar
 │       │   ├── NotificationBell.jsx  The bell: unread badge, dropdown with tabs, read / unread, mark all read
@@ -180,9 +187,9 @@ ets/
 │       │   ├── MultiSelect.jsx    Searchable multi-select (combobox + listbox, chips, keyboard, aria)
 │       │   ├── DisableReason.jsx  Exclusion reason form, reason badge of excluded rows, reason text
 │       │   ├── DeleteUsers.jsx    Delete-users confirmation (names, required reason) and restore dialog
-│       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG) and its legend
+│       │   ├── ErpWheel.jsx       Dashboard ERP module wheel (inline SVG, geometry in lib/wheelGeometry.js) and its legend
 │       │   ├── LiveBadge.jsx      «تحديث مباشر» / "Live" status badge
-│       │   ├── Icon.jsx           SVG icon set
+│       │   ├── Icon.jsx           SVG icon component (paths in lib/iconPaths.js)
 │       │   ├── PctEquation.jsx    Application header: functions % + reports % rings = application % ring
 │       │   ├── SCurve.jsx         S-curve chart and KPI cards (dashboard + curve page); the model is in lib/health.js
 │       │   └── ui.jsx             Indicator, ProgressBar, Card, NumberCard, Modal, Field, Toast, useLoad…
@@ -205,6 +212,31 @@ ets/
 │       │   ├── Approvals.jsx      Edit approvals: requests with before/after, approve / reject / withdraw
 │       │   └── Imports.jsx        Imports & approvals: list, import window, batch page with signatures
 │       └── styles/app.css         ERPNext-style design system (RTL/LTR aware)
+│
+├── mobile/                        Phone app (Android now, iOS-ready) — React Native 0.88 + Expo SDK 58, TypeScript strict
+│   ├── README.md                  Arabic / English: phases, installing the APK, server address and certificate, building
+│   ├── CHANGELOG.md               Release notes of the app (0.1.0 = phase 1)
+│   ├── package.json / package-lock.json   Exact dependency versions; scripts: start, android, ios, lint, typecheck, test,
+│   │                              export:web, preview:web
+│   ├── app.json                   Expo config: «ETS», ly.ets.mobile, plugins (router, splash, secure store, localization
+│   │                              with RTL, network security), expo-updates off
+│   ├── metro.config.js            Watch folder ../frontend/src (shared modules), node_modules lookup for them
+│   ├── tsconfig.json              strict; @/* → src/*, @web/* → ../frontend/src/*
+│   ├── eslint.config.js · jest.config.js
+│   ├── plugins/withAndroidNetworkSecurity.js  network_security_config: system + user CAs, no cleartext (debug: Metro)
+│   ├── scripts/web-preview.mjs    Development only: HTTPS server for the web export with an /api proxy
+│   ├── assets/images/             Launcher / adaptive / splash icons and favicon (the ETS mark)
+│   ├── __tests__/                 Jest: api, server address, theme vs app.css, wheel, RTL, i18n, shared files, plugin
+│   └── src/
+│       ├── app/                   Screens (expo-router): _layout (guards), setup, login (2FA), change-password,
+│       │                          (tabs)/home (dashboard, department/[id], app/[id]), (tabs)/notifications, (tabs)/profile
+│       ├── components/            ErpWheel, PctEquation, Ring, ToneLegend, ItemCard, AppTags, Icon, TopBar, AuthCard,
+│       │                          Logo, ui (Card, Pill, ProgressBar, Button, Field, Alert…)
+│       ├── lib/                   api (fetch, cookie, errors), session, i18n, rtl, server (https URL), storage(.web),
+│       │                          useLoad (refresh + 60 s polling), notifCount, links, items, iconElements, types
+│       ├── shared/web.ts          Typed entry point to the shared frontend modules
+│       ├── i18n/mobileMessages.ts App-only strings (m_*, app error codes)
+│       └── theme/                 tokens (app.css variables), fonts (Cairo), tone (pctTone scale)
 │
 ├── deploy/                        Ubuntu Server deployment
 │   ├── install.sh                 Interactive installation wizard (asks address, ports, certificate, DB credentials,

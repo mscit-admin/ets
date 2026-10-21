@@ -7,7 +7,8 @@ import { api, path, qs } from '../lib/api.js';
 import { useNotifStream } from '../lib/live.js';
 import { Icon } from '../components/Icon.jsx';
 import { Card, Empty, ErrorBox, Loading, PageHeader, toast } from '../components/ui.jsx';
-import { NotifRow, TABS } from '../components/NotificationBell.jsx';
+import { NotifRow } from '../components/NotificationBell.jsx';
+import { TABS } from '../lib/notifyTabs.js';
 
 const TYPES = ['approval_pending', 'approval_overdue', 'request_decided', 'import_pending', 'import_result', 'import_overdue',
   'stuck', 'untested', 'failed_retest', 'pass_conflict', 'not_started', 'quality', 'excluded', 'moved_in',
