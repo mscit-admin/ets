@@ -265,6 +265,36 @@ department(s), the project, and the weight that moves.
   including the move; the new department sees all of it. Destination users get the alert «نقل بنود إلى تطبيقات في
   نطاقي» (T8).
 
+## 1f. Online users (Administration → «المتصلون الآن») — 1.11.0, System Administrators only
+
+**Administration → «المتصلون الآن» / "Online now"** (`/online`) lists who is working on the system now: one row per
+signed-in session (a user with two browsers has two rows). Same access as the Users page (role *System
+Administrator* with *Manage users*); nobody else can see who is online, and the server refuses the list to anyone
+else (403). Opening the page is recorded in the change history (`view` / `presence`), at most once per 15 minutes
+per administrator. The Users page shows **«متصل الآن (n)»** linking here.
+
+| Column | Meaning |
+|---|---|
+| User | Full name, username and role; «(أنت)» on your own session |
+| Status · last activity | **متصل / Online**: the browser reported within the last 2 minutes. **خامل / Idle**: 2–15 minutes ago (tab hidden, browser minimised or the PC asleep) while the session is still valid. Older → not listed |
+| Current screen | Readable name of the screen and of what is open on it, e.g. «وظائف التطبيق — شؤون العاملين», linked to that screen. «غير معروف» when the screen is not known or what it named no longer exists |
+| On screen for | Time since the user opened this screen |
+| Session duration | Time since the sign-in (the password step, also when 2FA followed), with the sign-in time |
+| Active today | Today's time (Settings → Notifications time zone) with a visible ETS tab, all of the user's sessions together, not counted twice |
+| Client · IP | Browser or phone app, browser / system summary, IP address |
+
+Counts at the top: online sessions, idle sessions, all open sessions (including sessions whose tab is closed). The
+filters (role, department, screen) work on the list shown; *department* means the user's data scope (users with
+full scope match every department). The page refreshes every 15 seconds while it is visible, and its refreshes do
+not keep your own session alive.
+
+**«إنهاء الجلسة» / End session** (with a confirmation) signs out that one session — the user's other sessions stay.
+It is the same action as *End sessions* on the user's page, limited to one session, and is logged the same way
+(audit `revoke_sessions` with `session_ref`, sign-in log `sessions_revoked_by_admin`). Your own current session
+has no button (use *Sign out*).
+
+What is recorded about each user and for how long: see [06-Security.md](06-Security.md) §3a.
+
 ## 2. Two-factor authentication (2FA)
 
 ETS uses time-based one-time codes (TOTP). These work with Google Authenticator, Microsoft Authenticator,

@@ -2,19 +2,12 @@ import { useId, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { api, path } from '../lib/api.js';
 import { Alert, Modal, toast } from './ui.jsx';
+import { NAME_MAX, REASON_MAX, REASON_MIN, renameBody, renameCheck } from '../lib/itemRules.js';
 
 // Renaming a function / report item (1.9.1, backend services/rename.js): the code stays, the Arabic name is required,
 // the English name may be cleared, and the reason is required — same rule as the exclusion note: 3–500 characters,
 // spaces not counted. The rename is sent on its own; a member's rename waits for the team lead (202).
-export const NAME_MAX = 500;
-export const REASON_MIN = 3, REASON_MAX = 500;
-
-export function reasonProblem(v) {
-  const r = v.trim();
-  if (r.length > REASON_MAX) return 'rn_reason_too_long';
-  if (r.replace(/\s/gu, '').length < REASON_MIN) return 'rn_reason_required';
-  return null;
-}
+// The form's rules are lib/itemRules.js renameCheck (shared with the mobile app).
 
 // f: the item; others: the other items of the application (for the "same name" notice); onDone(): after saving.
 export function RenameDialog({ f, others = [], onClose, onDone }) {
@@ -26,23 +19,16 @@ export function RenameDialog({ f, others = [], onClose, onDone }) {
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const newAr = ar.trim(), newEn = en.trim();
-  const arChanged = newAr !== f.name_ar, enChanged = newEn !== (f.name_en || '');
-  const arProblem = !newAr ? 'rn_name_required' : newAr.length > NAME_MAX ? 'rn_name_too_long' : null;
-  const enProblem = newEn.length > NAME_MAX ? 'rn_name_too_long' : null;
-  const rProblem = reasonProblem(reason);
-  const unchanged = !arChanged && !enChanged;
-  const ok = !arProblem && !enProblem && !rProblem && !unchanged;
+  const c = renameCheck(f, { ar, en, reason }, others);
+  const { arProblem, enProblem, rProblem, unchanged, ok, dup } = c;
   const showReasonErr = !!rProblem && touched;
-  const dup = arChanged && newAr && others.some(o => o.id !== f.id && !o.removed_at && (o.name_ar || '').trim().toLowerCase() === newAr.toLowerCase());
   const len = reason.trim().length;
 
   const run = async () => {
     if (!ok || busy) return;
     setBusy(true); setErr(null);
     try {
-      const body = { rename_reason: reason.trim(), ...(arChanged ? { name_ar: newAr } : {}), ...(enChanged ? { name_en: newEn || null } : {}) };
-      const r = await api.patch(path`/tracker/functions/${f.id}`, body);
+      const r = await api.patch(path`/tracker/functions/${f.id}`, renameBody(c, reason));
       toast(r?.pending ? t('sent_for_approval') : t('rn_done'), r?.pending ? 'blue' : 'green');
       if (r?.warning === 'duplicate_name') toast(t('rn_duplicate_notice'), 'orange');
       onDone();

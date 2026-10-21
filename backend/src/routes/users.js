@@ -469,15 +469,26 @@ r.post('/:id/unlock', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Ends every session of the user (the administrator's own current one excepted) or, with { session_ref } (1.11.0, the
+// «إنهاء الجلسة» action of the online users screen: the first 16 hex characters of a session id), only that one.
+const SESSION_REF_RE = /^[0-9a-f]{16}$/;
 r.post('/:id/revoke-sessions', async (req, res) => {
   const id = idParam(req.params.id);
+  const ref = req.body?.session_ref;
+  if (ref !== undefined && (typeof ref !== 'string' || !SESSION_REF_RE.test(ref))) throw bad('invalid_value', { field: 'session_ref' });
+  if (ref && req.session.id.startsWith(ref)) throw bad('cannot_end_own_session');
   const u = await loadUser(id);
   const q = await tx(async c => {
-    const q = await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
-      WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2`, [id, req.session.id]);
-    await logAudit(req, { db: c, action: 'revoke_sessions', entity: 'user', entityId: id, summary: u.username, newValue: { count: q.rowCount } });
+    const q = ref
+      ? await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
+          WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2 AND left(id, 16) = $3`, [id, req.session.id, ref])
+      : await c.query(`UPDATE sessions SET revoked_at=now(), revoke_reason='revoked_by_admin'
+          WHERE user_id=$1 AND revoked_at IS NULL AND id <> $2`, [id, req.session.id]);
+    if (ref && !q.rowCount) throw notFound('session_not_found');
+    const one = ref ? { session_ref: ref, source: 'online_users' } : {};
+    await logAudit(req, { db: c, action: 'revoke_sessions', entity: 'user', entityId: id, summary: u.username, newValue: { count: q.rowCount, ...one } });
     await logAuth(req, { db: c, userId: id, username: u.username, event: 'sessions_revoked_by_admin', success: true,
-      detail: { by: req.user.username, count: q.rowCount } });
+      detail: { by: req.user.username, count: q.rowCount, ...one } });
     return q;
   });
   publishSessionCheck(id);

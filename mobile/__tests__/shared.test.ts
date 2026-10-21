@@ -9,7 +9,8 @@ import type { Item } from '@/lib/types';
 
 const WEB = path.resolve(__dirname, '../../frontend/src');
 // the files the app imports from the web frontend (src/shared/web.ts; also the CI path filter of mobile.yml)
-const SHARED = ['lib/format.js', 'lib/erpModules.js', 'lib/wheelGeometry.js', 'lib/equation.js', 'lib/notifyTabs.js', 'lib/iconPaths.js', 'i18n/messages.js'];
+const SHARED = ['lib/format.js', 'lib/erpModules.js', 'lib/wheelGeometry.js', 'lib/equation.js', 'lib/notifyTabs.js', 'lib/iconPaths.js',
+  'lib/itemRules.js', 'lib/approvalRules.js', 'lib/liveRules.js', 'i18n/messages.js'];
 
 describe('modules shared with the web frontend', () => {
   it.each(SHARED)('%s imports nothing (no frontend dependency reaches the app)', f => {
@@ -93,10 +94,18 @@ describe('items list rules', () => {
 describe('alerts', () => {
   it('opens the screens the phone has', () => {
     expect(mobileRoute('/app/per')).toBe('/home/app/per');
-    expect(mobileRoute('/app/per?x=1#fn-3')).toBe('/home/app/per');
+    expect(mobileRoute('/app/per?x=1#fn-3')).toBe('/home/app/per?fn=3');
     expect(mobileRoute('/department/hr')).toBe('/home/department/hr');
     expect(mobileRoute('/')).toBe('/home');
-    expect(mobileRoute('/approvals')).toBeNull();
+    expect(mobileRoute('/approvals')).toBe('/approvals');
+    expect(mobileRoute('/approvals?mine=1')).toBe('/approvals?mine=1');
+    expect(mobileRoute('/app/per#fn-12')).toBe('/home/app/per?fn=12');
+    expect(mobileRoute('/app/per?filter=conflict')).toBe('/home/app/per?filter=conflict');
+    expect(mobileRoute('/app/per?filter=<x>')).toBe('/home/app/per');
+    expect(mobileRoute('/notifications')).toBe('/notifications');
+    expect(mobileRoute('/logs?tab=auth')).toBeNull();
+    expect(mobileRoute('/imports/4')).toBeNull();
+    expect(mobileRoute('//evil.example/app/x')).toBeNull();
     expect(mobileRoute('https://evil.example/app/x')).toBeNull();
     expect(mobileRoute('/app/../../x')).toBeNull();
     expect(mobileRoute(null)).toBeNull();

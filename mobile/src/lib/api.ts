@@ -30,7 +30,7 @@ export function errorFromResponse(status: number, data: unknown): ApiError {
 /** Should this failed request end the session on the phone? (401 outside the sign-in endpoints) */
 export const endsSession = (status: number, path: string) => status === 401 && !path.startsWith('/auth/');
 
-type Options = { live?: boolean; signal?: AbortSignal };
+type Options = { live?: boolean; signal?: AbortSignal; headers?: Record<string, string> };
 type Config = { baseUrl: () => string | null; onUnauthorized: (code: string) => void; fetchImpl?: typeof fetch };
 
 export function createApi({ baseUrl, onUnauthorized, fetchImpl }: Config) {
@@ -52,6 +52,7 @@ export function createApi({ baseUrl, onUnauthorized, fetchImpl }: Config) {
           // a reload by the app itself (polling), not by the user: not activity for the server's idle timeout
           ...(opts.live ? { 'X-ETS-Live': '1' } : {}),
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...opts.headers,
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: ctl.signal,
@@ -73,11 +74,17 @@ export function createApi({ baseUrl, onUnauthorized, fetchImpl }: Config) {
   }
   return {
     get: <T>(path: string, opts?: Options) => request<T>('GET', path, undefined, opts),
-    post: <T>(path: string, body: unknown = {}) => request<T>('POST', path, body),
+    post: <T>(path: string, body: unknown = {}, opts?: Options) => request<T>('POST', path, body, opts),
     put: <T>(path: string, body: unknown = {}) => request<T>('PUT', path, body),
+    patch: <T>(path: string, body: unknown = {}) => request<T>('PATCH', path, body),
+    del: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
   };
 }
 export type Api = ReturnType<typeof createApi>;
+
+/** An answer that may have been sent for approval (HTTP 202 { pending: true, request_id }) instead of applied. */
+export type MaybePending = { pending?: boolean; request_id?: number; warning?: string };
+export const isPending = (r: unknown) => !!(r && typeof r === 'object' && (r as MaybePending).pending === true);
 
 /** API path with encoded segments: path`/tracker/applications/${id}` (an id never becomes another path). */
 export const path = (parts: TemplateStringsArray, ...vals: unknown[]) =>

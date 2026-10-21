@@ -1,7 +1,7 @@
 # ETS · تطبيق ETS للهاتف
 
-The ETS mobile app for Android and iOS, built with React Native and Expo. Phase 1 lets you sign in, view the project and read your alerts.
-تطبيق ETS للهاتف، لأندرويد و iOS، مبني بـ React Native و Expo. المرحلة الأولى: تسجيل الدخول، وعرض المشروع، وقراءة التنبيهات.
+The ETS mobile app for Android and iOS, built with React Native and Expo: sign in, view the project, edit and approve by permission, read your alerts.
+تطبيق ETS للهاتف، لأندرويد و iOS، مبني بـ React Native و Expo: تسجيل الدخول، وعرض المشروع، والتعديل والاعتماد حسب الصلاحيات، وقراءة التنبيهات.
 
 - [العربية](#العربية)
 - [English](#english)
@@ -17,7 +17,7 @@ The ETS mobile app for Android and iOS, built with React Native and Expo. Phase 
 
 تطبيق للهاتف يعرض نظام ETS بنفس شكل الموقع. الألوان والخط Cairo والشعار وعجلة وحدات ERP وحلقات النسب وألوان الحالة كلها مثل الموقع. يتصل بخادم ETS في مؤسستك مباشرة، ويستخدم نفس الحساب ونفس الصلاحيات ونفس النطاق.
 
-**المرحلة الأولى (هذا الإصدار، للعرض فقط):**
+**المرحلة الأولى (0.1.0):**
 
 - عنوان الخادم عند أول تشغيل. يُقبل `https://` فقط.
 - تسجيل الدخول باسم المستخدم أو البريد الإلكتروني، ثم التحقق بخطوتين برمز التطبيق أو برمز احتياطي. إن كانت السياسة تُلزم بالتحقق بخطوتين والحساب غير مفعّل له، يفعّله التطبيق من نفس الشاشة.
@@ -27,9 +27,19 @@ The ETS mobile app for Android and iOS, built with React Native and Expo. Phase 
 - **التطبيق:** معادلة النسبة (نسبة الوظائف + نسبة التقارير = نسبة التطبيق)، ثم البنود كبطاقات تُحمَّل تباعاً أثناء التمرير. لكل بند: نوعه (وظيفة أو تقرير)، والإنجاز، وحالة الاختبار، وتنبيه ⚠ إذا كانت الحالة «نجح» والنسبة أقل من 100%، وسبب الاستبعاد، و«منقول من». يمكن البحث والتصفية حسب حالة الاختبار.
 - **التنبيهات:** حسب التصنيف، وغير المقروءة فقط، وتعليم تنبيه كمقروء أو غير مقروء، وتعليم الكل كمقروء. عدد غير المقروء يظهر على الجرس في الأعلى وعلى تبويب التنبيهات.
 - **حسابي:** الاسم والدور والنطاق والصلاحيات، واللغة (تُحفظ في حسابك كما في الموقع)، وتسجيل الخروج.
-- السحب للأسفل يحدّث أي شاشة. وتتحدّث البيانات كل دقيقة ما دام التطبيق مفتوحاً.
+- السحب للأسفل يحدّث أي شاشة.
 
-**المرحلة الثانية:** التعديل والاعتماد حسب الصلاحيات: نسب الإنجاز، وحالة الاختبار، والملاحظات، وطلبات الاعتماد، والاستيراد.
+**المرحلة الثانية (هذا الإصدار، 0.2.0):** التعديل والاعتماد حسب الصلاحيات، بنفس قواعد الموقع ورسائله:
+
+- **تعديل البنود:** اضغط على البند لفتح نافذة التعديل: نسبة الإنجاز (مع زرّي − و +)، وحالة الاختبار والإشعارات والمراجعة، والملاحظة، والوزن، ونوع البند. يظهر كل حقل فقط لمن يملك صلاحيته.
+- **«نجح» = 100%:** لا يملأ التطبيق 100% تلقائياً. إن رفضت القاعدة القيمة تعود كما كانت وتظهر نفس رسالة الموقع. «نجح مع ملاحظة» مسموحة تحت 100%.
+- **إلغاء التضمين** بسبب ونوع وملاحظة (3–500 حرف) واختيار الوظائف المكرّرة، و**تعديل الاسم** بسبب، و**النقل** إلى تطبيق آخر مع أثره قبل وبعد، و**الإضافة والإزالة والاستعادة**.
+- **تعيين جماعي** للتطبيق كله أو للبنود المحدّدة في القائمة (اضغط مطوّلاً على بند أو اختر «تحديد»).
+- تعديل عضو الفريق يُرسل لاعتماد رئيس الفريق: تظهر رسالة «أُرسل للاعتماد» والقيمة المنتظرة على البند.
+- **الاعتمادات:** تبويب لرؤساء الفرق ومن لهم طلبات قائمة: اعتماد ورفض (بسبب) وسحب واعتماد الكل، وتفاصيل كل طلب.
+- **تفضيلات التنبيهات** في «حسابي»، وفتح الشاشة المعنية عند الضغط على تنبيه.
+- **تحديث مباشر:** تتحدّث الشاشات فور تغيّر البيانات على الخادم (بث الأحداث)، ويتوقف ذلك والتطبيق في الخلفية.
+
 **المرحلة الثالثة:** تثبيت شهادة الخادم (pinning)، وتوقيع رسمي ونشر على المتاجر، ونسخة iOS، وإشعارات فورية.
 
 ### تنزيل التطبيق (APK)
@@ -76,7 +86,7 @@ The ETS mobile app for Android and iOS, built with React Native and Expo. Phase 
 
 A phone app that shows ETS the same way as the website: the same colours, the Cairo font, the logo, the ERP module wheel, the progress rings and the tone colours. It talks directly to your organisation's ETS server, with the same account, permissions and scope.
 
-**Phase 1 (this release, view only):**
+**Phase 1 (0.1.0):**
 
 - Server address at first launch. Only `https://` is accepted.
 - Sign in with a username or email address, then two-step verification with an authenticator code or a recovery code. If the policy requires 2FA and the account does not have it yet, the app sets it up on the same screen.
@@ -86,9 +96,19 @@ A phone app that shows ETS the same way as the website: the same colours, the Ca
 - **Application:** the progress equation (functions % + reports % = application %), then the items as cards that load as you scroll. Each card shows the item type (function or report), progress, test status, a ⚠ when an item is "Passed" below 100%, the exclusion reason and "Moved from". You can search and filter by test status.
 - **Notifications:** category tabs, unread only, mark one read or unread, mark all as read. The unread count shows on the bell at the top and on the Notifications tab.
 - **My account:** name, role, scope, permissions, language (saved to your account, as on the website), and sign out.
-- Pull down on any screen to refresh. While the app is open, data refreshes every minute.
+- Pull down on any screen to refresh.
 
-**Phase 2:** editing and approvals by permission: progress, test status, notes, approval requests and imports.
+**Phase 2 (this release, 0.2.0):** editing and approvals by permission, with the website's rules and messages:
+
+- **Item editing:** tap an item to open its editor: progress (with − / + buttons), test, notification and review status, note, weight and item type. Each field appears only for users with its permission.
+- **"Passed" = 100 %:** the app never fills in 100 %. A value the rule refuses goes back, with the website's message. "Passed with note" is allowed below 100 %.
+- **Exclude** with a reason, a note (3–500 characters) and the duplicated items, **rename** with a reason, **move** to another application with its before / after impact, **add, remove and restore** items.
+- **Bulk set** for the whole application or for items ticked in the list (long-press an item or tap "Select").
+- A team member's change goes to the team lead: "Sent for approval" shows, and the waiting value appears on the item.
+- **Approvals:** a tab for team leads and users with pending requests: approve, reject (with a reason), withdraw, approve all, and the details of each request.
+- **Notification preferences** in My account; tapping an alert opens its screen.
+- **Live updates:** screens refresh as soon as data changes on the server (event stream), paused while the app is in the background.
+
 **Phase 3:** certificate pinning, release signing and store publishing, the iOS build, and push notifications.
 
 ### Download the app (APK)
@@ -158,14 +178,17 @@ mobile/
 ├── __tests__/                   Jest unit tests
 └── src/
     ├── app/                     Screens (expo-router, file-based)
-    │   ├── _layout.tsx          Fonts, language, session; which screens are allowed (Stack.Protected)
+    │   ├── _layout.tsx          Fonts, language, session, toasts; which screens are allowed (Stack.Protected)
     │   ├── setup.tsx · login.tsx · change-password.tsx
-    │   └── (tabs)/              الرئيسية / التنبيهات / حسابي
-    │       ├── home/            index (dashboard), department/[id], app/[id]
+    │   └── (tabs)/              الرئيسية / الاعتمادات / التنبيهات / حسابي; live stream, presence, dialog host
+    │       ├── home/            index (dashboard), department/[id], app/[id] (items, editing, bulk set)
+    │       ├── approvals.tsx
     │       ├── notifications.tsx
-    │       └── profile.tsx
-    ├── components/              ErpWheel, PctEquation, Ring, ToneLegend, ItemCard, Icon, TopBar, AuthCard, Logo, ui
-    ├── lib/                     api, session, i18n, rtl, server, storage(.web), useLoad, notifCount, links, items, types
+    │       └── profile.tsx      (+ notification preferences)
+    ├── components/              ErpWheel, PctEquation, Ring, ToneLegend, ItemCard, ItemEditor, ItemDialogs, Impact,
+    │                            MultiPicker, NotifyPrefs, Sheet, form, Toggle, Icon, TopBar, AuthCard, Logo, ui
+    ├── lib/                     api, session, i18n, rtl, server, storage(.web), useLoad, live, liveSse, liveContext,
+    │                            notifCount, approvalsCount, presence, toast, edit, links, items, types
     ├── shared/web.ts            Typed entry point to the modules shared with the web frontend
     ├── i18n/mobileMessages.ts   Strings that exist only in the app (m_*, err_* of the app)
     └── theme/                   tokens (app.css variables), fonts (Cairo), tone (pctTone scale)
@@ -182,8 +205,11 @@ The app imports these files directly from `../frontend/src`. They are not copied
 | `lib/erpModules.js` | ERP modules and the department → module mapping (`wheelSegments`) |
 | `lib/wheelGeometry.js` | Wheel geometry and fills (moved out of `ErpWheel.jsx`) |
 | `lib/equation.js` | The application equation (moved out of `PctEquation.jsx`) |
-| `lib/notifyTabs.js` | Alert categories and severity colours (moved out of `NotificationBell.jsx`) |
+| `lib/notifyTabs.js` | Alert categories, severity colours (moved out of `NotificationBell.jsx`) and the notification preference rules (from `ProfileNotify.jsx`) |
 | `lib/iconPaths.js` | The SVG icon set (moved out of `Icon.jsx`). Drawn with react-native-svg. |
+| `lib/itemRules.js` | Phase 2 edit rules: required notes, «نجح» = 100 %, exclusion / rename / move reasons (3–500), request bodies, pending values, impact deltas (moved out of `Application.jsx`, `DisableReason.jsx`, `RenameDialog.jsx`, `MoveDialog.jsx`) |
+| `lib/approvalRules.js` | How a request reads, move approval stages, decision toasts, who sees the approvals (moved out of `Approvals.jsx`) |
+| `lib/liveRules.js` | Live-update timings, backoff and filter (moved out of `lib/live.js`) |
 
 **Why import from the frontend instead of a `shared/` folder?** These files were already plain, dependency-free JavaScript. Pointing Metro at the folder (`watchFolders`, plus `nodeModulesPaths` so Babel helpers resolve from `mobile/node_modules`) and adding a tsconfig alias was enough. The web code, its imports and its build stay as they were. The only web change was moving four small pieces out of components into `lib/`.
 
@@ -203,11 +229,19 @@ The app signs in exactly like the website: `POST /api/auth/login`, then `/api/au
 - **Web preview:** checked in Chromium with `COOKIE_SECURE=true`. The browser received `__Host-ets_sid` (`secure=true`, `sameSite=Strict`), and every screen loaded with it.
 - **Result: no server change is needed.** The production CORS settings were not touched. The web preview avoids CORS by serving the app and proxying `/api` from a single HTTPS origin (`scripts/web-preview.mjs`).
 - A `401` outside `/api/auth/*` re-reads `/api/auth/me`, which returns the app to the sign-in screen with «انتهت الجلسة» / "Your session has ended". Server errors are shown with the shared `err_<code>` messages. Codes the app produces itself are `network`, `timeout`, `not_ets`, `url_*` and `no_server`.
-- Automatic reloads (polling) send `X-ETS-Live: 1`, like the website's live reloads. They therefore never keep an idle session alive.
+- Automatic reloads (live updates) send `X-ETS-Live: 1`, like the website's live reloads. They therefore never keep an idle session alive.
 
 ### Live updates
 
-Phase 1 uses **polling** instead of the `/api/events` stream. While a screen is open and the app is in the foreground, it reloads every 60 s. The unread count also reloads every 60 s. Nothing runs in the background. React Native has no built-in `EventSource`, and a third-party SSE library would add a native-networking dependency for little gain at this stage. Phase 2 can switch to the stream.
+Since 0.2.0 the app listens to the server's Server-Sent Events stream `GET /api/events`, with the session cookie, like the website (`src/lib/live.ts`, timings shared through `frontend/src/lib/liveRules.js`). The server only says that something changed and where (department / application ids); the screens then reload through their usual endpoints with `X-ETS-Live: 1`. Several events in a row give one reload (400 ms). A lost connection reconnects after 1, 2, 4 … 60 s; after 3 failures in a row the screens also reload every 30 s until the stream works again. In the background the stream closes; on return the screens reload once. `session_ended`, or a 401 answer, re-reads the session. A screen under another one in the stack reloads when it is shown again. The unread count follows `notif_changed`.
+
+- **Library:** [sse.js](https://github.com/mpetazzoni/sse.js) **2.8.0** (Apache-2.0, released 2026-02-07), pinned. It reads the stream with `XMLHttpRequest`, which React Native implements on the same native networking and cookie store as `fetch` (OkHttp + `CookieManager`, `NSURLSession` + `NSHTTPCookieStorage`). Its own reconnection is off. react-native-sse was considered and not used: its last release is from March 2024.
+- **No server change:** `/api/events` only needs the cookie; GET requests skip the CSRF check, and the app sends `X-Requested-With: ets` anyway.
+- **A value being saved is not overwritten:** rows with a pending answer keep the user's value through reloads, and a number being typed is kept until it is committed (the web's rule).
+
+### Presence
+
+For the administrators' «Online users» page (server 1.11.0), the app sends `POST /api/presence` `{ path, screen, ref? }` with `X-ETS-Live: 1` and `X-ETS-Client: mobile` on each screen change (one report for a burst of changes) and every 60 s while in the foreground, nothing in the background (`src/lib/presence.ts`). Answers are ignored. A server without the endpoint answers 404: presence then stays off until the app starts again.
 
 ### Direction (RTL)
 
@@ -253,6 +287,7 @@ A **debug** APK does not contain the JavaScript bundle. It loads the bundle from
 
 ### What only a device or CI can confirm
 
+- Phase 2: the stream over React Native's `XMLHttpRequest` with incremental responses and the cookie (Android, iOS), the bottom sheets with the keyboard and Android's back button, and long-press selection.
 - That the cookie persists across restarts in Android's `CookieManager`, and how `NSHTTPCookieStorage` behaves on iOS.
 - Trust of a user-installed CA with a real self-signed server.
 - The RTL reload through `Updates.reloadAsync()`.
@@ -261,5 +296,5 @@ A **debug** APK does not contain the JavaScript bundle. It loads the bundle from
 
 ### Phase 2 and 3 notes
 
-- **Phase 2:** editing by permission (`can.*` from `/api/tracker/applications/:id`), using the same `PATCH /tracker/functions/:id` and approval flows as the web. Also: the approvals list, approve and reject, the live stream (`/api/events`) instead of polling, a notification preferences screen, 2FA management and password change in the profile, and notification deep links to approvals.
+- **Phase 2 (done in 0.2.0):** editing by permission, approvals, the live stream, notification preferences and links, presence. Still on the website: 2FA management and password change in the profile, imports, reports, weights.
 - **Phase 3:** certificate pinning (SHA-256 of the server leaf, like ETS Alerts' `cert_sha256`, through a native OkHttp / `URLSession` hook or a pinning library); a release keystore in repository secrets; store listings; the iOS job; push notifications (FCM / APNs) reusing the device pairing of `/api/devices`; and replacing ETS Alerts.

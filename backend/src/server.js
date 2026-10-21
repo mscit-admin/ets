@@ -10,6 +10,7 @@ import { getDummyHash } from './services/passwords.js';
 import { assertCookieConfig } from './middleware/auth.js';
 import { closeAllStreams } from './services/live.js';
 import { startScheduler } from './services/notify-scan.js';
+import { startPresenceCleanup } from './services/presence.js';
 import { setAfterCommitErrorHandler } from './db/pool.js';
 
 assertConfig();
@@ -38,6 +39,8 @@ setTimeout(snap, 15_000).unref();
 setInterval(snap, 3600_000).unref();
 // Notifications (1.9.0): periodic checks every 15 minutes, one API process at a time (advisory lock).
 startScheduler();
+// Online users (1.11.0): stale presence rows and old daily activity, every 5 minutes (advisory lock).
+startPresenceCleanup();
 setAfterCommitErrorHandler(e => logger.warn({ err: e?.message }, 'after-commit task failed'));
 // Remove expired sessions hourly.
 setInterval(() => pool.query(`DELETE FROM sessions WHERE expires_at < now() - interval '30 days'`).catch(() => {}), 3600_000).unref();

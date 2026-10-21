@@ -19,6 +19,8 @@ type Session = {
   setServer: (url: string) => Promise<void>;
   forgetServer: () => Promise<void>;
   logout: () => Promise<void>;
+  /** the live stream says the session may have ended: re-read it; signed out → «انتهت الجلسة» on the sign-in screen */
+  checkSession: () => void;
   can: (perm: string) => boolean;
   logoUrl: string | null;        // the uploaded logo (Settings → Branding), else null (bundled mark)
 };
@@ -117,17 +119,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [refresh]);
 
+  const checkSession = useCallback(() => {
+    refresh().then(m => { if (!m.authenticated) setNotice('session_ended'); }).catch(() => {});
+  }, [refresh]);
+
   const value = useMemo<Session>(() => {
     const user = me?.authenticated && me.stage === 'done' ? me.user : null;
     const v = info?.branding?.logo;
     return {
       server: server ?? null, me, user, info, api: client, notice,
       clearNotice: () => setNotice(null),
-      refresh, setServer, forgetServer, logout,
+      refresh, setServer, forgetServer, logout, checkSession,
       can: p => !!user?.permissions?.includes(p),
       logoUrl: server && v ? `${server}/api/branding/logo?v=${encodeURIComponent(String(v))}` : null,
     };
-  }, [server, me, info, notice, refresh, setServer, forgetServer, logout]);
+  }, [server, me, info, notice, refresh, setServer, forgetServer, logout, checkSession]);
 
   if (server === undefined) return null;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

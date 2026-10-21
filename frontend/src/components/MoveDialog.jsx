@@ -4,21 +4,12 @@ import { api, path } from '../lib/api.js';
 import { pc } from '../lib/format.js';
 import { STANDARD_MODULES, EXTRA_MODULES } from '../lib/erpModules.js';
 import { Alert, Modal, toast } from './ui.jsx';
+import { REASON_MAX, REASON_MIN, emptyMove, moveAppAfterDept, moveReady, moveReasonProblem, num2, pctDelta, weightDelta } from '../lib/itemRules.js';
 
 // Moving items to another application (1.10.0, backend services/move.js): the module (department) first, then the
 // application (only those in the reader's scope, not the current one), a required reason (3–500 characters, spaces
-// not counted — the rule of a rename), and the impact before → after on both applications, their department(s) and
+// not counted — the rule of a rename; lib/itemRules.js, shared with the mobile app), and the impact before → after on both applications, their department(s) and
 // the project, with the application weight that goes with the items. Confirm stays disabled until all is valid.
-export const REASON_MIN = 3, REASON_MAX = 500;
-export const MOVE_MAX = 200;
-
-export function moveReasonProblem(v) {
-  const r = v.trim();
-  if (r.length > REASON_MAX) return 'mv_reason_too_long';
-  if (r.replace(/\s/gu, '').length < REASON_MIN) return 'mv_reason_required';
-  return null;
-}
-
 // ERP module of a department (lib/erpModules.js), shown next to its name in the module list.
 const moduleOf = id => [...STANDARD_MODULES, ...EXTRA_MODULES].find(m => m.depts.includes(id)) || null;
 
@@ -53,24 +44,25 @@ function usePreview(appId, ids, toApp, single) {
   return v;
 }
 
-const num2 = v => (Number.isFinite(+v) ? (Math.round(+v * 100) / 100).toFixed(2) : '—');
-
 // Before → after table of a move (also the approvals screen, with the impact stored when the move was requested).
 export function MoveImpact({ impact }) {
   const { t, nm } = useI18n();
   if (!impact) return null;
   const [src, dst] = impact.apps;
   const delta = (b, a) => {
-    const d = a - b;
-    return <td className={'num-col num ' + (Math.abs(d) < 0.05 ? 'muted' : d > 0 ? 'green-text' : 'red-text')}>{Math.abs(d) < 0.05 ? '—' : (d > 0 ? '+' : '') + pc(d)}</td>;
+    const d = pctDelta(b, a, pc);
+    return <td className={'num-col num ' + (d.tone === 'muted' ? 'muted' : d.tone + '-text')}>{d.text}</td>;
   };
   const pctRow = (label, x, k) => (
     <tr key={k}><th scope="row" className="mv-row-label">{label}</th><td className="num-col num">{pc(x.before)}%</td><td className="num-col num"><b>{pc(x.after)}%</b></td>{delta(x.before, x.after)}</tr>
   );
-  const wRow = (label, x, k) => (
-    <tr key={k}><th scope="row" className="mv-row-label">{label}</th><td className="num-col num">{num2(x.before)}</td><td className="num-col num"><b>{num2(x.after)}</b></td>
-      <td className={'num-col num ' + (Math.abs(x.after - x.before) < 0.005 ? 'muted' : '')}>{Math.abs(x.after - x.before) < 0.005 ? '—' : (x.after > x.before ? '+' : '') + num2(x.after - x.before)}</td></tr>
-  );
+  const wRow = (label, x, k) => {
+    const d = weightDelta(x.before, x.after);
+    return (
+      <tr key={k}><th scope="row" className="mv-row-label">{label}</th><td className="num-col num">{num2(x.before)}</td><td className="num-col num"><b>{num2(x.after)}</b></td>
+        <td className={'num-col num ' + (d.tone === 'muted' ? 'muted' : '')}>{d.text}</td></tr>
+    );
+  };
   const w = impact.weight;
   return (
     <div className="impact mv-impact">
@@ -123,7 +115,7 @@ export function MoveFields({ appId, ids, single, value, onChange, onPreview, sho
           <select id={uid + '-d'} className="input" value={value.dept} required aria-required="true"
             onChange={e => {
               const d = departments.find(x => x.id === e.target.value);
-              onChange({ ...value, dept: e.target.value, app: d?.applications.length === 1 ? d.applications[0].id : '' });
+              onChange({ ...value, dept: e.target.value, app: moveAppAfterDept(d) });
             }}>
             <option value="">{t('mv_module_pick')}</option>
             {departments.map(d => {
@@ -166,9 +158,6 @@ export function MoveFields({ appId, ids, single, value, onChange, onPreview, sho
     </>
   );
 }
-
-export const emptyMove = { dept: '', app: '', reason: '', touched: false };
-export const moveReady = (v, pv) => !!v.app && !moveReasonProblem(v.reason) && !!pv?.data && !pv.error && !pv.loading && !pv.data.weight.overflow;
 
 // One item: the «نقل» action of a row (pages/Application.jsx).
 export function MoveDialog({ app, f, onClose, onDone }) {

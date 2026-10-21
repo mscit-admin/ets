@@ -1,8 +1,8 @@
 {
   "name": "ets-mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "ETS mobile app (React Native / Expo): sign-in, dashboard, departments, applications, alerts — Arabic / English",
+  "description": "ETS mobile app (React Native / Expo): sign-in, dashboard, departments, applications with editing and approvals, alerts — Arabic / English",
   "main": "expo-router/entry",
   "engines": {
     "node": "^22.12.0 || >=24"
@@ -37,7 +37,8 @@
     "react-native-safe-area-context": "5.10.1",
     "react-native-screens": "4.30.0",
     "react-native-svg": "15.16.0",
-    "react-native-web": "0.21.4"
+    "react-native-web": "0.21.4",
+    "sse.js": "2.8.0"
   },
   "devDependencies": {
     "@types/jest": "30.0.0",

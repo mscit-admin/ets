@@ -38,7 +38,7 @@ export default function Department() {
   const { api } = useSession();
   const { data, error, loading, refreshing, refresh, reload } = useLoad(
     o => (ID.test(String(id)) ? api.get<DepartmentData>(path`/tracker/departments/${id}`, o) : Promise.reject(new ApiError(404, 'not_found'))),
-    [id]);
+    [id], { filter: m => !m.dept_id || m.dept_id === id });
   const d = data?.department;
   return (
     <View style={ui.flex}>
