@@ -44,7 +44,8 @@
   (`SESSION_IDLE_MINUTES`).
 - Sessions are revoked on logout, password change (other sessions), admin password reset, admin 2FA reset,
   self-service 2FA disable (other sessions), `create-admin` from the command line (all sessions of that account),
-  deactivation, admin *End sessions*, and after too many wrong answers to a re-authentication (that session).
+  deactivation, admin *End sessions* (all, or one session from «المستخدمون المتصلون الآن», 1.11.0), and after too
+  many wrong answers to a re-authentication (that session).
 - **Live updates (1.4.0, `GET /api/events`, Server-Sent Events):** signed-in users only (`requireAuth`); the
   events carry no data values — only "something changed" with department / application ids, sent only to users
   whose scope includes them — and every screen reloads through its usual scoped endpoint, so the scope rules
@@ -55,6 +56,37 @@
   open dashboard does not defeat the idle timeout. At most 5 open streams per user (`LIVE_MAX_STREAMS_PER_USER`,
   per API process); opening a stream counts as one request for the general rate limit and is written to the
   access log once (heartbeats are not). The CSP `connect-src 'self'` already allows the same-origin stream.
+
+## 3a. Online users — a privacy-sensitive view / المستخدمون المتصلون الآن (1.11.0)
+
+«المستخدمون المتصلون الآن» shows, per signed-in session, which screen a person has open, since when, how long they
+have been signed in, how long they were active today, their browser / system and IP address. That is monitoring of
+people's work, so:
+
+- **Who can see it:** system administrators only — the same guard as the Users screen (`requireAuth` +
+  `usr` + role `admin`, ETS-SEC-004); an `usr` override on another role is dropped by the server and never opens it.
+  `GET /api/presence` and `/api/presence/count` answer 403 to everyone else; no other screen, export, notification or
+  live event tells anyone who is online.
+- **Viewing is audited:** opening the list writes `view` / `presence` / `online_users` to the change history, at most
+  once per 15 minutes per administrator (same rule as the security logs, ETS-SEC-050). Ending a session from it is
+  audited (`revoke_sessions` with `session_ref`, and `sessions_revoked_by_admin` in the sign-in log).
+- **What a browser can write:** `POST /api/presence` updates only the row of the session whose cookie it carries
+  (nothing in the body names a session or a user). The path is checked (≤ 200 characters of
+  `A–Z a–z 0–9 / _ . ~ % -`), the screen must be a known key and the id must exist (department, application, import
+  batch, user) — otherwise the screen is stored as `unknown`. Labels and links are built on the server from the key
+  and names looked up in the database, never from text the browser sent, so a client cannot inject what an
+  administrator reads. One database write per session every 10 s at most (`PRESENCE_MIN_INTERVAL_SECONDS`), the
+  rest coalesced; the general per-IP limit still applies. Successful reports are written to the file access log
+  only (not `access_log`), refused ones as usual.
+- **No effect on session security:** a presence report never counts as activity for the idle timeout (the route
+  itself is excluded in `sessionMiddleware`, and the web app also sends `X-ETS-Live: 1`); a session left open on a
+  screen still ends after `SESSION_IDLE_MINUTES` without user action, and its row goes with it.
+- **Retention:** a row exists only while its session does: it is deleted when the session is revoked (trigger), and
+  by the 5-minute clean-up 15 minutes after the last report or once the session expired. `user_activity_daily`
+  (seconds per user and day) is kept 7 days. A backup holds only the rows present when it was taken.
+- **IP addresses** are shown here because the readers are administrators — consistent with the logs, where IPs and
+  user agents are for administrators only (ETS-SEC-047). The customer should tell staff that sign-ins, the screen
+  in use and active time are visible to system administrators (internal policy / notice).
 
 ## 4. Authorisation
 

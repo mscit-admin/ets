@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary.jsx';
 import { useBranding } from '../lib/branding.jsx';
 import { useLoad } from './ui.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
+import { usePresenceReporter } from '../lib/presence.js';
 
 function Navbar({ onMenu }) {
   const { t, lang, setLang, nm } = useI18n();
@@ -151,6 +152,7 @@ function Sidebar({ open, onClose }) {
           <div className="side-section">
             <div className="side-label">{t('nav_admin')}</div>
             {can('usr') && link('/users', 'users', t('nav_users'))}
+            {can('usr') && link('/online', 'pulse', t('nav_online'))}
             {can('log') && link('/logs', 'logs', t('nav_logs'))}
             {can('cfg') && user?.fullScope && link('/settings', 'settings', t('nav_settings'))}
           </div>
@@ -165,6 +167,7 @@ function Sidebar({ open, onClose }) {
 
 export default function Layout() {
   const [open, setOpen] = useState(false);
+  usePresenceReporter();          // online users (1.11.0): this tab's screen, for the administrators' list
   return (
     <div className="app-shell">
       <Navbar onMenu={() => setOpen(o => !o)} />

@@ -1,4 +1,4 @@
--- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–019).
+-- ETS schema reference (generated with pg_dump --schema-only after migrations 001–009 and 012–020).
 -- Do not run this file to install: the application creates the schema itself (npm run setup).
 -- Kept for documentation and for DBAs reviewing the structure. Ownership is not shown: on an installed server the
 -- log tables and their functions belong to ets_log_owner (deploy/db/harden-log-tables.sql), everything else to ets.
@@ -154,6 +154,14 @@ BEGIN
   END IF;
   UPDATE log_chain_head SET last_seq = NEW.chain_seq, last_hash = NEW.row_hash WHERE tbl = TG_TABLE_NAME;
   RETURN NEW;
+END $$;
+-- Name: ets_presence_session_ended(); Type: FUNCTION; Schema: public; Owner: -
+CREATE FUNCTION public.ets_presence_session_ended() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  DELETE FROM user_presence WHERE session_id = NEW.id;
+  RETURN NULL;
 END $$;
 -- Name: ets_purge_log(text, integer, text); Type: FUNCTION; Schema: public; Owner: -
 CREATE FUNCTION public.ets_purge_log(p_tbl text, p_days integer, p_actor text) RETURNS bigint
@@ -679,7 +687,8 @@ CREATE TABLE public.sessions (
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
-    revoke_reason text
+    revoke_reason text,
+    login_at timestamp with time zone
 );
 -- Name: settings; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.settings (
@@ -706,11 +715,38 @@ CREATE SEQUENCE public.system_log_id_seq
     CACHE 1;
 -- Name: system_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 ALTER SEQUENCE public.system_log_id_seq OWNED BY public.system_log.id;
+-- Name: user_activity_daily; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.user_activity_daily (
+    user_id integer NOT NULL,
+    day date NOT NULL,
+    seconds integer DEFAULT 0 NOT NULL,
+    last_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_activity_daily_seconds_check CHECK ((seconds >= 0))
+);
 -- Name: user_permissions; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.user_permissions (
     user_id integer NOT NULL,
     permission text NOT NULL,
     granted boolean NOT NULL
+);
+-- Name: user_presence; Type: TABLE; Schema: public; Owner: -
+CREATE TABLE public.user_presence (
+    session_id text NOT NULL,
+    user_id integer NOT NULL,
+    client text DEFAULT 'web'::text NOT NULL,
+    current_path text NOT NULL,
+    current_screen text NOT NULL,
+    screen_ref text,
+    screen_since timestamp with time zone DEFAULT now() NOT NULL,
+    first_seen timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen timestamp with time zone DEFAULT now() NOT NULL,
+    user_agent text,
+    ip inet,
+    CONSTRAINT user_presence_client_check CHECK ((client = ANY (ARRAY['web'::text, 'mobile'::text]))),
+    CONSTRAINT user_presence_current_path_check CHECK (((char_length(current_path) >= 1) AND (char_length(current_path) <= 200))),
+    CONSTRAINT user_presence_current_screen_check CHECK ((current_screen ~ '^[a-z_]{1,30}$'::text)),
+    CONSTRAINT user_presence_screen_ref_check CHECK ((screen_ref ~ '^[A-Za-z0-9_-]{1,40}$'::text)),
+    CONSTRAINT user_presence_user_agent_check CHECK ((char_length(user_agent) <= 160))
 );
 -- Name: user_recovery_codes; Type: TABLE; Schema: public; Owner: -
 CREATE TABLE public.user_recovery_codes (
@@ -908,9 +944,15 @@ ALTER TABLE ONLY public.settings
 -- Name: system_log system_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.system_log
     ADD CONSTRAINT system_log_pkey PRIMARY KEY (id);
+-- Name: user_activity_daily user_activity_daily_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.user_activity_daily
+    ADD CONSTRAINT user_activity_daily_pkey PRIMARY KEY (user_id, day);
 -- Name: user_permissions user_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.user_permissions
     ADD CONSTRAINT user_permissions_pkey PRIMARY KEY (user_id, permission);
+-- Name: user_presence user_presence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.user_presence
+    ADD CONSTRAINT user_presence_pkey PRIMARY KEY (session_id);
 -- Name: user_recovery_codes user_recovery_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.user_recovery_codes
     ADD CONSTRAINT user_recovery_codes_pkey PRIMARY KEY (id);
@@ -992,6 +1034,10 @@ CREATE INDEX sessions_expires_at_idx ON public.sessions USING btree (expires_at)
 CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 -- Name: system_log_ts_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX system_log_ts_idx ON public.system_log USING btree (ts DESC);
+-- Name: user_presence_last_seen; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX user_presence_last_seen ON public.user_presence USING btree (last_seen);
+-- Name: user_presence_user; Type: INDEX; Schema: public; Owner: -
+CREATE INDEX user_presence_user ON public.user_presence USING btree (user_id);
 -- Name: user_recovery_codes_user_id_idx; Type: INDEX; Schema: public; Owner: -
 CREATE INDEX user_recovery_codes_user_id_idx ON public.user_recovery_codes USING btree (user_id);
 -- Name: users_deleted_at; Type: INDEX; Schema: public; Owner: -
@@ -1018,6 +1064,8 @@ CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EACH STAT
 CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.auth_log FOR EACH STATEMENT EXECUTE FUNCTION public.ets_log_append_only();
 -- Name: log_chain_anchor ets_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 CREATE TRIGGER ets_no_truncate BEFORE TRUNCATE ON public.log_chain_anchor FOR EACH STATEMENT EXECUTE FUNCTION public.ets_anchor_append_only();
+-- Name: sessions sessions_presence_end; Type: TRIGGER; Schema: public; Owner: -
+CREATE TRIGGER sessions_presence_end AFTER UPDATE OF revoked_at ON public.sessions FOR EACH ROW WHEN (((new.revoked_at IS NOT NULL) AND (old.revoked_at IS NULL))) EXECUTE FUNCTION public.ets_presence_session_ended();
 -- Name: access_log access_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.access_log
     ADD CONSTRAINT access_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
@@ -1177,9 +1225,18 @@ ALTER TABLE ONLY public.sessions
 -- Name: settings settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.settings
     ADD CONSTRAINT settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+-- Name: user_activity_daily user_activity_daily_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.user_activity_daily
+    ADD CONSTRAINT user_activity_daily_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 -- Name: user_permissions user_permissions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.user_permissions
     ADD CONSTRAINT user_permissions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+-- Name: user_presence user_presence_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.user_presence
+    ADD CONSTRAINT user_presence_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id) ON DELETE CASCADE;
+-- Name: user_presence user_presence_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+ALTER TABLE ONLY public.user_presence
+    ADD CONSTRAINT user_presence_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 -- Name: user_recovery_codes user_recovery_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 ALTER TABLE ONLY public.user_recovery_codes
     ADD CONSTRAINT user_recovery_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

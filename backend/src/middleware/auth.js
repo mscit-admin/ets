@@ -29,14 +29,19 @@ export function assertCookieConfig() {
 // before sign-in or before 2FA never becomes a full session (ETS-SEC-015).
 export async function createSession(res, req, userId, { mfaPassed, mfaStage = null, replaces = 'replaced' }) {
   const old = req.cookies?.[cookieName()];
+  let loginAt = null;
   if (old) {
-    const q = await query('UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL RETURNING user_id', [sha256(old), replaces]);
+    const q = await query(`UPDATE sessions SET revoked_at=now(), revoke_reason=$2 WHERE id=$1 AND revoked_at IS NULL
+      RETURNING user_id, mfa_passed, COALESCE(login_at, created_at) AS login_at`, [sha256(old), replaces]);
     if (q.rows[0]) publishSessionCheck(q.rows[0].user_id);
+    // the 2FA step replaces the password-step session: the sign-in still started at the password (1.11.0, migration 020)
+    const o = q.rows[0];
+    if (replaces === 'mfa_completed' && o && o.user_id === userId && !o.mfa_passed) loginAt = o.login_at;
   }
   const token = randomToken();
-  await query(`INSERT INTO sessions(id,user_id,mfa_passed,mfa_stage,ip,user_agent,expires_at)
-    VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' hours')::interval)`,
-    [sha256(token), userId, mfaPassed, mfaStage, req.ip, req.get('user-agent')?.slice(0, 500) || null, String(config.session.ttlHours)]);
+  await query(`INSERT INTO sessions(id,user_id,mfa_passed,mfa_stage,ip,user_agent,expires_at,login_at)
+    VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' hours')::interval, COALESCE($8::timestamptz, now()))`,
+    [sha256(token), userId, mfaPassed, mfaStage, req.ip, req.get('user-agent')?.slice(0, 500) || null, String(config.session.ttlHours), loginAt]);
   res.cookie(cookieName(), token, cookieOpts());
 }
 
@@ -110,7 +115,8 @@ export async function sessionMiddleware(req, res, next) {
   req.user = user;
   // Automatic requests do not count as activity for the idle timeout: the live-updates stream itself and the
   // reloads it triggers (header X-ETS-Live: 1, frontend lib/live.js) — an open screen alone never keeps a session alive.
-  const automatic = req.path === '/events' || req.get('x-ets-live') === '1';
+  // Presence reports (POST /presence, 1.11.0) never count either, whatever headers they carry.
+  const automatic = req.path === '/events' || req.get('x-ets-live') === '1' || (req.method === 'POST' && req.path === '/presence');
   if (!automatic && Date.now() - new Date(s.last_seen_at).getTime() > 60_000) {
     query('UPDATE sessions SET last_seen_at=now() WHERE id=$1', [id]).catch(() => {});
   }

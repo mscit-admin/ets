@@ -920,3 +920,22 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 /* the impact table scrolls inside the dialog on a phone instead of widening it */
 .modal:has(.mv-impact) { min-width: 0; max-width: min(760px, 100%); }
 .mv-impact .table-wrap { max-width: 100%; }
+
+/* ---------- online users (1.11.0): table on wide screens, cards under 640px ---------- */
+.ou-screen { display: inline; }
+.ou-who b { font-weight: 600; }
+tr.ou-idle td, .ou-card.ou-idle { opacity: .75; }
+.ou-cards { display: none; }
+.ou-table td { white-space: nowrap; }
+.ou-table td.ou-screen-cell { white-space: normal; min-width: 180px; }
+.ou-table td.ou-wrap { white-space: normal; min-width: 110px; }
+.ou-note { margin-top: 12px; }
+.ou-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; display: grid; gap: 8px; }
+.ou-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.ou-kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.ou-kv dt { color: var(--text-muted); }
+.ou-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .ou-table { display: none; }
+  .ou-cards { display: grid; gap: 10px; }
+}

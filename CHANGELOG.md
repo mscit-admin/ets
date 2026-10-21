@@ -28,7 +28,35 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+---
+
+## [1.11.0] — 2026-10-21 — Online users
+
 ### Added
+- **Frontend:** «المستخدمون المتصلون الآن» / "Online users" (`/online`, Administration → «المتصلون الآن»; system
+  administrators only): one row per signed-in session — user and role, status (**online**: last report ≤ 2 minutes;
+  **idle**: 2–15 minutes while the session is valid), the current screen as a readable label with the name of what is
+  open, linked (e.g. «وظائف التطبيق — شؤون العاملين»), time on that screen, session duration and sign-in time, last
+  activity, active time today, client (browser / phone app), browser / system and IP. Counts of online / idle / open
+  sessions; filters by role, department (scope) and screen; refreshes every 15 s while visible (polling, with
+  `X-ETS-Live: 1`); a table on wide screens, cards under 640 px. Row action **«إنهاء الجلسة»** with confirmation.
+  The Users page shows «متصل الآن (n)» linking to it. Arabic / English (`// Online users (1.11.0)` blocks).
+- **Frontend:** `lib/presence.js` — every tab reports its screen (`POST /api/presence`, screen key + id) on every
+  screen change, every 60 s while visible and once when it becomes visible again; nothing while hidden.
+- **Backend:** `POST /api/presence` (signed in; the caller's own session only) → 200 / 202 coalesced;
+  `GET /api/presence` and `GET /api/presence/count` (administrators: `usr` + admin role);
+  `backend/src/services/presence.js`, `backend/src/routes/presence.js`. Labels and links are built on the server from
+  a whitelisted screen key and an id checked to exist (else «غير معروف» / `unknown`). Session duration counts from the
+  password step (`sessions.login_at`, kept when 2FA replaces the session). Active time today: the time between two
+  reports of any of the user's sessions when ≤ 90 s apart (local day of `notify.timezone`), never counted twice.
+- **Backend:** `POST /api/users/:id/revoke-sessions` takes `{session_ref}` to end one session (errors
+  `cannot_end_own_session`, `session_not_found`); audit `revoke_sessions` with `session_ref` and
+  `source: "online_users"`.
+- **Backend:** clean-up of presence rows every 5 minutes (one API process at a time, advisory lock
+  `ets_presence_cleanup`): rows older than 15 minutes or of a session no longer valid, daily activity older than 7 days.
+- **Tests:** `backend/test/presence.test.js` (upsert, `screen_since`, coalescing, idle timeout untouched, 403 for
+  non-administrators, list and thresholds, labels of invalid ids, sign-out / revocation / deleted user, clean-up and
+  its lock, ending one session and its audit, view audit throttle, `login_at` across 2FA).
 - **Mobile:** new cross-platform app in `mobile/` (React Native 0.88 / Expo SDK 58, TypeScript, `ly.ets.mobile`), phase 1:
   server address (https only), sign-in with 2FA, forced password change, dashboard with the ERP wheel, departments,
   read-only applications, alerts, profile; Arabic / English with RTL; built by `.github/workflows/mobile.yml` (APK
@@ -41,6 +69,8 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   (`POST /api/presence`, client `mobile`). No server change.
 
 ### Changed
+- **Backend:** a successful presence report is written to the file access log only, not to `access_log`
+  (one per minute and open tab).
 - **Frontend:** small dependency-free pieces moved out of components so the mobile app can import them:
   `lib/iconPaths.js` (from `Icon.jsx`), `lib/wheelGeometry.js` (from `ErpWheel.jsx`), `lib/equation.js` (from
   `PctEquation.jsx`), `lib/notifyTabs.js` (from `NotificationBell.jsx`). No behaviour change.
@@ -57,6 +87,26 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   `COLUMNS` (`userImport.js`), `EXPORT_LABELS` and the `move_to` label (`export-labels.js`), `ALL_TYPES`,
   `JOB_NAMES`, `DIGEST_TYPES` (notifications), and the unused messages `mv_items_n`, `mv_items_col`. No behaviour
   change.
+
+### Security
+- The online users list is a privacy-sensitive view: administrators only (same guard as Users, ETS-SEC-004; 403 for
+  everyone else, an `usr` override on another role never opens it), viewing it is recorded (`view` / `presence`, at
+  most once per 15 minutes per administrator, as ETS-SEC-050), ending a session from it is audited. Nobody else can
+  learn who is online. See `docs/handover/06-Security.md` §3a.
+- `POST /api/presence` changes only the row of the session whose cookie it carries; path, screen key and id are
+  validated (length and characters), only a whitelisted key and an existing id are stored, and nothing the browser
+  sends is displayed as text. One write per session per `PRESENCE_MIN_INTERVAL_SECONDS` (10 s), the rest coalesced.
+- A presence report never counts as activity for the idle timeout (`POST /presence` is excluded in
+  `sessionMiddleware`, whatever its headers); a revoked session's row is deleted at once by a trigger.
+
+### Upgrade notes
+- Run the migrations (`update.sh` does it): **`020_user_presence.sql`** adds `sessions.login_at`, the tables
+  `user_presence` and `user_activity_daily`, and the trigger `sessions_presence_end`. Existing sessions keep working
+  (their duration counts from `created_at`). Nothing else to do: the clean-up starts with the service.
+- Optional: `PRESENCE_MIN_INTERVAL_SECONDS` (default 10) in `backend/.env`.
+- Tell staff that system administrators can see who is signed in, the screen in use and active time (internal
+  policy / notice); see `docs/handover/06-Security.md` §3a.
+- `deploy/db/schema-reference.sql` regenerated after migration 020.
 
 ---
 
@@ -1693,7 +1743,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/dd41f54...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/2435711...HEAD
+[1.11.0]: https://github.com/mscit-admin/ets/compare/dd41f54...2435711
 [1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54
 [1.9.2]: https://github.com/mscit-admin/ets/compare/80f9472...1ff9138
 [1.9.1]: https://github.com/mscit-admin/ets/compare/b5eb9e2...80f9472
