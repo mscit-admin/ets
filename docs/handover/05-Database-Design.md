@@ -3,8 +3,8 @@
 **DBMS:** PostgreSQL 14+ · **Database:** `ets` · **Application role / database owner:** `ets` ·
 **Log owner role:** `ets_log_owner` (no login, owns the log tables — §3a) · **Extension:** `citext`
 **Creation script:** `deploy/db/create-database.sql` · **Schema source:** `backend/src/db/migrations/*.sql`
-(001–009 and 012–014; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
-(after migration 014)
+(001–009 and 012–020; the numbers 010 and 011 are not used) · **Full DDL for review:** `deploy/db/schema-reference.sql`
+(after migration 020)
 
 ## 1. How the schema is managed
 
@@ -25,7 +25,8 @@
 ## 2. Entity relationships
 
 ```
-roles 1───* users 1───* sessions
+roles 1───* users 1───* sessions 1───0..1 user_presence   (1.11.0)
+              │ 1───* user_activity_daily                  (1.11.0)
               │ 1───* user_recovery_codes
               │ 1───* user_permissions   (grant/revoke overrides)
               │ 1───* user_scopes        (department / application)
@@ -45,7 +46,8 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (`h1:` + HMAC-SHA-256, migration 008; older plain SHA-256 codes stay valid until used or regenerated), `used_at` |
 | `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool`. `usr` may be granted to the admin role only (migration 009 removed other grants, each recorded in the audit trail) |
 | `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. Full scope comes from `roles.full_scope` only: a user of another role with **no rows sees nothing** (fail closed; migration 009 lists such users in `system_log`, event `scope_fail_closed`) |
-| `sessions` | Server-side sessions | `id` = SHA-256 of the cookie token, `mfa_passed`, `mfa_stage`, `expires_at`, `last_seen_at`, `revoked_at`, `revoke_reason` |
+| `sessions` | Server-side sessions | `id` = SHA-256 of the cookie token, `mfa_passed`, `mfa_stage`, `expires_at`, `last_seen_at`, `revoked_at`, `revoke_reason`, `login_at` (migration 020: start of the sign-in, kept when 2FA replaces the session; NULL on older rows → `created_at`) |
+| `user_presence`, `user_activity_daily` | Online users (migration 020, see 3h) | one row per signed-in session that reported its screen; active seconds per user and day |
 | `settings` | System settings | `key`, `value jsonb`, `updated_by` |
 
 ### Tracker
@@ -258,6 +260,43 @@ FROM function_moves m ORDER BY m.moved_at DESC;
 -- move requests still waiting, and for whom
 SELECT id, app_id, target_app_id, CASE WHEN source_approved_by IS NULL THEN 'source lead' ELSE 'destination lead' END AS waits_for
 FROM edit_requests WHERE kind = 'move_function' AND status = 'pending';
+```
+
+### 3h. Migration 020 — online users (1.11.0)
+
+- **`sessions.login_at`** (`timestamptz`, NULL on rows from before 1.11.0): when the sign-in started. Completing 2FA
+  replaces the password-step session by a new one (new token, ETS-SEC-015); the new row copies the first row's time,
+  so the session duration of «المستخدمون المتصلون الآن» starts at the password step. The API reads
+  `COALESCE(login_at, created_at)`.
+- **`user_presence`** — one row per signed-in session that reported where it is (`POST /api/presence`):
+
+| Column | Meaning |
+|---|---|
+| `session_id` | PK, → `sessions(id)` ON DELETE CASCADE |
+| `user_id` | → `users(id)` ON DELETE CASCADE |
+| `client` | `web` \| `mobile` (request header `X-ETS-Client: mobile`) |
+| `current_path` | the path the browser reported, 1–200 characters of `A–Z a–z 0–9 / _ . ~ % -` (kept for support; never shown as a link) |
+| `current_screen` | whitelisted screen key (`^[a-z_]{1,30}$`; see `SCREENS` in `backend/src/services/presence.js`), `unknown` otherwise |
+| `screen_ref` | id of what the screen shows (department, application, import batch, user), `^[A-Za-z0-9_-]{1,40}$`, checked to exist when written — else the screen is stored as `unknown` |
+| `screen_since` | when this screen (key + id) was opened; unchanged by reports of the same screen |
+| `first_seen`, `last_seen` | first and latest report of the session |
+| `user_agent` (≤ 160), `ip` | of the latest report |
+
+  Indexes on `user_id` and `last_seen`. Trigger **`sessions_presence_end`** (function `ets_presence_session_ended()`):
+  `AFTER UPDATE OF revoked_at ON sessions` — the row is deleted as soon as its session is revoked, whatever revoked it
+  (sign-out, expiry noticed, administrator, password / 2FA reset, deactivation, deletion). The clean-up
+  (`services/presence.js`, every 5 minutes, advisory lock `ets_presence_cleanup`) deletes rows older than 15 minutes
+  and rows whose session is no longer valid (expired or idle without a request having noticed it).
+- **`user_activity_daily`** — `(user_id, day)` PK, `seconds` (≥ 0), `last_at`: the local day (setting
+  `notify.timezone`) and the seconds between two reports of any of the user's sessions when at most 90 s apart, so
+  parallel sessions are counted once. Rows older than 7 days are deleted by the clean-up.
+
+```sql
+-- who is online now (≤ 2 minutes) and where
+SELECT u.username, p.current_screen, p.screen_ref, now() - p.screen_since AS on_screen,
+       now() - COALESCE(s.login_at, s.created_at) AS session_age
+FROM user_presence p JOIN sessions s ON s.id = p.session_id JOIN users u ON u.id = p.user_id
+WHERE p.last_seen > now() - interval '2 minutes' AND s.revoked_at IS NULL AND s.expires_at > now();
 ```
 
 ## 4. Code values
