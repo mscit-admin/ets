@@ -1,9 +1,10 @@
 // Bottom tabs of the signed-in app: الرئيسية (dashboard → department → application), التنبيهات, حسابي.
-// The alerts tab carries the unread count (lib/notifCount.tsx); the live-updates stream (lib/liveContext.tsx) runs here,
-// for a signed-in user only.
+// The alerts tab carries the unread count (lib/notifCount.tsx); the live-updates stream (lib/liveContext.tsx) and the dialogs'
+// host (components/Sheet.tsx) live here, for a signed-in user only.
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/Icon';
+import { SheetHost } from '@/components/Sheet';
 import { useI18n } from '@/lib/i18n';
 import { LiveProvider } from '@/lib/liveContext';
 import { NotifCountProvider, badgeText, useNotifCount } from '@/lib/notifCount';
@@ -47,7 +48,9 @@ export default function TabsLayout() {
   return (
     <LiveProvider>
       <NotifCountProvider>
-        <TabsInner />
+        <SheetHost>
+          <TabsInner />
+        </SheetHost>
       </NotifCountProvider>
     </LiveProvider>
   );

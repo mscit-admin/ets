@@ -1,6 +1,7 @@
-// One item (function or report) of an application, read-only (web: the row of pages/Application.jsx):
-// type chip, code, name, source, progress, test status with the «نجح» below 100 % conflict ⚠, the exclusion
-// reason badge, «منقول من …» for a moved item, removed / awaiting-approval marks and the note.
+// One item (function or report) of an application (web: the row of pages/Application.jsx): type chip, code, name,
+// source, progress, test status with the «نجح» below 100 % conflict ⚠, the exclusion reason badge, «منقول من …» for
+// a moved item, removed / awaiting-approval marks (with the values waiting: «تعديل الاسم إلى …», «الإنجاز 80%»…) and
+// the note. A user who may edit opens the item editor by tapping it; in selection mode (bulk set) a tap ticks it.
 import { memo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useI18n } from '@/lib/i18n';
@@ -11,7 +12,7 @@ import { colors, fontSize, pills, radius, space } from '@/theme';
 import { Icon } from './Icon';
 import { Pill, ProgressBar, Txt, ltr, pctText } from './ui';
 
-function TypeChip({ type }: { type: 'function' | 'report' }) {
+export function TypeChip({ type }: { type: 'function' | 'report' }) {
   const { t } = useI18n();
   const fn = type === 'function';
   return (
@@ -23,7 +24,7 @@ function TypeChip({ type }: { type: 'function' | 'report' }) {
   );
 }
 
-function DisabledBadge({ f, appId }: { f: Item; appId: string }) {
+export function DisabledBadge({ f, appId }: { f: Item; appId: string }) {
   const { t, fmtDate } = useI18n();
   const [open, setOpen] = useState(false);
   const r = f.disabled_reason;
@@ -49,7 +50,7 @@ function DisabledBadge({ f, appId }: { f: Item; appId: string }) {
   );
 }
 
-function MovedBadge({ f }: { f: Item }) {
+export function MovedBadge({ f }: { f: Item }) {
   const { t, nm, fmtDate } = useI18n();
   const [open, setOpen] = useState(false);
   const m = f.moved_from!;
@@ -67,14 +68,24 @@ function MovedBadge({ f }: { f: Item }) {
   );
 }
 
-export const ItemCard = memo(function ItemCard({ f, appId, pending }: { f: Item; appId: string; pending: boolean }) {
-  const { t } = useI18n();
+type CardProps = {
+  f: Item; appId: string; pending: boolean; pendingText?: string | null;
+  onPress?: (f: Item) => void; onLongPress?: (f: Item) => void;
+  selecting?: boolean; selected?: boolean; selectable?: boolean; highlight?: boolean;
+};
+
+export const ItemCard = memo(function ItemCard({ f, appId, pending, pendingText, onPress, onLongPress, selecting, selected, selectable = true, highlight }: CardProps) {
+  const { t, fmtDate } = useI18n();
   const type = typeOf(f);
   const off = !!f.removed_at || !f.enabled;
   const conflict = passConflict(f);
-  return (
-    <View style={[st.card, type === 'report' && st.report, off && st.off]}>
+  const press = selecting ? (selectable ? onPress : undefined) : onPress;
+  const body = (
+    <>
       <View style={st.title}>
+        {selecting ? (
+          <View style={[st.tick, selected && st.tickOn, !selectable && st.tickOff]}>{selected ? <Icon name="check" size={14} color={colors.white} /> : null}</View>
+        ) : null}
         <TypeChip type={type} />
         <Txt w={600} size={fontSize.m} style={st.flex}>{f.name_ar}</Txt>
       </View>
@@ -88,8 +99,13 @@ export const ItemCard = memo(function ItemCard({ f, appId, pending }: { f: Item;
         <View style={st.meta}>
           {f.moved_from ? <MovedBadge f={f} /> : null}
           {!f.enabled && !f.removed_at ? <DisabledBadge f={f} appId={appId} /> : null}
-          {f.removed_at ? <Pill color="red">{t('fn_state_removed')}</Pill> : null}
-          {pending ? <Pill color="yellow" icon="clock">{t('awaiting_approval')}</Pill> : null}
+          {f.removed_at ? <Pill color="red">{t('removed_by_on', { name: f.removed_by_name || '—', date: fmtDate(f.removed_at) })}</Pill> : null}
+          {pending && !pendingText ? <Pill color="yellow" icon="clock">{t('awaiting_approval')}</Pill> : null}
+        </View>
+      ) : null}
+      {pending && pendingText ? (
+        <View style={st.pending} accessibilityLabel={`${t('awaiting_approval')}: ${pendingText}`}>
+          <Txt size={fontSize.s} color={pills.yellow.text} w={600}>⏳ {t('awaiting_approval')}: {pendingText}</Txt>
         </View>
       ) : null}
       <View style={st.status}>
@@ -111,7 +127,18 @@ export const ItemCard = memo(function ItemCard({ f, appId, pending }: { f: Item;
         </View>
       ) : null}
       {f.enabled && f.weight !== 1 ? <Txt size={fontSize.xs} color={colors.textMuted}>{t('weight')} {ltr(pc(f.weight))}</Txt> : null}
-    </View>
+      {f.removed_at && f.removed_reason ? <Txt size={fontSize.xs} color={colors.textMuted}>{t('reason')}: {f.removed_reason}</Txt> : null}
+    </>
+  );
+  const style = [st.card, type === 'report' && st.report, off && st.off, selected && st.selected, highlight && st.highlight];
+  if (!press && !onLongPress) return <View style={style} testID={`item-${f.code}`}>{body}</View>;
+  return (
+    <Pressable onPress={press ? () => press(f) : undefined} onLongPress={onLongPress ? () => onLongPress(f) : undefined} delayLongPress={350}
+      style={({ pressed }) => [...style, pressed && st.pressed]} testID={`item-${f.code}`}
+      accessibilityRole={selecting ? 'checkbox' : 'button'} accessibilityState={selecting ? { checked: !!selected, disabled: !selectable } : undefined} aria-checked={selecting ? !!selected : undefined}
+      accessibilityLabel={`${f.code} ${f.name_ar}`} accessibilityHint={selecting ? undefined : t('m_edit_item_hint')}>
+      {body}
+    </Pressable>
   );
 });
 
@@ -123,6 +150,13 @@ const st = StyleSheet.create({
   },
   report: { borderStartWidth: 3, borderStartColor: colors.itRepStrong },
   off: { opacity: 0.62 },
+  selected: { borderColor: colors.gray800, backgroundColor: colors.gray50, opacity: 1 },
+  highlight: { borderColor: colors.primaryBlue, borderWidth: 2 },
+  pressed: { backgroundColor: colors.gray50 },
+  tick: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.gray400, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  tickOn: { backgroundColor: colors.gray900, borderColor: colors.gray900 },
+  tickOff: { opacity: 0.3 },
+  pending: { backgroundColor: pills.yellow.bg, borderRadius: radius.md, paddingHorizontal: space.m, paddingVertical: 4 },
   title: { flexDirection: 'row', alignItems: 'flex-start', gap: space.m },
   typeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, borderRadius: radius.pill, borderWidth: 1, marginTop: 2 },
   chipText: { lineHeight: 19 },

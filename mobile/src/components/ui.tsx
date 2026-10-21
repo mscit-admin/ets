@@ -55,14 +55,14 @@ export function ProgressBar({ value, color, height = 6 }: { value: number; color
   );
 }
 
-type BtnKind = 'primary' | 'default' | 'ghost' | 'link';
-export function Button({ title, onPress, kind = 'primary', disabled, busy, icon, small, style, accessibilityLabel }: {
+type BtnKind = 'primary' | 'default' | 'ghost' | 'link' | 'danger';
+export function Button({ title, onPress, kind = 'primary', disabled, busy, icon, small, style, accessibilityLabel, testID }: {
   title: string; onPress: () => void; kind?: BtnKind; disabled?: boolean; busy?: boolean; icon?: string; small?: boolean;
-  style?: StyleProp<ViewStyle>; accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>; accessibilityLabel?: string; testID?: string;
 }) {
-  const fg = kind === 'primary' ? colors.white : kind === 'link' ? colors.gray700 : colors.text;
+  const fg = kind === 'primary' || kind === 'danger' ? colors.white : kind === 'link' ? colors.gray700 : colors.text;
   return (
-    <Pressable onPress={onPress} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? title}
+    <Pressable onPress={onPress} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? title} testID={testID} hitSlop={small ? 4 : undefined}
       accessibilityState={{ disabled: !!(disabled || busy), busy: !!busy }}
       style={({ pressed }) => [s.btn, small && s.btnSmall, s[kind], pressed && s[`${kind}Pressed`], (disabled || busy) && s.disabled, style]}>
       {busy ? <ActivityIndicator size="small" color={fg} /> : icon ? <Icon name={icon} size={small ? 14 : 16} color={fg} /> : null}
@@ -168,13 +168,15 @@ export const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, paddingHorizontal: 14,
     borderRadius: radius.md,
   },
-  btnSmall: { minHeight: 34, paddingHorizontal: 10 },
+  btnSmall: { minHeight: 36, paddingHorizontal: 10 },
   primary: { backgroundColor: colors.primary },
   primaryPressed: { backgroundColor: colors.primaryHover },
   default: { backgroundColor: colors.gray100 },
   defaultPressed: { backgroundColor: colors.gray200 },
   ghost: { backgroundColor: 'transparent' },
   ghostPressed: { backgroundColor: colors.gray100 },
+  danger: { backgroundColor: pills.red.text },
+  dangerPressed: { backgroundColor: '#a82020' },
   link: { backgroundColor: 'transparent', minHeight: 36 },
   linkPressed: { opacity: 0.6 },
   disabled: { opacity: 0.55 },

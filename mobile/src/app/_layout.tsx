@@ -11,6 +11,7 @@ import { useFonts } from 'expo-font';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider, useI18n } from '@/lib/i18n';
 import { SessionProvider, useSession } from '@/lib/session';
+import { ToastHost } from '@/lib/toast';
 import { colors, fontFiles } from '@/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -45,6 +46,7 @@ function Gate() {
           <Stack.Screen name="(tabs)" />
         </Stack.Protected>
       </Stack>
+      <ToastHost />
     </LocaleProvider>
   );
 }

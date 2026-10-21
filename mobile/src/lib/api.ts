@@ -75,9 +75,15 @@ export function createApi({ baseUrl, onUnauthorized, fetchImpl }: Config) {
     get: <T>(path: string, opts?: Options) => request<T>('GET', path, undefined, opts),
     post: <T>(path: string, body: unknown = {}) => request<T>('POST', path, body),
     put: <T>(path: string, body: unknown = {}) => request<T>('PUT', path, body),
+    patch: <T>(path: string, body: unknown = {}) => request<T>('PATCH', path, body),
+    del: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
   };
 }
 export type Api = ReturnType<typeof createApi>;
+
+/** An answer that may have been sent for approval (HTTP 202 { pending: true, request_id }) instead of applied. */
+export type MaybePending = { pending?: boolean; request_id?: number; warning?: string };
+export const isPending = (r: unknown) => !!(r && typeof r === 'object' && (r as MaybePending).pending === true);
 
 /** API path with encoded segments: path`/tracker/applications/${id}` (an id never becomes another path). */
 export const path = (parts: TemplateStringsArray, ...vals: unknown[]) =>
