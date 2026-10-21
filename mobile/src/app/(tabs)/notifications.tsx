@@ -1,15 +1,18 @@
 // Alerts (web: the bell + pages/Notifications.jsx): category tabs, unread only, pages of 30 (more at the end of the
 // list), mark one read / unread, mark all read. Opening an alert marks it read and opens its screen when the phone
-// has it (lib/links.ts). GET /api/notifications, POST /api/notifications/:id/read|unread, /read-all.
+// has it (lib/links.ts: an application or one of its items, a department, the approvals). The list reloads when the
+// unread count changes (live stream) and when events may have been missed. GET /api/notifications,
+// POST /api/notifications/:id/read|unread, /read-all.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Toggle } from '@/components/Toggle';
+import { router, type Href } from 'expo-router';
 import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { useNotifCount } from '@/lib/notifCount';
 import { path, qs } from '@/lib/api';
 import { mobileRoute } from '@/lib/links';
-import { POLL_MS } from '@/lib/useLoad';
+import { useLiveUpdates } from '@/lib/liveContext';
 import type { Notif, NotifList } from '@/lib/types';
 import { SEV_COLOR, SEV_ICON, TABS, type NotifTab } from '@/shared/web';
 import { colors, fontSize, pills, radius, space } from '@/theme';
@@ -83,11 +86,9 @@ export default function Notifications() {
       .then(d => { if (my === seq.current) { setItems(d.items); setNext(d.next_before); setErr(null); } })
       .catch(e => { if (my === seq.current) { setErr(e); setItems([]); } });
   }, [query]);
-  // reload while open: every minute, and when the unread count changes (another device, a new alert)
-  useFocusEffect(useCallback(() => {
-    const h = setInterval(() => load('live'), POLL_MS);
-    return () => clearInterval(h);
-  }, [load]));
+  // reload when the unread count changes (another device, a new alert), and when events may have been missed
+  // (reconnection, back in the foreground, fallback poll)
+  useLiveUpdates(m => { if (m.reason !== 'change') load('live'); });
   const lastUnread = useRef(count.unread);
   useEffect(() => { if (count.unread !== lastUnread.current) { lastUnread.current = count.unread; load('live'); } }, [count.unread, load]);
 
@@ -105,7 +106,7 @@ export default function Notifications() {
   const open = (n: Notif) => {
     if (!n.read) toggle(n);
     const to = mobileRoute(n.link);
-    if (to) router.navigate(to);
+    if (to) router.navigate(to as Href);
   };
   const readAll = async () => {
     try { await api.post('/notifications/read-all'); } catch (e) { setErr(e); }
@@ -123,8 +124,7 @@ export default function Notifications() {
       </ScrollView>
       <View style={st.tools}>
         <View style={st.switchRow}>
-          <Switch value={unreadOnly} onValueChange={v => { setItems(null); setUnreadOnly(v); }} accessibilityLabel={t('notif_unread_only')}
-            trackColor={{ true: colors.gray800, false: colors.gray300 }} thumbColor={colors.white} />
+          <Toggle value={unreadOnly} onValueChange={v => { setItems(null); setUnreadOnly(v); }} accessibilityLabel={t('notif_unread_only')} />
           <Txt size={fontSize.m}>{t('notif_unread_only')}</Txt>
         </View>
         <Button kind="default" small icon="check" title={t('mark_all_read')} onPress={readAll} disabled={!count.unread} />
