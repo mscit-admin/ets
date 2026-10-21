@@ -76,6 +76,11 @@ export const config = {
     heartbeatMs: Math.max(1000, int('LIVE_HEARTBEAT_SECONDS', 25) * 1000),
     maxStreamsPerUser: Math.max(1, int('LIVE_MAX_STREAMS_PER_USER', 5)),
   },
+  // Online users (1.11.0, services/presence.js): at most one database write per session in this interval; reports
+  // in between are coalesced (the latest one is written when the interval ends).
+  presence: {
+    minIntervalMs: Math.max(1, int('PRESENCE_MIN_INTERVAL_SECONDS', 10) || 10) * 1000,
+  },
   staticDir: env('STATIC_DIR', ''), // serve the built frontend from here (optional; nginx usually does it)
   // Phones (Android app, 1.9.0): written into the pairing QR code. PUBLIC_BASE_URL = the address the phones use
   // (e.g. https://ets.example.ly, reached over the organisation's VPN from outside); empty → the address of the

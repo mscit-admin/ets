@@ -114,7 +114,8 @@ export function logAccess(req, res, ms) {
   const m = reqMeta(req);
   const rec = { method: req.method, path: req.originalUrl.slice(0, MAX_PATH), status: res.statusCode, ms, ip: m.ip, userId: req.user?.id || null };
   accessFile.info(rec);
-  if (!config.logs.accessToDb) return;
+  // presence reports (1.11.0, every minute per open tab) go to the file only: user_presence already holds them
+  if (!config.logs.accessToDb || res.locals?.accessFileOnly) return;
   if (!rec.userId && (rec.status === 404 || rec.status === 429)) return;
   return write(`INSERT INTO access_log(user_id,method,path,status,duration_ms,ip,user_agent)
     VALUES ($1,$2,$3,$4,$5,$6,$7)`, [rec.userId, rec.method, rec.path, rec.status, ms, m.ip, m.user_agent]);
