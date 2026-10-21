@@ -90,8 +90,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # versions of the React Native 0.88 / Expo SDK 58 Gradle setup (compileSdk 37, build tools 37.0.0, NDK 27.1)
-          packages: platform-tools platforms;android-37 build-tools;37.0.0 ndk;27.1.12297006 cmake;3.22.1
+          # Only platform-tools here. The platform, build tools, NDK and CMake that the generated project asks for
+          # (React Native's version catalog: compileSdk 37, buildTools 37.0.0, ndkVersion 27.1.12297006) are installed
+          # by the Android Gradle Plugin on the first build, because this action accepts the SDK licences
+          # (accept-android-sdk-licenses defaults to true). Naming sdkmanager packages here broke the job whenever a
+          # name was missing from the repository ("Failed to find package 'platforms;android-37'"), and it would
+          # silently drift from the versions the next React Native / Expo upgrade requires.
+          packages: platform-tools
           log-accepted-android-sdk-licenses: false
 
       - name: Generate the native project (expo prebuild)
