@@ -23,10 +23,8 @@
         android:usesCleartextTraffic="false"
         tools:targetApi="34">
 
-        <!-- Main screen (1.1.0): ETS itself in a WebView. Rotation keeps the page (no reload). -->
         <activity
-            android:name=".ui.WebActivity"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -35,19 +33,11 @@
             </intent-filter>
         </activity>
 
-        <!-- The native list of the last alerts (the main screen of 1.0.0), from the main screen's menu. -->
-        <activity
-            android:name=".ui.MainActivity"
-            android:exported="false"
-            android:label="@string/action_alerts"
-            android:launchMode="singleTop"
-            android:parentActivityName=".ui.WebActivity" />
-
         <activity
             android:name=".ui.DeviceActivity"
             android:exported="false"
             android:label="@string/action_device"
-            android:parentActivityName=".ui.WebActivity"
+            android:parentActivityName=".ui.MainActivity"
             android:windowSoftInputMode="adjustResize" />
 
         <!-- Invisible notification-tap trampoline; never reachable from other apps. -->

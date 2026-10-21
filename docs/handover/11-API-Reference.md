@@ -22,8 +22,7 @@ or a re-authentication), `too_many_requests` (429, general `/api` limit, with `r
 `unsupported_media_type`, `requester_not_allowed`, `cannot_approve`, `not_found`, `server_error`,
 `pass_requires_100`, `progress_below_100_while_passed`, `import_has_row_errors` (1.8.1, see below), `mandatory_type`,
 `invalid_token` (401, `/m/*`), `too_many_devices` (409) (1.9.0), `rename_reason_required`, `rename_must_be_separate`,
-`name_unchanged` (400), `name_changed` (409) (1.9.1, see the rename below), `readonly_session` (403, 1.11.0: a change
-from a read-only session of the Android app, see below). There is no
+`name_unchanged` (400), `name_changed` (409) (1.9.1, see the rename below). There is no
 `423` / `account_locked` answer.
 
 **«نجح» needs 100 % (1.8.1).** The test status «نجح» (`test_status: 2`, plain pass) is accepted only with progress
@@ -61,21 +60,10 @@ Rate limits: password / 2FA / recovery-code checks (`/auth/login`, `/auth/2fa/*`
 | POST | `/2fa/enable` | `{code}` | → `{recovery_codes:[10]}` |
 | POST | `/2fa/disable` | `{password, code}` or `{password, recovery_code}` | Not allowed when the policy is *required* (unless exempt); signs out other sessions |
 | POST | `/2fa/recovery-codes` | `{password, code}` or `{password, recovery_code}` | New codes |
-| GET | `/me` | — | `{authenticated, stage, readonly, client, user{…permissions, scope, readonly, recovery_codes_left, recovery_codes_outdated}, mfa_mode, org names}`; before 2FA only `{stage, readonly, user{username, language}}`. `readonly: true` / `client: "mobile"` for a session of the Android app (1.11.0) |
+| GET | `/me` | — | `{authenticated, stage, user{…permissions, scope, recovery_codes_left, recovery_codes_outdated}, mfa_mode, org names}`; before 2FA only `user{username, language}` |
 | POST | `/logout` | — | |
 | POST | `/change-password` | `{current_password, new_password}` | Signs out other sessions; a wrong current password counts towards the account pause. Policy: ≥ 10 characters (12 for administrators, or the Settings minimum if higher), ≤ 72 bytes, letters and digits, not common, not containing the username |
 | PUT | `/language` | `{language: "ar" \| "en"}` | |
-
-**Read-only sessions (1.11.0).** A sign-in (`/login`, and the 2FA step) whose `User-Agent` contains
-`ETSAlerts/<version> (Android)` creates a session with `client: "mobile"`, `readonly: true` (the Android app 1.1.0).
-Such a session may send any `GET` (same permissions and scope as a browser session, Excel exports included); every
-`POST` / `PUT` / `PATCH` / `DELETE` gets **`403 {"error":"readonly_session"}`** except: `POST /auth/login`,
-`/auth/logout`, `/auth/2fa/verify`; `POST /auth/2fa/setup` and `/auth/2fa/enable` while enrolment is the pending
-sign-in step; `POST /auth/change-password` while the password must be changed; `PUT /auth/language`;
-`POST /notifications/:id/read`, `/notifications/:id/unread`, `/notifications/read-all`; `PUT /notifications/prefs`.
-The `can` objects of `/tracker/applications/:id`, `/tracker/reports`, `/tracker/schedule`, `/tracker/project-status`,
-`/approvals` (per request) and `/imports` (per batch, and `can_import`) are all `false` for such a session. See
-*06-Security.md → 4c*.
 
 ## Tracker — `/tracker` (signed in)
 | Method | Path | Permission | Description |

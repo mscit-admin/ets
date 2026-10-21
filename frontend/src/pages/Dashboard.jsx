@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
-import { api, path } from '../lib/api.js';
+import { api } from '../lib/api.js';
 import { pc, pctTone, TEST_COLORS } from '../lib/format.js';
 import { useAuth } from '../lib/auth.jsx';
-import { useLiveUpdates, useNotifStream } from '../lib/live.js';
-import { NotifRow } from '../components/NotificationBell.jsx';
+import { useLiveUpdates } from '../lib/live.js';
 import { STANDARD_MODULES, wheelSegments } from '../lib/erpModules.js';
 import { ErpLegend, ErpWheel } from '../components/ErpWheel.jsx';
 import { LiveBadge } from '../components/LiveBadge.jsx';
@@ -16,43 +14,9 @@ import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 
-// «التنبيهات والإشعارات» under the wheel — the home screen of the Android app (read-only session, 1.11.0): the latest
-// 10 alerts from the same API as the bell (scope and policy rules applied there), unread ones marked; choosing one
-// marks it read and opens its page; «عرض الكل» opens the history. Browsers keep the bell in the top bar instead.
-const HOME_NOTIF = 10;
-function HomeNotifications() {
-  const { t, lang } = useI18n();
-  const nav = useNavigate();
-  const [items, setItems] = useState(null);
-  const [unread, setUnread] = useState(0);
-  const load = useCallback(() => {
-    api.get(`/notifications?limit=${HOME_NOTIF}&lang=${lang}`, { live: true }).then(d => setItems(d.items)).catch(() => setItems([]));
-    api.get('/notifications/count', { live: true }).then(c => setUnread(c.unread)).catch(() => {});
-  }, [lang]);
-  useEffect(() => { load(); }, [load]);
-  useNotifStream(() => load(), () => load());
-  const toggle = async n => { try { await api.post(path`/notifications/${n.id}/${n.read ? 'unread' : 'read'}`); } catch { /* reload anyway */ } load(); };
-  const openItem = n => {
-    if (!n.read) api.post(path`/notifications/${n.id}/read`).catch(() => {});
-    nav(n.link && n.link.startsWith('/') ? n.link : '/notifications');
-  };
-  return (
-    <section className="card home-notif" aria-labelledby="home-notif-title">
-      <div className="card-head">
-        <h3 id="home-notif-title"><Icon name="bell" size={15} /> {t('home_notif_title')}
-          {unread > 0 && <span className="home-notif-count num" title={t('notif_bell_n', { n: unread })}>{unread > 99 ? '99+' : unread}</span>}</h3>
-        <div className="card-actions"><Link to="/notifications" className="btn btn-default btn-xs">{t('view_all')}</Link></div>
-      </div>
-      {items === null ? <div className="notif-empty">{t('loading')}</div> : !items.length ? <div className="notif-empty">{t('notif_none')}</div> : (
-        <ul className="notif-list">{items.map(n => <NotifRow key={n.id} n={n} onOpen={openItem} onToggle={toggle} compact />)}</ul>
-      )}
-    </section>
-  );
-}
-
 export default function Dashboard() {
   const { t, nm, fmtDay } = useI18n();
-  const { user, readonly } = useAuth();
+  const { user } = useAuth();
   const sum = useLoad(o => api.get('/tracker/summary', o), []);
   const pendingL = useLoad(o => api.get('/imports/pending-count', o), []);
   const editsL = useLoad(o => api.get('/approvals/pending-count', o), []);
@@ -120,8 +84,6 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
-
-      {readonly && <HomeNotifications />}
 
       <div className="grid-cards">
         <NumberCard label={t('functions_counted')} value={counts.functions}

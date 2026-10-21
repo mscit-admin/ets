@@ -16,7 +16,6 @@ import ly.ets.alerts.R
 import ly.ets.alerts.core.Alert
 import ly.ets.alerts.core.Severity
 import ly.ets.alerts.ui.MainActivity
-import ly.ets.alerts.ui.WebActivity
 import ly.ets.alerts.ui.OpenAlertActivity
 
 object Notifier {
@@ -179,7 +178,7 @@ object Notifier {
         val open = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, WebActivity::class.java),
+            Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return NotificationCompat.Builder(context, CHANNEL_SERVICE)

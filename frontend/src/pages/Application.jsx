@@ -8,7 +8,6 @@ import { PctEquation } from '../components/PctEquation.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { useLiveUpdates } from '../lib/live.js';
-import { useAuth } from '../lib/auth.jsx';
 import { MultiSelect } from '../components/MultiSelect.jsx';
 import { DisableReasonForm, DisabledReason, DISABLE_REASONS, emptyReason, noteProblem, reasonBody, reasonProblem, reasonText } from '../components/DisableReason.jsx';
 import { ITEM_TYPES, ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
@@ -132,10 +131,8 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }
   );
 }
 
-function StatusSelect({ value, prefix, disabled, onChange, label, ro }) {
+function StatusSelect({ value, prefix, disabled, onChange, label }) {
   const { t } = useI18n();
-  // read-only session (the Android app, 1.11.0): the status as text, in the colours of the list
-  if (ro) return <span className={'status-text s' + value} aria-label={label + ': ' + t(prefix + value)}>{t(prefix + value)}</span>;
   return (
     <select className={'input input-sm select-status s' + value} value={value} disabled={disabled} aria-label={label}
       onChange={e => onChange(parseInt(e.target.value, 10))}>
@@ -147,8 +144,6 @@ function StatusSelect({ value, prefix, disabled, onChange, label, ro }) {
 export default function Application() {
   const { id } = useParams();
   const { t, nm, errText, fmtDate, lang } = useI18n();
-  // read-only session (the Android app, 1.11.0): values as text, no editing control; the server's can flags are off too
-  const { readonly: ro } = useAuth();
   const location = useLocation();
   const { data, error, loading, reload, refresh } = useLoad(o => api.get(path`/tracker/applications/${id}`, o)
     .then(d => (d?.application && Array.isArray(d.functions) ? d : Promise.reject(notFoundError()))), [id]);
@@ -373,7 +368,7 @@ export default function Application() {
         <ItemTypeLegend reportsShare={settings.reports_share} />
 
         <div className="table-wrap">
-          <table className={'table fn-table' + (ro ? ' fn-ro' : '')}>
+          <table className="table fn-table">
             <thead>
               <tr>
                 <th className="w-check" title={t('enabled')}>✓</th>
@@ -391,13 +386,12 @@ export default function Application() {
               {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => (
                 <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')
                   + (typeOf(f) === 'report' ? ' row-report' : '')}>
-                  <td className="w-check" data-label={t('enabled')}>
-                    {ro ? <span className={'ro-flag' + (f.enabled ? ' on' : '')} role="img" aria-label={t('enabled') + ': ' + (f.enabled ? '✓' : '✗')}>{f.enabled ? '✓' : '✗'}</span> : (
+                  <td className="w-check">
                     <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at} aria-label={t('enabled')}
                       title={f.enabled ? t('exclude_hint') : t('include_hint')}
-                      onChange={e => setConfirm({ f, mode: 'toggle', enabled: e.target.checked })} />)}
+                      onChange={e => setConfirm({ f, mode: 'toggle', enabled: e.target.checked })} />
                   </td>
-                  <td className="fn-name" data-label={t('functions')}>
+                  <td className="fn-name">
                     <div className="fn-title">
                       <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at} onChange={v => patch(f, { item_type: v })} />
                       <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
@@ -433,17 +427,15 @@ export default function Application() {
                       {can.tog && f.removed_at && <button className="btn-link small" onClick={() => setConfirm({ f, mode: 'restore' })}>{t('fn_restore')}</button>}
                     </div>
                   </td>
-                  <td className="num-col" data-label={t('weight')}>{ro ? <span className="num ro-val">{pctText(f.weight)}</span>
-                    : <NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} />}</td>
-                  <td className="num-col" data-label={t('progress') + ' %'}>
-                    {ro ? <span className="num ro-val">{pctText(f.progress)}%</span>
-                      : <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })}
-                        check={v => (f.test_status === PASS && v < 100 ? t('pass_lower_blocked', { progress: pctText(v) }) : null)} />}
+                  <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
+                  <td className="num-col">
+                    <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })}
+                      check={v => (f.test_status === PASS && v < 100 ? t('pass_lower_blocked', { progress: pctText(v) }) : null)} />
                     <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
                   </td>
-                  <td data-label={t('test_status')}>
+                  <td>
                     <div className="ts-cell">
-                      <StatusSelect ro={ro} value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
+                      <StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
                       {!f.removed_at && passConflict(f) && (
                         <span className="pass-conflict" role="img" aria-label={t('pass_conflict_hint')} title={t('pass_conflict_hint') + ' — ' + t('pass_conflict_fix')}>
                           <Icon name="alert" size={15} />
@@ -451,15 +443,13 @@ export default function Application() {
                       )}
                     </div>
                   </td>
-                  <td data-label={t('notif_status')}><StatusSelect ro={ro} value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
-                  <td data-label={t('review_status')}><StatusSelect ro={ro} value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
-                  <td className={'w-check' + (ro && !f.note ? ' ro-empty' : '')} data-label={t('note')}>
-                    {/* read-only: the note opens for reading only, and there is nothing to open without one */}
-                    {(!ro || f.note) && (
+                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
+                  <td className="w-check">
                     <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNoteFor({ f })}
-                      title={f.note || (needsNote(f) ? t('note_required_hint') : ro ? t('note') : t('edit_note'))} aria-label={ro ? t('note') : t('edit_note')}>
+                      title={f.note || (needsNote(f) ? t('note_required_hint') : t('edit_note'))} aria-label={t('edit_note')}>
                       <Icon name="note" size={16} />
-                    </button>)}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -470,7 +460,7 @@ export default function Application() {
       </Card>
       </div>
 
-      {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={!ro && (can.tst || !!noteFor.pending)}
+      {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={can.tst || !!noteFor.pending}
         onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor.f, { ...(noteFor.pending || {}), note }); setNoteFor(null); }} />}
       {bulk && <BulkModal app={a} can={can} onClose={() => setBulk(false)} onDone={() => { setBulk(false); reload(); }} />}
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}

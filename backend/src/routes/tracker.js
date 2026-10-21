@@ -20,9 +20,6 @@ import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDis
   duplicatesOf } from '../services/disable.js';
 
 const r = Router();
-// The "can" flags a page shows its editing controls by: never for a read-only session (the Android app, 1.11.0),
-// whose changes the API refuses anyway (middleware/auth.js readonlyGuard).
-const mayEdit = (u, p) => hasPerm(u, p) && !u.readonly;
 r.use(requireAuth);
 
 const DATE = d => (d ? new Date(d).toISOString().slice(0, 10) : null);
@@ -126,7 +123,7 @@ export async function applicationData(user, id) {
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
-    can: { pct: mayEdit(u, 'pct'), wgt: mayEdit(u, 'wgt'), tst: mayEdit(u, 'tst'), tog: mayEdit(u, 'tog'), ren: mayEdit(u, 'ren'), mov: mayEdit(u, 'mov'), rep: mayEdit(u, 'rep') },
+    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep') },
   };
 }
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
@@ -750,7 +747,7 @@ export async function reportsData(user) {
         pending: pend.filter(p => p.app_id === a.id) };
     }),
     settings: calcSettings(v.settings),
-    can: { rep: mayEdit(user, 'rep') },
+    can: { rep: hasPerm(user, 'rep') },
   };
 }
 r.get('/reports', async (req, res) => res.json(await reportsData(req.user)));
@@ -820,7 +817,7 @@ export async function scheduleData(user) {
   const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const v = await loadVisible(user);
   return { ...scheduleJson(s), current_pct: v.calc.total.pct,
-    can: { sch: mayEdit(user, 'sch') && !!user.fullScope, timeline: mayEdit(user, 'cfg') && !!user.fullScope } };
+    can: { sch: hasPerm(user, 'sch') && !!user.fullScope, timeline: hasPerm(user, 'cfg') && !!user.fullScope } };
 }
 r.get('/schedule', async (req, res) => res.json(await scheduleData(req.user)));
 
@@ -931,7 +928,7 @@ export async function projectStatusData(user) {
     trend, dept_trend: deptTrend,
     // department status thresholds (Settings → Notifications), used by the status page and the plan alerts alike
     health_gaps: { riskGap: +v.settings['notify.dept_risk_gap'] || 5, delayGap: +v.settings['notify.dept_delay_gap'] || 15 },
-    can: { timeline: mayEdit(user, 'cfg') && !!user.fullScope, sch: mayEdit(user, 'sch') && !!user.fullScope },
+    can: { timeline: hasPerm(user, 'cfg') && !!user.fullScope, sch: hasPerm(user, 'sch') && !!user.fullScope },
   };
 }
 r.get('/project-status', async (req, res) => res.json(await projectStatusData(req.user)));

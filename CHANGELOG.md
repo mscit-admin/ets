@@ -28,77 +28,10 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
----
-
-## [1.11.0] — 2026-10-20 — The phone app shows ETS itself (view only)
-
-### Added
-- **Backend:** read-only sessions for the Android app. A sign-in (`POST /api/auth/login`, and the 2FA step) whose
-  `User-Agent` contains `ETSAlerts/<version> (Android)` creates a session with `client = 'mobile'`,
-  `readonly = true`; the 2FA step's new session keeps the flag. `readonlyGuard` (`backend/src/middleware/auth.js`,
-  mounted for the whole web API) answers every POST / PUT / PATCH / DELETE of such a session with
-  `403 readonly_session`, except `POST /auth/login`, `/auth/logout`, `/auth/2fa/verify`, `/auth/2fa/setup` and
-  `/auth/2fa/enable` (only while enrolment is the pending sign-in step), `/auth/change-password` (only while the
-  password must be changed), `PUT /auth/language`, `POST /notifications/:id/read|unread`, `/notifications/read-all`
-  and `PUT /notifications/prefs`. GETs, Excel exports included, keep their permission and scope checks.
-- **Backend:** `GET /api/auth/me` returns `readonly` and `client` (and `user.readonly`); the `can` flags of
-  `/tracker/applications/:id`, `/tracker/reports`, `/tracker/schedule`, `/tracker/project-status`, `/approvals` and
-  `/imports` (`can_import` too) are off for a read-only session; `GET /users/:id` lists each session's `client` /
-  `readonly`.
-- **Backend:** `auth_log` — sign-in rows from the app carry `detail.client = 'mobile'`, `detail.readonly = true`;
-  a refused change is written as `readonly_rejected` (path, method) and counted by the S5 «access denied» alert with
-  `access_denied` / `csrf_rejected`.
-- **Database:** migration `020_session_client.sql` — `sessions.client` (`web` | `mobile`, default `web`) and
-  `sessions.readonly` (default false).
-- **Frontend:** view-only mode when `/auth/me` says `readonly`: a «وضع العرض فقط» / "View only" badge in the top
-  bar; `can()` is false for the permissions that only allow changes (reading ones — `exp`, `log` — stay), so the
-  users and settings pages leave the menu and redirect home; imports and approvals leave the menu (they still open,
-  view only, from an alert); the application page shows weight, progress and the three statuses as text (no
-  checkboxes, pencil, move, remove / restore, bulk set or add; the note opens read-only); weights as text; the
-  profile page hides the password, 2FA and devices changes (language and alert preferences stay).
-- **Frontend:** «التنبيهات والإشعارات» / "Alerts and notifications" directly under the ERP wheel on the dashboard in
-  view-only mode: the latest 10 alerts (unread marked, a count badge), a tap opens the alert's page and marks it
-  read, «عرض الكل» opens `/notifications`. Browsers keep the bell instead.
-- **Frontend:** under 640px the read-only functions table becomes one card per item (label: value), so nothing
-  scrolls sideways at phone width.
-- **Android app 1.1.0** (`android/CHANGELOG.md`): the main screen is the ETS web application in a WebView (normal
-  sign-in with password + 2FA, cookie kept, User-Agent marker → read-only session), notification taps open inside
-  the app, pinned-certificate-only TLS override, paired-origin-only navigation, unpair wipes the WebView data.
-- **Tests:** `backend/test/readonly-session.test.js` (7) — a marker sign-in creates a read-only mobile session,
-  `/auth/me` and the audit detail; a browser session is unaffected; GETs and exports work with all `can` flags off and
-  the scope unchanged; PATCH function, rename, bulk, move, bulk-move, add, remove, approve, approve-all, import
-  approve, pair code, voluntary password change, 2FA setup, settings PUT, user PATCH / create, weights, schedule and
-  device DELETE get `403 readonly_session` (also with an upper-case path or dot segments) and change nothing; alerts
-  read / unread / read-all, preferences, language and logout work; the 2FA verify step keeps the session read-only;
-  enrolment at sign-in and a forced password change work. Android: `WebRulesTest` (5).
-
-### Fixed
-- **Frontend:** at phone width the department, weights and reports tables widened the whole page (horizontal
-  scroll); they now scroll inside their cards (weights and reports also leave out reference columns under 820px).
-  Under 560px the department table leaves out its progress bar (the % stays), cells have less side padding and
-  numeric headers may wrap, so the department, project status and reports tables fit 390px with no column hidden.
-
 ### Changed
 - **CI:** Android workflow (`.github/workflows/android.yml`) actions updated to their Node 24 majors (checkout v7,
   setup-java v6, upload-artifact v7, download-artifact v8, setup-android v4, gradle wrapper-validation v6,
   action-gh-release v3); runner pinned to `ubuntu-24.04` instead of `ubuntu-latest`.
-
-### Security
-- Read-only is a restriction, never a privilege: the User-Agent marker can be spoofed, but it only takes rights away
-  (a browser that sends it gets a read-only session; leaving it out gives nothing a normal sign-in does not), so it
-  cannot escalate. Enforced on the server for every change, not only hidden in the pages. See
-  `docs/handover/06-Security.md` §4c.
-- The app's WebView proceeds past a TLS error only for the pinned leaf certificate (SHA-256 of its DER) on the paired
-  host and port; no pin → system trust, no override.
-
-### Upgrade notes
-- Run the migrations (`update.sh` does): **`020_session_client.sql`** adds `sessions.client` and `sessions.readonly`
-  with defaults, so existing sessions stay ordinary browser sessions; no other action.
-- Install «ETS Alerts» **1.1.0** on the phones (tag `android-v1.1.0`) to get ETS inside the app. The 1.0.0 app keeps
-  working unchanged with this server (its `/api/m` calls are untouched). App 1.1.0 against an older server opens the
-  pages but the session is not limited to viewing — upgrade the server first.
-- Phones reach the web application through the same `PUBLIC_BASE_URL` and certificate as the pairing; nothing to
-  change in nginx. Users sign in once in the app with their usual password and 2FA.
 
 ---
 
@@ -1735,8 +1668,7 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/45e1f31...HEAD
-[1.11.0]: https://github.com/mscit-admin/ets/compare/dd41f54...45e1f31
+[Unreleased]: https://github.com/mscit-admin/ets/compare/dd41f54...HEAD
 [1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54
 [1.9.2]: https://github.com/mscit-admin/ets/compare/80f9472...1ff9138
 [1.9.1]: https://github.com/mscit-admin/ets/compare/b5eb9e2...80f9472

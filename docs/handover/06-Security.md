@@ -40,8 +40,6 @@
   `COOKIE_SECURE=false` uses `ets_sid`). The database stores only its SHA-256. A production server (`NODE_ENV=production`) refuses to start with
   `COOKIE_SECURE=false` unless `ALLOW_INSECURE_COOKIES=true` is set (lab systems only).
 - Signing in again from a browser revokes the session it had; completing 2FA issues a new token.
-- **Read-only sessions (1.11.0):** a sign-in from the Android app (User-Agent marker `ETSAlerts/<version> (Android)`)
-  creates a session with `client = 'mobile'`, `readonly = true` (migration 020) that can only read — see §4c.
 - The session expires 12 h after login (`SESSION_TTL_HOURS`) or after 60 min idle
   (`SESSION_IDLE_MINUTES`).
 - Sessions are revoked on logout, password change (other sessions), admin password reset, admin 2FA reset,
@@ -184,57 +182,6 @@ carries only `{unread, top_severity}`; alerts are not audit data. **Flood contro
 | Revocation | by the user (profile, or the phone: `DELETE /api/m/device`), an administrator (user page), and **in the same transaction** as deactivation, deletion and an administrator password reset; after `notify.device_idle_days` (90) without use by the daily check. Open phone streams close at once (and on every heartbeat re-check). `mobile_device_revoked` (auth_log) + `revoke:device` (audit_log, readable sentence) |
 | Phone content | only types whose policy allows the phone and that the user / an administrator did not take off the phone; a mandatory type kept off the phone appears as «لديك تنبيه جديد» without title or body; security and system alerts reach the phone without their body (no user names or IP addresses); S1, S2, S5, S8 are in-app only by default |
 | Transport | HTTPS through nginx; the QR carries `cert_sha256` (`TLS_CERT_SHA256`, the SHA-256 of the server certificate filled by install / update) for the app to pin; outside the organisation network only through the VPN — never expose the port to the internet |
-
-## 4c. Read-only phone sessions and the in-app browser / جلسات الجوال للعرض فقط (1.11.0)
-
-The Android app «ETS Alerts» 1.1.0 shows this web application in a WebView. Its sessions are **read-only, enforced by
-the server** (`backend/src/middleware/auth.js`):
-
-- **Marked at sign-in.** When `POST /api/auth/login` (or the 2FA step) carries a User-Agent matching
-  `\bETSAlerts/[0-9A-Za-z.+_-]{1,40} \(Android\)`, the session is created with `client = 'mobile'`,
-  `readonly = true`. The 2FA step's new session inherits the flag from the partial session (it can only be kept,
-  never dropped). The flag lives on the server-side session row for its whole life; the cookie carries nothing.
-- **Why a User-Agent is enough.** Read-only is a *restriction*, not a privilege: claiming to be the app only takes
-  rights away, and leaving the marker out gives nothing a normal browser sign-in does not already give (same
-  password, 2FA, lockout, permissions and scope). So spoofing the User-Agent cannot escalate anything, and no secret
-  in the app is needed. It is not a security boundary for the phone either: a phone user who wants to edit signs in
-  from a browser, which is allowed.
-- **Enforcement** — `readonlyGuard`, mounted for the whole web API after the CSRF check: any request of a read-only
-  session other than `GET` / `HEAD` / `OPTIONS` gets **`403 readonly_session`**, written to `auth_log` as
-  `readonly_rejected` (path, method; counted with `access_denied` / `csrf_rejected` by the S5 alert). Allowed, and
-  nothing else (paths compared in lower case without a trailing slash, as Express routes them):
-
-  | Request | Why |
-  |---|---|
-  | `POST /auth/login`, `/auth/logout`, `/auth/2fa/verify` | signing in again / out, the 2FA step |
-  | `POST /auth/2fa/setup`, `/auth/2fa/enable` — **only** while 2FA enrolment is the pending sign-in step | a policy that requires 2FA must not lock phone users out; from a full session these are refused |
-  | `POST /auth/change-password` — **only** while the password must be changed | a forced change is part of signing in; a voluntary change is refused |
-  | `PUT /auth/language` | display language |
-  | `POST /notifications/:id/read`, `/notifications/:id/unread`, `/notifications/read-all`; `PUT /notifications/prefs` | the user's own alerts and their muting — personal, not tracker data |
-
-  Everything else is refused, including the user's own 2FA disable / new recovery codes, a voluntary password
-  change, pairing codes and device revocation: those are changes to the account's security and stay in a browser.
-- **Reading is unchanged.** All `GET`s keep their permission and scope checks; the session has the account's full
-  permissions for reading (so approvers still receive approval alerts). **Excel exports** (`GET /export/*`, `exp`)
-  are therefore allowed, as reading; the in-app browser cannot save them, so in practice they are made in a browser.
-- **The pages** (`/auth/me` → `readonly: true`) hide every editing control and the users / settings pages, and the
-  API's `can` flags (application, reports, schedule, project status, approvals, imports) are off for the session —
-  a convenience on top of the guard, not the control.
-- **Audit:** the sign-in rows (`login`, `password_ok_mfa_pending`, and failed attempts on a known account) carry
-  `detail.client = 'mobile'`, `detail.readonly = true`; the administrator's user page lists sessions with
-  `client` / `readonly`.
-
-**The in-app browser** (`android/app/src/main/java/ly/ets/alerts/ui/WebActivity.kt`, rules in `core/WebRules.kt`):
-
-| Item | Rule |
-|---|---|
-| Origin | only the paired `PUBLIC_BASE_URL` (https, host, port, base path) loads in the WebView; anything else opens in the external browser (`http`/`https`/`mailto` only) |
-| WebView settings | JavaScript + DOM storage on; file access, content access, file-URL access, geolocation, multiple windows, mixed content and third-party cookies off; **no `addJavascriptInterface`** |
-| TLS with a pin (`cert_sha256` from the pairing QR) | `onReceivedSslError` → `proceed()` **only** when the failing URL is on the paired host and port **and** SHA-256 of the leaf certificate's DER equals the pin (leaf from `SslCertificate.getX509Certificate()` on Android 10+ / API 29+, from the `"x509-certificate"` entry of `SslCertificate.saveState()` on API 26–28); otherwise `cancel()` and an error screen. A page loaded with a system-trusted certificate is still compared with the pin when it finishes loading |
-| TLS without a pin | the phone's trust store decides; no override path |
-| Session | the normal web sign-in (password + 2FA); cookie `__Host-ets_sid` in the WebView's cookie store; server idle / absolute expiry. The device token (`/api/m`) is never used by the WebView, and the WebView's cookie never reaches `/api/m` |
-| Unpair / revocation | cookies, web storage and the WebView cache are wiped |
-| Notification tap | opens `{url}{link}` inside the WebView; the link is a same-origin path or the server root |
 
 ## 5. Web protections
 

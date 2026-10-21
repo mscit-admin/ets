@@ -17,7 +17,6 @@ import ly.ets.alerts.net.Http
 import ly.ets.alerts.net.RemoteUnpair
 import ly.ets.alerts.notify.Notifier
 import ly.ets.alerts.service.AlertStreamService
-import ly.ets.alerts.ui.WebData
 import ly.ets.alerts.work.PollWorker
 import java.util.concurrent.TimeUnit
 
@@ -105,7 +104,6 @@ object Session {
             stopDelivery(app)
             val remote = api?.unregisterDevice() ?: RemoteUnpair.ALREADY_GONE
             Settings.get(app).clearPairing()
-            WebData.clear(app)          // the in-app browser's ETS session goes with the pairing (1.1.0)
             Notifier.cancelAllAlerts(app)
             AlertsBus.changed()
             return remote == RemoteUnpair.FAILED
@@ -123,7 +121,6 @@ object Session {
         val app = context.applicationContext
         stopDelivery(app)
         val hadPairing = Settings.get(app).clearPairing()
-        WebData.clear(app)
         Notifier.cancelAllAlerts(app)
         if (hadPairing && !userUnpairing) Notifier.showRevoked(app)
         AlertsBus.changed()

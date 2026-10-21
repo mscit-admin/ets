@@ -94,8 +94,6 @@ async function visibleChanges(user, meta, rows, appsOf) {
 }
 
 export function importAbilities(user, b, meta, appIds) {
-  // a read-only session (the Android app, 1.11.0) is offered no action; the API refuses them anyway
-  if (user.readonly) return { approve_lead: false, approve_final: false, reject: false };
   const pending = b.status === 'pending';
   const s = sees(user, b, meta, appIds);
   const notUploader = b.uploaded_by !== user.id;
@@ -240,7 +238,7 @@ export async function listBatches(user, qs = {}, { limit = 300 } = {}) {
   return seen.map(b => ({ ...forReader(user, b, meta, appsOf.get(b.id), vis.get(b.id) || []), can: importAbilities(user, b, meta, appsOf.get(b.id)) }));
 }
 
-r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, req.query), can_import: hasPerm(req.user, 'imp') && !req.user.readonly }));
+r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, req.query), can_import: hasPerm(req.user, 'imp') }));
 
 // Batches waiting for this user's signature (sidebar badge, dashboard notice).
 r.get('/pending-count', async (req, res) => {

@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import fs from 'node:fs';
 import { config } from './config.js';
-import { sessionMiddleware, readonlyGuard } from './middleware/auth.js';
+import { sessionMiddleware } from './middleware/auth.js';
 import { accessLog, csrfGuard, errorHandler, notFoundHandler } from './middleware/common.js';
 import { jsonBody } from './middleware/body.js';
 import authRoutes from './routes/auth.js';
@@ -51,7 +51,6 @@ export function createApp() {
   api.use(sessionMiddleware);
   api.use(accessLog);
   api.use(csrfGuard);
-  api.use(readonlyGuard);  // the Android app's sessions (1.11.0): reading only, a few personal actions allowed
   api.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   api.use('/auth', authRoutes);
   api.use('/tracker', trackerRoutes);

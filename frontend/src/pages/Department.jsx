@@ -25,8 +25,6 @@ export default function Department() {
         <div className="head-pct"><Pct value={d.pct} /></div>
       </PageHeader>
       <Card>
-        {/* the table scrolls inside its card, never the page (phones, 1.11.0) */}
-        <div className="table-wrap">
         <table className="table list-view">
           <thead>
             <tr>
@@ -34,7 +32,7 @@ export default function Department() {
               <th className="hide-mobile">{t('functions')}</th>
               <th className="hide-mobile">{t('test_status')}</th>
               <th className="num-col">{t('weight')}</th>
-              <th className="w-30 bar-col">{t('progress')}</th>
+              <th className="w-30">{t('progress')}</th>
               <th className="num-col">%</th>
             </tr>
           </thead>
@@ -66,13 +64,12 @@ export default function Department() {
                   </span>
                 </td>
                 <td className="num-col num">{pc(a.calc.weight)}</td>
-                <td className="bar-col"><ProgressBar value={a.calc.pct} /></td>
+                <td><ProgressBar value={a.calc.pct} /></td>
                 <td className="num-col"><Pct value={a.calc.pct} /></td>
               </tr>
             ))}
           </tbody>
         </table>
-        </div>
       </Card>
     </div>
   );

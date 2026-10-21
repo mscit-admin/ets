@@ -315,7 +315,7 @@ async function securityChecks(ctx) {
     for (const user of admins) entries.push({ user, dedupeKey: `failed_logins:all:${hourKey(now)}`, count: total, link: '/logs?tab=auth', params: { minutes: 15 } });
   }
   if (entries.length) { await deliver('failed_logins', entries); out.failed_logins = entries.length; }
-  const denied = (await query(`SELECT count(*)::int AS n FROM auth_log WHERE ts > now() - interval '1 hour' AND event IN ('access_denied','csrf_rejected','readonly_rejected')`)).rows[0].n;
+  const denied = (await query(`SELECT count(*)::int AS n FROM auth_log WHERE ts > now() - interval '1 hour' AND event IN ('access_denied','csrf_rejected')`)).rows[0].n;
   if (denied >= s['notify.access_denied_threshold']) {
     const e = reach(ctx, 'access_denied').map(user => ({ user, dedupeKey: `access_denied:${hourKey(now)}`, count: denied, link: '/logs?tab=auth' }));
     await deliver('access_denied', e); out.access_denied = e.length;

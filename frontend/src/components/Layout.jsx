@@ -11,7 +11,7 @@ import { NotificationBell } from './NotificationBell.jsx';
 
 function Navbar({ onMenu }) {
   const { t, lang, setLang, nm } = useI18n();
-  const { user, me, logout, readonly } = useAuth();
+  const { user, me, logout } = useAuth();
   const { logo } = useBranding();
   const nav = useNavigate();
   const [q, setQ] = useState('');
@@ -44,12 +44,6 @@ function Navbar({ onMenu }) {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('search_placeholder')} aria-label={t('search_placeholder')} />
         </form>
         <div className="nav-right">
-          {/* the Android app's read-only session (1.11.0): changes are made from a browser */}
-          {readonly && (
-            <span className="ro-badge" role="status" title={t('readonly_hint')}>
-              <Icon name="eye" size={13} /><span>{t('readonly_badge')}</span>
-            </span>
-          )}
           <NotificationBell />
           <button className="btn btn-sm btn-ghost" onClick={switchLang} title={t('language')}>
             <Icon name="globe" size={15} /> <span className="hide-mobile">{t('lang_switch')}</span>
@@ -77,7 +71,7 @@ function Navbar({ onMenu }) {
 
 function Sidebar({ open, onClose }) {
   const { t, nm } = useI18n();
-  const { can, user, readonly } = useAuth();
+  const { can, user } = useAuth();
   const { data } = useLoad(() => api.get('/tracker/summary'), []);
   const loc = useLocation();
   // batches waiting for this user's signature; refreshed on every page change
@@ -118,8 +112,6 @@ function Sidebar({ open, onClose }) {
           {link('/status', 'pulse', t('nav_status'))}
           {link('/weights', 'scale', t('nav_weights'))}
           {link('/schedule', 'curve', t('nav_schedule'))}
-          {/* imports and approvals are actions: not in the read-only app's menu (their pages still open from an alert, view only) */}
-          {!readonly && <>
           <NavLink to="/imports" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
             <Icon name="upload" size={16} /><span>{t('nav_imports')}</span>
             {pending?.awaiting_me > 0 && <span className="side-badge" title={t('awaiting_you', { n: pending.awaiting_me })}>{pending.awaiting_me}</span>}
@@ -128,8 +120,6 @@ function Sidebar({ open, onClose }) {
             <Icon name="check" size={16} /><span>{t('nav_approvals')}</span>
             {edits?.awaiting_me > 0 && <span className="side-badge" title={t('edits_awaiting_you', { n: edits.awaiting_me })}>{edits.awaiting_me}</span>}
           </NavLink>
-          </>}
-          {readonly && link('/notifications', 'bell', t('notifications'))}
         </div>
         <div className="side-section">
           <div className="side-label">{t('departments')}</div>

@@ -13,16 +13,7 @@
     <string name="state_read">Read</string>
     <string name="state_unread">Unread</string>
     <string name="error_unreachable">Could not reach the ETS server. Check that the VPN is connected.</string>
-    <string name="no_browser">No browser is installed to open this link.</string>
-
-    <!-- ETS in the app (WebView) -->
-    <string name="action_home">ETS home</string>
-    <string name="action_alerts">Alerts list</string>
-    <string name="web_error_title">ETS cannot be reached</string>
-    <string name="web_error_body">The page could not be loaded. Check that the phone is connected to the company VPN, then try again.</string>
-    <string name="web_error_tls">Secure connection refused: the server certificate does not match the one this phone was paired with.</string>
-    <string name="web_retry">Try again</string>
-    <string name="web_download_unsupported">Files cannot be downloaded in the app. Open ETS in a browser to export.</string>
+    <string name="no_browser">No browser is installed to open this alert.</string>
 
     <!-- Notifications -->
     <string name="public_alert_title">New ETS alert</string>
@@ -64,7 +55,7 @@
     <string name="battery">Battery optimisation settings</string>
     <string name="battery_desc">For reliable delivery, set ETS Alerts to “Not optimised” / “Unrestricted”.</string>
     <string name="battery_settings_missing">Battery settings are not available on this device.</string>
-    <string name="open_alerts">Open ETS</string>
+    <string name="open_alerts">Open alerts</string>
     <string name="unpair">Unpair</string>
     <string name="confirm_unpair_message">Unpair this phone? It will stop receiving ETS alerts and the server will be asked to remove it.</string>
     <string name="unpair_remote_failed">Unpaired on this phone, but the ETS server could not be reached to confirm. Please also remove the device on the web under Profile → My devices.</string>
