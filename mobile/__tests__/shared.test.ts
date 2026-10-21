@@ -22,6 +22,10 @@ describe('modules shared with the web frontend', () => {
     const used = [...web.matchAll(/from '@web\/([^']+)'/g)].map(m => m[1]).sort();
     expect(used).toEqual([...SHARED].sort());
   });
+  it('the CI workflow watches them', () => {
+    const wf = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/mobile.yml'), 'utf8');
+    for (const f of SHARED) expect(wf).toContain(`frontend/src/${f}`);
+  });
 });
 
 describe('icons', () => {
