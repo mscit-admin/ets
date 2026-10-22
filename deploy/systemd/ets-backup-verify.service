@@ -1,0 +1,16 @@
+# ETS weekly test restore (1.12.0): the newest backup restored into a temporary database (ets_restore_check),
+# migrations and verify-audit run on it, row counts compared; the live database is only read.
+[Unit]
+Description=ETS weekly test restore of the newest backup
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+Environment=ETS_VERIFY_SCHEDULED=1
+ExecStart=/usr/local/bin/ets-backup-verify
+StandardOutput=append:/var/log/ets-backup-verify.log
+StandardError=append:/var/log/ets-backup-verify.log
+Nice=10
+TimeoutStartSec=6h
+PrivateTmp=true
+UMask=0077

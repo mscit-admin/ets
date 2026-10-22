@@ -28,7 +28,8 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/ets
+# 1.12.0: the backup agent inbox (single-use secrets, wake-up file) and the upload area of a restore
+ReadWritePaths=/var/log/ets -/var/lib/ets/inbox -/var/lib/ets/upload
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

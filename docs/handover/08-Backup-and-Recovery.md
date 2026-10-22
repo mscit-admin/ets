@@ -1,115 +1,321 @@
 # 08 — Backup & Recovery
 
-## 1. What must be protected
+Since 1.12.0 the backups run **every hour**, cover the database, the server configuration and the text logs, are
+copied to up to three **offsite destinations**, are **test-restored every week**, and are managed — including the
+restore — from **Settings → «النسخ الاحتياطي»** (system administrators only). The command-line tools remain as the
+fallback when the web UI cannot be used.
 
-| Item | Location | Why |
-|---|---|---|
-| Database | PostgreSQL `ets` | All data: users, progress, logs |
-| Configuration | `/etc/ets/ets.env` | `APP_SECRET` (decrypts 2FA keys) and the DB password |
-| Backup key | `/etc/ets/backup.key` | Decrypts the backups — without it they cannot be restored |
-| TLS certificate | `/etc/ssl/...` or `/etc/letsencrypt/` | HTTPS |
-| Application code | `/opt/ets` | Can be reinstalled from the repository |
-
-## 2. Automatic backups
-
-- `/etc/cron.d/ets-backup` runs `/usr/local/bin/ets-backup` **every day at 01:30**.
-- Output: `/var/backups/ets/ets-YYYYmmdd-HHMMSS.dump.gpg` — a pg_dump (custom format) **encrypted with gpg
-  (AES-256, tamper-evident)** using the backup key `/etc/ets/backup.key` — and `<file>.sha256` (checksum).
-  Files are root-only (600) in a root-only directory.
-- The configuration (`ets.env`) is **not** copied next to the dumps any more. A copy left there by an older
-  version (`ets.env.backup`) is deleted, and older unencrypted `*.dump` files are encrypted, at the next run.
-- Backups older than **30 days** are deleted (`ETS_BACKUP_KEEP_DAYS`).
-- Each run is logged in `/var/log/ets-backup.log` (root-only, rotated monthly) and in the system log
-  (`event = backup`).
-- With a remote database the dump travels over TLS (the `PGSSLMODE` / `PGSSLROOTCERT` of `ets.env`).
-
-Manual backup: `sudo ets-backup`
-
-**Copy the backups off the server.** A backup kept on the same disk does not protect against losing the
-server. The files are encrypted, so the backup host never sees the data. Example (daily, to a backup host):
-
-```bash
-# /etc/cron.d/ets-offsite
-0 3 * * * root rsync -a /var/backups/ets/ backup@backup-host:/srv/backups/ets/
-```
-
-### Key escrow — do this once, right after the installation
-
-The backups are useless without the backup key, and a restored database needs the same `APP_SECRET` for
-users' 2FA. Keep both **away from the backup files** (never on the backup host):
-
-```bash
-sudo cat /etc/ets/backup.key      # 64 characters
-sudo cat /etc/ets/ets.env         # APP_SECRET and the DB password
-```
-
-Store them in the organisation's password manager / vault, or print them and keep the sheet in a sealed
-envelope in a safe; ideally two people know where. Record the date. If the backup key is ever exposed:
-create a new one (`sudo sh -c 'umask 077; openssl rand -base64 48 > /etc/ets/backup.key'`), escrow it, take a
-new backup, and delete the backups made with the old key once they are no longer needed.
-
-## 3. Restore
-
-```bash
-sudo ls -lt /var/backups/ets/ | head                           # choose a .dump.gpg file
-sudo ets-restore /var/backups/ets/ets-20261012-013000.dump.gpg
-# type YES
-```
-
-`ets-restore`:
-
-1. checks the file against its `.sha256` checksum, decrypts it with `/etc/ets/backup.key` (a damaged or
-   altered file is refused) and checks it is a valid dump — nothing is changed yet;
-2. takes a fresh backup of the current data (so a restore can itself be undone);
-3. stops the service, restores in **one transaction** (any error → nothing is changed), starts the service.
-
-The change history and sign-in log are protected in the database (owned by `ets_log_owner`, see
-[07 §3](07-Logging-and-Audit.md)), so the application role alone cannot replace them. For a local database
-`ets-restore` therefore restores through `ets-log-protect restore`: one PostgreSQL-superuser transaction in which
-the restore runs as the application role and the protection is applied again before `COMMIT`. Then it applies the
-migrations of the installed version (a backup from an older version is brought up to date) and checks
-`ets-log-protect status`. For a **remote** database whose log tables the DBA has protected, `ets-restore` stops
-before changing anything unless the DBA provides a superuser connection:
-`sudo ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full' ets-restore <file>`.
-
-Then check: sign in, open the dashboard, look at *Logs → System* (`restore` event). Older, unencrypted
-`.dump` files can still be restored (a warning is shown).
-
-## 4. Disaster recovery (new server)
-
-1. Install Ubuntu Server and copy the repository.
-2. **Before** running the installer, put back the escrowed configuration and backup key:
-   ```bash
-   sudo mkdir -p /etc/ets
-   sudo nano /etc/ets/ets.env        # paste the saved file;  then: sudo chmod 640 /etc/ets/ets.env
-   sudo sh -c 'umask 077; nano /etc/ets/backup.key'   # paste the saved key (one line)
-   ```
-3. Run `sudo bash deploy/install.sh`. Answer with the same database name and user as before, and press
-   Enter at the database password question to keep the one in `ets.env`. The existing `APP_SECRET` and
-   backup key are kept automatically. For the administrator, give any password; the restore replaces the users.
-4. Copy the latest `.dump.gpg` (and `.sha256`) back to `/var/backups/ets/` and run `sudo ets-restore <file>`.
-
-Users keep their passwords and 2FA, because `APP_SECRET` is the same.
-
-## 5. Targets
-
-| Measure | Value with the default setup |
+| Target | Value |
 |---|---|
-| RPO (maximum data loss) | 24 h (daily backup). Run backups more often from cron if needed |
-| RTO (time to restore) | about 30–60 min on a new server, about 5 min on the same server |
+| **RPO** (data lost at most) | **1 hour** (hourly backups; offsite within minutes after each one) |
+| **RTO** (back in service) | same server: 5–15 min from the web UI · new server: 45–90 min (install + restore), see §10 |
 
-## 6. Restore test (recommended every 3 months)
+## 1. What is backed up
+
+| Item | Where on the server | In the backups | Notes |
+|---|---|---|---|
+| Database | PostgreSQL (`ets`) | `ets-<time>.dump.gpg` every run | `pg_dump` custom format, restored as a whole |
+| Roles of the cluster | PostgreSQL | inside the configuration bundle (`globals.sql`) | `pg_dumpall --globals-only`: with password hashes when run as root on a local database (through the `postgres` account), otherwise as the application role with `--no-role-passwords` (a non-superuser cannot read `pg_authid`); omitted with a note in the manifest if neither works. For reference — the installer recreates the application role |
+| `ets.env` (APP_SECRET, DB password) | `/etc/ets/ets.env` | configuration bundle | APP_SECRET decrypts users' 2FA keys and phone tokens |
+| `install.conf` (installation answers) | `/etc/ets/install.conf` | configuration bundle | |
+| Database CA (remote DB) | `/etc/ets/db-ca.crt` | configuration bundle (when present) | |
+| TLS certificate **and key** | self-signed `/etc/ssl/certs/ets-selfsigned.crt` + `/etc/ssl/private/ets-selfsigned.key`; own certificate: the paths in `install.conf`; Let's Encrypt: the whole `/etc/letsencrypt` | configuration bundle | the phones pin the certificate's SHA-256 — keeping it keeps them paired (§11) |
+| nginx site, `backup.conf` | `/etc/nginx/…`, `/etc/ets/backup.conf` | configuration bundle (reference only, never restored) | regenerated by the installer / the backup agent |
+| Text logs | `/var/log/ets/*.log*` (incl. rotated `.gz`), `/var/log/ets-backup.log`, `ets-offsite.log`, `ets-backup-verify.log`, `ets-backup-agent.log`, `ets-install.log` | `ets-logs-<date>.tar.gpg` once a day | ETS's own logs only (no syslog, no nginx logs) |
+| **Backup key** | `/etc/ets/backup.key` | **NEVER** | escrow it by hand (§6) — without it nothing can be restored |
+| Application code | `/opt/ets` | no | reinstalled from the repository (the manifest records version and commit) |
+
+## 2. The backup files
+
+All in `/var/backups/ets` (root only, 700), every artifact **encrypted with gpg (AES-256, tamper-evident)** using the
+backup key:
+
+| File | Content | When |
+|---|---|---|
+| `ets-YYYYmmdd-HHMMSS.dump.gpg` | database (pg_dump custom format, compressed) | every run |
+| `ets-config-YYYYmmdd-HHMMSS.tar.gpg` | `files/<original path>` of the files above, `globals.sql`, `manifest.json` | every run, **kept only when its content changed** (compared by a hash of the files, roles, server identity and key id; otherwise "configuration unchanged since …") |
+| `ets-logs-YYYYmmdd.tar.gpg` | the text logs above (gpg-compressed) | the first run at or after the logs time (default 00:45) each day |
+| `<file>.sha256` | checksum | with each artifact |
+| `<file>.meta` | **not secret**: kind, time, size, id of the key that encrypted it, ETS version, host name, APP_SECRET fingerprint; dumps: database size, tables, rows; bundles: items, certificate SAN / SHA-256, address | lets the restore wizard tell which key is needed and what a backup holds **before** the key is typed |
+
+`manifest.json` (inside the encrypted bundle): ETS version and git commit (`/opt/ets/BUILD-INFO`), PostgreSQL version,
+database name / user / host / port, host name and IP addresses, address, `PUBLIC_BASE_URL`, `TLS_CERT_SHA256`, the
+certificate (mode, paths, SHA-256, SAN, expiry), APP_SECRET fingerprint, backup key id, roles mode, per-table row
+estimates and sizes, and every file with its path, mode, owner, size and SHA-256.
+
+The **key id** is a salted scrypt hash of the key / passphrase (16 hex digits): it identifies a key without allowing
+it to be guessed. The **APP_SECRET fingerprint** is an HMAC of a constant with APP_SECRET; the API also stores it in
+the database (`settings.system.app_secret_fp`), so a backup from a server with another APP_SECRET is recognised.
+
+## 3. Schedule, retention, locking
+
+* **systemd timers** (they replace `/etc/cron.d/ets-backup`, which `update.sh` removes):
+  `ets-backup.timer` (hourly at :07 by default; every 2/4/6/12 h or daily from the web UI) and
+  `ets-backup-verify.timer` (weekly, Friday 03:00 by default). Why timers rather than cron: `Persistent=true` runs a
+  backup missed while the server was off at the next boot; a oneshot service never runs twice at the same time;
+  `systemctl list-timers ets-*` shows the next run (also shown in the web UI); output goes to the log files and
+  the journal. The schedule set in the web UI is written by the backup agent into
+  `/etc/systemd/system/ets-backup.timer.d/schedule.conf` (and `ets-backup-verify.timer.d/`).
+* **No overlap**: `ets-backup` takes `flock /run/lock/ets-backup.lock` (waits up to 1 h); a restore holds it too.
+* **Retention (tiers, by the timestamp in the file name — never by file date)**, configurable in the web UI:
+
+  | Tier | Default | Kept |
+  |---|---|---|
+  | hourly | 48 hours | every backup of the last 48 h |
+  | daily | 30 days | the newest backup of each day |
+  | weekly | 12 weeks | the newest of each ISO week |
+  | monthly | 12 months | the newest of each calendar month |
+
+  The newest backup is never deleted; a name with a future or impossible date is kept; a configuration bundle is kept
+  as long as a kept dump was made while it was in force; logs bundles follow the same tiers; `.sha256` / `.meta` go
+  with their file; other files are never touched. The same function (`bk_retention_plan` in
+  `deploy/scripts/backup-lib.sh`, unit-tested by `deploy/tests/backup-retention.test.sh`) is applied **locally and on
+  every destination**.
+* **Update from 1.11.0**: `/etc/ets/backup.conf` is created with the daily tier = max(30, `ETS_BACKUP_KEEP_DAYS`), so
+  the existing dailies (one per day at 01:30) all stay; the first hourly run only applies the tiers to them.
+
+Manual backup: `sudo ets-backup` (or «نسخ احتياطي الآن»). Logs: `/var/log/ets-backup.log`, `/var/log/ets-offsite.log`.
+
+## 4. Offsite destinations
+
+Each backup is copied, already encrypted, to every enabled destination right after it is made. Each destination is
+independent (one failing does not stop the others), the copy is written under a temporary name and renamed when
+complete, then **read back** (rsync checksum comparison / `rclone check` of size and hash), and the same retention
+is applied there. Every copy writes a `backup_offsite` row `{dest, ok, target, files, deleted, error}` to the system
+log; «النسخة الخارجية متأخرة/فشلت» (S9) alerts the administrators per destination.
+Configure them in **Settings → «النسخ الاحتياطي» → «الوجهات الخارجية»** (password and 2FA code asked again), then
+«اختبار الاتصال» (writes, reads back and deletes a test file).
+
+### 4a. Another server over SSH (rsync)
+
+On the **backup server** (once):
+```bash
+sudo useradd -m -s /bin/sh etsbackup
+sudo install -d -o etsbackup -m 700 /srv/backups/ets
+sudo apt-get install -y rsync          # provides /usr/bin/rrsync (restricted rsync)
+```
+In the web UI: target `etsbackup@<backup server>:/srv/backups/ets`, port → **«إنشاء مفتاح»**: the ETS server creates
+`/etc/ets/backup_ssh_key` (ed25519, root 600) and shows the public key and the line to put in
+`~etsbackup/.ssh/authorized_keys` on the backup server:
+```
+restrict,command="rrsync /srv/backups/ets" ssh-ed25519 AAAA… ets-backup@ets
+```
+`restrict` forbids shells, forwarding and ttys; `rrsync` limits the key to rsync inside that one directory (paths are
+relative to it). For **append-only** copies (ransomware protection) use `command="rrsync -no-del /srv/backups/ets"`
+and untick «تطبيق مدة الاحتفاظ على هذه الوجهة»: the backup server then applies its own retention. The host key is
+accepted on the first connection (`StrictHostKeyChecking=accept-new`, `/etc/ets/backup_known_hosts`): compare the
+fingerprint shown after the first successful test with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the
+backup server. Installer: `ETS_BACKUP_SSH_TARGET`; command line: `sudo ets-backup --ssh-key`.
+
+### 4b. NAS (NFS / SMB mount)
+
+Mount the share under `/mnt`, `/media` or `/srv` (other paths are refused), e.g. `/etc/fstab`:
+```
+nas01:/volume1/ets  /mnt/ets-backup  nfs   defaults,_netdev,nofail  0 0
+//nas01/ets         /mnt/ets-backup  cifs  credentials=/root/.nas-cred,uid=0,gid=0,file_mode=0600,dir_mode=0700,_netdev,nofail  0 0
+```
+then «NAS» → `/mnt/ets-backup`. Before each copy `mountpoint -q` must succeed: **when the NAS is not mounted nothing is
+written** (the root disk never fills up) and the copy is reported as failed.
+
+### 4c. Cloud object storage (S3-compatible, rclone)
+
+`rclone` is installed by `install.sh` / `update.sh`. In the web UI choose «تخزين متوافق مع S3»: provider, endpoint
+(not for AWS), region, bucket, path, access key id and secret key. The keys are **write-only** (shown as «محفوظ»),
+stored in the database encrypted with an HKDF key derived from APP_SECRET (AES-256-GCM, `services/crypto.js`), and
+the root backup agent writes them into `/etc/ets/rclone.conf` (root, 600, remote `ets-cloud`); the file is removed
+when the cloud copy is switched off. The files are already encrypted with the backup key before they leave the
+server. Give the key **only** the rights it needs on that bucket / prefix (list, get, put, delete; no bucket admin);
+with object lock / versioning, untick the retention there and let the bucket's lifecycle rules delete. Alternative:
+«وجهة rclone مُعدّة يدوياً»: configure a remote with `sudo rclone config --config /etc/ets/rclone.conf` and enter
+`name:bucket/path` (installer: `ETS_BACKUP_RCLONE_REMOTE`).
+
+## 5. Managing backups from the web UI (how it stays safe)
+
+Settings → «النسخ الاحتياطي» (role admin with `cfg`) shows: the last local backup (time, size, late?), every
+destination (last copy, state, error), the last test restore, the next runs, free space on the backup disk, the
+key id and its escrow; the schedule and retention; the destinations; the backup files (database / configuration /
+logs) with date, size, checksum, key and on which destination each one is; «نسخ احتياطي الآن» and «تحقق الآن» with live
+progress; the key / passphrase; the restore wizard.
+
+The web application runs as the unprivileged user `ets` and **never gets root**. It stores the desired configuration
+(`backup_config`) and queues jobs (`backup_jobs`: `backup_now`, `verify_now`, `test_destination`,
+`generate_ssh_key`, `set_passphrase`, `restore_inspect`, `restore_run` only). The **backup agent**
+(`ets-backup-agent.service`, root, started every 30 s by `ets-backup-agent.timer` and at once by
+`ets-backup-agent.path` when the API touches `/var/lib/ets/inbox/.wake`) validates the configuration again with the
+same strict rules (host, user, path, remote, endpoint, bucket: whitelisted characters, no `..`; NAS only under
+`/mnt`, `/media`, `/srv`), refuses it otherwise (the error is shown in the UI and nothing is written), writes only
+its fixed files (`backup.conf`, `rclone.conf`, `backup.key`, the timer drop-ins), starts commands with argument
+lists (never a shell), and writes the status back. `update.sh` / `install.sh` install and enable it and import an
+existing `backup.conf` into the database once.
+
+Every change and every job request is in the change history with readable sentences (old → new; secrets as
+«(تغيّر — لا يُعرض)»). Changing destinations or credentials, creating the SSH key and setting a passphrase ask for the
+password (and the 2FA code) again. Job requests are rate-limited (20 per 10 minutes per administrator).
+
+## 6. Key escrow — do this now, and check it every year
+
+**Without the backup key no backup can ever be restored**, and a restored database needs the same APP_SECRET for 2FA
+and the phones. The key is deliberately not in any backup. Escrow it right after the installation:
 
 ```bash
-F=$(sudo ls -1t /var/backups/ets/*.dump.gpg | head -1)
-sudo sh -c "cd /var/backups/ets && sha256sum -c $(basename "$F").sha256"
-sudo gpg --batch --pinentry-mode loopback --passphrase-file /etc/ets/backup.key -d "$F" > /tmp/ets-test.dump
-sudo chown postgres /tmp/ets-test.dump
-sudo -u postgres createdb ets_restore_test
-sudo -u postgres pg_restore --no-owner --no-acl -d ets_restore_test /tmp/ets-test.dump
-sudo -u postgres psql -d ets_restore_test -c "SELECT count(*) FROM functions; SELECT max(ts) FROM audit_log;"
-sudo -u postgres dropdb ets_restore_test; sudo shred -u /tmp/ets-test.dump
+sudo cat /etc/ets/backup.key        # one line (64 characters, or the passphrase you set)
+sudo cat /etc/ets/backup.key.id     # its id, shown in the web UI next to every backup
 ```
 
-Also check once a year that the escrowed backup key and `ets.env` can be found and match the server
-(`sudo sha256sum /etc/ets/backup.key` against the escrowed copy).
+Then tick «تأكيد حفظ مفتاح التشفير» in Settings → «النسخ الاحتياطي»; the warning banner stays until it is confirmed and
+comes back after a year and whenever the key changes.
+
+**Escrow checklist (print it, fill it in, keep it with the envelope)**
+
+| ✔ | Step | Done by / date |
+|---|---|---|
+| ☐ | Copy the content of `/etc/ets/backup.key` (or the passphrase) into the organisation's password vault **and** on paper in a sealed envelope | |
+| ☐ | Write the key id (`/etc/ets/backup.key.id`) on the envelope and in the vault entry | |
+| ☐ | Store the envelope in a safe in another building than the server; two named people know where | |
+| ☐ | Never put the key on the backup server, the NAS or in the cloud bucket | |
+| ☐ | Tick «تأكيد حفظ مفتاح التشفير» in the web UI | |
+| ☐ | Yearly: compare `sudo sha256sum /etc/ets/backup.key` with the escrowed copy; confirm again in the UI | |
+| ☐ | After a key change (new passphrase): escrow the new key **and keep the old one** as long as backups made with it exist | |
+
+> **قائمة حفظ المفتاح:** انسخ محتوى ‎/etc/ets/backup.key‎ إلى خزنة كلمات المرور وعلى ورقة في ظرف مختوم، واكتب معرّف المفتاح
+> عليهما، واحفظ الظرف في خزنة خارج مبنى الخادم ويعرف مكانه شخصان، ولا تضع المفتاح أبداً مع النسخ، ثم أكّد الحفظ في
+> الإعدادات ← النسخ الاحتياطي، وراجعه سنوياً.
+
+**Changing the key** (Settings → «تعيين عبارة سرية جديدة», password + 2FA): at least 16 characters of 3 kinds or 24+
+characters, or a pasted key of the installer's format. New backups use it at once (a new configuration bundle is
+made, its key id differs). **Old backups are not re-encrypted: they still need the old key.** The previous key stays
+on the server as `/etc/ets/backup.key.<old id>.<date>` (root, 600). If a key was **exposed**: set a new one, escrow it,
+take a backup, and delete the backups made with the exposed key (locally and on the destinations) once they are no
+longer needed.
+
+## 7. Monitoring and alerts
+
+| Alert (administrators, critical, phone allowed, mandatory) | Condition | Default |
+|---|---|---|
+| S6 «لا توجد نسخة احتياطية» | no successful local backup for max(`notify.backup_max_age_hours`, interval + 1 h) | 2 h (the old default 26 h becomes 2 h on update) |
+| S9 «النسخة الخارجية متأخرة/فشلت» | per destination of the newest run: no successful copy for max(`notify.offsite_max_age_hours`, interval + 2 h) | 3 h |
+| S10 «فشل الاسترجاع التجريبي» | the newest test restore failed, or none succeeded for 8 days | — |
+| S11 «استرجاع من نسخة احتياطية» | a restore started (sent by the API) / finished, rolled back or failed (picked up after the restore) | — |
+
+The checks run every 15 minutes (`notify_scan`, job `backups`). Thresholds: Settings → «الإشعارات».
+
+## 8. Weekly test restore
+
+`ets-backup-verify` (timer, or «تحقق الآن») decrypts the newest dump, restores it into a **temporary database**
+`ets_restore_check`, applies this version's migrations to it, runs `verify-audit` (hash chains) on it, compares the
+row counts of the key tables with the live database, drops the temporary database and writes `backup_verify
+{ok, details}` to the system log (S10 alerts on failure). It never writes the live database (only reads counts and
+appends the log row). Creating the temporary database needs one of: running as root on the database server (the
+`postgres` account), `ETS_SU_CONNINFO` (DBA connection), the application role's `CREATEDB` right, or — once, by the
+DBA — `CREATE DATABASE ets_restore_check OWNER <application role>;` (it is then emptied instead of dropped).
+
+## 9. Restore — from the web UI
+
+Settings → «النسخ الاحتياطي» → **«استرجاع من نسخة»** (administrators):
+
+1. **The backup point**: this server, SSH, NAS, cloud, or an **uploaded encrypted file** (`.gpg`, with its `.sha256` /
+   `.meta` when available; up to `ETS_UPLOAD_MAX_MB`, 4 GB by default; streamed to `/var/lib/ets/upload`). Choose the
+   database backup; the configuration bundle in force at that time is taken (another one can be chosen); the logs
+   have their own day selector.
+2. **What to restore** — «تحديد الكل» or individual items: «قاعدة البيانات كاملة» (always as a whole: no single tables,
+   so references and the audit hash chain stay consistent), «مفتاح النظام وإعدادات الخادم (ets.env)» (APP_SECRET; the
+   server keeps its own database connection), «شهادة HTTPS ومفتاحها», «إعدادات التثبيت (install.conf)», «شهادة قاعدة
+   البيانات (db-ca.crt)», «السجلات النصية» (into `/var/log/ets/restored-<date>/`, never over the current logs).
+   Unavailable items are disabled with the reason. Warnings: database from another server without ets.env (2FA,
+   recovery codes and phones would break), ets.env without the database, a certificate for another address, a
+   backup from a newer version (blocked).
+3. **Three factors, every time**: the administrator's password, the 2FA code (or a recovery code) when 2FA is on,
+   and the **backup key / passphrase of that backup** (the old key works on a new server). The key travels only in
+   the HTTPS request; the API writes it to `/var/lib/ets/inbox/<random>.sec` (0600) **encrypted with a one-time
+   key** that only the job row holds; the agent reads and deletes the file at once, wipes the one-time key from the
+   row and keeps the key in its tmpfs directory `/run/ets-backup-agent` (root, 700) until the restore or for 15
+   minutes. It is never stored in the database or written to a log. **3 wrong keys in 15 minutes pause restores for
+   15 minutes**; requests are rate-limited.
+4. **Inspection (nothing is changed)**: fetch, checksums, decryption (a wrong key is reported here), test restore
+   of the dump into the temporary database, manifest: backup date, ETS version / commit against the installed one,
+   source host / IP, size, row counts, migrations to apply.
+5. **Confirmation**: the server's host name or «استرجاع»; the page says what is replaced, that everybody is signed
+   out, that a safety backup is taken.
+6. **Execution by the agent** (`flock`, one job at a time): safety copy of exactly what will be replaced (database:
+   `ets-backup --no-offsite`; files: `/var/backups/ets/pre-restore-<time>/`), the API stopped **only** for the
+   database or ets.env (certificates: nginx reload only; logs: no downtime), the database restored in one transaction
+   (through `ets-log-protect` when the superuser is reachable; schema emptied first), files put back, migrations,
+   verify-audit, every session ended, API started and checked. **Any failure → automatic rollback of exactly the
+   replaced items.** Progress (bytes, tables, rows, per-step checklist, time left from the measured throughput) is in
+   `/var/lib/ets/restore/status.json` (no secrets), which nginx serves to the restore screens and to the maintenance
+   page shown while the API is down.
+7. **After**: the restore is recorded in the restored database (change history: who, which backup, source, items,
+   verify-audit result; system log; S11 to every administrator) and everybody signs in again.
+
+## 10. Restore — from the command line (fallback)
+
+```bash
+sudo ls -lt /var/backups/ets | head                                         # choose a .dump.gpg
+sudo ets-restore /var/backups/ets/ets-20261012-013000.dump.gpg               # asks for YES
+sudo ets-restore --yes --key /root/old-backup.key FILE                       # another key, non-interactive
+```
+
+`ets-restore` checks the checksum, the key and the archive (nothing changed yet), refuses a backup of a newer version,
+takes a safety backup, stops the service, restores in **one transaction** (schema emptied first —
+`deploy/db/wipe-public.sql`, so a backup of an older version also restores), applies the migrations (both through
+`ets-log-protect` and as the application role), ends every session, runs `verify-audit` (exit 4 when a chain is
+broken) and starts the service. A remote database whose log tables the DBA protected needs
+`ETS_SU_CONNINFO='host=<db server> user=<superuser> sslmode=verify-full'`.
+
+## 11. Disaster recovery on a new server
+
+**Phones and browsers reach the server by its IP address.** The phones pin the certificate's SHA-256. So a new
+server keeps the phones working **only if it gets the same IP address and the restored certificate**. Otherwise every
+phone must be paired again (and browsers trust the certificate again). Recommendation: move to an **internal DNS
+name** (e.g. `ets.company.local` in the organisation's DNS, with a certificate for that name from the organisation's
+CA): a replacement server then only needs the DNS record changed.
+
+**A. With the web UI (usual)** — the old backup key is needed:
+1. New Ubuntu server with the **same IP address** (take the old one out of the network first).
+2. Install ETS of the same version or newer: `sudo bash deploy/install.sh` (any administrator password; same database
+   name and user as before is recommended).
+3. Make the backups reachable: mount the NAS / configure the SSH or cloud destination in Settings → «النسخ الاحتياطي»
+   (for SSH: create the new server's key and authorise it on the backup server), or upload the files.
+4. «استرجاع من نسخة» → select all (database, ets.env, certificate, install.conf, db-ca.crt if any) → password →
+   **the OLD backup key** → inspect → confirm. Sign in with the restored accounts.
+5. Confirm the escrow of this server's backup key (the new server made its own key: escrow it; the old one is still
+   needed for the old backups) and check the offsite destinations.
+
+**B. From the command line** (`ets-restore-server`, from a repository copy):
+```bash
+sudo bash deploy/scripts/restore-server.sh --from /mnt/ets-backup --key /root/old-backup.key --dry-run   # checks only
+sudo bash deploy/scripts/restore-server.sh --from /mnt/ets-backup --key /root/old-backup.key
+#   --from ssh:etsbackup@10.0.0.30:/srv/backups/ets --ssh-key /root/id_ed25519 [--ssh-port 22]
+#   --from rclone:remote:bucket/path --rclone-config /root/rclone.conf
+#   --config ets-config-….tar.gpg --dump ets-….dump.gpg      (files directly)
+```
+It fetches the newest dump and the configuration bundle in force at its time, checks checksums, decrypts, checks the
+manifest's files and that the certificate and key belong together, refuses a backup newer than the repository copy,
+puts `ets.env`, `install.conf`, `db-ca.crt`, the certificate and key and the **old backup key** back, runs
+`install.sh --yes` with the same answers and **the same certificate** (`ETS_KEEP_CERT=1`: no new self-signed certificate
+even near expiry; `ETS_SKIP_FIRST_BACKUP=1`), restores the database (`ets-restore --yes --no-safety-backup`),
+migrations, verify-audit, checks `/api/health`, and prints whether **the phones keep working** (certificate
+fingerprint unchanged and this server has the old address). `--dry-run` does everything up to the restore as checks
+only.
+
+Users keep their passwords and 2FA, because APP_SECRET is restored with ets.env.
+
+## 12. Hot standby (later)
+
+This design is compatible with a streaming-replication standby: the dumps are logical (independent of the
+replication), every script takes the connection from `ets.env` (point `PGHOST` at the primary), the events are written
+to the primary, and the test restore uses a separate temporary database. With a standby, keep the hourly logical
+backups (they protect against mistakes that replication copies at once) and the weekly test restore.
+
+## 13. Files
+
+| Path | What |
+|---|---|
+| `/usr/local/bin/ets-backup`, `ets-backup-verify`, `ets-restore`, `ets-restore-server` | the commands |
+| `/usr/local/sbin/ets-backup-agent`, `ets-log-protect` | root helpers |
+| `/usr/local/lib/ets/backup-lib.sh` | shared functions (retention, validation) |
+| `/etc/ets/backup.conf` | written by the agent from the web UI (data, never executed) |
+| `/etc/ets/backup.key`, `.id` | the key and its id (root 600) — **escrow** |
+| `/etc/ets/backup_ssh_key(.pub)`, `backup_known_hosts`, `rclone.conf` | destination credentials (root 600) |
+| `/var/lib/ets/inbox`, `upload` (ets, 700) · `restore/status.json` (no secrets) · `restore/work` (root, 700) | agent exchange |
+| `/var/log/ets-backup.log`, `ets-offsite.log`, `ets-backup-verify.log`, `ets-backup-agent.log` | logs (rotated monthly) |

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ETS — صيانة: استرجاع نسخة احتياطية</title>
+<!-- Served by nginx while a restore runs (/var/lib/ets/restore/active): the API is stopped, so this page reads the
+     progress file /api/restore-status.json (no secrets) once a second and draws the same bar as the web app. -->
+<style>
+  :root { --b: #0b6bcb; --g: #30a66d; --r: #e24c4c; --o: #f0883a; --t: #1f272e; --m: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Cairo, "Segoe UI", Tahoma, sans-serif; background: #f4f5f6; color: var(--t); }
+  main { max-width: 640px; margin: 8vh auto; padding: 0 16px; }
+  .card { background: #fff; border: 1px solid #e2e6e9; border-radius: 10px; padding: 22px; }
+  h1 { font-size: 20px; margin: 0 0 6px; } p { color: var(--m); margin: 0 0 16px; font-size: 14px; }
+  .head { display: flex; align-items: baseline; gap: 10px; }
+  .pct { margin-inline-start: auto; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; direction: ltr; }
+  .bar { height: 16px; border-radius: 999px; background: #e9ecef; overflow: hidden; margin: 10px 0; }
+  .fill { height: 100%; width: 0; border-radius: 999px; background-color: var(--b); transition: width .9s ease-out;
+    background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%, transparent);
+    background-size: 28px 28px; animation: s 1s linear infinite reverse; }
+  .ok .fill { background-color: var(--g); animation: none; } .bad .fill { background-color: var(--r); animation: none; } .warn .fill { background-color: var(--o); }
+  @keyframes s { from { background-position: 0 0; } to { background-position: 28px 0; } }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--m); font-variant-numeric: tabular-nums; }
+  ol { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; font-size: 13px; }
+  li { color: var(--m); } li.done { color: #16794c; } li.running { color: var(--t); font-weight: 700; } li.failed { color: #cc2929; font-weight: 700; }
+  .msg { margin-top: 14px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card" id="c">
+    <h1>يجري استرجاع نسخة احتياطية</h1>
+    <p>النظام متوقف مؤقتاً. ستعود الصفحة تلقائياً عند الانتهاء، وسيُطلب تسجيل الدخول من جديد.</p>
+    <div class="head"><b id="st">جارٍ</b><span class="pct" id="pct">0.0%</span></div>
+    <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+    <div class="meta" id="meta"></div>
+    <ol id="steps"></ol>
+    <div class="msg" id="msg"></div>
+  </div>
+</main>
+<script src="/maintenance.js"></script>
+</body>
+</html>

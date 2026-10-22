@@ -18,6 +18,7 @@ const LARGE_ROUTES = [
   ['POST', /^\/tracker\/import\/?$/],
   ['PUT', /^\/branding\/[^/]+\/?$/],
   ['POST', /^\/users\/import(\/preview)?\/?$/i],
+  ['POST', /^\/backups\/upload\/?$/],          // raw encrypted backup file, streamed to disk inside the route (1.12.0)
 ];
 const isLargeRoute = req => LARGE_ROUTES.some(([m, re]) => req.method === m && re.test(req.path));
 
@@ -26,7 +27,8 @@ function checkDepth(req, res, buf) {
 }
 
 // Text values lose bidi control characters (ETS-SEC-061); passwords are compared byte for byte, so they are kept.
-const KEEP_RAW = new Set(['password', 'current_password', 'new_password']);
+// (and the backup key / passphrase / cloud credentials of Settings → «النسخ الاحتياطي», 1.12.0)
+const KEEP_RAW = new Set(['password', 'current_password', 'new_password', 'key', 'passphrase', 'cloud_access_key_id', 'cloud_secret_access_key']);
 const reviver = (k, v) => (typeof v === 'string' && !KEEP_RAW.has(k) ? stripBidi(v) : v);
 
 const parser = limit => express.json({ limit, verify: checkDepth, reviver });

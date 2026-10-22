@@ -1,0 +1,10 @@
+# The API touches /var/lib/ets/inbox/.wake when it queues a job: the agent starts at once instead of within 30 s.
+[Unit]
+Description=ETS backup agent — start when the web UI queues a job
+
+[Path]
+PathChanged=/var/lib/ets/inbox/.wake
+Unit=ets-backup-agent.service
+
+[Install]
+WantedBy=paths.target

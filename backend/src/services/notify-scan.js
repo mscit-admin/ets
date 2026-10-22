@@ -4,8 +4,10 @@
 //
 //   security  every run      S2 failed sign-ins (15 min, per address and all together), S5 refused requests and
 //                            S8 server errors (last hour)
+//   backups   every run      S6 local backup late, S9 offsite copy late / failing (per destination), S10 weekly test
+//                            restore failed or missing, S11 a restore finished (1.12.0; services/backup-status.js)
 //   daily     every day from notify.digest_hour (local time, notify.timezone):
-//                            S3 audit-log hash chains, S4 unique e-mail index, S6 backup age, phones unused for
+//                            S3 audit-log hash chains, S4 unique e-mail index, phones unused for
 //                            notify.device_idle_days revoked, old alerts and pairing codes deleted
 //   digest    work days (notify.work_days) from notify.digest_hour:
 //                            T1 stuck, T2 untested, T3 failed not re-tested, T4 «نجح» below 100 %, T5 not started,
@@ -25,6 +27,7 @@ import { scheduleModel, projectHealth } from './health.js';
 import { activeUsers, appMap, deliver, resolveExcept, restrictions, wanted } from './notify.js';
 import { effectivePolicy, TYPES } from './notify-catalog.js';
 import { revokeDevices } from './devices.js';
+import { backupSummary, VERIFY_MAX_AGE_DAYS } from './backup-status.js';
 import { projectStatusData } from '../routes/tracker.js';
 import { importAbilities, loadImportMeta, batchApps } from '../routes/imports.js';
 
@@ -47,7 +50,7 @@ const setState = (k, v) => query(`INSERT INTO notify_state(key, value) VALUES ($
 
 // Which jobs are due now (state: { job: {day} }).
 export function dueJobs(lp, s, state) {
-  const out = ['security'];
+  const out = ['security', 'backups'];
   const atHour = lp.hour >= s['notify.digest_hour'];
   if (atHour && state.daily?.day !== lp.date) out.push('daily');
   const work = (s['notify.work_days'] || []).includes(lp.weekday);
@@ -78,14 +81,14 @@ export async function runScan({ now = new Date(), force = [] } = {}) {
     for (const j of jobs) {
       try {
         done[j] = await JOBS[j](ctx);
-        if (j !== 'security') await setState('job:' + j, { day: lp.date, at: now.toISOString() });
+        if (j !== 'security' && j !== 'backups') await setState('job:' + j, { day: lp.date, at: now.toISOString() });
       } catch (e) {
         done[j] = { error: e.message };
         logger.warn({ err: e.message, job: j }, 'notify: scan job failed');
       }
     }
     const ms = Date.now() - t0;
-    if (jobs.some(j => j !== 'security') || Object.values(done.security || {}).some(v => v > 0)) {
+    if (jobs.some(j => j !== 'security' && j !== 'backups') || Object.values(done.security || {}).some(v => v > 0) || Object.values(done.backups || {}).some(v => v > 0)) {
       await logSystem('notify_scan', 'notification check', { jobs: done, ms, local: lp });
     }
     return { jobs: done, ms };
@@ -338,13 +341,6 @@ async function dailySystem(ctx) {
   // S4: the unique e-mail index of migration 014 / 015 is missing
   const missing = (await query(`SELECT to_regclass('users_email_lower_uniq') IS NULL AS m`)).rows[0].m;
   out.email_index = await publish('email_index', missing ? reach(ctx, 'email_index').map(user => ({ user, dedupeKey: `email_index:${lp.date}`, link: '/users' })) : []);
-  // S6: ets-backup writes system_log 'backup' only when it succeeds; nothing for notify.backup_max_age_hours → alert
-  // (not in the first hours of a new installation)
-  const H = s['notify.backup_max_age_hours'];
-  const b = (await query(`SELECT (SELECT max(ts) FROM system_log WHERE event='backup') AS last, (SELECT min(ts) FROM system_log) AS first`)).rows[0];
-  const stale = (!b.last || now - new Date(b.last) > H * 3600e3) && b.first && now - new Date(b.first) > H * 3600e3;
-  out.backup_missing = await publish('backup_missing', stale ? reach(ctx, 'backup_missing').map(user => ({ user, dedupeKey: `backup_missing:${lp.date}`,
-    link: '/logs?tab=system', params: { hours: H, last: b.last ? new Date(b.last).toISOString() : null } })) : []);
   // phones not used for notify.device_idle_days
   out.devices_revoked = (await tx(async c => {
     const ids = (await c.query(`SELECT id FROM mobile_devices WHERE revoked_at IS NULL AND COALESCE(last_seen_at, created_at) < $1`,
@@ -359,8 +355,50 @@ async function dailySystem(ctx) {
   return out;
 }
 
+// ---------------------------------------------------------------- backups (S6, S9, S10, S11), every run
+async function backupChecks(ctx) {
+  const { s, now, lp } = ctx;
+  const out = {};
+  const b = await backupSummary(s, now);
+  // S6: ets-backup writes system_log 'backup' only when it succeeds; none for max(notify.backup_max_age_hours, interval + 1 h)
+  // → alert (not in the first hours of a new installation)
+  out.backup_missing = await publish('backup_missing', b.local.stale ? reach(ctx, 'backup_missing').map(user => ({ user, dedupeKey: `backup_missing:${lp.date}`,
+    link: '/settings#backups', params: { hours: b.local.max_age_hours, last: b.local.last ? new Date(b.local.last).toISOString() : null } })) : []);
+  // S9: per destination of the newest run, no successful copy for max(notify.offsite_max_age_hours, interval + 2 h)
+  const off = [];
+  for (const d of b.offsite.filter(x => x.stale)) {
+    for (const user of reach(ctx, 'backup_offsite')) off.push({ user, dedupeKey: `backup_offsite:${d.dest}:${lp.date}`, link: '/settings#backups',
+      params: { dest: d.dest, hours: d.max_age_hours, last_ok: d.last_ok ? new Date(d.last_ok).toISOString() : null, error: d.error } });
+  }
+  out.backup_offsite = await publish('backup_offsite', off);
+  // S10: the newest test restore failed, or none succeeded for VERIFY_MAX_AGE_DAYS
+  const v = b.verify.failed ? { stage: 'failed', error: b.verify.error, key: `failed:${new Date(b.verify.last).toISOString()}` }
+    : b.verify.stale ? { stage: 'stale', days: VERIFY_MAX_AGE_DAYS, key: `stale:${lp.date}` } : null;
+  out.backup_verify = await publish('backup_verify', v ? reach(ctx, 'backup_verify').map(user => ({ user, dedupeKey: `backup_verify:${v.key}`,
+    link: '/settings#backups', params: { stage: v.stage, error: v.error || null, days: v.days || null } })) : []);
+  // S11: restores that finished since the last run (the restore started alert is sent by the API; the end is written
+  // by the agent into the restored database, so it is picked up here once the API runs again)
+  const seen = (await getState('restore_notified'))?.id ?? null;
+  // first run (or a database restored from before 1.12.0): only restores of the last two hours are announced
+  const rows = (await query(`SELECT id, ts, level, detail FROM system_log WHERE event='restore'
+    AND (CASE WHEN $1::bigint IS NULL THEN ts > now() - interval '2 hours' ELSE id > $1 END) ORDER BY id`, [seen])).rows;
+  if (rows.length) {
+    const e = [];
+    for (const r of rows) {
+      const stage = r.detail?.state === 'rolled_back' ? 'rolled_back' : r.level === 'error' || r.detail?.ok === false ? 'failed' : 'done';
+      for (const user of reach(ctx, 'restore_event')) e.push({ user, dedupeKey: `restore_event:${r.id}`, link: '/settings#backups',
+        params: { stage, by: r.detail?.by?.username || null, created: r.detail?.backup?.created || null, items: r.detail?.items || null } });
+    }
+    await deliver('restore_event', e);
+    await setState('restore_notified', { id: rows[rows.length - 1].id });
+    out.restore_event = e.length;
+  }
+  return out;
+}
+
 const JOBS = {
   security: securityChecks,
+  backups: backupChecks,
   daily: dailySystem,
   digest: async ctx => ({ ...(await trackingDigest(ctx)), ...(await approvalsDigest(ctx)), ...(await planDigest(ctx)) }),
   weekly: async ctx => ({ ...(await qualityWeekly(ctx)), ...(await stalledWeekly(ctx)) }),

@@ -524,11 +524,11 @@ test('the scheduler takes an advisory lock: a second run while one holds it is s
   assert.ok([x, y].some(v => v.skipped === 'locked') || [x, y].every(v => v.jobs), 'two at once: never both inside together');
   // schedule: daily from the digest hour, the digest on work days only (Africa/Tripoli by default)
   const s = { 'notify.digest_hour': 8, 'notify.work_days': [0, 1, 2, 3, 4] };
-  assert.deepEqual(scan.dueJobs({ date: '2026-10-18', hour: 7, weekday: 0 }, s, {}), ['security']);
-  assert.deepEqual(scan.dueJobs({ date: '2026-10-18', hour: 8, weekday: 0 }, s, {}), ['security', 'daily', 'digest', 'weekly']);
-  assert.deepEqual(scan.dueJobs({ date: '2026-10-23', hour: 9, weekday: 5 }, s, { daily: { day: '2026-10-22' } }), ['security', 'daily']);
+  assert.deepEqual(scan.dueJobs({ date: '2026-10-18', hour: 7, weekday: 0 }, s, {}), ['security', 'backups']);
+  assert.deepEqual(scan.dueJobs({ date: '2026-10-18', hour: 8, weekday: 0 }, s, {}), ['security', 'backups', 'daily', 'digest', 'weekly']);
+  assert.deepEqual(scan.dueJobs({ date: '2026-10-23', hour: 9, weekday: 5 }, s, { daily: { day: '2026-10-22' } }), ['security', 'backups', 'daily']);
   assert.deepEqual(scan.dueJobs({ date: '2026-10-19', hour: 9, weekday: 1 }, s, { daily: { day: '2026-10-19' }, digest: { day: '2026-10-18' }, weekly: { day: '2026-10-18' } }),
-    ['security', 'digest']);
+    ['security', 'backups', 'digest']);
   assert.deepEqual(scan.localParts(new Date('2026-10-18T06:30:00Z'), 'Africa/Tripoli'), { date: '2026-10-18', hour: 8, weekday: 0 });
   assert.ok((await pool.query(`SELECT count(*)::int AS n FROM system_log WHERE event='notify_scan'`)).rows[0].n > 0);
 });

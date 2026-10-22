@@ -1,0 +1,13 @@
+# Hourly at :07 by default. Persistent=true: a run missed while the server was off is made at the next boot.
+# A run never overlaps the previous one (a oneshot service is not started twice; ets-backup also takes a lock).
+[Unit]
+Description=ETS backup schedule
+
+[Timer]
+OnCalendar=*-*-* *:07:00
+Persistent=true
+AccuracySec=1min
+Unit=ets-backup.service
+
+[Install]
+WantedBy=timers.target

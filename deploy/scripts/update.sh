@@ -2,8 +2,8 @@
 # Update an installed ETS to the version in this repository copy.
 #   cd /path/to/new/ets && sudo bash deploy/scripts/update.sh
 # Takes an encrypted backup first, builds the new version as the unprivileged ets-build user, copies it to
-# /opt/ets, re-deploys the service unit, nginx site and headers, logrotate, backup/restore commands and
-# cron job from the answers of the installation (/etc/ets/install.conf), applies the database migrations and
+# /opt/ets, re-deploys the service unit, nginx site and headers, logrotate, backup/restore commands, timers and
+# backup agent (1.12.0) from the answers of the installation (/etc/ets/install.conf), applies the database migrations and
 # (local database) the audit-trail protection as the PostgreSQL superuser, then restarts and checks.
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,12 +34,18 @@ fi
 
 # New backup script and key first, so the pre-update backup is already encrypted.
 ensure_backup_key
+install -d -m 755 /usr/local/lib/ets
+install -m 644 "$SRC/deploy/scripts/backup-lib.sh" /usr/local/lib/ets/backup-lib.sh
 install -m 755 "$SRC/deploy/scripts/backup.sh" /usr/local/bin/ets-backup
 /usr/local/bin/ets-backup
 PRE=$(find "$BACKUPS" -maxdepth 1 -name 'ets-*.dump.gpg' -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
 trap 'warn "update failed. The data before the update is in $PRE. To roll back: run deploy/scripts/update.sh from the previous release copy, and if the database was changed: sudo ets-restore $PRE"' ERR
 
+# rclone: offsite copies to cloud storage can be switched on from the web UI (1.12.0), which cannot install packages
+command -v rclone >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y rclone >/dev/null \
+  || warn "rclone could not be installed — cloud copies will not work until: sudo apt-get install rclone"
 build_and_deploy_app
+# 1.12.0: hourly timer instead of the daily cron job, /etc/ets/backup.conf (existing dailies kept), backup agent
 install_runtime_files "${DEF_DB_MODE:-local}" "${DEF_DB_HOST:-127.0.0.1}"
 
 # nginx site, app snippet and security headers, re-rendered from the installation answers
@@ -67,6 +73,8 @@ systemctl reload nginx
 # ets-log-protect, which then protects the audit trail again (ETS-SEC-013); remote: see migrate_db.
 systemctl stop ets-backend
 migrate_db "${DEF_DB_MODE:-local}"
+# backup settings of /etc/ets/backup.conf → database (once), then rendered again by the agent
+backup_agent_import
 systemctl restart ets-backend
 ok=0
 for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && { ok=1; break; }; sleep 1; done
@@ -74,4 +82,6 @@ for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/nul
 trap - ERR
 echo "update ok"
 [[ "${BACKUP_KEY_CREATED:-0}" == 1 ]] && warn "NEW backup key $BACKUP_KEY: copy it to a safe place now (without it the backups cannot be restored)."
+echo "Backups: every hour (ets-backup.timer), weekly test restore (ets-backup-verify.timer), settings in Settings → «النسخ الاحتياطي»."
+echo "         Confirm there that the backup key is escrowed; configure offsite copies (SSH / NAS / cloud) there too."
 exit 0

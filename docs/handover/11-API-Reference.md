@@ -211,7 +211,8 @@ Types: `approval_pending` (A1), `approval_overdue` (A2), `request_decided` (A3),
 (A5), `import_overdue` (A6), `stuck` (T1), `untested` (T2), `failed_retest` (T3), `pass_conflict` (T4), `not_started` (T5),
 `quality` (T6), `excluded` (T7), `moved_in` (T8, 1.10.0), `dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
 `account_locked` (S1), `failed_logins` (S2), `audit_integrity` (S3), `email_index` (S4), `access_denied` (S5),
-`backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), and `rate_capped` (above the hourly cap).
+`backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), `backup_offsite` (S9, 1.12.0), `backup_verify` (S10),
+`restore_event` (S11), and `rate_capped` (above the hourly cap).
 The policy itself is the setting `notify.policy` (`PUT /settings`). The live stream `/events` also sends
 `notif_changed` `{unread, top_severity}` to the user's own streams when their alerts change (no content).
 
@@ -241,6 +242,25 @@ revoked, or the account is inactive, deleted, paused or must change its password
 | POST | `/m/notifications/:id/read` | → `204`; `404` when not the user's or not shown on the phone |
 | GET | `/m/events` | `text/event-stream` (`Cache-Control: no-cache, no-store`, `X-Accel-Buffering: no`): `retry: 10000`; `event: unread` `{"unread":n}` on connect; for each new alert the phone may show `event: notification` `{"id":n}` followed by `event: unread`; a comment line `: hb` every `LIVE_HEARTBEAT_SECONDS` (25 s), on which the device and account are re-checked. One stream per device (a new one replaces the old). The server ends the stream when the device is revoked or the account may no longer be used; reconnecting then gets 401 |
 | DELETE | `/m/device` | the phone unpairs itself → `204`; the device is revoked (reason `unpaired`, `revoke:device` + `mobile_device_revoked`), the token stops working at once |
+
+## Backups — `/backups` (1.12.0; permission `cfg` **and** role `admin`, 403 otherwise)
+The API never runs anything as root: it stores the configuration and queues jobs for the root backup agent
+(docs 08 §5). Errors: 400 `invalid_backup_config` (`key`, `reason`), `wrong_password` / `mfa_code_required` /
+`invalid_code` (re-authentication), 409 `job_already_queued`, 429 `too_many_requests`, 503 `backup_agent_unavailable`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/backups` | `{config, secrets: {cloud_access_key_id: bool, cloud_secret_access_key: bool}, version, applied_version, apply_error, agent: {seen_at, ok}, escrow: {confirmed_at, confirmed_by, due, key_id}, status (written by the agent: local files with .meta, destinations' listings, disk, next runs, SSH public key / authorized_keys line / host fingerprint, key id), summary: {frequency_hours, local, offsite[], verify}, jobs (15 newest), limits, current}` |
+| PUT | `/backups/config` | `{config, secrets?: {cloud_access_key_id?, cloud_secret_access_key?}, password?, code? \| recovery_code?}`. `config`: `frequency_hours` 1/2/4/6/12/24, `daily_time`, `logs_time` (HH:MM), `verify {enabled, weekday 0–6, time}`, `retention {hourly_hours 1–168, daily_days 1–3650, weekly_weeks 0–520, monthly_months 0–240}`, `ssh {enabled, target user@host:path, port, prune}`, `nas {enabled, dir under /mnt\|/media\|/srv, prune}`, `cloud {enabled, mode s3\|rclone, provider, endpoint https://…, region, bucket, path, remote name:bucket/path, prune}`. Changing `ssh` / `nas` / `cloud` or a secret needs the password (and 2FA code). Secrets: empty = keep, `null` = remove; never returned. Audited `update` / `backup_config` with old → new (secrets masked) |
+| POST | `/backups/escrow` | `{confirmed: true}` → the key escrow is attested (date, administrator); asked again after 365 days or a key change |
+| POST | `/backups/passphrase` | `{passphrase, password, code?}` → 202 `{job}` (`set_passphrase`); 400 `weak_passphrase` (`reason`). The passphrase reaches the agent through the single-use channel only |
+| POST | `/backups/jobs` | `{kind: backup_now \| verify_now \| test_destination (+ dest ssh\|nas\|cloud) \| generate_ssh_key (+ rotate, password, code)}` → 202 `{job}`; 20 per 10 minutes per administrator |
+| GET | `/backups/jobs/:id` | `{job: {id, kind, status queued\|running\|ok\|failed\|cancelled, progress (percent, phases, ETA, counters), result, log}}` |
+| POST | `/backups/restore/plan` | `{source local\|ssh\|nas\|cloud\|upload, dump?, config? (default: the bundle in force at the dump's time; null = none), logs?, items?, uploads?}` → `{point, available: {db\|env\|tls\|install_conf\|db_ca\|logs: {available, reason?, from}}, warnings: [{code, item, blocking?}], problem}`. No key needed |
+| POST | `/backups/upload?name=<artifact>[&upload_id=]` | raw body (`application/octet-stream`), an encrypted artifact or its `.sha256` / `.meta`; ≤ `ETS_UPLOAD_MAX_MB` (4096) → `{upload_id, name, size}`; 10 per hour |
+| POST | `/backups/restore/inspect` | plan fields + `items`, `key` (backup key / passphrase), `password`, `code?` → 202 `{job}` (`restore_inspect`: fetch, checksums, decryption, test restore, manifest — nothing changed). 400 `backup_key_required` / `invalid_restore_selection`; 409 `restore_blocked` / `restore_in_progress`; 429 `restore_locked` (`retry_after`) after 3 wrong keys in 15 minutes; 10 per 15 minutes. The key is never stored or logged |
+| POST | `/backups/restore/run` | `{inspect_id, items (inspected ones), confirm: <host name> \| «استرجاع» \| RESTORE}` → 202 `{job}` (`restore_run`); the same administrator, within 15 minutes of the inspection. 400 `confirmation_phrase_mismatch`, 409 `inspection_expired`. Every administrator gets S11 |
+| GET | `/backups/restore/status` | the progress file of the current / last restore. While the API is stopped nginx serves the same file at `GET /api/restore-status.json` (header `X-ETS-Status: 1`, no session; no secrets) |
 
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |
