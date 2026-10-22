@@ -270,7 +270,10 @@ carries only `{unread, top_severity}`; alerts are not audit data. **Flood contro
 |---|---|---|
 | `APP_SECRET` | `/etc/ets/ets.env` | Encrypts the 2FA secrets (AES-256-GCM, key = HKDF-SHA-256 of `APP_SECRET`, 16-byte tag enforced, format `v2:<key id>:…`; older `v1` values are still read). Placeholders and short or low-variety values are refused at start |
 | Database password | `/etc/ets/ets.env` | Root and the `ets` group only |
-| Backup key | `/etc/ets/backup.key` (root, 600) | Encrypts the backups (gpg AES-256). Kept **separately** from the backups — see [08-Backup-and-Recovery.md](08-Backup-and-Recovery.md) |
+| Backup key | `/etc/ets/backup.key` (root, 600) | Encrypts every backup artifact (gpg symmetric AES-256 with MDC: a modified file does not decrypt). **Never** put in a backup; escrowed by hand and attested in the web UI — see [08 §6](08-Backup-and-Recovery.md). Only its id (salted scrypt, 16 hex) is written next to the backups. A passphrase chosen in the UI: ≥ 16 characters of 3 kinds or ≥ 24 characters, never an example value |
+| SSH key of the SSH destination | `/etc/ets/backup_ssh_key` (ed25519, root 600), `backup_known_hosts` | On the backup server only as `restrict,command="rrsync <dir>"` for a dedicated user (no shell, no forwarding, rsync inside one directory; `rrsync -no-del` for append-only). Host key accepted once (`accept-new`), its fingerprint shown in the UI to be compared |
+| Cloud credentials (S3) | database `backup_config.secrets` (AES-256-GCM, HKDF key from APP_SECRET, AAD `backup:<name>`), rendered by the root agent into `/etc/ets/rclone.conf` (root 600) | Write-only in the API («محفوظ»), never returned or logged; the file is removed when the cloud copy is off. Give the key rights on one bucket / prefix only |
+| A restore key typed in the wizard | HTTPS request → `/var/lib/ets/inbox/<random>.sec` (0600) encrypted with a one-time key held only in the job row → the agent's tmpfs `/run/ets-backup-agent` (root 700) | Read and deleted at once, the one-time key wiped from the row, deleted after the restore or after 15 minutes; never in the database or a log |
 
 **Rotating `APP_SECRET`** (e.g. after a suspected leak of `ets.env`):
 
@@ -288,14 +291,50 @@ sudo systemctl restart ets-backend
 Then store the new `ets.env` in the safe place. Backups taken before the rotation need the old `APP_SECRET`
 to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the script again).
 
+## 6b. Backups and restore from the web UI / النسخ الاحتياطي والاسترجاع (1.12.0)
+
+- **Privilege separation.** The API (user `ets`, `NoNewPrivileges`, read-only system) never runs anything as root. It
+  stores the desired backup configuration and queues jobs of seven whitelisted kinds; the root **backup agent**
+  (`ets-backup-agent.service`) validates both again with the same strict patterns (users, hosts, paths, remotes,
+  endpoints, buckets: whitelisted characters, no `..`, NAS only under `/mnt`, `/media`, `/srv`), writes only a fixed
+  list of files, and starts commands with argument arrays (no shell). Someone able to write the database can at
+  most choose another valid destination or start a whitelisted job — not run a command or write elsewhere.
+  `ets-backend` may additionally write only `/var/lib/ets/inbox` and `/var/lib/ets/upload`.
+- **Who.** Only system administrators (role `admin` with `cfg`); the API refuses everyone else (403), the section is
+  not shown to them. Changing destinations or credentials, creating the SSH key and setting a passphrase ask for the
+  password and the 2FA code again (the profile page's re-authentication, counted towards the account lockout).
+- **Restore = three factors every time**: password, 2FA code (or recovery code), and the backup key / passphrase.
+  The key is checked by decrypting (a wrong key fails before anything is changed); **3 wrong keys in 15 minutes pause
+  restores for 15 minutes**; restore requests are rate-limited (10 per 15 minutes per administrator), job requests
+  too (20 per 10 minutes); one restore at a time (database-level unique open job + `flock`); a confirmation phrase
+  (the server name or «استرجاع»); every administrator is notified when a restore starts and ends (S11, in-app and
+  phone).
+- **Uploads** for a restore: administrators only, artifact names only, size limit (`ETS_UPLOAD_MAX_MB`), streamed
+  to `/var/lib/ets/upload/<random>/` (0600, deleted after 24 h); the file stays encrypted until the agent decrypts it
+  with the typed key. Archive members are checked before extraction (no absolute paths, no `..`, no links outside
+  `/etc/letsencrypt`).
+- **Integrity.** Every artifact has a SHA-256 checksum (checked before use) and gpg's MDC; the configuration
+  bundle's manifest lists each file's SHA-256 (checked after decryption); the database is restored in one
+  transaction, then `verify-audit` checks the hash chains, and a failure after the data was replaced rolls back to
+  the safety backup automatically. Every session ends after a database or APP_SECRET restore.
+- **What is visible without a session.** Only `/api/restore-status.json` (nginx, `X-ETS-Status: 1`) during a restore:
+  steps, percentage, counters and times — no names of people, no keys, no data. The `.meta` files next to the
+  backups (also on the destinations) are not secret: kind, time, key id, version, host name, APP_SECRET fingerprint
+  (an HMAC of a constant), table / row totals.
+- **Audit.** Every change of the backup settings (old → new; secrets as «(changed — not shown)»), every job
+  request, upload, inspection, restore start and restore (who, which backup, source, items, verify result) is in
+  the change history with readable sentences.
+
 ## 7. Recommendations for the customer
 
 1. Use a certificate from the organisation's CA or Let's Encrypt instead of the self-signed one.
 2. Set the 2FA policy to **Required** after users have been trained. Exempt only service or emergency
    accounts.
 3. Keep two administrator accounts, both with 2FA.
-4. Keep a copy of `/etc/ets/ets.env` and of the backup key `/etc/ets/backup.key` off the server in a safe place
-   (password manager / sealed envelope), **not** together with the backup files.
+4. Escrow the backup key `/etc/ets/backup.key` off the server (password manager **and** sealed envelope), **not**
+   together with the backup files, and confirm it in Settings → «النسخ الاحتياطي» (08 §6). `ets.env` is inside the
+   encrypted configuration bundles since 1.12.0; an escrowed copy is still useful. Configure at least one offsite
+   destination; prefer an append-only one (rrsync `-no-del`, object lock) against ransomware.
 5. Review the *Login & security* log weekly (failed attempts, lockouts, access denied), run *Logs → Verify log
    integrity* and keep the chain heads it shows somewhere off the server. Forward the journal (`"alert":true`
    events) to a central syslog / SIEM. Check `sudo ets-log-protect status` after updates and restores; with a

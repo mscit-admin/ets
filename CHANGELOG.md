@@ -30,6 +30,100 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.0] — 2026-10-22 — Backups: hourly, offsite, test restore, and restore from the web UI
+
+### Added
+- **Deployment:** hourly backups (`ets-backup.timer`, `Persistent=true`, `flock`): the database dump, a
+  **configuration bundle** `ets-config-<time>.tar.gpg` (ets.env, install.conf, db-ca.crt, the TLS certificate **and
+  key** in use — or `/etc/letsencrypt` —, the nginx site, `pg_dumpall --globals-only`, `manifest.json` with version,
+  commit, PostgreSQL version, database, host name, IPs, `PUBLIC_BASE_URL`, `TLS_CERT_SHA256`, per-table counts and the
+  SHA-256 of every file; made only when its content changed) and a daily **logs bundle** `ets-logs-<date>.tar.gpg`
+  (ETS's own text logs incl. rotated ones); `.sha256` and a non-secret `.meta` (key id, kind, server, items) next to
+  each artifact; the backup key is never put in a backup. `deploy/scripts/backup.sh`, `backup-lib.sh`.
+- **Deployment:** tiered retention by the time in the file name (every backup 48 h, daily 30 days, weekly 12 weeks,
+  monthly 12 months; configurable), applied locally and on each destination by one shared function.
+- **Deployment:** offsite copies after each backup to any combination of **SSH** (rsync, `rrsync`-restricted
+  ed25519 key `/etc/ets/backup_ssh_key`, `accept-new` + `/etc/ets/backup_known_hosts`), a mounted **NAS** (refused while
+  not mounted: the root disk never fills up) and **S3-compatible cloud storage** (rclone, `/etc/ets/rclone.conf`); each
+  destination on its own, temporary names, read-back verification, `backup_offsite` system-log rows.
+- **Deployment:** weekly **test restore** `ets-backup-verify` (`ets-backup-verify.timer`, Friday 03:00): temporary
+  database `ets_restore_check`, migrations, `verify-audit`, row counts against the live database, `backup_verify` row.
+- **Deployment:** `ets-restore-server` (`deploy/scripts/restore-server.sh`): disaster recovery onto a new server from a
+  directory, SSH or rclone — files back with their modes, `install.sh` non-interactively with the **same certificate**
+  (`ETS_KEEP_CERT=1`), restore, migrations, verify-audit, health check, and whether the phones keep working; `--dry-run`.
+- **Backend:** Settings → «النسخ الاحتياطي» API `/api/backups` (role admin + `cfg`) and the root **backup agent**
+  (`ets-backup-agent.service` / `.timer` / `.path`, `backend/scripts/backup-agent.js`): the API stores the desired
+  configuration (`backup_config`, cloud credentials encrypted with an APP_SECRET HKDF key, write-only) and queues
+  whitelisted jobs (`backup_jobs`); the agent validates them again, renders `/etc/ets/backup.conf`, `rclone.conf` and the
+  timer schedules, and runs the jobs. Migration **021_backup_center.sql**.
+- **Backend / Frontend:** **restore from the web UI** — «استرجاع من نسخة»: source (this server, SSH, NAS, cloud,
+  upload), items with «تحديد الكل» (database as a whole, ets.env, certificate, install.conf, db-ca.crt, logs into
+  `restored-<date>/`), unavailable items with reasons, dependency warnings; **password + 2FA + backup key** every time
+  (the key travels through a single-use encrypted channel, never stored or logged; 3 wrong keys → 15-minute pause);
+  inspection (test restore, versions, counts) before anything changes; confirmation phrase; safety copy of exactly
+  what is replaced, the API stopped only for the database or ets.env, automatic rollback on any failure; every
+  session ends; audited in the restored database.
+- **Frontend:** real progress for restores, test restores and «نسخ احتياطي الآن» (`ProgressPanel.jsx`,
+  `backend/src/backup/progress.js`): animated bar per state, percentage with one decimal, ETA from a smoothed
+  throughput («تقديري» before the first measurement), data / table / row counters, step checklist; the same bar on the
+  maintenance page nginx serves while the API is stopped (`/maintenance.html`, `/api/restore-status.json`).
+- **Frontend:** status panel (last local backup, each destination, last test restore, next runs, free disk), schedule
+  and retention, destinations with «اختبار الاتصال» and «إنشاء مفتاح», backup files per type and destination, key /
+  passphrase, escrow attestation with a yearly reminder.
+- **Backend:** notifications **S9** `backup_offsite` (per destination, `notify.offsite_max_age_hours`, default 3 h),
+  **S10** `backup_verify` (test restore failed / none for 8 days), **S11** `restore_event` (restore started /
+  finished); administrators, critical, phone allowed, mandatory.
+- **Tests:** `backend/test/backups.test.js` (rules, injection attempts, rendering, key ids, selection / warnings,
+  progress math and the pg_restore parser, API permissions, re-authentication, write-only secrets, audit, jobs and
+  limits, restore inspect / run, the key never persisted, wrong-key lockout, notifications),
+  `backend/test/backup-agent.test.js` (agent end-to-end with the real scripts on a scratch database: wrong key,
+  database + APP_SECRET, database only, certificate only without downtime, forced failure with rollback, progress
+  monotonic to 100 %; `ETS_AGENT_E2E=1`), `deploy/tests/backup-retention.test.sh`, `deploy/tests/backup-e2e.sh`
+  (NAS on tmpfs, SSH through rrsync, rclone, `ets-restore --yes`, `ets-restore-server --dry-run`).
+
+### Changed
+- **Deployment:** backups run from a systemd timer instead of `/etc/cron.d/ets-backup` (removed by `update.sh`).
+- **Deployment:** `ets-restore` takes `--yes`, `--key FILE` and `--no-safety-backup`, refuses a backup of a newer
+  version, applies the migrations on both paths, ends every session and runs `verify-audit` after the restore (exit 4
+  when a chain is broken).
+- **Backend:** S6 «لا توجد نسخة احتياطية» is checked every 15 minutes with the threshold
+  max(`notify.backup_max_age_hours`, interval + 1 h); the default becomes **2 h** (migration 021 changes an
+  installation still at the old default 26 h; a customised value is kept).
+- **Deployment:** `install.sh` asks for optional offsite destinations, installs `rclone`, shows the escrow reminder
+  loudly; nginx: upload, status file and maintenance page locations, 503 instead of 502 during a restore.
+
+### Fixed
+- **Deployment:** `ets-restore` / `ets-log-protect restore` failed on a backup of an older version (pg_restore
+  `--clean` drops only the dump's objects; newer tables' foreign keys blocked it): schema `public` is now emptied in the
+  restore transaction (`deploy/db/wipe-public.sql`).
+
+### Security
+- **Backend:** the web application never gets root: a separate root agent with strict re-validation, a fixed list
+  of writable files and argument-array commands; destinations / credentials / SSH key / passphrase need the password
+  and 2FA again; job, upload and restore requests are rate-limited; restore needs three factors; backup settings,
+  jobs, uploads and restores are audited (secrets masked) — docs 06 §6b.
+
+### Upgrade notes
+- `sudo bash deploy/scripts/update.sh` from this version: installs the timers (`ets-backup.timer`,
+  `ets-backup-verify.timer`) and the backup agent (`ets-backup-agent.timer` / `.path`), removes
+  `/etc/cron.d/ets-backup`, installs `rclone`, creates **`/etc/ets/backup.conf`** (root 600; local only, hourly; the
+  daily tier keeps at least your `ETS_BACKUP_KEEP_DAYS`, so the existing 30 daily backups are **not** deleted by the
+  first run), applies migration **021**, then imports `backup.conf` into the database once — from then on the
+  settings are managed in **Settings → «النسخ الاحتياطي»** (the agent rewrites the file).
+- **Escrow the backup key now** (`sudo cat /etc/ets/backup.key`, id in `/etc/ets/backup.key.id`): password vault and a
+  sealed envelope, away from the backups; then tick «تأكيد حفظ مفتاح التشفير» in Settings → «النسخ الاحتياطي». Without
+  this key no backup can be restored (docs 08 §6 has a printable checklist).
+- Configure the offsite destinations in Settings → «النسخ الاحتياطي» → «الوجهات الخارجية», then «اختبار الاتصال»:
+  **SSH** — a dedicated user on the backup server, «إنشاء مفتاح», put the shown `restrict,command="rrsync <dir>"` line
+  in its `authorized_keys`, compare the host fingerprint (08 §4a); **NAS** — mount the share under `/mnt` (fstab with
+  `nofail`) and enter the mount point (08 §4b); **cloud** — provider, endpoint, region, bucket, path and keys (stored
+  encrypted, never shown again), or an rclone remote of `/etc/ets/rclone.conf` (08 §4c).
+- Check: `systemctl list-timers 'ets-backup*'`, «نسخ احتياطي الآن» and «تحقق الآن» succeed, every destination is green.
+- Phones reach the server by IP: a replacement server keeps them paired only with the same IP and the restored
+  certificate — consider an internal DNS name (08 §11).
+
+---
+
 ## [1.11.0] — 2026-10-21 — Online users
 
 ### Added
@@ -1743,7 +1837,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/2435711...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/RELEASE...HEAD
+[1.12.0]: https://github.com/mscit-admin/ets/compare/2435711...RELEASE
 [1.11.0]: https://github.com/mscit-admin/ets/compare/dd41f54...2435711
 [1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54
 [1.9.2]: https://github.com/mscit-admin/ets/compare/80f9472...1ff9138
