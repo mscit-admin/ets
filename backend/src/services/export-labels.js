@@ -59,6 +59,8 @@ const ar = {
   f_q: 'بحث', f_source: 'المصدر', f_test: 'حالة الاختبار', f_show_off: 'إظهار غير المفعّلة', f_show_removed: 'إظهار المُزالة',
   f_status: 'الحالة', f_mine: 'طلباتي', f_dept: 'الإدارة', f_type: 'السجل', f_from: 'من', f_to: 'إلى', f_user_id: 'المستخدم',
   f_event: 'الحدث', f_success: 'النجاح', f_deleted: 'المستخدمون المحذوفون',
+  f_awaiting: 'بانتظار اعتمادي', f_app: 'التطبيق', f_kind: 'نوع الطلب', f_field: 'الحقل المعدَّل', f_requester: 'مقدّم الطلب', f_decided_by: 'قرّره',
+  rename: 'تعديل الاسم',
   deleted_at: 'تاريخ الحذف', deleted_by: 'حذفه', delete_reason: 'سبب الحذف',
   // log columns
   log_audit: 'سجل التعديلات', log_auth: 'الدخول والأمان', log_access: 'سجل الطلبات', log_error: 'الأخطاء', log_system: 'النظام',
@@ -124,6 +126,8 @@ const en = {
   f_q: 'Search', f_source: 'Source', f_test: 'Test status', f_show_off: 'Show disabled', f_show_removed: 'Show removed',
   f_status: 'Status', f_mine: 'My requests', f_dept: 'Department', f_type: 'Log', f_from: 'From', f_to: 'To', f_user_id: 'User',
   f_event: 'Event', f_success: 'Success', f_deleted: 'Deleted users',
+  f_awaiting: 'Awaiting my approval', f_app: 'Application', f_kind: 'Request type', f_field: 'Changed field', f_requester: 'Requested by', f_decided_by: 'Decided by',
+  rename: 'Rename',
   deleted_at: 'Deleted on', deleted_by: 'Deleted by', delete_reason: 'Reason for deletion',
   log_audit: 'Audit trail', log_auth: 'Login & security', log_access: 'Request log', log_error: 'Errors', log_system: 'System',
   lc_id: '#', lc_ts: 'Time', lc_user_id: 'User id', lc_username: 'Username', lc_full_name: 'Name', lc_event: 'Event',

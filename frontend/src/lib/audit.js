@@ -133,7 +133,9 @@ export function makeAudit({ t, lang }) {
     if (k === 'status') return tx((report === 'approvals' ? 'rq_' : 'st_') + v) || v;
     if (k === 'type') return tx('log_' + v) || v;
     if (k === 'success') return v === 'true' ? t('yes') : t('no');
-    if (k === 'show_off' || k === 'show_removed' || k === 'mine' || k === 'deleted') return t('yes');
+    if (k === 'show_off' || k === 'show_removed' || k === 'mine' || k === 'deleted' || k === 'awaiting') return t('yes');
+    if (report === 'approvals' && k === 'kind') return tx('rq_kind_' + v) || v;
+    if (report === 'approvals' && k === 'field' && v === 'name') return t('rqf_field_name');
     if (k === 'reason') return tx('dr_' + v) || v;
     if (k === 'item_type') return tx('it_' + v) || v;
     return quote(short(String(v), 60));

@@ -389,7 +389,7 @@ export default function Application() {
                       {f.enabled && partW(f) > 0 && <span className="muted">{t('share')} <span className="num">{pc((f.weight / partW(f)) * 100)}%</span></span>}
                       {f.updated_by_name && <span className="muted" title={fmtDate(f.updated_at)}>{t('last_updated_by', { name: f.updated_by_name })}</span>}
                       {pendingByFn[f.id] && (
-                        <Link to="/approvals" className="pending-chip" title={pendingDetails(ph, pendingByFn[f.id]).join('\n')}>
+                        <Link to={'/approvals?app=' + encodeURIComponent(id)} className="pending-chip" title={pendingDetails(ph, pendingByFn[f.id]).join('\n')}>
                           ⏳ {t('awaiting_approval')}: {pendingSummary(ph, pendingByFn[f.id])}
                         </Link>
                       )}

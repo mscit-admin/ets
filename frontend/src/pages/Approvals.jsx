@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api, path, qs } from '../lib/api.js';
 import { pc } from '../lib/format.js';
@@ -9,7 +9,7 @@ import { ExportButton } from '../components/ExportButton.jsx';
 import { DisabledReason } from '../components/DisableReason.jsx';
 import { TypeBadge } from '../components/ItemType.jsx';
 import { MoveImpact } from '../components/MoveDialog.jsx';
-import { RQ_FIELD_LABEL as FIELD_LABEL, RQ_STATUSES, RQ_STATUS_COLOR as STATUS_COLOR, REJECT_MAX, approveAllToasts, approveLabelKey, canApproveAny as anyApprovable,
+import { RQ_FIELD_LABEL as FIELD_LABEL, RQ_STATUSES, RQ_STATUS_COLOR as STATUS_COLOR, REJECT_MAX, approveAllToasts, approveLabelKey,
   decisionToast, fmtChange, moveStage, rejectProblem, showRenameReason } from '../lib/approvalRules.js';
 
 // How a change reads, the stages of a move and the toasts of a decision: lib/approvalRules.js (shared with the mobile app).
@@ -18,13 +18,36 @@ function useFmt() {
   return (kind, field, v) => fmtChange({ t, nm, pc }, kind, field, v);
 }
 
+// Filters of the screen (1.12.1), kept in the address (?status=&dept=…) so a filtered list can be shared or reloaded.
+// No «status» in the address means «pending»; «status=» (empty) means every status. The server applies them all
+// (routes/approvals.js) and still shows only the requests the user may see; the choices come from GET /approvals/facets.
+const FILTER_KEYS = ['status', 'mine', 'awaiting', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
+const readFilters = params => Object.fromEntries(FILTER_KEYS.map(k => [k, k === 'status' && !params.has('status') ? 'pending' : params.get(k) || '']));
+const isFiltered = f => FILTER_KEYS.some(k => (k === 'status' ? f.status !== 'pending' : !!f[k]));
+
 export default function Approvals() {
   const { t, nm, errText, fmtDate } = useI18n();
   const fmt = useFmt();
-  const [status, setStatus] = useState('pending');
-  const [mine, setMine] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const f = readFilters(params);
+  const setFilter = (k, v) => setParams(prev => {
+    const next = new URLSearchParams(prev);
+    if (k === 'status' ? v === 'pending' : !v) next.delete(k); else next.set(k, v);
+    if (k === 'dept' && v) next.delete('app');                // the application list follows the department
+    return next;
+  }, { replace: true });
+  // the search box applies after a short pause in typing
+  const [text, setText] = useState(f.q);
+  useEffect(() => { setText(f.q); }, [f.q]);
+  useEffect(() => {
+    if (text.trim() === f.q) return undefined;
+    const h = setTimeout(() => setFilter('q', text.trim()), 350);
+    return () => clearTimeout(h);
+  });
   const [dlg, setDlg] = useState(null); // {req, mode:'reject'}
-  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ status, mine: mine ? 1 : '' })), [status, mine]);
+  const key = JSON.stringify(f);
+  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '' })), [key]);
+  const facets = useLoad(() => api.get('/approvals/facets' + qs({ status: f.status })), [f.status]).data;
 
   const act = async (rq, action, body = {}) => {
     try {
@@ -34,34 +57,62 @@ export default function Approvals() {
       setDlg(null); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
+  // «approve all shown»: only the requests listed now (the filters applied) that this user may approve
+  const approvable = (data?.requests || []).filter(rq => rq.can?.approve).map(rq => rq.id);
   const approveAll = async () => {
-    if (!window.confirm(t('are_you_sure'))) return;
+    if (!window.confirm(t('approve_shown_confirm', { n: approvable.length }))) return;
     try {
-      const r = await api.post('/approvals/approve-all', {});
+      const r = await api.post('/approvals/approve-all', { ids: approvable });
       for (const m of approveAllToasts(r)) toast(t(m.key, m.vars), m.kind === 'red' ? 'red' : undefined);
       reload();
     }
     catch (e) { toast(errText(e), 'red'); }
   };
 
-  if (loading && !data) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
-  const canApproveAny = anyApprovable(data.requests);
+  const filtered = isFiltered(f);
+  const apps = (facets?.applications || []).filter(a => !f.dept || a.department_id === f.dept);
+  const fieldLabel = k => (k === 'name' ? t('rqf_field_name') : t(FIELD_LABEL[k] || k));
+  const sel = (k, label, options) => (
+    <select className={'input input-sm' + (f[k] ? ' filter-on' : '')} value={f[k]} onChange={e => setFilter(k, e.target.value)} aria-label={label}>
+      <option value="">{label}: {t('all')}</option>
+      {/* a value in the address that is not offered any more stays selectable, so it can be seen and cleared */}
+      {f[k] && !options.some(([v]) => String(v) === f[k]) && <option value={f[k]}>{f[k]}</option>}
+      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
 
   return (
     <div>
       <PageHeader title={t('approvals_title')} sub={t('approvals_sub')} icon="check">
-        <ExportButton report="approvals" params={{ status, mine: mine ? 1 : '' }} />
-        {status === 'pending' && canApproveAny && <button className="btn btn-primary btn-sm" onClick={approveAll}>{t('approve_all')}</button>}
+        <ExportButton report="approvals" params={{ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '' }} />
+        {approvable.length > 0 && <button className="btn btn-primary btn-sm" onClick={approveAll}>
+          {filtered ? t('approve_shown_n', { n: approvable.length }) : t('approve_all')}</button>}
       </PageHeader>
-      <div className="filter-bar">
-        <select className="input input-sm" value={status} onChange={e => setStatus(e.target.value)} aria-label={t('status')}>
-          <option value="">{t('status')}: {t('all')}</option>
-          {RQ_STATUSES.map(s => <option key={s} value={s}>{t('rq_' + s)}</option>)}
-        </select>
-        <label className="check"><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} /> {t('my_requests')}</label>
-      </div>
-      {!data.requests.length ? <Card><Empty>{t('no_requests')}</Empty></Card> : data.requests.map(rq => (
+      <Card className="rq-filters">
+        <div className="filter-bar">
+          <input className="input input-sm" type="search" placeholder={t('rqf_search')} title={t('rqf_search_hint')} aria-label={t('rqf_search')} value={text} onChange={e => setText(e.target.value)} />
+          <select className="input input-sm" value={f.status} onChange={e => setFilter('status', e.target.value)} aria-label={t('status')}>
+            <option value="">{t('status')}: {t('all')}</option>
+            {RQ_STATUSES.map(s => <option key={s} value={s}>{t('rq_' + s)}</option>)}
+          </select>
+          {sel('dept', t('department'), (facets?.departments || []).map(d => [d.id, nm(d)]))}
+          {sel('app', t('application'), apps.map(a => [a.id, nm(a)]))}
+          {sel('requester', t('rqf_requester'), (facets?.requesters || []).map(u => [u.id, u.name]))}
+          {sel('kind', t('rqf_kind'), (facets?.kinds || []).map(k => [k, t('rq_kind_' + k)]))}
+          {sel('field', t('rqf_field'), (facets?.fields || []).map(k => [k, fieldLabel(k)]))}
+          {f.status !== 'pending' && sel('decided_by', t('rqf_decided_by'), (facets?.deciders || []).map(u => [u.id, u.name]))}
+          <label className="inline-field">{t('from')} <input className="input input-sm" type="date" value={f.from} max={f.to || undefined} onChange={e => setFilter('from', e.target.value)} /></label>
+          <label className="inline-field">{t('to')} <input className="input input-sm" type="date" value={f.to} min={f.from || undefined} onChange={e => setFilter('to', e.target.value)} /></label>
+          <label className="check"><input type="checkbox" checked={f.awaiting === '1'} onChange={e => setFilter('awaiting', e.target.checked ? '1' : '')} /> {t('rqf_awaiting')}</label>
+          <label className="check"><input type="checkbox" checked={f.mine === '1'} onChange={e => setFilter('mine', e.target.checked ? '1' : '')} /> {t('my_requests')}</label>
+          {filtered && <button type="button" className="btn btn-default btn-sm" onClick={() => { setText(''); setParams({}, { replace: true }); }}>
+            <Icon name="x" size={13} /> {t('rqf_clear')}</button>}
+          {data && <span className="muted small push" role="status">{t('rqf_count', { n: data.requests.length })}</span>}
+        </div>
+      </Card>
+      {data?.truncated && <Alert kind="orange">{t('rqf_truncated', { n: data.requests.length })}</Alert>}
+      {error ? <ErrorBox error={error} /> : loading && !data ? <Loading /> : !data.requests.length
+        ? <Card><Empty>{filtered ? t('rqf_none') : t('no_requests')}</Empty></Card> : data.requests.map(rq => (
         <Card key={rq.id} className="req-card"
           title={rq.kind === 'move_function'
             ? <span className="link-row mv-route"><Icon name="move" size={15} /> {t('mv_rq_title', {
