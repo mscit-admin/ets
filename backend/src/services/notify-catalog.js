@@ -55,6 +55,11 @@ export const TYPES = {
   backup_missing:    { code: 'S6', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   retention_reduced: { code: 'S7', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   server_errors:     { code: 'S8', category: 'system', kind: 'periodic', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
+  // backups (1.12.0): a destination's offsite copy late or failing, the weekly test restore failed / missing, a restore
+  // started or finished (web UI or CLI)
+  backup_offsite:    { code: 'S9', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
+  backup_verify:     { code: 'S10', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
+  restore_event:     { code: 'S11', category: 'system', kind: 'event', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
 };
 // Not a policy type: replaces the alerts above the hourly cap (notify.rate_cap_per_hour) of one user.
 export const RATE_CAPPED = 'rate_capped';
@@ -144,7 +149,8 @@ export const NOTIFY_DEFAULTS = {
   'notify.failed_logins_threshold': 20,    // S2: failed sign-ins in 15 minutes (one address, or all together)
   'notify.access_denied_threshold': 30,    // S5: refusals in one hour
   'notify.server_errors_threshold': 10,    // S8: server errors in one hour
-  'notify.backup_max_age_hours': 26,       // S6
+  'notify.backup_max_age_hours': 2,        // S6 (hourly backups since 1.12.0; never less than the interval + 1 h)
+  'notify.offsite_max_age_hours': 3,       // S9, per destination (never less than the interval + 2 h)
   'notify.rate_cap_per_hour': 50,          // new alerts per user per hour (mandatory alerts are never held back)
   'notify.retention_days': 180,            // read alerts kept this long, unread twice as long
   'notify.device_idle_days': 90,           // a phone not seen for this long is revoked
@@ -171,6 +177,7 @@ export const NOTIFY_RULES = {
   'notify.access_denied_threshold': intRule(5, 1000),
   'notify.server_errors_threshold': intRule(1, 1000),
   'notify.backup_max_age_hours': intRule(2, 168),
+  'notify.offsite_max_age_hours': intRule(2, 168),
   'notify.rate_cap_per_hour': intRule(5, 500),
   'notify.retention_days': intRule(30, 730),
   'notify.device_idle_days': intRule(7, 365),

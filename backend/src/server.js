@@ -12,6 +12,7 @@ import { closeAllStreams } from './services/live.js';
 import { startScheduler } from './services/notify-scan.js';
 import { startPresenceCleanup } from './services/presence.js';
 import { setAfterCommitErrorHandler } from './db/pool.js';
+import { appSecretFp } from './backup/config.js';
 
 assertConfig();
 assertCookieConfig();
@@ -19,6 +20,11 @@ assertCookieConfig();
 // Bring the schema and catalog up to date on every start (both are idempotent).
 await migrate({ log: m => logger.info(m) });
 await seed({ log: m => logger.info(m) });
+// Backups (1.12.0): a fingerprint of APP_SECRET (HMAC of a constant, not secret) in the database, so a restore can tell
+// whether a backup comes from a server with another APP_SECRET (2FA, recovery codes and phones would then break).
+await pool.query(`INSERT INTO settings(key, value) VALUES ('system.app_secret_fp', $1)
+  ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value WHERE settings.value IS DISTINCT FROM EXCLUDED.value`, [JSON.stringify(appSecretFp(config.appSecret))])
+  .catch(e => logger.warn({ err: e.message }, 'app secret fingerprint not stored'));
 // Build the login dummy hash now so the first unknown-username login is not slower than the rest.
 await getDummyHash();
 

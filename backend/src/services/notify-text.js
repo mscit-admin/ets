@@ -141,6 +141,25 @@ const T = {
     title: l === 'ar' ? `لا توجد نسخة احتياطية منذ أكثر من ${ar(p.hours, 'hour')}` : `No database backup for more than ${en(p.hours, 'hour')}`,
     body: p.last ? (l === 'ar' ? `آخر نسخة: ${String(p.last).slice(0, 16).replace('T', ' ')}` : `Last backup: ${String(p.last).slice(0, 16).replace('T', ' ')}`)
       : (l === 'ar' ? 'لم تُسجَّل أي نسخة' : 'No backup recorded') }),
+  backup_offsite: (l, p) => {
+    const d = { ar: { ssh: 'الخادم البعيد (SSH)', nas: 'وحدة التخزين الشبكية (NAS)', cloud: 'التخزين السحابي' }, en: { ssh: 'remote server (SSH)', nas: 'NAS', cloud: 'cloud storage' } }[l][p.dest] || p.dest;
+    return { title: l === 'ar' ? `النسخة الخارجية متأخرة أو فشلت: ${d}` : `Offsite copy late or failing: ${d}`,
+      body: (p.last_ok ? (l === 'ar' ? `آخر نسخة ناجحة: ${String(p.last_ok).slice(0, 16).replace('T', ' ')}` : `Last good copy: ${String(p.last_ok).slice(0, 16).replace('T', ' ')}`)
+        : (l === 'ar' ? 'لم تنجح أي نسخة بعد' : 'No successful copy yet')) + (p.error ? ` · ${String(p.error).slice(0, 120)}` : '') };
+  },
+  backup_verify: (l, p) => (p.stage === 'stale'
+    ? { title: l === 'ar' ? `لم ينجح اختبار الاسترجاع منذ أكثر من ${ar(p.days, 'day')}` : `No successful test restore for more than ${en(p.days, 'day')}`,
+      body: l === 'ar' ? 'شغّل «تحقق الآن» من الإعدادات ← النسخ الاحتياطي' : 'Run «Verify now» in Settings → Backups' }
+    : { title: l === 'ar' ? 'فشل اختبار الاسترجاع الأسبوعي للنسخة الاحتياطية' : 'The weekly test restore of the backup failed',
+      body: p.error ? String(p.error).slice(0, 160) : null }),
+  restore_event: (l, p) => {
+    const st = { started: ['بدأ استرجاع من نسخة احتياطية', 'A restore from a backup started'], done: ['اكتمل الاسترجاع من النسخة الاحتياطية', 'The restore from a backup finished'],
+      rolled_back: ['فشل الاسترجاع وأُعيد النظام إلى حالته السابقة', 'The restore failed and was rolled back'],
+      failed: ['فشل الاسترجاع من النسخة الاحتياطية', 'The restore from a backup failed'] }[p.stage] || ['استرجاع من نسخة احتياطية', 'Restore from a backup'];
+    return { title: l === 'ar' ? st[0] : st[1],
+      body: [p.by ? (l === 'ar' ? `بواسطة: ${p.by}` : `By: ${p.by}`) : null, p.created ? (l === 'ar' ? `نسخة: ${String(p.created).slice(0, 16).replace('T', ' ')}` : `Backup: ${String(p.created).slice(0, 16).replace('T', ' ')}`) : null]
+        .filter(Boolean).join(' · ') || null };
+  },
   retention_reduced: (l, p) => ({
     title: l === 'ar' ? 'خُفّضت مدة الاحتفاظ بالسجلات' : 'Log retention was reduced',
     body: `${p.key}: ${p.from} → ${p.to}${p.by ? (l === 'ar' ? ` · بواسطة ${p.by}` : ` · by ${p.by}`) : ''}` }),
