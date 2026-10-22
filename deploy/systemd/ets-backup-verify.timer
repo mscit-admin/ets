@@ -1,0 +1,12 @@
+# Weekly, Friday 03:00 by default (Settings → «النسخ الاحتياطي»: ets-backup-verify.timer.d/schedule.conf).
+[Unit]
+Description=ETS weekly test restore schedule
+
+[Timer]
+OnCalendar=Fri *-*-* 03:00:00
+Persistent=true
+AccuracySec=1min
+Unit=ets-backup-verify.service
+
+[Install]
+WantedBy=timers.target

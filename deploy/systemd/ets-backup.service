@@ -1,0 +1,19 @@
+# ETS backup (1.12.0): database dump, configuration bundle, the day's logs bundle, retention, offsite copies.
+# Started by ets-backup.timer (hourly by default; the schedule is set in Settings → «النسخ الاحتياطي» and written by
+# ets-backup-agent into ets-backup.timer.d/schedule.conf). Runs as root: it reads the backup key and the TLS key.
+[Unit]
+Description=ETS backup (encrypted database, configuration and logs; offsite copies)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ets-backup
+StandardOutput=append:/var/log/ets-backup.log
+StandardError=append:/var/log/ets-backup.log
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=3h
+PrivateTmp=true
+UMask=0077

@@ -5,7 +5,10 @@
 BUILD_USER=ets-build                 # unprivileged user that runs npm ci / vite build
 BUILD_HOME=/var/lib/ets-build
 BACKUP_KEY=${CONF:-/etc/ets}/backup.key
+# shellcheck disable=SC2034  # BACKUP_LOG: used by install.sh
 BACKUP_LOG=/var/log/ets-backup.log  # root-owned, outside the ets-writable /var/log/ets
+BACKUP_CONF=${CONF:-/etc/ets}/backup.conf
+STATE_DIR=/var/lib/ets               # backup agent: inbox (API → agent), upload, restore status (1.12.0)
 NODE_MAJOR=22
 # NodeSource repository signing key (https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key).
 # The installer refuses the key if its fingerprint differs. Confirm this value against NodeSource's
@@ -100,6 +103,9 @@ build_and_deploy_app() {
   mkdir -p "$APP"
   rsync -a --delete --chown=root:root --exclude '/frontend/node_modules' "$stage/" "$APP/"
   rm -rf "$stage"
+  # version and commit of this build (in each configuration backup's manifest.json)
+  printf 'version=%s\ncommit=%s\nbuilt=%s\n' "$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$APP/backend/package.json" | head -1)" \
+    "$(git -c safe.directory="$SRC" -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)" "$(date -Is)" >"$APP/BUILD-INFO"
   set_app_permissions
 }
 # root owns the code; the service (group ets) reads the backend; nginx reads only the built frontend.
@@ -128,10 +134,37 @@ prune_env_backups() {
   done < <(find "$CONF" -maxdepth 1 -name 'ets.env.bak-*' -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2-)
 }
 
-# ---------------------------------------------------------------- service, cron, logrotate
-# install_runtime_files DB_MODE DB_HOST — systemd unit, logrotate, backup/restore commands, cron.
+# /etc/ets/backup.conf when it does not exist yet (first installation, or an update from 1.11.0): local backups only,
+# hourly, tiers 48 h / 30 days / 12 weeks / 12 months; the daily tier keeps at least ETS_BACKUP_KEEP_DAYS of 1.11.0 so
+# the existing dailies are not deleted earlier than before. Offsite destinations from the installer's answers
+# (ETS_BACKUP_SSH_TARGET, ETS_BACKUP_NAS_DIR, ETS_BACKUP_RCLONE_REMOTE). From then on the settings live in the database
+# (Settings → «النسخ الاحتياطي»): ets-backup-agent imports this file once and rewrites it.
+ensure_backup_conf() {
+  [[ -f "$BACKUP_CONF" ]] && { chown root:root "$BACKUP_CONF"; chmod 600 "$BACKUP_CONF"; return 0; }
+  local kd; kd=$(env_get "$ENVF" ETS_BACKUP_KEEP_DAYS 2>/dev/null || true); [[ "$kd" =~ ^[0-9]+$ ]] || kd=30; (( kd < 30 )) && kd=30
+  (umask 077; cat >"$BACKUP_CONF" <<CONF
+# /etc/ets/backup.conf — created by $(basename "$0") on $(date -Is). Imported once into the database; afterwards it is
+# written by ets-backup-agent from Settings → «النسخ الاحتياطي» (do not edit by hand). Read as data, never executed.
+BACKUP_FREQUENCY_HOURS=1
+BACKUP_LOGS_TIME='00:45'
+BACKUP_KEEP_HOURLY=48
+BACKUP_KEEP_DAILY=$kd
+BACKUP_KEEP_WEEKLY=12
+BACKUP_KEEP_MONTHLY=12
+BACKUP_VERIFY_ENABLED=yes
+BACKUP_SSH_TARGET='${ETS_BACKUP_SSH_TARGET:-}'
+BACKUP_SSH_PORT=${ETS_BACKUP_SSH_PORT:-22}
+BACKUP_NAS_DIR='${ETS_BACKUP_NAS_DIR:-}'
+BACKUP_RCLONE_REMOTE='${ETS_BACKUP_RCLONE_REMOTE:-}'
+CONF
+  )
+  echo "Created $BACKUP_CONF (backups every hour; daily copies kept $kd days)"
+}
+
+# ---------------------------------------------------------------- service, timers, logrotate
+# install_runtime_files DB_MODE DB_HOST — systemd units, logrotate, backup/restore commands and timers, backup agent.
 install_runtime_files() {
-  local mode=$1 dbhost=$2 unit=/etc/systemd/system/ets-backend.service
+  local mode=$1 dbhost=$2 unit=/etc/systemd/system/ets-backend.service u
   install -m 644 "$APP/deploy/systemd/ets-backend.service" "$unit"
   if [[ $mode == local ]]; then
     sed -i 's/^After=.*/After=network-online.target postgresql.service/; s/^#\?Requires=.*/Requires=postgresql.service/' "$unit"
@@ -144,18 +177,49 @@ install_runtime_files() {
     fi
   fi
   install -m 644 "$APP/deploy/logrotate/ets" /etc/logrotate.d/ets
+  install -d -m 755 /usr/local/lib/ets
+  install -m 644 "$APP/deploy/scripts/backup-lib.sh" /usr/local/lib/ets/backup-lib.sh
   install -m 755 "$APP/deploy/scripts/backup.sh" /usr/local/bin/ets-backup
+  install -m 755 "$APP/deploy/scripts/backup-verify.sh" /usr/local/bin/ets-backup-verify
   install -m 755 "$APP/deploy/scripts/restore.sh" /usr/local/bin/ets-restore
+  install -m 755 "$APP/deploy/scripts/restore-server.sh" /usr/local/bin/ets-restore-server
   install -m 750 "$APP/deploy/scripts/log-protect.sh" /usr/local/sbin/ets-log-protect
-  touch "$BACKUP_LOG"; chown root:root "$BACKUP_LOG"; chmod 600 "$BACKUP_LOG"
-  echo "30 1 * * * root /usr/local/bin/ets-backup >> $BACKUP_LOG 2>&1" >/etc/cron.d/ets-backup
+  install -m 750 "$APP/deploy/scripts/backup-agent.sh" /usr/local/sbin/ets-backup-agent
+  for u in /var/log/ets-backup.log /var/log/ets-offsite.log /var/log/ets-backup-verify.log /var/log/ets-backup-agent.log; do
+    touch "$u"; chown root:root "$u"; chmod 600 "$u"
+  done
+  # backup agent directories: the API (ets) writes the inbox and the upload area; only root reads the staging area;
+  # the restore status (no secrets) is readable by nginx for the maintenance page
+  install -d -m 755 -o root -g root "$STATE_DIR" "$STATE_DIR/restore"
+  install -d -m 700 -o ets -g ets "$STATE_DIR/inbox" "$STATE_DIR/upload"
+  install -d -m 700 -o root -g root "$STATE_DIR/restore/work"
   ensure_backup_key
+  ensure_backup_conf
+  # 1.11.0 and earlier: a daily cron job — replaced by the systemd timer (hourly, Persistent=true, no overlap)
+  if [[ -e /etc/cron.d/ets-backup ]]; then rm -f /etc/cron.d/ets-backup; echo "Removed /etc/cron.d/ets-backup (backups now run from ets-backup.timer)"; fi
+  for u in ets-backup.service ets-backup.timer ets-backup-verify.service ets-backup-verify.timer ets-backup-agent.service ets-backup-agent.timer ets-backup-agent.path; do
+    install -m 644 "$APP/deploy/systemd/$u" "/etc/systemd/system/$u"
+  done
+  systemctl daemon-reload
+  systemctl enable --now ets-backup.timer ets-backup-verify.timer ets-backup-agent.timer ets-backup-agent.path >/dev/null
   # earlier versions kept a copy of ets.env (APP_SECRET, DB password) next to the dumps
   if [[ -e "$BACKUPS/ets.env.backup" ]]; then
     shred -u "$BACKUPS/ets.env.backup" 2>/dev/null || rm -f "$BACKUPS/ets.env.backup"
     echo "Removed the old configuration copy $BACKUPS/ets.env.backup"
   fi
   prune_env_backups
+}
+# After the migrations (table backup_config exists): /etc/ets/backup.conf → database, once; then the agent renders the
+# configuration and the timer schedule from the database.
+backup_agent_import() {
+  ETS_ENV_FILE="$ENVF" /usr/local/sbin/ets-backup-agent import >/dev/null \
+    || warn "the backup agent could not import $BACKUP_CONF — see /var/log/ets-backup-agent.log (Settings → «النسخ الاحتياطي» shows the state)"
+}
+# The SSH destination's key (ed25519, /etc/ets/backup_ssh_key): created when missing; prints the public key and the
+# restricted authorized_keys line for the backup server.
+show_backup_ssh_key() {
+  [[ -n "${ETS_BACKUP_SSH_TARGET:-}" ]] || return 0
+  /usr/local/bin/ets-backup --ssh-key | grep -v '^RESULT '
 }
 
 # ---------------------------------------------------------------- database migrations and audit-trail protection

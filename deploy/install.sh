@@ -84,6 +84,10 @@ is_adminpass() {
   [[ "${1,,}" != *"${ETS_ADMIN_USER,,}"* ]] && not_example "$1"
 }
 is_sslmode()  { [[ "$1" =~ ^(require|verify-ca|verify-full)$ ]]; }
+# offsite backup destinations (1.12.0) — the same strict rules as deploy/scripts/backup-lib.sh and the web UI
+is_ssh_target0() { [[ -z "$1" ]] || { [[ "$1" =~ ^[a-z_][a-z0-9_.-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[A-Za-z0-9._/+-]{0,200}$ ]] && [[ ! "${1#*:}" =~ (^|/)\.\.(/|$) && "${1#*:}" != -* ]]; }; }
+is_nas_dir0()    { [[ -z "$1" ]] || { is_safepath "$1" && [[ "$1" =~ ^/(mnt|media|srv)/[A-Za-z0-9._@+-] && ! "$1" =~ (^|/)\.\.(/|$) ]]; }; }
+is_remote0()     { [[ -z "$1" ]] || { [[ "$1" =~ ^[A-Za-z0-9_-]{1,40}:[A-Za-z0-9._/-]{0,200}$ ]] && [[ ! "${1#*:}" =~ (^|/)\.\.(/|$) ]]; }; }
 
 # ---------------------------------------------------------------- question helpers
 # ask VAR "question" "default" validator "error message"
@@ -275,6 +279,15 @@ ask ETS_IMPORT_FILE "Original tracker file to import now (HTML/JSON path, Enter 
 ask_choice ETS_FIREWALL "Configure the firewall (ufw) to allow only SSH and the web ports?" "$DEF_FIREWALL" \
   "yes|Yes (recommended)" "no|No, I manage the firewall myself"
 
+section "6. Offsite copies of the backups (optional — can also be set later in Settings → «النسخ الاحتياطي»)"
+echo "  Backups run every hour and stay on this server. Copies elsewhere protect against losing the server."
+echo "  Any combination; press Enter to skip a destination. Used only at the first installation (then the web UI)."
+[[ $ASSUME_YES -eq 1 ]] && : "${ETS_BACKUP_SSH_TARGET=}" "${ETS_BACKUP_NAS_DIR=}" "${ETS_BACKUP_RCLONE_REMOTE=}"
+ask ETS_BACKUP_SSH_TARGET "Another server over SSH (user@host:/path, e.g. etsbackup@10.0.0.30:/srv/backups/ets)" "" is_ssh_target0 "user@host:/path — letters, digits and . _ / + - only"
+ask ETS_BACKUP_NAS_DIR "Mounted NAS directory (NFS / SMB mount point under /mnt, /media or /srv)" "" is_nas_dir0 "an absolute path under /mnt, /media or /srv"
+ask ETS_BACKUP_RCLONE_REMOTE "rclone remote of /etc/ets/rclone.conf (name:bucket/path; S3 keys can be entered in the web UI instead)" "" is_remote0 "name:bucket/path"
+
+
 # ---------------------------------------------------------------- derived values
 : "${ETS_LE_EMAIL:=}" "${ETS_CERT:=}" "${ETS_KEY:=}"
 URL="https://$ETS_ADDRESS$( [[ $ETS_HTTPS_PORT == 443 ]] || echo ":$ETS_HTTPS_PORT")"
@@ -298,7 +311,8 @@ cat <<EOF
   2FA policy ............ $ETS_MFA_MODE
   System names .......... $ETS_ORG_NAME_AR / $ETS_ORG_NAME_EN
   Time zone ............. $ETS_TIMEZONE
-  Backups ............... daily 01:30, encrypted, kept $ETS_BACKUP_KEEP_DAYS days in $BACKUPS
+  Backups ............... every hour, encrypted, in $BACKUPS (48 h hourly, ${ETS_BACKUP_KEEP_DAYS} days daily, 12 weeks, 12 months)
+  Offsite copies ........ ${ETS_BACKUP_SSH_TARGET:+SSH $ETS_BACKUP_SSH_TARGET  }${ETS_BACKUP_NAS_DIR:+NAS $ETS_BACKUP_NAS_DIR  }${ETS_BACKUP_RCLONE_REMOTE:+cloud $ETS_BACKUP_RCLONE_REMOTE}$( [[ -z "$ETS_BACKUP_SSH_TARGET$ETS_BACKUP_NAS_DIR$ETS_BACKUP_RCLONE_REMOTE" ]] && echo "none (set them later in Settings → «النسخ الاحتياطي»)")
   Import data from ...... ${ETS_IMPORT_FILE:-(nothing)}
   Firewall .............. $ETS_FIREWALL$( [[ $ETS_FIREWALL == yes ]] && echo " (SSH $SSH_PORT + web ports)")
 EOF
@@ -405,7 +419,8 @@ STEP=0; STEPS=12
 export DEBIAN_FRONTEND=noninteractive
 
 step "System packages"
-PKGS=(ca-certificates curl gnupg rsync openssl nginx logrotate cron)
+# rclone: offsite copies to cloud storage can be switched on later from the web UI, which cannot install packages
+PKGS=(ca-certificates curl gnupg rsync openssl nginx logrotate rclone)
 [[ $ETS_DB_MODE == local ]] && PKGS+=(postgresql postgresql-contrib) || PKGS+=(postgresql-client)
 [[ $ETS_FIREWALL == yes ]] && PKGS+=(ufw)
 [[ $ETS_TLS == letsencrypt ]] && PKGS+=(certbot)
@@ -532,7 +547,11 @@ fi
 ln -sf "$NGX_SITE" /etc/nginx/sites-enabled/ets
 case $ETS_TLS in
   selfsigned)
-    if selfsigned_needs_renewal "$ETS_ADDRESS" "$ETS_CERT"; then
+    if [[ "${ETS_KEEP_CERT:-0}" == 1 && -f "$ETS_CERT" && -f "$ETS_KEY" ]]; then
+      # a certificate put back from a backup (ets-restore-server): kept even when it would be renewed, because the
+      # phones pin its fingerprint — renew it later on purpose (and re-pair the phones)
+      selfsigned_needs_renewal "$ETS_ADDRESS" "$ETS_CERT" && warn "the restored certificate expires within 30 days or does not name $ETS_ADDRESS — kept anyway (phones pin it)"
+    elif selfsigned_needs_renewal "$ETS_ADDRESS" "$ETS_CERT"; then
       make_selfsigned "$ETS_ADDRESS" "$ETS_CERT" "$ETS_KEY"
     fi
     echo "Self-signed certificate: $ETS_CERT (server certificate for $ETS_ADDRESS only, CA:FALSE, valid 825 days)."
@@ -564,6 +583,8 @@ systemctl enable nginx && systemctl restart nginx
 
 step "Application service, log rotation and backups (encrypted with $BACKUP_KEY)"
 install_runtime_files "$ETS_DB_MODE" "$ETS_DB_HOST"
+backup_agent_import
+show_backup_ssh_key
 systemctl daemon-reload
 systemctl enable ets-backend
 systemctl restart ets-backend
@@ -585,7 +606,8 @@ for i in $(seq 1 20); do curl -fsS "http://127.0.0.1:$ETS_API_PORT/api/health" >
 [[ $ok == 1 ]] && echo "✓ application service answers on port $ETS_API_PORT" || warn "application not answering — see: journalctl -u ets-backend -n 50"
 CHECK="https://127.0.0.1:$ETS_HTTPS_PORT/api/health"
 curl -fsSk "$CHECK" >/dev/null && echo "✓ web server answers on $CHECK" || warn "web server check failed: $CHECK"
-/usr/local/bin/ets-backup >> "$BACKUP_LOG" 2>&1 && echo "✓ first (encrypted) backup created in $BACKUPS" || warn "first backup failed — see $BACKUP_LOG"
+if [[ "${ETS_SKIP_FIRST_BACKUP:-0}" == 1 ]]; then echo "first backup skipped (a restore follows)"
+else /usr/local/bin/ets-backup >> "$BACKUP_LOG" 2>&1 && echo "✓ first (encrypted) backup created in $BACKUPS" || warn "first backup failed — see $BACKUP_LOG"; fi
 
 # ================================================================= DONE
 cat <<EOF
@@ -604,9 +626,10 @@ EOF
 cat <<EOF
 
   Configuration:   $ENVF        ${YE}← copy it to a safe place (contains APP_SECRET)${N}
-  Backup key:      $BACKUP_KEY  ${YE}← copy it to a safe place, NOT with the backups (needed to restore)${N}
+  Backup key:      $BACKUP_KEY  ${RE}← ESCROW IT NOW: copy it to a safe place, NOT with the backups. Without it no backup
+                   can ever be restored. Then confirm it in Settings → «النسخ الاحتياطي» (docs/handover/08 §4)${N}
   Logs:            $LOGDIR/  ·  journalctl -u ets-backend  ·  backups: $BACKUP_LOG
-  Backups:         $BACKUPS/ (daily 01:30, encrypted, $ETS_BACKUP_KEEP_DAYS days)  ·  sudo ets-backup  ·  sudo ets-restore <file.dump.gpg>
+  Backups:         $BACKUPS/ (every hour, encrypted)  ·  Settings → «النسخ الاحتياطي»  ·  sudo ets-backup  ·  sudo ets-restore <file.dump.gpg>
   Install log:     /var/log/ets-install.log
   Service:         sudo systemctl status|restart ets-backend
 ${GR}════════════════════════════════════════════════════════════════════${N}

@@ -11,8 +11,9 @@
     create 0640 ets ets
 }
 
-# nightly backup output (written by root's cron job, kept outside the ets-writable /var/log/ets)
-/var/log/ets-backup.log {
+# backup output (written by root's systemd services, kept outside the ets-writable /var/log/ets): backups,
+# offsite copies, weekly test restore, backup agent (1.12.0)
+/var/log/ets-backup.log /var/log/ets-offsite.log /var/log/ets-backup-verify.log /var/log/ets-backup-agent.log {
     monthly
     rotate 12
     missingok

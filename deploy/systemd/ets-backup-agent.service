@@ -1,0 +1,22 @@
+# ETS backup agent (1.12.0) — the privileged helper of Settings → «النسخ الاحتياطي». The web application runs as the
+# unprivileged user ets and never gets root: it stores the desired configuration and queues jobs in the database;
+# this oneshot service (root) validates them again, renders /etc/ets/backup.conf, rclone.conf and the timer schedules,
+# and runs the whitelisted jobs (backup now, verify now, destination test, SSH key, passphrase, restore).
+# Started every 30 s by ets-backup-agent.timer and at once by ets-backup-agent.path.
+[Unit]
+Description=ETS backup agent (configuration and jobs from the web UI)
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+Environment=ETS_ENV_FILE=/etc/ets/ets.env
+WorkingDirectory=/opt/ets/backend
+ExecStart=/usr/local/sbin/ets-backup-agent run
+StandardOutput=append:/var/log/ets-backup-agent.log
+StandardError=append:/var/log/ets-backup-agent.log
+# restore keys (≤ 15 minutes, between the inspection and the restore) live only in this tmpfs directory
+RuntimeDirectory=ets-backup-agent
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+TimeoutStartSec=6h
+UMask=0077

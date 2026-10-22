@@ -183,7 +183,9 @@ if [[ $MODE == sshkey ]]; then
   fi
   [[ -s "$BACKUP_SSH_KEY.pub" ]] || ssh-keygen -y -f "$BACKUP_SSH_KEY" >"$BACKUP_SSH_KEY.pub"
   pub=$(cat "$BACKUP_SSH_KEY.pub"); fp=$(ssh-keygen -l -f "$BACKUP_SSH_KEY.pub" | awk '{print $2}')
-  dir=${BACKUP_SSH_TARGET#*:}; [[ -n "$BACKUP_SSH_TARGET" && "${dir:0:1}" == / ]] || dir=/srv/backups/ets
+  # the restricted directory on the backup server: the target path when absolute (with rrsync the client path "/" is
+  # the top of that directory), /srv/backups/ets otherwise
+  dir=${BACKUP_SSH_TARGET#*:}; [[ -n "$BACKUP_SSH_TARGET" && "${dir:0:1}" == / && "$dir" != / ]] || dir=/srv/backups/ets
   line="restrict,command=\"rrsync ${dir%/}\" $pub"
   echo "Public key ($fp) — on the backup server, for a dedicated user (e.g. etsbackup), add this line to ~etsbackup/.ssh/authorized_keys:"
   echo "  $line"
@@ -221,7 +223,7 @@ if [[ $MODE == test ]]; then
   [[ -n "$free" ]] && extra+=",\"free_kb\":$free"
   if [[ $d == ssh ]]; then
     h=${BACKUP_SSH_TARGET#*@}; h=${h%%:*}; [[ "$BACKUP_SSH_PORT" == 22 ]] || h="[$h]:$BACKUP_SSH_PORT"
-    hfp=$(ssh-keygen -l -F "$h" -f "$SSH_KNOWN" 2>/dev/null | awk '!/^#/{print $2" ("$NF")"}' | head -3 | paste -sd ' ' -)
+    hfp=$(ssh-keygen -l -F "$h" -f "$SSH_KNOWN" 2>/dev/null | awk '!/^#/{print $3" ("$2")"}' | head -3 | paste -sd ' ' -)
     extra+=",\"host_fingerprint\":$(bk_json_str "$hfp")"
   fi
   echo "RESULT {\"ok\":true,\"dest\":\"$d\",\"files\":${files:-0}$extra}"

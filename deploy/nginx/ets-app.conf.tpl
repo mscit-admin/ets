@@ -21,6 +21,12 @@ location /api/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 120s;
+    # a restore is running (the API is stopped on purpose): 503 + the maintenance page instead of 502
+    error_page 502 503 504 = @ets_maintenance;
+}
+location @ets_maintenance {
+    if (-f /var/lib/ets/restore/active) { return 503 '{"error":"maintenance_restore"}'; }
+    return 502 '{"error":"api_unavailable"}';
 }
 
 # Live updates (Server-Sent Events, backend/src/routes/events.js): one long-lived response per open tab.
@@ -109,6 +115,38 @@ location ~* ^/api/auth/(login|change-password|2fa/(verify|setup|enable|disable|r
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
+# Backups (1.12.0): an encrypted backup file uploaded for a restore (Settings → «النسخ الاحتياطي»). The API streams it
+# to disk after the administrator check and enforces its own limit (ETS_UPLOAD_MAX_MB, 4 GB by default).
+location = /api/backups/upload {
+    client_max_body_size 4g;
+    proxy_request_buffering off;
+    proxy_pass http://127.0.0.1:__API_PORT__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+
+# Progress of a restore (1.12.0), served by nginx because the API is stopped while the database is replaced.
+# Read-only, no secrets (steps, percentage, counters, times; written by ets-backup-agent). Only the restore screens ask
+# for it (they send X-ETS-Status: 1); any other request gets 404.
+location = /api/restore-status.json {
+    if ($http_x_ets_status != "1") { return 404; }
+    alias /var/lib/ets/restore/status.json;
+    default_type application/json;
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+# While the API is down for a restore (/var/lib/ets/restore/active exists) the pages show the maintenance page with the
+# same progress bar; the API answers 503 there instead of 502.
+location = /maintenance.html {
+    add_header Cache-Control "no-store";
+    include /etc/nginx/snippets/ets-headers.conf;
+}
+
 # Hashed static assets: cache for a long time
 location /assets/ {
     expires 30d;
@@ -117,8 +155,9 @@ location /assets/ {
     try_files $uri =404;
 }
 
-# Single-page app: every other path serves index.html
+# Single-page app: every other path serves index.html (the maintenance page during a restore)
 location / {
+    if (-f /var/lib/ets/restore/active) { rewrite ^ /maintenance.html last; }
     add_header Cache-Control "no-cache";
     include /etc/nginx/snippets/ets-headers.conf;
     try_files $uri /index.html;
