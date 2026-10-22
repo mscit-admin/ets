@@ -142,7 +142,7 @@ location = /api/restore-status.json {
 }
 # While the API is down for a restore (/var/lib/ets/restore/active exists) the pages show the maintenance page with the
 # same progress bar; the API answers 503 there instead of 502.
-location = /maintenance.html {
+location ~ ^/maintenance\.(html|js)$ {
     add_header Cache-Control "no-store";
     include /etc/nginx/snippets/ets-headers.conf;
 }
@@ -157,7 +157,7 @@ location /assets/ {
 
 # Single-page app: every other path serves index.html (the maintenance page during a restore)
 location / {
-    if (-f /var/lib/ets/restore/active) { rewrite ^ /maintenance.html last; }
+    if (-f /var/lib/ets/restore/active) { rewrite ^ /maintenance.html last; }   # (/assets/ and /maintenance.js stay reachable)
     add_header Cache-Control "no-cache";
     include /etc/nginx/snippets/ets-headers.conf;
     try_files $uri /index.html;

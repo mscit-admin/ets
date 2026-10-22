@@ -104,13 +104,13 @@ export async function refreshStatus(p = agentPaths()) {
   if (cfg.ssh?.target && fs.existsSync(p.knownHosts)) {
     const host = cfg.ssh.target.split('@')[1].split(':')[0];
     const r = await run('ssh-keygen', ['-l', '-F', cfg.ssh.port === 22 ? host : `[${host}]:${cfg.ssh.port}`, '-f', p.knownHosts]);
-    if (r.code === 0) hostFp = r.out.split('\n').filter(l => l && !l.startsWith('#')).map(l => { const f = l.trim().split(/\s+/); return `${f[1]} (${f[f.length - 1]})`; }).join(' ');
+    if (r.code === 0) hostFp = r.out.split('\n').filter(l => l && !l.startsWith('#')).map(l => { const f = l.trim().split(/\s+/); return `${f[2]} (${f[1]})`; }).join(' ');
   }
   const dir = cfg.ssh?.target?.split(':')[1];
   const data = {
     generated_at: new Date().toISOString(), hostname: hostname(), ips: ips(), backup_dir: p.backupDir, disk, local, destinations: dests,
     next_backup: await nextRun(p, 'ets-backup.timer'), next_verify: await nextRun(p, 'ets-backup-verify.timer'),
-    ssh: pub ? { public_key: pub.trim(), fingerprint: sshFp, authorized_keys_line: `restrict,command="rrsync ${dir && dir.startsWith('/') ? dir.replace(/\/$/, '') : '/srv/backups/ets'}" ${pub.trim()}`,
+    ssh: pub ? { public_key: pub.trim(), fingerprint: sshFp, authorized_keys_line: `restrict,command="rrsync ${dir && dir.startsWith('/') && dir !== '/' ? dir.replace(/\/$/, '') : '/srv/backups/ets'}" ${pub.trim()}`,
       host_fingerprint: hostFp } : null,
     key_id: (readText(p.backupKey + '.id') || '').trim() || null,
     rclone: fs.existsSync(p.rcloneConf),

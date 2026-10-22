@@ -4,27 +4,29 @@
 // /var/lib/ets/restore/status.json (restore) or to the job row (other jobs) about once a second; the web UI and the
 // maintenance page served by nginx only display it.
 
-// Size model: seconds a phase takes = fixed + units / rate. The rates were measured on the end-to-end test of the
-// agent (PostgreSQL 16, a 4-vCPU container, a 165 kB / 1 250-row and a 52 MB / 400 000-row database) and rounded
-// down, so the first estimate is rather pessimistic; the ETA then follows the measured throughput.
+// Size model: seconds a phase takes = fixed + units / rate. Rates measured on the end-to-end runs of the agent
+// (PostgreSQL 16, 4 vCPU container): a 1.2 GB database (6 M rows, 47 MB encrypted dump) restored with checksum 0.1 s,
+// decrypt 0.3 s, safety backup 31.5 s, data 12.5 s, indexes / constraints 12.4 s, migrations / verify-audit / start
+// < 1 s — and a 10 MB / 1 300-row database (fixed costs dominate). Rounded down, so the first estimate is rather
+// pessimistic; the ETA then follows the measured throughput (EWMA).
 export const MODEL = {
   fetch:         { fixed: 1, per: 'bytes', rate: 40e6 },    // copy from a destination / the upload area
-  checksum:      { fixed: 0.2, per: 'bytes', rate: 400e6 },
+  checksum:      { fixed: 0.2, per: 'bytes', rate: 300e6 },
   decrypt:       { fixed: 0.5, per: 'bytes', rate: 120e6 },
-  safety:        { fixed: 3, per: 'db_bytes', rate: 25e6 },  // pg_dump + gpg of the current database
+  safety:        { fixed: 3, per: 'db_bytes', rate: 30e6 },  // pg_dump + gpg of the current database
   stop:          { fixed: 2 },
-  restore_data:  { fixed: 1, per: 'data_bytes', rate: 15e6 },
-  restore_index: { fixed: 1, per: 'data_bytes', rate: 60e6 },
+  restore_data:  { fixed: 1, per: 'data_bytes', rate: 80e6 }, // data_bytes: tables with their indexes (pg_total_relation_size)
+  restore_index: { fixed: 1, per: 'data_bytes', rate: 80e6 },
   config:        { fixed: 1 },
   migrate:       { fixed: 2 },
-  verify:        { fixed: 1, per: 'rows', rate: 60e3 },       // verify-audit walks the hash chains
+  verify:        { fixed: 2, per: 'rows', rate: 5e6 },        // verify-audit walks the hash chains (a share of the rows)
   start:         { fixed: 3 },
   health:        { fixed: 2 },
   logs:          { fixed: 0.5, per: 'logs_bytes', rate: 80e6 },
   createdb:      { fixed: 1 },
   counts:        { fixed: 1 },
   drop:          { fixed: 1 },
-  dump:          { fixed: 2, per: 'db_bytes', rate: 25e6 },
+  dump:          { fixed: 2, per: 'db_bytes', rate: 30e6 },
   bundle:        { fixed: 1 },
   retention:     { fixed: 0.5 },
   offsite:       { fixed: 3, per: 'db_bytes', rate: 10e6 },
@@ -76,7 +78,10 @@ export class Tracker {
   begin(key, now = Date.now()) {
     const i = this.phases.findIndex(p => p.key === key);
     if (i < 0) return;
-    for (let j = 0; j < i; j++) if (this.phases[j].state === 'pending' || this.phases[j].state === 'running') this.phases[j].state = this.phases[j].state === 'running' ? 'done' : 'skipped';
+    for (let j = 0; j < i; j++) {
+      const q = this.phases[j];
+      if (q.state === 'running') { q.state = 'done'; q.frac = 1; q.finishedAt = now; } else if (q.state === 'pending') q.state = 'skipped';
+    }
     this.phases[i].state = 'running'; this.phases[i].frac = 0; this.phases[i].startedAt = now;
     this.current = key;
     this.tick(now);
@@ -136,7 +141,8 @@ export class Tracker {
     const e = this.eta(now);
     return {
       kind: this.kind, state: this.state, percent: Math.round(this.pct * 10) / 10, current: this.current,
-      phases: this.phases.map(p => ({ key: p.key, state: p.state, percent: Math.round(p.frac * 1000) / 10 })),
+      phases: this.phases.map(p => ({ key: p.key, state: p.state, percent: Math.round(p.frac * 1000) / 10,
+        ...(p.startedAt ? { seconds: Math.round(((p.finishedAt || now) - p.startedAt) / 100) / 10 } : {}) })),
       eta_s: e.seconds, eta_estimated: e.estimated, elapsed_s: Math.round(((this.endedAt || now) - this.startedAt) / 1000),
       counters: this.counters, started_at: new Date(this.startedAt).toISOString(), updated_at: new Date(now).toISOString(),
     };

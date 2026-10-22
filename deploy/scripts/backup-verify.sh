@@ -186,6 +186,8 @@ STAGE=verify_audit
 if run_node scripts/verify-audit.js --json >"$WORK/va.json" 2>"$WORK/va.err"; then note "audit chains intact (verify-audit)"; AUD=true
 else AUD=false; fail "audit chain check failed on the backup: $(head -c 300 "$WORK/va.err")"; fi
 STAGE=counts
+# statistics of the restored copy (pg_restore does not analyze): rows and sizes per table drive the restore progress
+psql_app -d "$TMPDB" -c 'ANALYZE' >/dev/null 2>&1 || true
 psql_app -d "$TMPDB" -tA -F $'\t' -c "SELECT c.relname, GREATEST(c.reltuples,0)::bigint, pg_total_relation_size(c.oid) FROM pg_class c
   WHERE c.relnamespace='public'::regnamespace AND c.relkind IN ('r','p') ORDER BY 1" >"$WORK/stats" 2>/dev/null || : >"$WORK/stats"
 DBSIZE=$(psql_app -d "$TMPDB" -tAc 'SELECT pg_database_size(current_database())')

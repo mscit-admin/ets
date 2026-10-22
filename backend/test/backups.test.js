@@ -138,7 +138,7 @@ test('restore selection: nearest configuration bundle, unavailable items with re
 });
 
 test('progress: weights from the size model, monotonic percentage, EWMA ETA, counters', () => {
-  const ph = planPhases(PLANS.restore, { bytes: 100e6, db_bytes: 500e6, data_bytes: 400e6, rows: 3e6 });
+  const ph = planPhases(PLANS.restore, { bytes: 1e9, db_bytes: 5e9, data_bytes: 4e9, rows: 3e7 });
   assert.ok(Math.abs(ph.reduce((a, p) => a + p.weight, 0) - 1) < 1e-9);
   const big = ph.find(p => p.key === 'restore_data').weight, small = ph.find(p => p.key === 'stop').weight;
   assert.ok(big > 10 * small, 'big tables weigh more than a fixed step');

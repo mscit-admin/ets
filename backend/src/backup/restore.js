@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { query } from '../db/pool.js';
 import { run, takeSecret, keyFile, sha256File, readText, readJsonFile, writeJson, writeAtomic, ips, hostname } from './agent-util.js';
-import { Tracker, parseRestoreLine, restoreFraction } from './progress.js';
+import { Tracker, restoreFraction, MODEL } from './progress.js';
 import { parseArtifact, parseKv, validateConfig, cloudRemote, restoreWarnings, appSecretFp, cmpVersion, CONFIG_ITEMS, RESTORE_ITEMS } from './config.js';
 
 const SOURCES = ['local', 'ssh', 'nas', 'cloud', 'upload'];
@@ -377,34 +377,45 @@ export async function restoreRun(job, p, { setJob }) {
     const listFile = dumpFile + '.list';
     fs.writeFileSync(listFile, l.out.split('\n').filter(x => !/^\d+; \d+ \d+ (EXTENSION|COMMENT - EXTENSION) /.test(x)).join('\n') + '\n', { mode: 0o600 });
     const su = await viaSu(p);
-    const seen = new Set(); let cur = null, dataStarted = false;
+    const seen = new Set(); let cur = null, idxStart = 0;
+    const rowsTotal = tables.reduce((x, t) => x + (+t.rows || 0), 0);
+    const idxEst = Math.max(2, (sizes.data_bytes || 0) / MODEL.restore_index.rate);
     const progress = () => {
       const f = restoreFraction(tables, seen, cur);
       tr.count('rows', f.rows, f.rowsTotal); tr.count('tables', f.tables, f.tablesTotal);
-      if (tr.phase(phaseData)?.state === 'running') tr.advance(phaseData, f.frac);
+      if (tr.phase(phaseData)?.state === 'running') tr.advance(phaseData, Math.min(0.99, f.frac));
+    };
+    const toIndex = () => {
+      if (tr.phase(phaseIdx)?.state === 'running' || tr.phase(phaseIdx)?.state === 'done') return;
+      if (cur) seen.add(cur.table); cur = null;
+      progress(); tr.done(phaseData); tr.begin(phaseIdx); idxStart = Date.now();
     };
     tr.begin(phaseData);
-    const poll = setInterval(async () => {
-      const sql = `SELECT relid::regclass::text, tuples_processed, bytes_processed, bytes_total FROM pg_stat_progress_copy WHERE datname = current_database()`;
-      const out = su ? await suQuery(p, e0.PGDATABASE || 'ets', sql)
-        : (await run('psql', ['-X', '-qtA', '-F', '\t', '-c', sql], { env: e0 })).out;
-      const row = String(out || '').split('\n').find(Boolean);
-      if (row) {
-        const [rel, tuples, bytes, btotal] = row.split(/\t|\|/);
-        const name = rel.replace(/^public\./, '').replace(/"/g, '');
-        if (cur && cur.table !== name) seen.add(cur.table);
-        cur = { table: name, tuples: +tuples || 0, bytes: +bytes || 0, bytes_total: +btotal || 0 };
-        dataStarted = true;
-      } else if (dataStarted && cur) { seen.add(cur.table); cur = null; }
-      progress();
-    }, 1000);
+    // the index / constraint phase has no counter of its own: it advances by its estimated duration (size model)
+    const idxTimer = setInterval(() => { if (tr.phase(phaseIdx)?.state === 'running') tr.advance(phaseIdx, Math.min(0.95, (Date.now() - idxStart) / 1000 / idxEst)); }, 1000);
+    let poll = null;
+    if (su) {
+      // through ets-log-protect (superuser transaction): PostgreSQL's own COPY progress. The tables are created inside
+      // that transaction, so another session sees their OIDs, not their names: rows and tables are counted per OID.
+      const perRel = new Map(); let seenCopy = false, idle = 0;
+      poll = setInterval(async () => {
+        const out = await suQuery(p, e0.PGDATABASE || 'ets', `SELECT relid::oid, tuples_processed FROM pg_stat_progress_copy WHERE datname = current_database()`);
+        const line = String(out || '').split('\n').find(Boolean);
+        if (line) { const [rel, n] = line.split('|'); perRel.set(rel, Math.max(perRel.get(rel) || 0, +n || 0)); seenCopy = true; idle = 0; }
+        else if (seenCopy && ++idle >= 2) toIndex();
+        const done = [...perRel.values()].reduce((x, v) => x + v, 0);
+        tr.count('rows', done, rowsTotal); tr.count('tables', Math.max(0, perRel.size - (line ? 1 : 0)), tables.length);
+        if (tr.phase(phaseData)?.state === 'running' && rowsTotal) tr.advance(phaseData, Math.min(0.99, done / rowsTotal));
+      }, 1000);
+    }
     let r;
     try {
       if (su) {
         r = await run(p.protectCmd, ['restore', dumpFile, listFile], { env: { ETS_ENV_FILE: p.envFile, ETS_APP_DIR: p.app } });
       } else {
         // as the application role (log tables not protected): one psql transaction — schema public emptied
-        // (deploy/db/wipe-public.sql), then the SQL of the backup streamed with a byte / row / table counter
+        // (deploy/db/wipe-public.sql), then the SQL of the backup streamed through a counter: the pipe is small, so what
+        // has been sent is what PostgreSQL has taken (COPY lines = rows; after the data, indexes and constraints)
         const sqlFile = dumpFile + '.sql';
         const g = await run('pg_restore', ['--no-owner', '--no-acl', `--use-list=${listFile}`, `--file=${sqlFile}`, dumpFile]);
         if (g.code !== 0) throw new Error('pg_restore could not read the backup: ' + g.out.trim().split('\n').pop());
@@ -414,19 +425,17 @@ export async function restoreRun(job, p, { setJob }) {
           if (ev?.type === 'data') { if (cur) seen.add(cur.table); cur = { table: ev.table, tuples: 0 }; }
           else if (ev?.type === 'row' && cur) cur.tuples++;
           else if (ev?.type === 'end' && cur) { seen.add(cur.table); cur = null; }
-          if (bytes < post.offset) { progress(); tr.advance(phaseData, bytes / Math.max(1, post.offset)); }
-          else {
-            if (tr.phase(phaseIdx)?.state !== 'running') { if (cur) seen.add(cur.table); cur = null; progress(); tr.done(phaseData); tr.begin(phaseIdx); }
-            tr.advance(phaseIdx, (bytes - post.offset) / Math.max(1, post.size - post.offset));
-          }
+          if (bytes < post.offset) progress(); else toIndex();
         });
         fs.rmSync(sqlFile, { force: true });
       }
-    } finally { clearInterval(poll); }
+    } finally { if (poll) clearInterval(poll); clearInterval(idxTimer); }
     if (r.code !== 0) throw new Error('database restore failed (rolled back by PostgreSQL): ' + r.out.trim().split('\n').filter(l => /ERROR|psql:/.test(l)).slice(-2).join(' '));
     for (const x of tables) seen.add(x.table);
-    progress();
-    tr.done(phaseData); tr.begin(phaseIdx); tr.done(phaseIdx);
+    cur = null; progress();
+    if (tr.phase(phaseData)?.state === 'running') tr.done(phaseData);
+    if (tr.phase(phaseIdx)?.state !== 'running') tr.begin(phaseIdx);
+    tr.done(phaseIdx);
     return su;
   };
   const migrate = async su => {
