@@ -39,7 +39,7 @@ fill the table without signing in.
 | `mfa_verify_while_locked` / `reauth_while_locked` | 2FA code, or the password asked again on the profile page, sent while the account is paused |
 | `session_expired` | A session ended by inactivity or its maximum age (`detail.reason` = idle / absolute) |
 | `session_revoked_reuse` | A request still carried the cookie of an ended session (`detail.revoke_reason`) |
-| `logout` | User logged out |
+| `logout` | User logged out; `detail.reason = "idle"` when the web app signed out by itself after `SESSION_IDLE_MINUTES` without input (1.12.2, `revoke_reason = 'idle_timeout'`) |
 | `mfa_verified` / `mfa_bad_code` / `mfa_code_replay` | 2FA code accepted / wrong / reused |
 | `mfa_recovery_code_used` / `mfa_bad_recovery_code` | Recovery code accepted / wrong |
 | `mfa_setup_started` / `mfa_enabled` / `mfa_enrolled_at_login` / `mfa_enable_bad_code` | Enrolment |

@@ -50,7 +50,8 @@ result and a screenshot to the defect list (§4).
 | A-08 | Try new passwords `abc`, `Abcdefg12` (9 characters) and `Password2026!` (common) | Each refused with the policy message (at least 10 characters, letters and digits, not common, not containing the username) | |
 | A-08b | Admin creates an administrator with an 11-character password | Refused: administrators need at least 12 characters | |
 | A-09 | Change the password correctly | Dashboard opens; log `password_changed` | |
-| A-10 | Stay idle for 60 minutes, then click anything | Returned to the login screen | |
+| A-10 | Stay idle for 60 minutes (do not touch the page; leave the dashboard or Settings → «النسخ الاحتياطي» open) | Returned to the login screen by itself, with «انتهت الجلسة بسبب عدم النشاط»; a reload and a hard reload (Ctrl+Shift+R) stay on the login screen; log `session_expired` (reason idle) | |
+| A-10b | Keep working in one tab for more than 60 minutes while a second tab of the same browser stays untouched | Neither tab signs out | |
 | A-11 | Click the avatar → **Log out** | Login screen; log `logout` | |
 | A-12 | Switch language on the login screen | All texts switch Arabic ↔ English and the direction changes RTL ↔ LTR | |
 | A-13 | Send more than 30 wrong sign-ins from one PC within 15 minutes (any usernames) | "Too many attempts — wait N seconds" (HTTP 429); log `rate_limited` written once for the window | |

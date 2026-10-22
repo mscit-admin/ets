@@ -182,7 +182,7 @@ The wizard writes this file. Edit it by hand only if needed, then run `sudo syst
 | `APP_SECRET` | Encrypts 2FA secrets. **Never change after go-live** |
 | `PORT` | Internal application port (must match nginx; change it through the wizard) |
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | Database connection |
-| `SESSION_TTL_HOURS` (12), `SESSION_IDLE_MINUTES` (60) | Session length and idle timeout |
+| `SESSION_TTL_HOURS` (12), `SESSION_IDLE_MINUTES` (60) | Session length and idle timeout (minutes without genuine user activity — input in the page, not background requests; keep it at 5 or more) |
 | `COOKIE_SECURE` | `true` (always written by the installer): the session cookie is `__Host-ets_sid` and works only over HTTPS. `false` is refused with `NODE_ENV=production` unless `ALLOW_INSECURE_COOKIES=true` (lab only, never on a real server) |
 | `MAX_FAILED_LOGINS` (5), `LOCK_MINUTES` (15), `LOCKOUT_RESET_MINUTES` (60) | Failures before sign-in to an account pauses, longest pause, quiet time after which the failure count restarts |
 | `LOGIN_RATE_LIMIT` (30), `API_RATE_LIMIT` (600) | Password / 2FA checks per IP per 15 min (and failures per account); any API request per IP per minute |

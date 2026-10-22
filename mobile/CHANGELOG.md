@@ -6,6 +6,11 @@ versions: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Requests a person starts send `X-ETS-Activity: 1`; automatic ones (polling, live reloads, presence, the session
+  check `GET /auth/me`) send `X-ETS-Live: 1`. Server 1.12.2 extends the idle timeout only on `X-ETS-Activity`, so an app
+  in use stays signed in and an app left open signs out after `SESSION_IDLE_MINUTES` (`src/lib/api.ts`, `session.tsx`).
+
 ## [0.2.0] — Phase 2: editing and approvals by permission, live updates
 
 ### Added

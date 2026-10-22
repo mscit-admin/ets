@@ -139,6 +139,8 @@ ets/
 │       ├── login-email.test.js    Sign-in by username or e-mail: same answer, shared lockout, duplicates, 014 upgrade
 │       ├── user-delete.test.js    Deleting users: admin only, self / last admin, reason, sessions + stream closed,
 │       │                          history kept, pending requests closed, bulk all-or-nothing, reuse, restore
+│       ├── session-expiry.test.js Idle / absolute expiry: background traffic never extends a session, expired sessions
+│       │                          refused for good, X-ETS-Activity + /auth/activity, idle sign-out, /auth/me timing
 │       ├── live.test.js           /api/events: auth, tracker_changed after commit without values, scope, sign-out /
 │       │                          expiry close the stream, per-user cap, access log (needs TEST_DATABASE_URL)
 │       ├── notifications.test.js  Alert rules of each family, scope / permission at creation and read, policy matrix,
@@ -162,6 +164,8 @@ ets/
 │       │   ├── audit.js           Audit row → readable sentence, field / previous / new value lines
 │       │   ├── api.js             fetch wrapper (CSRF header, error codes), downloads
 │       │   ├── auth.jsx           Current user / session context
+│       │   ├── activity.js        Idle timeout: real input → POST /auth/activity (X-ETS-Activity), sign-out after the idle
+│       │   │                      limit without input (server-side revoke), other tabs respected
 │       │   ├── live.js            Live updates: one EventSource per tab, debounced reloads, backoff, 30 s polling fallback;
 │       │   │                      "notif_changed" for the bell
 │       │   ├── erpModules.js      ERP module wheel: standard modules and the department → module mapping (edit here)

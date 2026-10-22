@@ -41,7 +41,27 @@
   `COOKIE_SECURE=false` unless `ALLOW_INSECURE_COOKIES=true` is set (lab systems only).
 - Signing in again from a browser revokes the session it had; completing 2FA issues a new token.
 - The session expires 12 h after login (`SESSION_TTL_HOURS`) or after 60 min idle
-  (`SESSION_IDLE_MINUTES`).
+  (`SESSION_IDLE_MINUTES`). The server is the authority: an expired session is revoked by the first request that
+  presents it (`revoke_reason = 'expired'`, `auth_log` `session_expired` with `detail.reason` idle / absolute), the
+  cookie is cleared, and every later request with it — any route, a reload or a hard reload — is refused
+  (`session_revoked_reuse`).
+- **Idle = no genuine user activity (1.12.2).** Only a request carrying `X-ETS-Activity: 1` moves
+  `sessions.last_seen_at` (at most once per 30 s). The web app sends it only from real input — `pointerdown`,
+  `keydown`, `wheel`, `touchstart` (not `mousemove`, which browsers also fire when content moves under a still
+  pointer) — as `POST /api/auth/activity`, at most once a minute (`frontend/src/lib/activity.js`). Data loads, polls,
+  `/auth/me` checks, live reloads (`X-ETS-Live: 1`, which wins over the activity header), the live stream and
+  presence reports never extend a session, so an open screen or a forgotten tab cannot keep it alive. Before
+  1.12.2 the rule was the reverse (every request counted except the stream, `X-ETS-Live` and presence), so any
+  untagged automatic request — e.g. the 30 s refresh of Settings → «النسخ الاحتياطي», or a page reload — kept
+  the session alive.
+- **The browser signs out on its own:** when a tab has seen no input for `SESSION_IDLE_MINUTES` (or the absolute end
+  is reached) it asks the server (`/auth/me`, not activity); if another tab of the same browser kept the session
+  alive it waits for the new deadline, otherwise it calls `POST /api/auth/logout {reason:"idle"}` (session revoked,
+  cookie cleared) and shows the sign-in page with «انتهت الجلسة بسبب عدم النشاط». A hidden tab or a sleeping PC is
+  checked when the tab becomes visible again. A failed session check (network, 5xx) no longer shows the sign-in
+  page while the session may still be valid, and an older answer can no longer overwrite a newer one.
+- The phone app (`mobile/`) sends `X-ETS-Activity: 1` on the requests a person starts and `X-ETS-Live: 1` on its
+  automatic ones (polling, live reloads, presence, session checks).
 - Sessions are revoked on logout, password change (other sessions), admin password reset, admin 2FA reset,
   self-service 2FA disable (other sessions), `create-admin` from the command line (all sessions of that account),
   deactivation, admin *End sessions* (all, or one session from «المستخدمون المتصلون الآن», 1.11.0), and after too
@@ -53,7 +73,7 @@
   on sign-out, password change / reset, 2FA reset or disable, *End sessions*, deactivation and scope / role
   changes (PostgreSQL `NOTIFY` to every API process); an ended, expired or idle session closes the stream
   (`session_ended`). Neither the stream nor the reloads it triggers (`X-ETS-Live: 1`) count as activity, so an
-  open dashboard does not defeat the idle timeout. At most 5 open streams per user (`LIVE_MAX_STREAMS_PER_USER`,
+  open dashboard does not defeat the idle timeout (1.12.2: only `X-ETS-Activity: 1` counts, see above). At most 5 open streams per user (`LIVE_MAX_STREAMS_PER_USER`,
   per API process); opening a stream counts as one request for the general rate limit and is written to the
   access log once (heartbeats are not). The CSP `connect-src 'self'` already allows the same-origin stream.
 
@@ -79,7 +99,7 @@ people's work, so:
   rest coalesced; the general per-IP limit still applies. Successful reports are written to the file access log
   only (not `access_log`), refused ones as usual.
 - **No effect on session security:** a presence report never counts as activity for the idle timeout (the route
-  itself is excluded in `sessionMiddleware`, and the web app also sends `X-ETS-Live: 1`); a session left open on a
+  itself is excluded in `sessionMiddleware` even with `X-ETS-Activity: 1`, and the web app also sends `X-ETS-Live: 1`); a session left open on a
   screen still ends after `SESSION_IDLE_MINUTES` without user action, and its row goes with it.
 - **Retention:** a row exists only while its session does: it is deleted when the session is revoked (trigger), and
   by the 5-minute clean-up 15 minutes after the last report or once the session expired. `user_activity_daily`

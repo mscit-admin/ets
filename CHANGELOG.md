@@ -30,6 +30,58 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.2] — 2026-10-22 — Sessions: idle timeout counts only real user activity
+
+### Security
+- **Backend:** the idle timeout (`SESSION_IDLE_MINUTES`, 60) now counts **only genuine user activity**: a request
+  moves `sessions.last_seen_at` only when it carries **`X-ETS-Activity: 1`** (opt-in; at most one write per 30 s).
+  Before, every request counted except `GET /events`, `X-ETS-Live: 1` and `POST /presence`, so any automatic request
+  the client did not tag kept a session alive — the 30 s refresh of Settings → «النسخ الاحتياطي» kept an
+  administrator's session open indefinitely, and every page reload (soft or hard) restarted the idle clock through
+  `GET /auth/me`. `X-ETS-Live: 1` still wins, and the stream and presence reports never count even with the header
+  (`middleware/auth.js`, `isUserActivity`).
+- **Frontend:** the web app signs out by itself after the idle limit without input (`frontend/src/lib/activity.js`):
+  only `pointerdown`, `keydown`, `wheel` and `touchstart` count (not `mousemove`, which browsers also fire when content
+  moves under a still pointer) and are reported as `POST /api/auth/activity`, at most once a minute. When a tab has
+  seen no input for the limit — or the absolute end (`SESSION_TTL_HOURS`) is reached — it asks the server; if another
+  tab of the same browser kept the session alive it waits, otherwise it calls `POST /api/auth/logout {reason:"idle"}`
+  (session revoked, cookie cleared) and shows the sign-in page with «انتهت الجلسة بسبب عدم النشاط» / "Your session
+  ended after a period of inactivity". A hidden tab or a sleeping PC is checked as soon as the tab is visible again.
+
+### Added
+- **Backend:** `POST /api/auth/activity` (any session; `401` without one — an ended session is never revived) →
+  `{idle_minutes, idle_expires_at, expires_at, server_now}`; written to the file access log only.
+- **Backend:** `GET /api/auth/me` returns `session: {idle_minutes, idle_expires_at, expires_at, server_now}`;
+  `POST /api/auth/logout` takes `{reason: "idle"}` → `revoke_reason = 'idle_timeout'`, `auth_log` `logout` with
+  `detail.reason = "idle"`.
+
+### Fixed
+- **Frontend:** a session check that could not reach the server (network error, 5xx, 429) showed the sign-in page
+  although the session was still valid — a reload then showed the user signed in again. A failed check now keeps the
+  signed-in state (the server still refuses an ended session on the next request), and when several checks run at
+  once only the latest answer is applied, so an older answer can no longer overwrite a newer one (`lib/auth.jsx`).
+  Session checks (`/auth/me`) are sent as automatic requests.
+- **Mobile:** the app sends `X-ETS-Activity: 1` on the requests a person starts and `X-ETS-Live: 1` on its automatic
+  ones, session checks included (`mobile/src/lib/api.ts`, `session.tsx`), so an app in use stays signed in and an app
+  left open signs out after the idle limit, as on the website.
+
+### Tests
+- **Tests:** `backend/test/session-expiry.test.js` — background traffic (the backups poll, data loads, `/auth/me`,
+  live reloads, presence, the stream) never extends the idle timeout; an idle-expired session is refused on every
+  route and for good (cookie cleared, reloads stay signed out); `X-ETS-Activity` and `POST /auth/activity` extend it;
+  the absolute limit; the idle sign-out; `/auth/me` timing. `presence.test.js`: the control request now carries the
+  activity header. Mobile: `__tests__/api.test.ts` checks both headers.
+
+### Upgrade notes
+- No migration, no setting. Reload open browser tabs after the update: the previous web build does not send
+  `X-ETS-Activity`, so its users are signed out after `SESSION_IDLE_MINUTES` even while working. The same applies to
+  phone app builds older than this change until they are updated.
+- Keep `SESSION_IDLE_MINUTES` at 5 or more: activity reaches the server at most once a minute.
+- Scripts or tools that call the API with a session cookie must send `X-ETS-Activity: 1` on the requests that should
+  keep the session alive.
+
+---
+
 ## [1.12.1] — 2026-10-22 — Approvals: filters
 
 ### Added
