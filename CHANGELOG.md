@@ -30,6 +30,42 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.1] — 2026-10-22 — Approvals: filters
+
+### Added
+- **Backend:** `GET /api/approvals` takes the filters of the screen as query parameters — `dept`, `app` (a move
+  matches its source **or** its destination), `kind` (`function`, `bulk`, `report`, `add_function`,
+  `remove_function`, `restore_function`, `move_function`), `field` (a changed field of an item; `name` = a rename,
+  Arabic or English), `requester`, `decided_by` (who decided, or signed one stage of a move), `from` / `to` (day of
+  the request), `q` (request number, summary, reason, departments, applications, requester, items' codes and names;
+  `#12` = request 12 only; `%` and `_` are plain text) and `awaiting=1` (only what the reader may approve now). Bad
+  values are refused with `400 invalid_value` and the field. Every filter only narrows the list: visibility is still
+  decided per request after the query (ETS-SEC-007), so no filter reaches another department's requests. The answer
+  also says `truncated` when the newest 300 matching rows were cut.
+- **Backend:** `GET /api/approvals/facets?status=` — the choices of the filters (departments, applications,
+  requesters, deciders, kinds, changed fields), taken only from the requests the reader may see.
+- **Frontend:** «اعتماد التعديلات» / Approvals: a filter bar — search, status, department, application (follows
+  the department), requester, request type, changed field, «قرّره / اعتمده» (when the status is not «pending»), date
+  range, «بانتظار اعتمادي» and «طلباتي فقط» — with the count of requests, «مسح التصفية» and the filters kept in the
+  address (`/approvals?app=ess&kind=report…`; no `status` = pending, `status=` = all), so `/approvals?mine=1` from a
+  notification now opens filtered. The «awaiting approval» chips of an application and of the Reports screen open the
+  screen filtered on that application.
+- **Backend / Frontend:** the Excel export of the screen takes the same filters; the sheet names them in words
+  (department, application, requester…), the audit row keeps the raw values and the Logs sentence reads them.
+- **Docs:** `docs/handover/11-API-Reference.md` — the new filters of `GET /approvals` and `GET /approvals/facets`.
+
+### Fixed
+- **Frontend:** «اعتماد كل المعروض» / "Approve all shown" approved every pending request the user could approve,
+  not only the ones listed. It now sends the ids of the listed requests that the user may approve
+  (`POST /api/approvals/approve-all` with `ids`), shows their number when filters are on, and asks for confirmation
+  with that number; the server still re-checks each one.
+
+### Tests
+- **Tests:** `backend/test/approvals-filter.test.js` — each filter, dates and free text, refused values, scope (a lead
+  of one department, a member), `awaiting=1`, the facets, the export with filters and «approve all shown».
+
+---
+
 ## [1.12.0] — 2026-10-22 — Backups: hourly, offsite, test restore, and restore from the web UI
 
 ### Added
@@ -1837,7 +1873,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/4eab0ae...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/91587f6...HEAD
+[1.12.1]: https://github.com/mscit-admin/ets/compare/4eab0ae...91587f6
 [1.12.0]: https://github.com/mscit-admin/ets/compare/2435711...4eab0ae
 [1.11.0]: https://github.com/mscit-admin/ets/compare/dd41f54...2435711
 [1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54

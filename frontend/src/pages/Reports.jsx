@@ -63,7 +63,7 @@ export default function Reports() {
                   <tr key={a.id}>
                     <td><Link to={'/app/' + a.id} className="link-row"><Icon name={a.icon} size={15} /> {nm(a)}</Link></td>
                     <td><Indicator color={REPORT_COLORS[r.status]}>{t('rs_' + r.status)}</Indicator>
-                      {a.pending?.length > 0 && <Link to="/approvals" className="pending-chip" title={a.pending.map(p => p.requested_by_name).join(', ')}>⏳ {t('awaiting_approval')}</Link>}</td>
+                      {a.pending?.length > 0 && <Link to={'/approvals?kind=report&app=' + encodeURIComponent(a.id)} className="pending-chip" title={a.pending.map(p => p.requested_by_name).join(', ')}>⏳ {t('awaiting_approval')}</Link>}</td>
                     <td><ProgressBar value={r.progress} /></td>
                     <td className="num-col"><Pct value={r.progress} /></td>
                     <td className="num-col num hide-mobile">{a.report_items > 0 ? <span className="it-count-rep"><Icon name="item_report" size={12} /> {a.report_items}</span> : '—'}</td>

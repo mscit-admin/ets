@@ -8,7 +8,7 @@ import { publishChange, publishApps } from '../services/live.js';
 import { requestDecided, requestsSettled, itemsMovedIn } from '../services/notify-events.js';
 import { approveMove, currentShare } from '../services/move.js';
 import { PASS_RULE_CODES } from '../services/passRule.js';
-import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
+import { HttpError, bad, notFound, str, idParam, isId, isDate } from '../utils/http.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -61,25 +61,103 @@ async function items(ids) {
     LEFT JOIN functions f ON f.id=i.function_id WHERE i.request_id = ANY($1) ORDER BY i.id`, [ids])).rows;
 }
 
-// The requests a user may see, with their items: the Approvals screen and its Excel export (routes/export.js).
-export async function listRequests(user, qs = {}, { limit = 300 } = {}) {
+// Filters of the Approvals screen (1.12.1), also taken by its Excel export. Every one only narrows the list: what a
+// user may see is still decided by visible() below, after the query.
+export const RQ_KINDS = ['function', 'bulk', 'report', 'add_function', 'remove_function', 'restore_function', 'move_function'];
+// a changed field; 'name' is a rename (the Arabic or the English name)
+const FIELD_OF = f => (f === 'name_ar' || f === 'name_en' ? 'name' : f);
+const FIELDS_IN = f => (f === 'name' ? ['name_ar', 'name_en'] : [f]);
+export const RQ_FILTERS = ['status', 'mine', 'awaiting', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
+const userId = (v, field) => {
+  if (!/^[0-9]{1,10}$/.test(v) || !isId(+v)) throw bad('invalid_value', { field });
+  return +v;
+};
+
+function filterSql(user, qs) {
   const params = [], where = [];
-  if (qs.status) { params.push(str(qs.status, 20)); where.push(`r.status=$${params.length}`); }
-  if (qs.mine === '1') { params.push(user.id); where.push(`r.requested_by=$${params.length}`); }
+  const add = (sql, v) => { params.push(v); where.push(sql.replaceAll('?', '$' + params.length)); };
+  const s = k => (typeof qs[k] === 'string' ? qs[k] : '');
+  if (qs.status) add('r.status=?', str(qs.status, 20));
+  if (qs.mine === '1') add('r.requested_by=?', user.id);
+  // a move belongs to both of its departments / applications
+  if (s('dept')) add('(r.department_id=? OR r.target_department_id=?)', str(qs.dept, 50));
+  if (s('app')) add('(r.app_id=? OR r.target_app_id=?)', str(qs.app, 50));
+  if (s('kind')) {
+    if (!RQ_KINDS.includes(qs.kind)) throw bad('invalid_value', { field: 'kind' });
+    add('r.kind=?', qs.kind);
+  }
+  if (s('field')) {
+    if (!/^[a-z_]{1,40}$/.test(qs.field)) throw bad('invalid_value', { field: 'field' });
+    add('EXISTS (SELECT 1 FROM edit_request_items fi WHERE fi.request_id=r.id AND fi.field = ANY(?))', FIELDS_IN(qs.field));
+  }
+  if (s('requester')) add('r.requested_by=?', userId(qs.requester, 'requester'));
+  // who decided it, or signed one stage of a move
+  if (s('decided_by')) add('(r.decided_by=? OR r.source_approved_by=? OR r.target_approved_by=?)', userId(qs.decided_by, 'decided_by'));
+  for (const k of ['from', 'to']) if (s(k) && !isDate(qs[k])) throw bad('invalid_value', { field: k });
+  if (s('from')) add('r.requested_at >= ?::date', qs.from);
+  if (s('to')) add('r.requested_at < (?::date + 1)', qs.to);
+  // free text: the request number, its summary / reason, departments, applications, requester, and its items' codes / names;
+  // «#12» is request 12 only
+  const q = str(qs.q, 200);
+  if (/^#[0-9]{1,10}$/.test(q)) add('r.id::text = ?', q.slice(1));
+  else if (q) {
+    params.push(q, '%' + q.replace(/[%_\\]/g, '\\$&') + '%');
+    const eq = '$' + (params.length - 1), like = '$' + params.length;
+    where.push(`(r.id::text = ${eq} OR concat_ws(' ', r.summary, r.reason, d.name_ar, d.name_en, a.id, a.name_ar, a.name_en, td.name_ar, td.name_en,
+      ta.id, ta.name_ar, ta.name_en, ur.full_name, ur.username) ILIKE ${like}
+      OR EXISTS (SELECT 1 FROM edit_request_items qi JOIN functions qf ON qf.id=qi.function_id WHERE qi.request_id=r.id
+        AND concat_ws(' ', qf.code, qf.name_ar, qf.name_en) ILIKE ${like}))`);
+  }
+  return { params, where };
+}
+
+// The requests a user may see, with their items: the Approvals screen and its Excel export (routes/export.js).
+export async function listRequests(user, qs = {}, { limit = 300, meta = false } = {}) {
+  const { params, where } = filterSql(user, qs);
   const rows = (await query(`SELECT ${COLS} FROM edit_requests r ${JOINS}
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY r.requested_at DESC LIMIT ${limit | 0}`, params)).rows;
   const apps = await allApps();
-  const list = rows.filter(x => visible(user, x, apps));
+  let list = rows.filter(x => visible(user, x, apps));
+  // «awaiting my approval»: the requests this user may approve now
+  if (qs.awaiting === '1') list = list.filter(x => abilities(user, x, apps).approve);
   const its = await items(list.map(x => x.id));
   for (const x of list) {
     x.can = abilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id);
     // a pending move: the weight share as it would be now (applied at approval) next to the one when it was requested
     if (isMove(x) && x.status === 'pending') x.move_now = await currentShare({ query }, x.app_id, x.items.map(i => i.function_id).filter(Boolean));
   }
-  return list;
+  return meta ? { requests: list, truncated: rows.length >= (limit | 0) } : list;
 }
 
-r.get('/', async (req, res) => res.json({ requests: await listRequests(req.user, req.query) }));
+// The choices of the screen's filters, taken only from the requests this user may see (with the chosen status):
+// their departments and applications (both sides of a move), requesters, deciders, kinds and changed fields.
+async function facets(user, qs) {
+  const apps = await allApps();
+  const st = str(qs.status, 20);
+  const rows = (await query(`SELECT id, kind, app_id, department_id, target_app_id, target_department_id, requested_by, decided_by,
+    source_approved_by, target_approved_by FROM edit_requests ${st ? 'WHERE status=$1' : ''}`, st ? [st] : [])).rows.filter(x => visible(user, x, apps));
+  const set = f => [...new Set(rows.flatMap(f).filter(v => v !== null && v !== undefined))];
+  const ids = rows.map(x => x.id);
+  const deptIds = set(x => [x.department_id, x.target_department_id]), appIds = set(x => [x.app_id, x.target_app_id]);
+  const reqIds = set(x => [x.requested_by]), decIds = set(x => [x.decided_by, x.source_approved_by, x.target_approved_by]);
+  const [depts, appRows, users, fields] = await Promise.all([
+    query('SELECT id, name_ar, name_en FROM departments WHERE id = ANY($1) ORDER BY sort, id', [deptIds]),
+    query('SELECT id, department_id, name_ar, name_en FROM applications WHERE id = ANY($1) ORDER BY sort, id', [appIds]),
+    query('SELECT id, full_name, username FROM users WHERE id = ANY($1) ORDER BY full_name, id', [[...new Set([...reqIds, ...decIds])]]),
+    ids.length ? query('SELECT DISTINCT field FROM edit_request_items WHERE request_id = ANY($1)', [ids]) : { rows: [] },
+  ]);
+  const person = u => ({ id: u.id, name: u.full_name || u.username });
+  return {
+    departments: depts.rows, applications: appRows.rows,
+    requesters: users.rows.filter(u => reqIds.includes(u.id)).map(person),
+    deciders: users.rows.filter(u => decIds.includes(u.id)).map(person),
+    kinds: RQ_KINDS.filter(k => rows.some(x => x.kind === k)),
+    fields: [...new Set(fields.rows.map(x => FIELD_OF(x.field)))].sort(),
+  };
+}
+
+r.get('/', async (req, res) => res.json(await listRequests(req.user, req.query, { meta: true })));
+r.get('/facets', async (req, res) => res.json(await facets(req.user, req.query)));
 
 r.get('/pending-count', async (req, res) => {
   const rows = (await query(`SELECT id, department_id, app_id, requested_by, kind, target_app_id, source_approved_by FROM edit_requests WHERE status='pending'`)).rows;

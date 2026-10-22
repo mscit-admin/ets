@@ -18,7 +18,7 @@ import { passConflict } from '../services/passRule.js';
 import { notFound, own, str } from '../utils/http.js';
 import { summaryData, projectStatusData, departmentData, applicationData, weightsData, reportsData, scheduleData, addPeriods }
   from './tracker.js';
-import { listRequests } from './approvals.js';
+import { listRequests, RQ_FILTERS } from './approvals.js';
 import { listBatches, batchDetail } from './imports.js';
 import { listUsers, listDeletedUsers } from './users.js';
 import { exportRows, logFilters, EXPORT_CAP } from './logs.js';
@@ -62,6 +62,21 @@ const FIELD_KEY = { status: 'report_status', create: 'fn_add', removed: 'removed
 const fieldLabel = (t, f) => t(FIELD_KEY[f] || f);
 const itemLabel = (L, x) => (x.kind === 'report' ? L.t('kind_report') : x.kind === 'weight' ? L.t('kind_weight')
   : x.field === 'create' ? L.t('fn_add') : [x.code, x.fn_name_ar].filter(Boolean).join(' '));
+
+// The Approvals filters (1.12.1) as a reader says them, for the sheet's second row (the audit row keeps the raw values).
+async function approvalFilterView(L, f) {
+  const { t } = L;
+  const name = async (sql, v) => { const x = (await query(sql, [v])).rows[0]; return x ? (x.full_name ?? L.nm(x)) : v; };
+  const out = {};
+  for (const [k, v] of Object.entries(f)) {
+    out[k] = k === 'status' ? t('rq_' + v) : k === 'kind' ? t('rk_' + v) : k === 'mine' || k === 'awaiting' ? t('yes')
+      : k === 'field' ? (v === 'name' ? t('rename') : fieldLabel(t, v))
+      : k === 'dept' ? await name('SELECT name_ar, name_en FROM departments WHERE id=$1', v)
+      : k === 'app' ? await name('SELECT name_ar, name_en FROM applications WHERE id=$1', v)
+      : (k === 'requester' || k === 'decided_by') && /^[0-9]{1,10}$/.test(v) ? await name('SELECT full_name FROM users WHERE id=$1', +v) : v;
+  }
+  return out;
+}
 
 // Each report: build(req, L) → { rows, columns, filters?, id?, target?, name? }.
 // columns: [key, header label key, type?] — types: text (default), int, number, pct (0–100), date, datetime.
@@ -212,7 +227,7 @@ const REPORTS = {
   approvals: {
     async build(req, L) {
       const { t } = L;
-      const f = pick(req.query, ['status', 'mine']);
+      const f = pick(req.query, RQ_FILTERS);
       const list = await listRequests(req.user, f, { limit: EXPORT_CAP });
       const rows = list.flatMap(rq => {
         const base = { id: rq.id, status: t('rq_' + rq.status), dept: L.nm(rq, 'dept_name'), app: L.nm(rq, 'app_name'), kind: t('rk_' + rq.kind),
@@ -225,7 +240,7 @@ const REPORTS = {
             + (i.field === 'move' ? ' — ' + t('move_share') + ': ' + (i.meta?.weight_share ?? 0) + (i.meta?.reason ? ' — ' + t('move_reason') + ': ' + i.meta.reason : '') : ''),
           applied: i.applied === undefined || i.applied === null ? '' : yesNo(t, i.applied) }));
       });
-      return { rows, filters: f, columns: [['id', 'request', 'int'], ['status', 'status'], ['dept', 'department'], ['app', 'application'],
+      return { rows, filters: f, filterView: await approvalFilterView(L, f), columns: [['id', 'request', 'int'], ['status', 'status'], ['dept', 'department'], ['app', 'application'],
         ['kind', 'kind'], ['by', 'requested_by'], ['at', 'requested_at', 'datetime'], ['dby', 'decided_by'], ['dat', 'decided_at', 'datetime'],
         ['reason', 'reason'], ['item', 'item'], ['field', 'field'], ['before', 'before'], ['after', 'after'], ['applied', 'applied_col'],
         ['to', 'move_to_app']] };                                       // 1.10.0: the destination of a move
@@ -325,7 +340,7 @@ r.get('/:file', async (req, res) => {
   const report = L.t('r_' + key);
   const title = out.name ? `${report} — ${out.name}` : report;
   const who = req.user.full_name || req.user.username;
-  const ft = filterText(L, out.filters);
+  const ft = out.filterView ? Object.entries(out.filterView).map(([k, v]) => `${L.t('f_' + k)}: ${v}`).join(' · ') : filterText(L, out.filters);
   const subtitle = [`${L.t('exported_by')}: ${who}`, stamp, ft && `${L.t('filters')}: ${ft}`].filter(Boolean).join(' · ');
   // a column of type 'mixed' takes each row's own type from row.type (project status: one "value" column)
   const columns = out.columns.map(([k, h, type]) => ({ key: k, header: out.header ? out.header(k) : L.t(h),
