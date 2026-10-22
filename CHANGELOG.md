@@ -1873,8 +1873,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/RELEASE...HEAD
-[1.12.1]: https://github.com/mscit-admin/ets/compare/4eab0ae...RELEASE
+[Unreleased]: https://github.com/mscit-admin/ets/compare/91587f6...HEAD
+[1.12.1]: https://github.com/mscit-admin/ets/compare/4eab0ae...91587f6
 [1.12.0]: https://github.com/mscit-admin/ets/compare/2435711...4eab0ae
 [1.11.0]: https://github.com/mscit-admin/ets/compare/dd41f54...2435711
 [1.10.0]: https://github.com/mscit-admin/ets/compare/1ff9138...dd41f54
