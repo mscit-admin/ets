@@ -24,6 +24,7 @@ umask 077
 ENVF="${ETS_ENV_FILE:-/etc/ets/ets.env}"
 APPDIR="${ETS_APP_DIR:-/opt/ets}"
 SQL="${ETS_HARDEN_SQL:-$APPDIR/deploy/db/harden-log-tables.sql}"
+WIPE="${ETS_WIPE_SQL:-$APPDIR/deploy/db/wipe-public.sql}"
 MIGDIR="${ETS_MIGRATIONS_DIR:-$APPDIR/backend/src/db/migrations}"
 LOG_OWNER="${ETS_LOG_OWNER:-ets_log_owner}"
 fail() { echo "xx  ets-log-protect: $*" >&2; exit 1; }
@@ -135,9 +136,12 @@ case "$cmd" in
     DUMP=${2:-}; LIST=${3:-}
     [[ -r "$DUMP" ]] || fail "usage: ets-log-protect restore <file.dump> [<list>]"
     check || not_superuser_help restore
-    # --no-owner/--no-acl: objects belong to the application role; the protection is applied before COMMIT
-    pg_restore --clean --if-exists --no-owner --no-acl ${LIST:+--use-list="$LIST"} --file="$WORK/restore.sql" "$DUMP" \
+    [[ -r "$WIPE" ]] || fail "missing $WIPE"
+    # --no-owner/--no-acl: objects belong to the application role; the protection is applied before COMMIT.
+    # Schema public is emptied first in the same transaction (wipe-public.sql; pg_restore --clean would fail on the
+    # tables a newer version added).
+    pg_restore --no-owner --no-acl ${LIST:+--use-list="$LIST"} --file="$WORK/restore.sql" "$DUMP" \
       || fail "pg_restore could not read $DUMP — nothing was changed"
-    { prelude; cat "$WORK/restore.sql"; postlude; } | su_psql ;;
+    { prelude; cat "$WIPE"; cat "$WORK/restore.sql"; postlude; } | su_psql ;;
   *) sed -n '2,20p' "$0" >&2; exit 2 ;;
 esac
