@@ -1,6 +1,6 @@
 // Real progress of the long backup jobs (1.12.0): restore, rollback, test restore / inspection, «نسخ احتياطي الآن».
 // Pure: phase weights from a size model, a monotonic percentage, an ETA from a smoothed throughput (EWMA), byte / row /
-// table counters, and the parser of `pg_restore --verbose` output. The backup agent feeds it and writes the snapshot to
+// table counters, and the parser of the SQL pg_restore writes (streamed to psql during a restore). The backup agent feeds it and writes the snapshot to
 // /var/lib/ets/restore/status.json (restore) or to the job row (other jobs) about once a second; the web UI and the
 // maintenance page served by nginx only display it.
 
@@ -149,22 +149,17 @@ export class Tracker {
   }
 }
 
-// `pg_restore --verbose` (stderr) → an event, or null.
-//   pg_restore: processing data for table "public.users"     → { type: 'data', table: 'users' }
-//   pg_restore: creating INDEX "public.users_email_lower_uniq" → { type: 'index', name }
-//   pg_restore: creating CONSTRAINT / FK CONSTRAINT / TRIGGER  → { type: 'constraint' | 'fk' | 'trigger', name }
-//   pg_restore: creating TABLE "public.users"                → { type: 'schema', what: 'TABLE', name }
-//   pg_restore: dropping TABLE users                         → { type: 'drop', name }
-export function parseRestoreLine(line) {
-  const s = String(line).replace(/^pg_restore:\s*/, '').trim();
-  let m = /^processing data for table "(?:([^"]+)\.)?([^"]+)"$/.exec(s);
-  if (m) return { type: 'data', table: m[2] };
-  m = /^creating (FK CONSTRAINT|CONSTRAINT|INDEX|TRIGGER) "?(?:[^".]+\.)?([^"]+)"?/.exec(s);
-  if (m) return { type: { 'FK CONSTRAINT': 'fk', CONSTRAINT: 'constraint', INDEX: 'index', TRIGGER: 'trigger' }[m[1]], name: m[2] };
-  m = /^creating ([A-Z ]+?) "?(?:[^".]+\.)?([^"]+)"?$/.exec(s);
-  if (m) return { type: 'schema', what: m[1], name: m[2] };
-  m = /^dropping ([A-Z ]+?) (.+)$/.exec(s);
-  if (m) return { type: 'drop', what: m[1], name: m[2] };
+// One line of the SQL that pg_restore writes (`pg_restore --file`), as the restore streams it to psql → an event:
+//   COPY public.users (id, …) FROM stdin;   → { type: 'data', table: 'users' }   (then one { type: 'row' } per line)
+//   \.                                      → { type: 'end' }                    (end of that table's rows)
+//   CREATE [UNIQUE] INDEX / ALTER TABLE ONLY … / CREATE TRIGGER  → { type: 'post' } (indexes, constraints, triggers)
+// inCopy: whether the previous lines opened a COPY block. Anything else → null.
+export function scriptLineEvent(line, inCopy) {
+  const l = String(line);
+  if (inCopy) return l === '\\.' ? { type: 'end' } : { type: 'row' };
+  const m = /^COPY (?:[^.\s]+\.)?"?([^"\s(]+)"? /.exec(l);
+  if (m) return { type: 'data', table: m[1] };
+  if (/^(CREATE (UNIQUE )?INDEX|ALTER TABLE ONLY |CREATE TRIGGER)/.test(l)) return { type: 'post' };
   return null;
 }
 

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as C from '../src/backup/config.js';
-import { Tracker, planPhases, ewma, parseRestoreLine, restoreFraction, estimateSeconds, PLANS } from '../src/backup/progress.js';
+import { Tracker, planPhases, ewma, scriptLineEvent, restoreFraction, estimateSeconds, PLANS } from '../src/backup/progress.js';
 import { sealSecret, openSecret, writeAllowed, agentPaths } from '../src/backup/agent-util.js';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -168,22 +168,34 @@ test('progress: weights from the size model, monotonic percentage, EWMA ETA, cou
   assert.equal(t2.eta(10).estimated, true);
 });
 
-test('progress: pg_restore --verbose parser and the per-table fraction', () => {
-  const sample = `pg_restore: connecting to database for restore
-pg_restore: dropping TABLE users
-pg_restore: creating TABLE "public.users"
-pg_restore: processing data for table "public.users"
-pg_restore: processing data for table "public.audit_log"
-pg_restore: creating INDEX "public.users_email_lower_uniq"
-pg_restore: creating CONSTRAINT "public.users users_pkey"
-pg_restore: creating FK CONSTRAINT "public.sessions sessions_user_id_fkey"
-pg_restore: creating TRIGGER "public.audit_log audit_log_chain"`.split('\n').map(parseRestoreLine);
-  assert.equal(sample[0], null);
-  assert.deepEqual(sample[1], { type: 'drop', what: 'TABLE', name: 'users' });
-  assert.deepEqual(sample[2], { type: 'schema', what: 'TABLE', name: 'users' });
-  assert.deepEqual(sample[3], { type: 'data', table: 'users' });
-  assert.deepEqual(sample[4], { type: 'data', table: 'audit_log' });
-  assert.equal(sample[5].type, 'index'); assert.equal(sample[6].type, 'constraint'); assert.equal(sample[7].type, 'fk'); assert.equal(sample[8].type, 'trigger');
+test('progress: parser of the SQL pg_restore writes (captured sample) and the per-table fraction', () => {
+  // captured from `pg_restore --no-owner --no-acl --file=- <dump>` of a test database (shortened)
+  const sample = `--
+-- PostgreSQL database dump
+--
+\\restrict 7ZqC1xQe
+SET statement_timeout = 0;
+CREATE TABLE public.users (
+    id integer NOT NULL,
+    username public.citext NOT NULL
+);
+COPY public.users (id, username, full_name, password_hash) FROM stdin;
+1\tadmin1\tمدير النظام\t$2a$04$x
+2\tsara\tSara\t$2a$04$y
+\\.
+COPY public.audit_log (id, ts, user_id, username, action) FROM stdin;
+1\t2026-10-20 09:27:32+00\t1\tadmin1\tlogin
+\\.
+SELECT pg_catalog.setval('public.users_id_seq', 2, true);
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+CREATE UNIQUE INDEX users_email_lower_uniq ON public.users USING btree (lower((email)::text));
+CREATE TRIGGER ets_chain BEFORE INSERT ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.ets_log_chain_insert();`.split('\n');
+  let inCopy = false; const ev = [];
+  for (const l of sample) { const e = scriptLineEvent(l, inCopy); if (e?.type === 'data') inCopy = true; else if (e?.type === 'end') inCopy = false; if (e) ev.push(e.type + (e.table ? ':' + e.table : '')); }
+  assert.deepEqual(ev, ['data:users', 'row', 'row', 'end', 'data:audit_log', 'row', 'end', 'post', 'post', 'post']);
+  assert.equal(scriptLineEvent('CREATE TABLE public.users (', false), null);
+  assert.deepEqual(scriptLineEvent('COPY public."user presence" (a) FROM stdin;', false), { type: 'data', table: 'user' });   // quoted names stop at a space
   const tables = [{ table: 'users', rows: 10, bytes: 1000 }, { table: 'audit_log', rows: 90, bytes: 9000 }];
   const f = restoreFraction(tables, new Set(['users']), { table: 'audit_log', tuples: 45 });
   assert.ok(Math.abs(f.frac - 0.55) < 1e-9); assert.equal(f.rows, 55); assert.equal(f.rowsTotal, 100); assert.equal(f.tables, 1); assert.equal(f.tablesTotal, 2);

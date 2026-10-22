@@ -56,7 +56,8 @@ before(async () => {
     ETS_ENV_FILE: path.join(R, 'etc/ets/ets.env'), ETS_CONF_DIR: path.join(R, 'etc/ets'), ETS_STATE_DIR: path.join(R, 'state'), ETS_RUN_DIR: path.join(R, 'run'),
     ETS_SYSTEMD_DIR: path.join(R, 'systemd'), ETS_SYSTEMCTL: path.join(R, 'bin/systemctl'), ETS_NGINX_CMD: path.join(R, 'bin/nginx'),
     ETS_BACKUP_CMD: path.join(REPO, 'deploy/scripts/backup.sh'), ETS_VERIFY_CMD: path.join(REPO, 'deploy/scripts/backup-verify.sh'),
-    ETS_LOG_PROTECT_CMD: '/bin/false', ETS_APP_DIR: REPO, ETS_RUN_AS: 'root', ETS_BACKUP_DIR: path.join(R, 'backups'), ETS_LOG_DIR: path.join(R, 'log/ets'),
+    // ETS_AGENT_E2E_SU=1: the superuser path through ets-log-protect (needs ETS_SU_CONNINFO with a superuser)
+    ETS_LOG_PROTECT_CMD: process.env.ETS_AGENT_E2E_SU === '1' ? path.join(REPO, 'deploy/scripts/log-protect.sh') : '/bin/false', ETS_APP_DIR: REPO, ETS_RUN_AS: 'root', ETS_BACKUP_DIR: path.join(R, 'backups'), ETS_LOG_DIR: path.join(R, 'log/ets'),
     ETS_SYSLOG_DIR: path.join(R, 'varlog'), ETS_NGINX_DIR: path.join(R, 'nginx'), ETS_BACKUP_LOCK: path.join(R, 'backup.lock'), ETS_SERVICE: 'ets-test',
     ETS_HEALTH_URL: `http://127.0.0.1:${server.address().port}/api/health`, ETS_VERIFY_DB: 'ets_agent_e2e_check', ETS_INSPECT_DB: 'ets_agent_e2e_check',
     ETS_TLS_CERT: path.join(R, 'ssl/ets.crt'), ETS_TLS_KEY: path.join(R, 'ssl/ets.key'),

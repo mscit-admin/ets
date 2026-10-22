@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { query } from '../db/pool.js';
 import { run, takeSecret, keyFile, sha256File, readText, readJsonFile, writeJson, writeAtomic, ips, hostname } from './agent-util.js';
-import { Tracker, restoreFraction, MODEL } from './progress.js';
+import { Tracker, restoreFraction, scriptLineEvent, MODEL } from './progress.js';
 import { parseArtifact, parseKv, validateConfig, cloudRemote, restoreWarnings, appSecretFp, cmpVersion, CONFIG_ITEMS, RESTORE_ITEMS } from './config.js';
 
 const SOURCES = ['local', 'ssh', 'nas', 'cloud', 'upload'];
@@ -188,8 +188,9 @@ export function psqlStream(env, head, file, tail, onProgress) {
         bytes += chunk.length;
         const lines = (rest + chunk.toString('latin1')).split('\n'); rest = lines.pop();
         for (const l of lines) {
-          if (inCopy) { if (l === '\\.') { inCopy = false; onProgress(bytes, { type: 'end' }); } else onProgress(bytes, { type: 'row' }); }
-          else { const m = /^COPY (?:[^.\s]+\.)?"?([^"\s(]+)"? /.exec(l); if (m) { inCopy = true; onProgress(bytes, { type: 'data', table: m[1] }); } }
+          const ev = scriptLineEvent(l, inCopy);
+          if (ev?.type === 'data') inCopy = true; else if (ev?.type === 'end') inCopy = false;
+          if (ev && ev.type !== 'post') onProgress(bytes, ev);
         }
         onProgress(bytes, null);
         if (!ps.stdin.write(chunk)) { s.pause(); ps.stdin.once('drain', () => s.resume()); }
