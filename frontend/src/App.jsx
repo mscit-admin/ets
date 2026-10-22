@@ -19,6 +19,8 @@ import { ImportDetail, ImportList } from './pages/Imports.jsx';
 import Approvals from './pages/Approvals.jsx';
 import Notifications from './pages/Notifications.jsx';
 import OnlineUsers from './pages/OnlineUsers.jsx';
+import { useEffect, useState } from 'react';
+import { RestoreMonitor, readWatch } from './components/RestoreWizard.jsx';
 
 function Guard({ perm, children }) {
   const { can } = useAuth();
@@ -27,6 +29,10 @@ function Guard({ perm, children }) {
 
 export default function App() {
   const { me, ready } = useAuth();
+  // a restore started from Settings → «النسخ الاحتياطي» (1.12.0): its progress replaces every page until it is dismissed
+  const [watch, setWatch] = useState(readWatch);
+  useEffect(() => { const f = () => setWatch(readWatch()); window.addEventListener('ets-restore-watch', f); return () => window.removeEventListener('ets-restore-watch', f); }, []);
+  if (watch) return <RestoreMonitor watch={watch} />;
   if (!ready) return <div className="boot"><Loading /></div>;
   const signedIn = me.authenticated && me.stage === 'done';
   return (

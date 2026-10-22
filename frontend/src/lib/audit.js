@@ -284,7 +284,29 @@ export function makeAudit({ t, lang }) {
       case 'purge:log': text = t('au_purge_log', { n: r.new_value?.deleted?.audit_log ?? 0, days: r.new_value?.audit_retention_days ?? '' }); break;
       case 'purge_skipped:log': text = t('au_purge_skipped_log', { tables: (r.new_value?.tables || []).map(x => x.table).join(', ') }); break;
       case 'purge_acknowledge:log': text = t('au_purge_acknowledge_log', { tables: (r.new_value?.tables || []).map(x => x.table).join(', ') }); break;
-      case 'restore:database': text = t('au_restore_database'); break;
+      case 'restore:database': {
+        // 1.12.0: the items restored (web UI or CLI) and the result of the audit-chain check
+        const nv = r.new_value || {};
+        text = Array.isArray(nv.items) ? t('au_restore_web', { items: nv.items.map(i => tx('bk_item_' + i) || i).join(listSep), verify: nv.verify ? tx('bk_verify_' + (nv.verify === 'ok' ? 'ok' : 'failed')) : '—' })
+          : t('au_restore_database');
+        if (nv.file || nv.config) notes.push([nv.file, nv.config, nv.logs].filter(Boolean).join(' · '));
+        break;
+      }
+      // backups (1.12.0): Settings → «النسخ الاحتياطي»
+      case 'update:backup_config': {
+        const ch = ctx.changes || [];
+        text = t('au_backup_config', { fields: ch.map(c => c.field).join(listSep) || r.summary || '' });
+        lines = ch.map(c => ({ field: c.field, label: c.field, from: c.secret ? (c.old ? t('bk_secret_saved') : t('au_empty')) : fmt(c.field, c.old),
+          to: c.secret ? (c.new ? t('au_secret_changed') : t('au_empty')) : fmt(c.field, c.new) }));
+        break;
+      }
+      case 'escrow_confirm:backup_config': text = t('au_backup_escrow', { key: r.entity_id || '—' }); break;
+      case 'passphrase_change:backup_config': text = t('au_backup_passphrase', { key: r.new_value?.key_id || '—' }); break;
+      case 'backup_job:backup_job': text = t('au_backup_job', { kind: tx('bk_kind_' + r.summary) || r.summary }); break;
+      case 'backup_upload:backup_file': text = t('au_backup_upload', { file: r.entity_id || '' }); break;
+      case 'restore_inspect:backup_job': text = t('au_restore_inspect', { files: Object.values(r.new_value?.files || {}).join(listSep) }); break;
+      case 'restore_start:backup_job': text = t('au_restore_start', { items: (r.new_value?.items || []).map(i => tx('bk_item_' + i) || i).join(listSep),
+        source: tx('bk_src_' + r.new_value?.source) || r.new_value?.source || '' }); break;
       case 'bulk_update:user': text = t('au_bulk_user', { summary: r.summary || '' }); break;
       case 'bulk_create:user': text = t('au_bulk_create_user', { n: r.new_value?.count ?? '' });
         if (r.new_value?.usernames?.length) notes.push(short(r.new_value.usernames.join(', '), 300));

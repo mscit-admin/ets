@@ -13,7 +13,8 @@ import { TABS } from '../lib/notifyTabs.js';
 const TYPES = ['approval_pending', 'approval_overdue', 'request_decided', 'import_pending', 'import_result', 'import_overdue',
   'stuck', 'untested', 'failed_retest', 'pass_conflict', 'not_started', 'quality', 'excluded', 'moved_in',
   'dept_behind', 'dept_stalled', 'project_status', 'close_approaching',
-  'account_locked', 'failed_logins', 'audit_integrity', 'email_index', 'access_denied', 'backup_missing', 'retention_reduced', 'server_errors', 'rate_capped'];
+  'account_locked', 'failed_logins', 'audit_integrity', 'email_index', 'access_denied', 'backup_missing', 'retention_reduced', 'server_errors',
+  'backup_offsite', 'backup_verify', 'restore_event', 'rate_capped'];
 const PAGE = 30;
 
 export default function Notifications() {

@@ -7,10 +7,11 @@ import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } fro
 import { useBranding } from '../lib/branding.jsx';
 import { addPeriods } from '../components/SCurve.jsx';
 import { NotifySettingsCard } from '../components/NotifySettings.jsx';
+import { BackupSection } from '../components/BackupCenter.jsx';
 
 export default function Settings() {
   const { t, errText, fmtDate } = useI18n();
-  const { can, refresh } = useAuth();
+  const { can, refresh, user } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api.get('/settings'), []);
   const info = useLoad(() => api.get('/system/info'), []);
   const sched = useLoad(() => api.get('/tracker/schedule'), []);
@@ -126,6 +127,9 @@ export default function Settings() {
           )}
         </div>
       </Card>
+
+      {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
+      {user?.role === 'admin' && <BackupSection />}
 
       {info.data && (
         <Card title={t('sec_system')}>
