@@ -156,8 +156,8 @@ test('a presence report never extends the idle timeout (with or without X-ETS-Li
   assert.equal((await c.post('/presence', { path: '/', screen: 'weights' })).status, 200);   // no X-ETS-Live header
   const after = (await pool.query('SELECT last_seen_at FROM sessions WHERE id=$1', [c.sessionId])).rows[0].last_seen_at;
   assert.equal(after.getTime(), before.getTime());
-  // a request of the user does count (control)
-  await c.get('/auth/me');
+  // a request marked as user activity does count (control; 1.12.2: only X-ETS-Activity: 1 extends a session)
+  await c.get('/auth/me', { 'x-ets-activity': '1' });
   await wait(200);
   const later = (await pool.query('SELECT last_seen_at FROM sessions WHERE id=$1', [c.sessionId])).rows[0].last_seen_at;
   assert.ok(later.getTime() > before.getTime());

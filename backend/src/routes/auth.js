@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { query, tx } from '../db/pool.js';
-import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial } from '../middleware/auth.js';
+import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial, sessionTiming } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/ratelimit.js';
 import { hashPassword, verifyPassword, needsRehash, getDummyHash, checkPolicy, generateRecoveryCodes,
   hashRecoveryCode, recoveryCodeHashes } from '../services/passwords.js';
@@ -274,9 +274,12 @@ r.get('/me', async (req, res) => {
   const s = await allSettings();
   const org = { org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], branding: await brandingVersions() };
   // Password accepted but 2FA pending: only what the 2FA screen needs (ETS-SEC-017).
+  // session: the idle limit and when this session ends (the web app's idle sign-out, frontend lib/activity.js).
+  // Reading /auth/me is never activity: the app also calls it on its own.
+  const session = sessionTiming(req.session);
   if (!req.session.mfa_passed) {
     return res.json({ authenticated: true, stage: req.session.mfa_stage,
-      user: { username: req.user.username, language: req.user.language }, ...org });
+      user: { username: req.user.username, language: req.user.language }, session, ...org });
   }
   const codes = req.user.totp_enabled
     ? (await query(`SELECT count(*)::int AS n, (count(*) FILTER (WHERE code_hash NOT LIKE 'h1:%'))::int AS old
@@ -288,16 +291,28 @@ r.get('/me', async (req, res) => {
     // recovery_codes_outdated: unused codes made before 1.0.0 (weaker format); the profile page suggests new ones
     user: { ...req.user, recovery_codes_left: codes.n, recovery_codes_outdated: codes.old > 0 },
     mfa_mode: s['mfa.mode'],
+    session,
     ...org,
   });
 });
 
 // The session is revoked first and always: a failed log write must never keep a session alive. The row is
 // therefore written soft (a failure is counted and reported, see services/logs.js).
+// { reason: 'idle' }: the web app signs out by itself after SESSION_IDLE_MINUTES without user input (1.12.2,
+// frontend lib/activity.js) → revoke_reason 'idle_timeout', auth_log 'logout' with detail.reason 'idle'.
 r.post('/logout', async (req, res) => {
-  await revokeSession(req, res, 'logout');
-  if (req.user) await logAuth(req, { userId: req.user.id, username: req.user.username, event: 'logout', success: true });
+  const idle = req.body?.reason === 'idle';
+  await revokeSession(req, res, idle ? 'idle_timeout' : 'logout');
+  if (req.user) await logAuth(req, { userId: req.user.id, username: req.user.username, event: 'logout', success: true, detail: idle ? { reason: 'idle' } : undefined });
   res.json({ ok: true });
+});
+
+// Genuine user activity (1.12.2): the web app sends this ping, with X-ETS-Activity: 1, at most once a minute while
+// someone is using the page (pointer, keyboard, wheel, touch). sessionMiddleware has already moved last_seen_at;
+// the answer says when the session now ends. Any session (a 2FA step in progress too); 401 without one.
+r.post('/activity', requirePartial, (req, res) => {
+  res.locals.accessFileOnly = true;          // up to one row per minute and user: file access log only, like presence
+  res.json(sessionTiming(req.session));
 });
 
 r.post('/change-password', authLimiter, requireAuthDuringPasswordChange, async (req, res) => {
