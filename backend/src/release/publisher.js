@@ -14,6 +14,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pool, query } from '../db/pool.js';
+import { releaseNotifyStage } from '../services/release.js';
+import { releaseEvent } from '../services/notify-events.js';
 import { releasePaths, publisherWritable, writeAllowed, readConf, run } from './agent-util.js';
 
 export const LOCK_KEY = 'ets_release_publisher';
@@ -139,7 +141,7 @@ async function pullStatus(p, conf) {
 
   // map the prod phase onto the open test row with the same nonce (status CHECK: requested/publishing/deploying/…)
   if (status.nonce) {
-    const row = (await query(`SELECT id, status FROM release_promotions WHERE nonce=$1 ORDER BY id DESC LIMIT 1`, [status.nonce])).rows[0];
+    const row = (await query(`SELECT id, status, version, intent, prev_version FROM release_promotions WHERE nonce=$1 ORDER BY id DESC LIMIT 1`, [status.nonce])).rows[0];
     if (row && !['succeeded', 'failed', 'rolled_back', 'cancelled'].includes(row.status)) {
       const PHASE_TO_STATUS = { pulled: 'deploying', backing_up: 'deploying', deploying: 'deploying', verifying: 'deploying',
         succeeded: 'succeeded', failed: 'failed', rolled_back: 'rolled_back' };
@@ -148,6 +150,12 @@ async function pullStatus(p, conf) {
       await setRow(row.id, { status: next, progress: { phase: status.phase || null, prod: status.progress || null },
         result: status.result || null, backup_ref: status.backup_ref || null, error: status.error || null,
         ...(terminal ? { finished_at: new Date() } : {}) });
+      // S-REL (S12): alert admins on a terminal transition (succeeded / failed / rolled_back). The started alert was
+      // sent by the API; the pure releaseNotifyStage() decides which hop warrants an alert.
+      const stage = releaseNotifyStage(row.status, next);
+      if (stage) await releaseEvent(stage, { id: Number(row.id), version: row.version, intent: row.intent,
+        prev_version: row.prev_version, backup_ref: status.backup_ref || null, error: status.error || null,
+        result: status.result || null });
     }
   }
   return { pulled: true, version: status.version, phase: status.phase };

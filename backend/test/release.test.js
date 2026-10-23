@@ -114,6 +114,62 @@ test('release: REJECT — prev mismatch (manifest authored against a different d
   assert.equal(R.checkPrev({ prev_commit: PREV_COMMIT }, null), null);   // first deploy: nothing deployed, skipped
 });
 
+// ================================================================= Phase 3: pure deploy-decision logic
+test('release: evaluateHealth — all required probes pass → passed', () => {
+  const v = R.evaluateHealth([{ name: 'http_health', ok: true, detail: '200' }, { name: 'db_reachable', ok: true }, { name: 'migrations_applied', ok: true }]);
+  assert.equal(v.passed, true);
+  assert.deepEqual(v.failed, []);
+  assert.match(v.summary, /passed/);
+});
+test('release: evaluateHealth — a failed probe fails the gate and names the check', () => {
+  const v = R.evaluateHealth([{ name: 'http_health', ok: false, detail: 'curl exit 7' }, { name: 'db_reachable', ok: true }]);
+  assert.equal(v.passed, false);
+  assert.deepEqual(v.failed, ['http_health']);
+  assert.match(v.summary, /http_health/);
+  assert.equal(v.checks[0].detail, 'curl exit 7');
+});
+test('release: evaluateHealth — no probes, or a required probe not run, is a failure', () => {
+  assert.equal(R.evaluateHealth([]).passed, false);
+  const v = R.evaluateHealth([{ name: 'http_health', ok: true }], { required: ['http_health', 'db_reachable'] });
+  assert.equal(v.passed, false);
+  assert.deepEqual(v.missing, ['db_reachable']);
+  assert.match(v.summary, /db_reachable \(not run\)/);
+});
+
+test('release: rollbackDecision — full decision table (every branch)', () => {
+  // healthy → none
+  assert.equal(R.rollbackDecision({ health_passed: true, auto_rollback: true, migration_ran: true }).action, 'none');
+  // unhealthy + no migration + auto + prev commit → code_rollback
+  const cr = R.rollbackDecision({ health_passed: false, auto_rollback: true, migration_ran: false, prev_commit: 'a'.repeat(40) });
+  assert.equal(cr.action, 'code_rollback');
+  assert.equal(cr.needs_db_restore, false);
+  // unhealthy + migration ran → stop_needs_db_restore (even with auto on) + the exact ets-restore command
+  const dbr = R.rollbackDecision({ health_passed: false, auto_rollback: true, migration_ran: true, backup_ref: 'ets-2026.tar.age', prev_commit: 'a'.repeat(40) });
+  assert.equal(dbr.action, 'stop_needs_db_restore');
+  assert.equal(dbr.needs_db_restore, true);
+  assert.equal(dbr.restore_command, 'ets-restore ets-2026.tar.age');
+  // auto_rollback off (no migration) → stop
+  const off = R.rollbackDecision({ health_passed: false, auto_rollback: false, migration_ran: false, prev_commit: 'a'.repeat(40) });
+  assert.equal(off.action, 'stop');
+  assert.equal(off.reason, 'auto_rollback_off');
+  // auto on but nothing to roll back to (first deploy) → stop
+  assert.equal(R.rollbackDecision({ health_passed: false, auto_rollback: true, migration_ran: false, prev_commit: null }).action, 'stop');
+  // stop_needs_db_restore with no backup_ref still gives a usable command placeholder
+  assert.equal(R.rollbackDecision({ health_passed: false, migration_ran: true }).restore_command, 'ets-restore <backup_ref>');
+});
+
+test('release: releaseNotifyStage fires only on terminal transitions', () => {
+  assert.equal(R.releaseNotifyStage('deploying', 'succeeded'), 'succeeded');
+  assert.equal(R.releaseNotifyStage('deploying', 'failed'), 'failed');
+  assert.equal(R.releaseNotifyStage('failed', 'rolled_back'), 'rolled_back');
+  assert.equal(R.releaseNotifyStage('requested', 'publishing'), null);   // non-terminal hop
+  assert.equal(R.releaseNotifyStage('succeeded', 'succeeded'), null);    // no change
+  assert.equal(R.releaseStageSeverity('failed'), 'critical');
+  assert.equal(R.releaseStageSeverity('rolled_back'), 'critical');
+  assert.equal(R.releaseStageSeverity('started'), 'info');
+  assert.equal(R.releaseStageSeverity('succeeded'), 'info');
+});
+
 // ================================================================= API
 let server, base, pool, ids = {}, totp, cryptoSvc, KEYDIR;
 before(async () => {
@@ -189,7 +245,7 @@ test('release API: administrators only — signed-out 401, a cfg override is not
 test('release API: /versions lists promotable versions with commit + what-changed, and current state', { skip }, async () => {
   const root = await as('root');
   const v = (await root.get('/release/versions')).data;
-  assert.equal(v.phase, 1);
+  assert.equal(v.phase, 3);
   assert.equal(v.production.version, '1.12.16');
   assert.equal(v.signing_ready, true);
   const e = v.versions.find(x => x.version === '1.12.17');
@@ -261,7 +317,7 @@ test('release API: /status and /history shape', { skip }, async () => {
   const r = await root.post('/release/promote', { version: '1.12.17', confirm: '1.12.17', ...PW });
   assert.equal(r.status, 202);
   const st = (await root.get('/release/status')).data;
-  assert.equal(st.phase, 1);
+  assert.equal(st.phase, 3);
   assert.equal(st.in_flight, true);
   assert.equal(st.current.version, '1.12.17');
   assert.equal(st.production.version, '1.12.16');
@@ -269,7 +325,29 @@ test('release API: /status and /history shape', { skip }, async () => {
   assert.ok(Array.isArray(h.promotions) && h.promotions.length >= 1);
   assert.equal(h.promotions[0].version, '1.12.17');
   assert.ok(h.promotions[0].manifest, 'history carries the manifest');
+  // the history row exposes the fields the expandable detail view renders
+  for (const k of ['progress', 'result', 'backup_ref', 'prev_version', 'authorized_at', 'finished_at']) {
+    assert.ok(k in h.promotions[0], `history row carries ${k}`);
+  }
   await pool.query('DELETE FROM release_promotions');
+  await pool.query(`DELETE FROM notifications WHERE type='release_event'`);
+});
+
+test('release API: /promote raises the S-REL (S12) started notification to administrators', { skip }, async () => {
+  await pool.query(`DELETE FROM notifications WHERE type='release_event'`);
+  const admin = await as('twofa');   // a fresh admin (root's per-hour promote quota is spent by earlier tests)
+  const r = await admin.post('/release/promote', { version: '1.12.17', confirm: '1.12.17', ...PW });
+  assert.equal(r.status, 202, JSON.stringify(r.data));
+  const n = (await pool.query(`SELECT user_id, severity, params FROM notifications WHERE type='release_event'`)).rows;
+  assert.ok(n.length >= 1, 'a release_event notification was created');
+  const mine = n.find(x => x.user_id === ids.twofa);
+  assert.ok(mine, 'the admin who promoted is alerted');
+  assert.equal(mine.params.stage, 'started');
+  assert.equal(mine.params.version, '1.12.17');
+  assert.equal(mine.params.intent, 'deploy');
+  assert.equal(mine.severity, 'info', 'started is informational (failed/rolled_back are critical)');
+  await pool.query('DELETE FROM release_promotions');
+  await pool.query(`DELETE FROM notifications WHERE type='release_event'`);
 });
 
 test('release API: /promote is rate-limited per administrator', { skip }, async () => {

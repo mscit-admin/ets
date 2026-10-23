@@ -14,7 +14,7 @@ const TYPES = ['approval_pending', 'approval_overdue', 'request_decided', 'impor
   'stuck', 'untested', 'failed_retest', 'pass_conflict', 'not_started', 'quality', 'excluded', 'moved_in', 'app_moved_in',
   'dept_behind', 'dept_stalled', 'project_status', 'close_approaching',
   'account_locked', 'failed_logins', 'audit_integrity', 'email_index', 'access_denied', 'backup_missing', 'retention_reduced', 'server_errors',
-  'backup_offsite', 'backup_verify', 'restore_event', 'rate_capped'];
+  'backup_offsite', 'backup_verify', 'restore_event', 'release_event', 'rate_capped'];
 const PAGE = 30;
 
 export default function Notifications() {

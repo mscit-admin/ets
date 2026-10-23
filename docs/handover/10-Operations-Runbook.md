@@ -112,7 +112,7 @@ weekly test restore and `/etc/cron.d/ets-backup` is gone; `/etc/ets/backup.conf`
 Settings → «النسخ الاحتياطي» shows the agent working; confirm the escrow of the backup key there; set up the offsite
 destinations (08 §4); the first hourly run keeps the existing dailies (08 §3).
 
-## 3a. Promote a version to production (1.12.19, Phase 2)
+## 3a. Promote a version to production (1.12.19 Phase 2, 1.12.20 Phase 3 — feature-complete)
 
 The one-button test→production pipeline. Design and the full operator setup are in
 [13 — Release Promotion](13-Release-Promotion-Design.md) (§8a for keys, deploy keys, unit install/enable and the
@@ -129,32 +129,53 @@ staging dry-run rehearsal that MUST pass before first real use). Two ROOT agents
    takes a **pre-deploy backup**, checks out the tag, runs `update.sh`, and **health-gates** `/api/health`. Watch
    `/var/log/ets-deploy-agent.log`.
 4. On success the prod agent signs + pushes `production-status.json`; the publisher pulls it and the test UI goes
-   green (`succeeded`). An S-REL alert goes to admins (Phase 3 wires the alert class).
+   green (`succeeded`). An **S-REL (S12) alert** goes to every admin (1.12.20, Phase 3): started / succeeded are
+   informational; **failed / rolled_back are critical** and go to the phone.
 
-**If the deploy fails the health gate:**
+**If the deploy fails the extended health gate** (app `/api/health`, the DB reachable, migrations applied; the exact
+failing check is recorded in the row `result.health_summary` / `health_checks` and shown on the Release screen):
 
-* **No migration ran + `AUTO_ROLLBACK=on`** → the agent auto code-rolls-back (checkout prev commit + `update.sh`),
-  ends `rolled_back`. No DB action needed.
-* **A migration ran** → the agent STOPS at `failed`, records `backup_ref` and `needs_db_restore=true`. The schema is
-  ahead of the old code, so a **DB restore is required** (§5.3): on production, roll the code back and restore the
-  pre-deploy backup:
+* **No migration ran + `AUTO_ROLLBACK=on` + a previous commit exists** → the agent auto code-rolls-back (checkout prev
+  commit + `update.sh`), ends `rolled_back`. No DB action needed.
+* **`AUTO_ROLLBACK=off` (or no previous commit)** → the agent STOPS at `failed`; inspect, then use the break-glass
+  rollback below or redeploy manually.
+* **A migration ran** → the agent STOPS at `failed`, records `backup_ref`, `needs_db_restore=true` and the exact
+  `ets-restore` command; the Release screen shows the **«استرجاع قاعدة البيانات»** panel. Follow **§3b**.
 
-  ```bash
-  sudo git -C /opt/ets-src checkout <prev tag>       # e.g. the version in production-status.json prev_version
-  sudo ETS_ENV_FILE=/etc/ets/ets.env /usr/local/sbin/ets-deploy-agent dry-run   # confirm state first
-  sudo ets-restore <backup_ref from the failed row / status>   # restores the pre-deploy DB (data since then is lost)
-  cd /opt/ets-src && sudo bash deploy/scripts/update.sh         # redeploy the previous code
-  ```
+Automatic DB rollback is deliberately **never** done (ETS migrations do not run in reverse): the only reliable DB
+rollback is restore-from-backup, and it is **manual** by design (13 §5.3).
 
-  (Automatic DB rollback is deliberately **not** done; it is the Phase-3 / manual path.)
-
-**Manual rollback (break-glass):** the Rollback button on the test UI records a `rollback` intent to the previous
-version; the same pipeline runs in reverse with the §5.3 DB caveat shown before confirming.
+**Manual rollback (break-glass):** the «تراجع» Rollback button on the test UI (enabled when the last deploy is
+`failed`) records a `rollback` intent to the previous version and drives a **code-rollback** promotion; the §5.3 DB
+caveat is shown before confirming. A rollback shows in the promotion history like any other promotion.
 
 **Diagnostics:** `systemctl status ets-release-publisher.timer ets-deploy-agent.timer`; the two agent logs;
 `ets-deploy-agent dry-run` on production verifies the current signal without deploying (reports `already_current`
 when prod already runs it); a rejected signal is logged with its reason (`unknown_signer`, `non_ancestor`,
-`downgrade`, `stale`, `replayed_nonce`, `prev_mismatch`) and nothing is deployed.
+`downgrade`, `stale`, `replayed_nonce`, `prev_mismatch`) and nothing is deployed. The read-only `GET /api/release/status`
+(admin) shows the deployed version/commit, last deploy time and the agent heartbeat/staleness on either server.
+
+## 3b. Restore the database after a failed migration-deploy (1.12.20)
+
+When a production deploy fails the health gate **after a migration ran**, the schema is ahead of the old code, so a
+code rollback alone is unsafe — restore the pre-deploy backup. The Release screen's «استرجاع قاعدة البيانات» panel
+names the `backup_ref` and the exact command. On the **production** server, as the operator (root):
+
+```bash
+# 1. the backup_ref is in the failed promotion's result / the «استرجاع قاعدة البيانات» panel / production-status.json
+sudo ETS_ENV_FILE=/etc/ets/ets.env /usr/local/sbin/ets-deploy-agent dry-run   # confirm current state first
+# 2. roll the CODE back to the version production ran before (prev_version / prev_commit on the row)
+sudo git -C /opt/ets-src checkout <prev tag or prev_commit>
+# 3. restore the pre-deploy DB (empties + reloads the schema in one transaction) — DATA WRITTEN SINCE THE BACKUP IS LOST
+sudo ets-restore <backup_ref>
+# 4. redeploy the previous code and confirm health
+cd /opt/ets-src && sudo bash deploy/scripts/update.sh
+curl -fsS http://127.0.0.1:${PORT:-3000}/api/health
+```
+
+The pre-deploy backup is taken immediately before the deploy, so the lost-writes window is seconds (13 §5.3). After a
+clean restore, record the outcome and, if the version is to be retried, fix the migration first (expand/contract, 13
+§5.3) before promoting again.
 
 ## 4. Periodic tasks
 

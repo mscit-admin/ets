@@ -13,9 +13,13 @@
 //   3. on accept: take a pre-deploy ets-backup (store its ref), checkout the tagged commit, run deploy/scripts/
 //      update.sh (migrations + build + restart), then HEALTH-GATE (poll /api/health for HEALTH_TIMEOUT seconds).
 //   4. success → record 'succeeded', write + sign + push production-status.json. Failure → record 'failed' with the
-//      backup_ref and, when AUTO_ROLLBACK=on AND NO migration ran, code-rollback (checkout prev commit + update.sh);
-//      when a migration ran the schema is ahead of the old code so a DB restore-from-backup is required — that is the
-//      §5.3 manual / Phase-3 path, left as a clearly-recorded hook (DB rollback is NOT performed automatically here).
+//      backup_ref and consult the PURE rollbackDecision() table (services/release.js, unit-tested): when AUTO_ROLLBACK=
+//      on AND NO migration ran AND a previous commit exists → code-rollback (checkout prev commit + update.sh); when a
+//      migration ran the schema is ahead of the old code so the decision is stop_needs_db_restore — the §5.3 restore-
+//      from-backup is MANUAL (the exact `ets-restore <backup_ref>` command is recorded on the row for the Release
+//      screen's «استرجاع قاعدة البيانات» guidance panel); DB rollback is NEVER performed automatically here (1.12.20,
+//      Phase 3). The extended health gate records a full readiness verdict (http + db + migrations) so the Release
+//      screen shows WHY a deploy failed.
 //
 // No shell (argument arrays); only the status files + the local status.json are writable (deployWritable allow-list);
 // runs as root only via its own unit; the API / ets user is never in this path.
@@ -27,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pool, query } from '../db/pool.js';
-import { signManifest } from '../services/release.js';
+import { signManifest, evaluateHealth, rollbackDecision } from '../services/release.js';
 import { releasePaths, deployWritable, writeAllowed, readConf, run, readText } from './agent-util.js';
 
 export const LOCK_KEY = 'ets_deploy_agent';
@@ -86,17 +90,47 @@ async function writeStatus(p, conf, status) {
   return { pushed: r.code === 0, reason: r.code === 0 ? null : r.out.trim().slice(-200) };
 }
 
-// Poll the local health endpoint until it answers OK or the timeout elapses. → true on healthy.
-async function healthGate(conf) {
+// One readiness sweep (the IMPURE probing — HTTP + DB). Returns the raw [{ name, ok, detail }] the PURE
+// evaluateHealth() reduces to a verdict. Checks: the app serves /api/health, an optional second known endpoint, the
+// database is reachable, and migrations are applied. The decision of pass/fail from these results lives in the pure,
+// unit-tested evaluateHealth (services/release.js) — this only gathers the facts.
+async function readinessProbes(conf) {
+  const probes = [];
   const url = conf.HEALTH_URL || `http://127.0.0.1:${conf.PORT || process.env.PORT || 3000}/api/health`;
+  const h = await run('curl', ['-fsS', '--max-time', '5', url]);
+  probes.push({ name: 'http_health', ok: h.code === 0, detail: h.code === 0 ? `200 ${url}` : `curl exit ${h.code}: ${(h.out || '').trim().slice(-200)}` });
+  if (conf.READY_URL) {
+    const rr = await run('curl', ['-fsS', '--max-time', '5', conf.READY_URL]);
+    probes.push({ name: 'known_endpoint', ok: rr.code === 0, detail: rr.code === 0 ? `200 ${conf.READY_URL}` : `curl exit ${rr.code}` });
+  }
+  const mh = await migrationHead();
+  probes.push({ name: 'db_reachable', ok: mh.n !== null, detail: mh.n !== null ? `${mh.n} migrations applied` : 'database unreachable' });
+  probes.push({ name: 'migrations_applied', ok: mh.n !== null && mh.n > 0, detail: mh.head ? `head ${mh.head}` : 'no migrations found' });
+  return probes;
+}
+
+// Extended health gate: poll readiness with a configurable timeout + exponential retry/backoff until every required
+// check passes or the timeout elapses. Returns the PURE evaluateHealth() verdict of the last sweep (with attempts),
+// which the caller records into the promotion result and the signed production-status.json → the Release screen shows
+// WHY a deploy failed. Required checks are configurable (HEALTH_REQUIRE=a,b); default: every probe must pass.
+async function healthGate(conf) {
   const timeoutMs = Math.max(5, Number(conf.HEALTH_TIMEOUT || 120)) * 1000;
   const deadline = Date.now() + timeoutMs;
+  const required = (conf.HEALTH_REQUIRE || '').split(',').map(s => s.trim()).filter(Boolean);
+  let delay = Math.max(1, Number(conf.HEALTH_RETRY_DELAY || 3)) * 1000;
+  const maxDelay = Math.max(delay, Number(conf.HEALTH_RETRY_MAX || 15) * 1000);
+  let attempts = 0;
+  let verdict = evaluateHealth([], { required: required.length ? required : null });
   while (Date.now() < deadline) {
-    const r = await run('curl', ['-fsS', '--max-time', '5', url]);
-    if (r.code === 0) return true;
-    await new Promise(res => setTimeout(res, 3000));
+    attempts++;
+    const probes = await readinessProbes(conf);
+    verdict = { ...evaluateHealth(probes, { required: required.length ? required : null }), attempts };
+    if (verdict.passed) return verdict;
+    if (Date.now() + delay >= deadline) break;
+    await new Promise(res => setTimeout(res, delay));
+    delay = Math.min(maxDelay, Math.round(delay * 1.7));
   }
-  return false;
+  return { ...verdict, attempts, timed_out: true };
 }
 
 // Run deploy/scripts/update.sh from the repo working copy (as root; update.sh builds, migrates and restarts). →
@@ -143,43 +177,56 @@ async function deploy(p, conf, manifest) {
   const up = runUpdate(p, conf);
   const upRes = await up;
 
-  // 3. health gate
+  // 3. extended health gate — record the full readiness verdict (WHY it passed/failed) into the status back-channel.
   await emit('verifying', { backup_ref: backupRef });
-  const healthy = upRes.code === 0 && await healthGate(conf);
+  const health = upRes.code === 0 ? await healthGate(conf)
+    : { ...evaluateHealth([{ name: 'update_sh', ok: false, detail: `update.sh exit ${upRes.code}` }]), attempts: 0 };
+  const healthy = upRes.code === 0 && health.passed;
   const postMig = await migrationHead();
   const migrated = preMig.n !== null && postMig.n !== null && postMig.n > preMig.n;
+  const healthResult = { update_exit: upRes.code, healthy, migrated, migration_head: postMig.head,
+    health_summary: health.summary, health_checks: health.checks, health_attempts: health.attempts,
+    log_tail: upRes.out.slice(-4000) };
 
   if (healthy) {
     say(`deploy ${version} succeeded`);
-    await emit('succeeded', { backup_ref: backupRef, result: { migrated, migration_head: postMig.head, update_exit: upRes.code } });
+    await emit('succeeded', { backup_ref: backupRef, result: healthResult });
     return { ok: true, backup_ref: backupRef, migrated };
   }
 
-  // 4. failure → record, then decide rollback. AUTO_ROLLBACK governs prod (the test row's auto_rollback is advisory).
-  say(`deploy ${version} FAILED (update_exit=${upRes.code}, healthy=${healthy}, migrated=${migrated})`);
+  // 4. failure → record, then consult the PURE decision table (services/release.js rollbackDecision). AUTO_ROLLBACK
+  // governs prod (the test row's auto_rollback is advisory). The action is recorded so the Release screen can show it.
   const auto = (conf.AUTO_ROLLBACK || 'on') !== 'off';
-  const failResult = { update_exit: upRes.code, healthy: false, migrated, migration_head: postMig.head, log_tail: upRes.out.slice(-4000) };
+  const decision = rollbackDecision({ auto_rollback: auto, migration_ran: migrated, health_passed: false,
+    backup_ref: backupRef, prev_commit: prevInfo.commit });
+  say(`deploy ${version} FAILED (update_exit=${upRes.code}, migrated=${migrated}) → action=${decision.action} (${decision.reason})`);
+  const failResult = { ...healthResult, rollback_action: decision.action, rollback_reason: decision.reason,
+    needs_db_restore: decision.needs_db_restore, auto_rollback: auto };
 
-  if (auto && !migrated && prevInfo.commit) {
+  if (decision.action === 'code_rollback') {
     // CODE-ONLY rollback (safe: no migration ran, so the old code matches the schema): checkout prev + redeploy
-    say('auto code-rollback to', prevInfo.commit.slice(0, 10));
+    say('auto code-rollback to', String(decision.prev_commit).slice(0, 10));
     await emit('failed', { error: 'health_gate_failed; code-rollback in progress', backup_ref: backupRef, result: failResult });
-    const rc = await checkout(p, conf, prevInfo.commit);
+    const rc = await checkout(p, conf, decision.prev_commit);
     const ru = rc.ok ? await runUpdate(p, conf) : { code: 1, out: 'checkout prev failed' };
-    const rhealthy = ru.code === 0 && await healthGate(conf);
-    if (rhealthy) {
-      await emit('rolled_back', { backup_ref: backupRef, result: { ...failResult, rolled_back_to: prevInfo.version, db_restored: false } });
+    const rhealth = ru.code === 0 ? await healthGate(conf) : evaluateHealth([{ name: 'update_sh', ok: false, detail: 'checkout prev / update.sh failed' }]);
+    if (ru.code === 0 && rhealth.passed) {
+      await emit('rolled_back', { backup_ref: backupRef, result: { ...failResult, rolled_back_to: prevInfo.version, db_restored: false, rollback_health_summary: rhealth.summary } });
       return { ok: false, rolled_back: true, backup_ref: backupRef };
     }
-    await emit('failed', { error: 'code-rollback also failed — operator intervention required', backup_ref: backupRef, result: { ...failResult, rollback_failed: true } });
+    await emit('failed', { error: 'code-rollback also failed — operator intervention required', backup_ref: backupRef, result: { ...failResult, rollback_failed: true, rollback_health_summary: rhealth.summary } });
     return { ok: false, rolled_back: false, backup_ref: backupRef };
   }
 
-  // A migration ran (schema ahead of old code) OR auto-rollback is off: STOP at 'failed' with the backup_ref recorded.
-  // DB rollback = restore-from-backup (ets-restore <backup_ref>) — the §5.3 path, performed manually or by Phase 3,
-  // NOT automatically here. The hook is the recorded backup_ref + needs_db_restore flag.
-  await emit('failed', { error: migrated ? 'health_gate_failed after a migration ran — DB restore required (ets-restore ' + (backupRef || '<backup>') + '); see §5.3' : 'health_gate_failed; auto_rollback off', backup_ref: backupRef, result: { ...failResult, needs_db_restore: !!migrated, auto_rollback: auto } });
-  return { ok: false, rolled_back: false, needs_db_restore: !!migrated, backup_ref: backupRef };
+  // stop / stop_needs_db_restore: STOP at 'failed' with the backup_ref recorded. For stop_needs_db_restore a migration
+  // ran (schema ahead of old code) so DB rollback = restore-from-backup (the exact command is on the row) — the §5.3
+  // MANUAL path the Release screen surfaces with the «استرجاع قاعدة البيانات» guidance panel; NEVER automatic here.
+  const errMsg = decision.action === 'stop_needs_db_restore'
+    ? `health_gate_failed after a migration ran — DB restore required (${decision.restore_command}); see docs/handover/13 §5.3`
+    : `health_gate_failed; ${auto ? 'no previous commit to roll back to' : 'auto_rollback off'}`;
+  await emit('failed', { error: errMsg, backup_ref: backupRef,
+    result: { ...failResult, restore_command: decision.restore_command || null } });
+  return { ok: false, rolled_back: false, needs_db_restore: decision.needs_db_restore, backup_ref: backupRef };
 }
 
 // One cycle: fetch, read + verify the signal, and deploy when it is accepted and not already applied.

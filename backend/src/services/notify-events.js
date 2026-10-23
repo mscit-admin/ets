@@ -8,7 +8,9 @@
 //   T8 moved_in           items moved into an application (1.10.0) → users of that application (not who moved / approved)
 //   S1 account_locked     an account's sign-in was paused → administrators
 //   S7 retention_reduced  a log retention setting was lowered → administrators
+//   S12 release_event     a production promotion started / succeeded / failed / rolled back → administrators
 import { query } from '../db/pool.js';
+import { releaseStageSeverity } from './release.js';
 import { hasPerm, canSeeApp, coversDept } from '../middleware/auth.js';
 import { activeUsers, appMap, deliver, resolveExcept } from './notify.js';
 import { logger } from './logs.js';
@@ -153,4 +155,24 @@ export const retentionReduced = safe('retention_reduced', async ({ key, from, to
   const list = await admins();
   await deliver('retention_reduced', list.map(user => ({ user, dedupeKey: `retention_reduced:${key}:${Date.now()}`,
     link: '/settings', params: { key, from, to, by } })));
+});
+
+// ---- S12: a production promotion changed state (docs/handover/13 §4.3). stage ∈ started|succeeded|failed|rolled_back.
+// Started is sent by the API when the admin records the intent (routes/release.js); the terminal stages are sent by
+// the test-side publisher when it learns production's result from the pulled, signed status (release/publisher.js).
+// One row per promotion + stage; failed / rolled_back are critical (releaseStageSeverity) so they are high-signal.
+export const releaseEvent = safe('release_event', async (stage, promotion = {}) => {
+  if (!['started', 'succeeded', 'failed', 'rolled_back'].includes(stage)) return;
+  const list = await admins();
+  if (!list.length) return;
+  const result = promotion.result || {};
+  await deliver('release_event', list.map(user => ({ user,
+    dedupeKey: `release_event:${promotion.id ?? promotion.nonce ?? promotion.version}:${stage}`,
+    link: '/settings#release', severity: releaseStageSeverity(stage),
+    params: { stage, intent: promotion.intent || 'deploy', version: promotion.version || null,
+      prev_version: promotion.prev_version || null, by: promotion.by || null, backup_ref: promotion.backup_ref || null,
+      needs_db_restore: !!(result.needs_db_restore ?? promotion.needs_db_restore),
+      restore_command: result.needs_db_restore || promotion.needs_db_restore
+        ? `ets-restore ${promotion.backup_ref || '<backup_ref>'}` : null,
+      error: promotion.error ? String(promotion.error).slice(0, 300) : null } })));
 });

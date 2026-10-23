@@ -26,6 +26,7 @@ import { HttpError } from '../utils/http.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { reauth } from './auth.js';
 import { buildManifest, signManifest, newNonce, cmpVersion, keyId } from '../services/release.js';
+import { releaseEvent } from '../services/notify-events.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('cfg'), requireAdmin);
@@ -123,7 +124,7 @@ r.get('/versions', async (req, res) => {
       commit: resolved.commit, commit_source: resolved.source, promotable: newer });
   }
   res.json({
-    phase: 1,
+    phase: 3,
     production: prod,
     test: { version: pkg.version, resolved: resolveCommit(pkg.version)?.commit || null },
     signing_ready: signingReady(),
@@ -137,7 +138,7 @@ r.get('/status', async (req, res) => {
   const cur = (await query(`SELECT p.*, u.full_name AS by_name FROM release_promotions p LEFT JOIN users u ON u.id=p.requested_by
     ORDER BY p.id DESC LIMIT 1`)).rows[0];
   res.json({
-    phase: 1,
+    phase: 3,
     production: production(st),
     agent: { seen_at: st.agent_seen_at || null, ok: !!st.agent_seen_at && Date.now() - new Date(st.agent_seen_at) < 3 * 60_000,
       apply_error: st.apply_error || null },
@@ -220,7 +221,10 @@ async function recordIntent(req, res, { intent }) {
   }
   await logSystem('release_requested', `production ${intent} requested: ${version} (${commit.slice(0, 10)})`,
     { promotion_id: Number(row.id), version, commit, intent, by: req.user.username });
-  wake();   // Phase 2: ets-release-publisher re-reads, signs, pushes; Phase 1 only records the intent.
+  // S-REL (S12): every administrator is alerted that a promotion / rollback started (in-app + phone).
+  await releaseEvent('started', { id: Number(row.id), version, intent, prev_version: prod.version,
+    by: req.user.full_name || req.user.username });
+  wake();   // the root ets-release-publisher re-reads, signs, pushes; the prod ets-deploy-agent deploys & reports back.
   res.status(202).json({ promotion: publicPromotion(row), note: 'Promotion recorded; the root release agents sign, push and deploy it (see docs/handover/13).' });
 }
 
