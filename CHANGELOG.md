@@ -30,6 +30,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.15] — 2026-10-23 — Dashboard: function-count stats moved inside the ERP card
+
+### Changed
+- **Frontend:** the four function-count stats (الوظائف الداخلة في الحساب، المكتملة كليًا، التي اختُبرت بنجاح، التي عليها
+  ملاحظات) moved from a separate row below the ERP card into that same card, as a footer stats row under the wheel/KPI
+  (`pages/Dashboard.jsx`). Each tile gets a subtle 3D splash (accent-tinted gradient + raised shadow + inset highlight,
+  `app.css` `.erp-stats`/`.erp-stat`), responsive 4-across → 2×2, RTL-correct. Values/labels unchanged; `NumberCard`
+  elsewhere untouched (a scoped `.erp-stat` variant is used, not a global restyle).
+
+---
+
 ## [1.12.14] — 2026-10-23 — Download encrypted backup files from the backup screen
 
 ### Added
