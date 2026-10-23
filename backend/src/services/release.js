@@ -111,7 +111,18 @@ export function checkCommit(manifest, knownCommits = null) {
   if (knownCommits && !(knownCommits instanceof Set ? knownCommits.has(manifest.commit) : knownCommits.includes(manifest.commit))) {
     return 'unknown_commit';
   }
-  return null;   // NOTE (Phase 2): also require `git merge-base --is-ancestor <commit> origin/HEAD`.
+  return null;
+}
+
+// 2b. Ancestor membership (PHASE 2 — completed in the production deploy agent, which HAS the fetched git working copy).
+//     The agent computes `git merge-base --is-ancestor <commit> <default-branch-tip>` and passes the boolean result as
+//     `isAncestor`. A commit that is NOT an ancestor of the default branch is refused (it was never released on the
+//     line production follows). `isAncestor === null`/undefined means the caller cannot evaluate it (e.g. the
+//     unprivileged test API, which has no fetched default branch) → skipped, exactly like checkCommit's knownCommits.
+export function checkAncestor(manifest, { isAncestor = null } = {}) {
+  if (!COMMIT_RE.test(String(manifest?.commit || ''))) return 'bad_commit_format';
+  if (isAncestor === false) return 'non_ancestor';
+  return null;
 }
 
 // 3. Monotonic version — blocks a downgrade. For intent 'deploy' the version must be STRICTLY NEWER than the deployed
@@ -154,10 +165,11 @@ export function checkPrev(manifest, deployed) {
 // The whole verification the production agent runs before it would act (§3.1). Returns { ok: true } or
 // { ok: false, reason, check }. Checks run in order; the first failure is reported.
 export function verifyManifest({ manifest, signature }, { allowedSigners = [], deployed = null,
-  knownCommits = null, now = Date.now(), freshnessDays = DEFAULT_FRESHNESS_DAYS, usedNonces = null } = {}) {
+  knownCommits = null, isAncestor = null, now = Date.now(), freshnessDays = DEFAULT_FRESHNESS_DAYS, usedNonces = null } = {}) {
   const steps = [
     ['signature', () => checkSignature(manifest, signature, allowedSigners)],
     ['commit', () => checkCommit(manifest, knownCommits)],
+    ['ancestor', () => checkAncestor(manifest, { isAncestor })],
     ['version', () => checkVersion(manifest, deployed)],
     ['freshness', () => checkFreshness(manifest, { now, freshnessDays, usedNonces })],
     ['prev', () => checkPrev(manifest, deployed)],

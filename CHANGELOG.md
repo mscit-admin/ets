@@ -30,6 +30,58 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.19] — 2026-10-23 — Release promotion pipeline — Phase 2 (the root agents, signing & systemd)
+
+### Added
+- **Release promotion pipeline, PHASE 2 — the real root agents, signing and systemd** (design in
+  `docs/handover/13-Release-Promotion-Design.md`; **requires operator setup — see §8a and `docs/handover/10` §3a**).
+  Two unprivileged-API-never-root agents mirror `ets-backup-agent`:
+  - **`ets-release-publisher`** (TEST server; `deploy/scripts/release-publisher.sh` →
+    `backend/scripts/release-publisher.js` → `backend/src/release/publisher.js`; units
+    `deploy/systemd/ets-release-publisher.{service,timer,path}`). Reads the latest `release_promotions` row in status
+    `requested` **from the database**, re-verifies the signed manifest, creates/pushes the **annotated signed git tag
+    `v<version>`**, writes + pushes the signed manifest `deploy/production-release.json(+.sig)` via a write-restricted
+    deploy key, sets the row `publishing`, and pulls the signed `production-status.json` back.
+  - **`ets-deploy-agent`** (PRODUCTION server; `deploy/scripts/deploy-agent.sh` →
+    `backend/scripts/deploy-agent.js` → `backend/src/release/deploy-agent.js`; units
+    `deploy/systemd/ets-deploy-agent.{service,timer,path}`). Fetches, verifies the signal (signature, **real
+    `git merge-base --is-ancestor`** ancestor check, strictly-newer/rollback, freshness + one-time nonce,
+    prev-match), takes a pre-deploy `ets-backup`, checks out the tagged commit, runs `update.sh`, **health-gates**
+    `/api/health`, and signs + pushes the status back. On a failed health check with `AUTO_ROLLBACK=on` and **no
+    migration applied** it performs the **code rollback** (checkout prev + `update.sh`); when a migration ran it stops
+    at `failed` with `backup_ref` + `needs_db_restore=true` (DB restore is the §5.3 manual / Phase-3 path).
+- **Shared no-shell verifier `deploy/release/verify.mjs`** (ESM) — imports the pure `backend/src/services/release.js`,
+  verifies a manifest + detached signature against a directory of allow-listed signer public keys, and exits 0/1/2
+  with a machine-readable JSON reason. Both agents call it (no crypto in bash). A `--mode signature` check verifies
+  the status back-channel file. New `backend/test/release-verify.test.js` exercises every rejection against the real
+  helper process.
+- **Install hooks** (`deploy/scripts/deploy-lib.sh`): `install_release_agent_files` installs the agent scripts, the 6
+  units and `verify.mjs` on both servers (enabling nothing automatically); `ensure_release_signing_key` generates the
+  Ed25519 release keypair on the test server only when `ETS_RELEASE_GENERATE_KEY=1`. Example role configs
+  `deploy/release-publisher.conf.example` and `deploy/deploy-agent.conf.example`.
+
+### Security
+- The signal's authenticity is the **Ed25519 signature over the canonical manifest**, independent of git transport: a
+  compromised repo or a leaked deploy key cannot forge a production deploy (a bad/unknown-signer/replayed/downgrade/
+  non-ancestor/prev-mismatched signal is **rejected and logged**, nothing deployed). Signing keys live only in
+  root-owned files (never in the DB or the repo); the API (user `ets`) stays unprivileged and holds no push credential.
+- The **ancestor check is now real** in the production agent (the Phase-1 stub, `checkAncestor` in
+  `services/release.js`, completed with the git working copy): a signal pointing at a commit that is not an ancestor
+  of the default branch is refused. Agents use allow-listed argument-array `run()` (no shell) and a writable-file
+  allow-list — the only files they write in the repo are the signal / status files.
+
+### Upgrade notes
+- **No database migration this phase.** `update.sh` installs the new agent scripts, the 6 systemd units and
+  `verify.mjs` automatically, but **enables no timer and generates no key on its own.** To activate the pipeline the
+  operator must provision keys, deploy keys and the per-server role conf and enable the role's units — follow
+  `docs/handover/13` **§8a.5** (test: `ets-release-publisher`; production: `ets-deploy-agent`) and run the **§8a.4
+  staging dry-run rehearsal BEFORE first real use**. The promotion/rollback runbook is `docs/handover/10` §3a.
+- Signed tags need `git user.signingkey` + gpg configured for root on the test server, or set `TAG_SIGN=off` in
+  `release-publisher.conf` for annotated (unsigned) tags. Escrow the release and status signing keys like the backup
+  key.
+
+---
+
 ## [1.12.18] — 2026-10-23 — Release promotion pipeline — Phase 1 (in-app foundation)
 
 ### Added
@@ -2321,7 +2373,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/ddc5999...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/958dbed...HEAD
+[1.12.19]: https://github.com/mscit-admin/ets/compare/ddc5999...958dbed
 [1.12.18]: https://github.com/mscit-admin/ets/compare/a587e3d...ddc5999
 [1.12.17]: https://github.com/mscit-admin/ets/compare/6483caa...a587e3d
 [1.12.16]: https://github.com/mscit-admin/ets/compare/cf5cb68...6483caa

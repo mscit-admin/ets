@@ -1,0 +1,22 @@
+# ETS deploy agent (1.12.19, PHASE 2) — the privileged PRODUCTION-side helper. Installed BY THE OPERATOR on the
+# production server (not by the test install). It PULLS the signed signal from git and VERIFIES it cryptographically
+# (all §3.1 checks, including git merge-base --is-ancestor) before taking a pre-deploy backup, checking out the tagged
+# commit, running deploy/scripts/update.sh (migrations + build + restart), health-gating, and writing/signing/pushing
+# the status back. It must run update.sh (which restarts ets-backend and runs the PostgreSQL superuser migration
+# step), so it is intentionally NOT filesystem-sandboxed — matching ets-backup-agent.service. Started every 30 s by
+# ets-deploy-agent.timer and at once by ets-deploy-agent.path. Configure it in /etc/ets/deploy-agent.conf.
+[Unit]
+Description=ETS deploy agent (pull + verify + deploy the promoted release on production)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=ETS_ENV_FILE=/etc/ets/ets.env
+WorkingDirectory=/opt/ets/backend
+ExecStart=/usr/local/sbin/ets-deploy-agent run
+StandardOutput=append:/var/log/ets-deploy-agent.log
+StandardError=append:/var/log/ets-deploy-agent.log
+# a deploy (build + migrations + health gate, and possibly a code rollback) can take a while
+TimeoutStartSec=6h
+UMask=0077

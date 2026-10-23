@@ -79,7 +79,7 @@ copy_allowlist() {   # $1 = source tree, $2 = destination
     --include '/frontend/' --include '/frontend/src/***' --include '/frontend/public/***' --include '/frontend/index.html' \
     --include '/frontend/vite.config.js' --include '/frontend/package*.json' --include '/frontend/.npmrc' \
     --include '/deploy/' --include '/deploy/db/***' --include '/deploy/nginx/***' --include '/deploy/systemd/***' \
-    --include '/deploy/logrotate/***' --include '/deploy/scripts/***' \
+    --include '/deploy/logrotate/***' --include '/deploy/scripts/***' --include '/deploy/release/***' \
     --exclude '*' "$1/" "$2/"
 }
 # Installs the packages and builds the frontend as the unprivileged $BUILD_USER in a staging copy
@@ -200,6 +200,8 @@ install_runtime_files() {
   for u in ets-backup.service ets-backup.timer ets-backup-verify.service ets-backup-verify.timer ets-backup-agent.service ets-backup-agent.timer ets-backup-agent.path; do
     install -m 644 "$APP/deploy/systemd/$u" "/etc/systemd/system/$u"
   done
+  install_release_agent_files
+  ensure_release_signing_key
   systemctl daemon-reload
   systemctl enable --now ets-backup.timer ets-backup-verify.timer ets-backup-agent.timer ets-backup-agent.path >/dev/null
   # earlier versions kept a copy of ets.env (APP_SECRET, DB password) next to the dumps
@@ -209,6 +211,42 @@ install_runtime_files() {
   fi
   prune_env_backups
 }
+# ---------------------------------------------------------------- release promotion agents (1.12.19, Phase 2)
+# Installs the two ROOT release agents (ets-release-publisher on the test server; ets-deploy-agent on production) and
+# their 6 systemd units, plus the shared no-shell verifier. The scripts + units are installed on BOTH servers (they
+# are inert until enabled); the operator ENABLES only the unit for that server's role and provisions the keys and the
+# role conf (/etc/ets/release-publisher.conf or /etc/ets/deploy-agent.conf) per docs/handover/13 §8a. Nothing here
+# generates keys or enables a timer, so an install never starts deploying on its own — matching the backup trust split.
+install_release_agent_files() {
+  install -m 750 "$APP/deploy/scripts/release-publisher.sh" /usr/local/sbin/ets-release-publisher
+  install -m 750 "$APP/deploy/scripts/deploy-agent.sh" /usr/local/sbin/ets-deploy-agent
+  for u in /var/log/ets-release-publisher.log /var/log/ets-deploy-agent.log; do
+    touch "$u"; chown root:root "$u"; chmod 600 "$u"
+  done
+  for u in ets-release-publisher.service ets-release-publisher.timer ets-release-publisher.path \
+           ets-deploy-agent.service ets-deploy-agent.timer ets-deploy-agent.path; do
+    install -m 644 "$APP/deploy/systemd/$u" "/etc/systemd/system/$u"
+  done
+  # the inbox already exists (backup agent); the API (ets) touches <inbox>/.release-wake to wake the publisher
+  install -d -m 755 -o root -g root "$STATE_DIR/release"
+}
+
+# Generate the TEST server's Ed25519 release signing keypair (root-600 private, public into the signers allow-list).
+# Opt-in only: set ETS_RELEASE_GENERATE_KEY=1 (or run the openssl commands in docs/handover/13 §8a.1 by hand). The
+# private key never leaves the test server and is never in the repo; the PUBLIC half is copied to production's
+# /etc/ets/release-trust by the operator.
+ensure_release_signing_key() {
+  local key=$CONF/release-sign.key pub=$CONF/release-sign.pub trust=$CONF/release-trust
+  install -d -m 700 -o root -g root "$trust"
+  [[ "${ETS_RELEASE_GENERATE_KEY:-0}" == 1 ]] || return 0
+  if [[ -s "$key" ]]; then chown root:root "$key"; chmod 600 "$key"; else
+    (umask 077; openssl genpkey -algorithm ed25519 -out "$key"); chmod 600 "$key"
+    echo "Created the release signing key $key — escrow it; its PUBLIC half ($pub) goes to production's $trust."
+  fi
+  openssl pkey -in "$key" -pubout -out "$pub" 2>/dev/null; chmod 644 "$pub"
+  install -m 644 "$pub" "$trust/release-local.pub"
+}
+
 # After the migrations (table backup_config exists): /etc/ets/backup.conf → database, once; then the agent renders the
 # configuration and the timer schedule from the database.
 backup_agent_import() {

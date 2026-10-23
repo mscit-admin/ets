@@ -1,0 +1,21 @@
+# ETS release publisher (1.12.19, PHASE 2) — the privileged TEST-side helper of Settings → «الترقية والنشر». The web
+# application runs as the unprivileged user ets and never gets root or a git push credential: it records a SIGNED
+# promotion intent in the database (backend/src/routes/release.js); this oneshot service (root) re-reads it, re-verifies
+# the signature against the allow-listed signers, creates/pushes the annotated signed tag v<version>, pushes the signed
+# manifest deploy/production-release.json via the write-restricted deploy key, and pulls the signed status back.
+# Started every 60 s by ets-release-publisher.timer and at once by ets-release-publisher.path (the API touches
+# /var/lib/ets/inbox/.release-wake). Mirrors ets-backup-agent.service.
+[Unit]
+Description=ETS release publisher (sign + push the production promotion signal)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=ETS_ENV_FILE=/etc/ets/ets.env
+WorkingDirectory=/opt/ets/backend
+ExecStart=/usr/local/sbin/ets-release-publisher run
+StandardOutput=append:/var/log/ets-release-publisher.log
+StandardError=append:/var/log/ets-release-publisher.log
+TimeoutStartSec=30min
+UMask=0077

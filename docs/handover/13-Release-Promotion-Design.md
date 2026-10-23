@@ -1,5 +1,40 @@
 # 13 — Release Promotion (Test → Production) — Design & Implementation Plan
 
+> **Status: PHASE 2 IMPLEMENTED (1.12.19) — OPERATOR-VERIFIED.** The two ROOT agents, the signed-tag/push mechanism,
+> the shared no-shell verifier and the systemd units are built, delivered and unit-tested where they can be (the pure
+> verifier). They mirror the `ets-backup-agent` trust split exactly. **What is sandbox-tested:** the shared verifier
+> `deploy/release/verify.mjs` (and the pure `services/release.js` ancestor check it completes) — every §3.1 rejection
+> (bad signature, unknown signer, non-ancestor, downgrade, stale, replayed nonce, prev-mismatch) is exercised against
+> the real helper process in `backend/test/release-verify.test.js`. **What is OPERATOR-VERIFIED ONLY** (no prod, no
+> VPN, no systemd, no real GitHub deploy key in the dev sandbox): the real `git` tag/push/pull with the deploy key,
+> the production `update.sh`/migrations/restart, the health gate, the code-rollback, and the systemd wiring — these
+> are rehearsed on the real servers (and a staging clone) per **§8a** below. Nothing in an install/update enables a
+> timer or generates a key on its own; the operator provisions keys + role conf and enables the role's units.
+>
+> **Agents (Phase 2):** `ets-release-publisher` (TEST, `backend/src/release/publisher.js` + `backend/scripts/
+> release-publisher.js` + `deploy/scripts/release-publisher.sh`) reads the latest `release_promotions` row in status
+> `requested` **from the database** (the same mechanism the backup agent uses — it reads desired state from the DB, not
+> an exported file), re-verifies the signature via the shared helper, creates/pushes the **annotated signed tag
+> `v<version>`**, writes + pushes the signed manifest `deploy/production-release.json(+.sig)` via a write-restricted
+> deploy key, sets the row `publishing`, and pulls the signed `production-status.json` back to update
+> `release_agent_status` and the open row. `ets-deploy-agent` (PROD, `backend/src/release/deploy-agent.js` +
+> `backend/scripts/deploy-agent.js` + `deploy/scripts/deploy-agent.sh`) fetches, reads the signal, verifies it via the
+> same helper (**the ancestor check is now real here** — `git merge-base --is-ancestor <commit> origin/<branch>`),
+> takes a pre-deploy `ets-backup`, checks out the tagged commit, runs `update.sh`, health-gates, and writes/signs/
+> pushes the status. On a failed health check it records `failed` + `backup_ref`; with `AUTO_ROLLBACK=on` and **no
+> migration applied** it performs the **code rollback** (checkout prev commit + `update.sh`) → `rolled_back`; when a
+> migration ran it STOPS at `failed` with `needs_db_restore=true` (the §5.3 DB restore is manual / Phase 3, never
+> automatic). The shared no-shell `run()` and the writable-file allow-list are reused from the backup agent
+> (`backend/src/release/agent-util.js`).
+>
+> **DB-status mapping (no new migration this phase):** migration 024's `status` CHECK stays as-is; the publisher uses
+> `publishing` to mean "signal pushed, awaiting production", and the finer phase (`published`/`pulled`/`backing_up`/
+> `deploying`/`verifying`) is carried in `progress.phase` and in the signed `production-status.json`. The prod-side
+> execution writes `release_agent_status` (deployed version/commit, `last_nonce` for replay) and the local
+> `/var/lib/ets/release/status.json`.
+>
+> ----
+>
 > **Status: PHASE 1 IMPLEMENTED (1.12.18).** The in-app foundation of §8 Phase 1 is built and tested: migration
 > `024_release_promotion.sql` (`release_promotions`, `release_agent_status`), the pure manifest + Ed25519 sign/verify
 > logic `backend/src/services/release.js`, the admin-only `/api/release/*` endpoints
@@ -533,6 +568,61 @@ prod allow-list.
    pre-deploy backup** (§5.3), ending `rolled_back` with the DB intact and the alert sent.
 5. Only after 1–4 pass on staging, enable it against the real production server and do the first promotion during a
    maintenance window with the operator watching.
+
+### 8a.5 Exact Phase 2 install (built in 1.12.19)
+
+`install.sh`/`update.sh` install the agent scripts, the 6 systemd units and the verifier on **both** servers (via
+`install_release_agent_files`), but **enable nothing and generate no key on their own**. The operator does the rest.
+
+**Both servers already have:** `/usr/local/sbin/ets-release-publisher`, `/usr/local/sbin/ets-deploy-agent`,
+`/opt/ets/deploy/release/verify.mjs`, the 6 units in `/etc/systemd/system/`, `/var/lib/ets/release/`, and
+`/etc/ets/release-trust/` (created mode 700).
+
+**TEST server (the publisher):**
+
+```bash
+# 1. signing key (either the opt-in installer flag, OR the manual openssl in §8a.1)
+sudo ETS_RELEASE_GENERATE_KEY=1 bash deploy/scripts/update.sh      # creates /etc/ets/release-sign.key + release-trust/release-local.pub
+#    (the API uses ETS_RELEASE_SIGN_KEY, default /etc/ets/release-sign.key — the promote button enables once it exists)
+
+# 2. a real git working copy for the publisher (NOT /opt/ets, which is an rsync build copy)
+sudo git clone https://github.com/mscit-admin/ets.git /opt/ets-src
+
+# 3. the write-restricted push credential (ssh deploy key with WRITE, or an https PAT remote), root 600
+sudo install -m 600 /dev/stdin /etc/ets/release-deploy-key < your-deploy-key
+#    add its PUBLIC half as a WRITE deploy key on github.com/mscit-admin/ets
+
+# 4. signed tags: configure gpg for root (git user.signingkey), or set TAG_SIGN=off in the conf to use annotated tags
+
+# 5. the role conf, then enable the publisher units
+sudo install -m 600 deploy/release-publisher.conf.example /etc/ets/release-publisher.conf   # edit REPO_DIR etc.
+sudo systemctl enable --now ets-release-publisher.timer ets-release-publisher.path
+```
+
+**PRODUCTION server (the deploy agent):**
+
+```bash
+# 1. trust: copy the TEST server's release-sign.pub into the allow-list (this is what makes a signal trusted)
+sudo install -d -m 700 /etc/ets/release-trust
+sudo install -m 644 release-sign.pub /etc/ets/release-trust/test-release.pub
+
+# 2. the prod status signing key; its PUBLIC half goes to the test server's /etc/ets/status-trust
+sudo bash -c 'umask 077; openssl genpkey -algorithm ed25519 -out /etc/ets/deploy-status.key'
+sudo openssl pkey -in /etc/ets/deploy-status.key -pubout -out /etc/ets/deploy-status.pub   # → test:/etc/ets/status-trust/
+
+# 3. a real git working copy update.sh runs from + the read/write deploy keys (PULL_KEY read, DEPLOY_KEY write-status)
+sudo git clone https://github.com/mscit-admin/ets.git /opt/ets-src
+
+# 4. the role conf, then — AFTER the §8a.4 dry run passes — enable the deploy-agent units
+sudo install -m 600 deploy/deploy-agent.conf.example /etc/ets/deploy-agent.conf    # edit REPO_DIR, keys, AUTO_ROLLBACK
+sudo -E ETS_ENV_FILE=/etc/ets/ets.env /usr/local/sbin/ets-deploy-agent dry-run     # verify-only: must report verified/already_current
+sudo systemctl enable --now ets-deploy-agent.timer ets-deploy-agent.path
+```
+
+The publisher's wake file is `/var/lib/ets/inbox/.release-wake` (touched by the API when an admin records a
+promotion); the deploy agent is driven by its 30 s timer and can be poked with `/var/lib/ets/inbox/.deploy-wake`.
+Logs: `/var/log/ets-release-publisher.log`, `/var/log/ets-deploy-agent.log`. Escrow the release and status keys like
+the backup key (§8a.3).
 
 ---
 
