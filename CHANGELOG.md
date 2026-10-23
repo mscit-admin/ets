@@ -30,6 +30,31 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.12] — 2026-10-23 — Users overview: one donut with a dimension selector
+
+### Changed
+- **Frontend:** the dashboard Users overview (`components/UsersOverview.jsx`) now consolidates all the user
+  breakdowns into a **single donut driven by a dropdown** instead of a department bar chart plus four separate
+  donuts. The `<select>` (styled with the shared `.input input-sm`) chooses the dimension — «المستخدمون حسب
+  الإدارة» (departments, the default), «المستخدمون حسب الدور» (roles), «حالة الحسابات» (account status),
+  «الاتصال الآن» (presence) and «التحقق بخطوتين» (2FA) — and the one `Donut` re-renders its slices, legend,
+  centre total and tooltips for the chosen dimension. Each dimension keeps its existing colours, labels and links
+  (presence online → `/users?tab=online`, status deleted → `/users?tab=deleted`, roles / status active →
+  `/users`); the new departments slices reuse the role palette and link to `/department/{id}`. The selection is
+  held in component state and mirrored to the URL (`?uo=<dim>`) so a reload or shared link reopens the same
+  breakdown. The card is width-constrained and centred so the lone donut never looks lost.
+- **Frontend:** fixed the combined «المستخدمون» KPI card alignment — each stat is now a self-contained centred
+  block with its number directly above its label (`.uo-stat` in `styles/app.css`), reading as one unit in both
+  Arabic (RTL) and English (LTR); previously the ltr-forced number and the direction-following label drifted to
+  opposite edges of each cell.
+
+### Removed
+- **Frontend:** the Users-overview department **bar chart** and the four standalone donuts (by role, status,
+  presence, 2FA), together with their now-unused `.uo-grid` / `.ubar-*` styles — all replaced by the single
+  dropdown-driven donut above.
+
+---
+
 ## [1.12.11] — 2026-10-23 — Users overview: one combined KPI card
 
 ### Changed
@@ -2111,7 +2136,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/83d44aa...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/b53272a...HEAD
+[1.12.12]: https://github.com/mscit-admin/ets/compare/83d44aa...b53272a
 [1.12.11]: https://github.com/mscit-admin/ets/compare/6d1c14a...83d44aa
 [1.12.10]: https://github.com/mscit-admin/ets/compare/1e244b8...6d1c14a
 [1.12.9]: https://github.com/mscit-admin/ets/compare/3177ecb...1e244b8
