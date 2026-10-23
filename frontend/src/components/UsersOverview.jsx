@@ -25,8 +25,8 @@ function Stat({ label, value, color, href }) {
   const navigate = useNavigate();
   const inner = (
     <>
-      <div className={'nc-value ' + (color || '')}>{value}</div>
       <div className="nc-label">{label}</div>
+      <div className={'nc-value ' + (color || '')}>{value}</div>
     </>
   );
   return href
@@ -100,25 +100,27 @@ export function UsersOverview() {
   return (
     <section className="users-overview" aria-label={t('users_overview')}>
       <h2 className="section-title">{t('users_overview')}</h2>
-      <Card title={t('uo_summary')} className="uo-summary">
-        <div className="uo-stats">
-          <Stat label={t('total_users')} value={data.total} />
-          <Stat label={t('active_users')} value={data.active} color="green" />
-          <Stat label={t('nav_online')} value={data.online} color="blue" href="/users?tab=online" />
-          <Stat label={t('inactive')} value={data.inactive} color="orange" />
-          <Stat label={t('uo_deleted')} value={data.deleted} color="red" href="/users?tab=deleted" />
-        </div>
-      </Card>
-      <Card className="uo-dim-card">
-        <div className="uo-dim-head">
-          <label className="uo-dim-label" htmlFor="uo-dim">{t('uo_breakdown')}</label>
-          <select id="uo-dim" className="input input-sm uo-dim-select" value={current.key}
-                  onChange={e => onPick(e.target.value)}>
-            {dims.map(d => <option key={d.key} value={d.key}>{d.title}</option>)}
-          </select>
-        </div>
-        <Donut key={current.key} title={current.title} segments={current.segments} />
-      </Card>
+      <div className="uo-row">
+        <Card title={t('uo_summary')} className="uo-summary">
+          <div className="uo-stats">
+            <Stat label={t('total_users')} value={data.total} />
+            <Stat label={t('active_users')} value={data.active} color="green" />
+            <Stat label={t('nav_online')} value={data.online} color="blue" href="/users?tab=online" />
+            <Stat label={t('inactive')} value={data.inactive} color="orange" />
+            <Stat label={t('uo_deleted')} value={data.deleted} color="red" href="/users?tab=deleted" />
+          </div>
+        </Card>
+        <Card className="uo-dim-card">
+          <div className="uo-dim-head">
+            <label className="uo-dim-label" htmlFor="uo-dim">{t('uo_breakdown')}</label>
+            <select id="uo-dim" className="input input-sm uo-dim-select" value={current.key}
+                    onChange={e => onPick(e.target.value)}>
+              {dims.map(d => <option key={d.key} value={d.key}>{d.title}</option>)}
+            </select>
+          </div>
+          <Donut key={current.key} title={current.title} segments={current.segments} />
+        </Card>
+      </div>
     </section>
   );
 }

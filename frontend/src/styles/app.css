@@ -254,17 +254,23 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 
 /* ---------- dashboard: users overview (1.12.9) ---------- */
 .users-overview { margin-bottom: 18px; }
-/* Combined headline KPI card — stat grid flows with the page direction (RTL/LTR) via logical properties. */
-.uo-summary { margin: 0 0 16px; }
-.uo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px 20px; }
-/* each stat is a self-contained unit: number directly above its label, both centred, so the pair reads as one
-   block and stays grouped in RTL and LTR alike (the number keeps its own ltr digits via .nc-value). */
-.uo-stat { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; }
-.uo-stat .nc-value, .uo-stat .nc-label { width: 100%; text-align: center; }
-.uo-stat-link { text-decoration: none; border-radius: var(--radius); margin: -6px -8px; padding: 6px 8px; transition: background .12s; }
+/* Summary KPI card and breakdown donut sit side by side, flowing with the page direction (RTL/LTR) via flex;
+   on narrow widths they wrap and stack. */
+.uo-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+/* the summary keeps a compact fixed width so the donut cell gets the room it needs; it grows to full width
+   only when it has wrapped onto its own row. */
+.uo-summary { flex: 1 1 280px; max-width: 360px; }
+/* stats are a vertical list: each row is label on the leading side, number on the trailing side (space-between
+   follows the page direction, so RTL/LTR flip automatically; the number keeps its own ltr digits via .nc-value),
+   separated by a subtle divider. */
+.uo-stats { display: flex; flex-direction: column; }
+.uo-stat { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.uo-stat:last-child { border-bottom: none; }
+.uo-stat .nc-value { font-size: 20px; margin-top: 0; }
+.uo-stat-link { text-decoration: none; border-radius: var(--radius); margin-inline: -8px; padding-inline: 8px; transition: background .12s; }
 .uo-stat-link:hover { background: var(--gray-100); }
-/* single breakdown donut: one constrained, centred card so it never looks lost in a wide empty area. */
-.uo-dim-card { max-width: 540px; margin: 0 auto; }
+/* breakdown donut fills the remaining space beside the summary; it wraps below on narrow widths. */
+.uo-dim-card { flex: 1 1 360px; }
 .uo-dim-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 14px; }
 .uo-dim-label { font-size: 12.5px; font-weight: 600; color: var(--gray-700); }
 .uo-dim-select { max-width: 260px; }
