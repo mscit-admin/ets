@@ -18,7 +18,6 @@ import Profile from './pages/Profile.jsx';
 import { ImportDetail, ImportList } from './pages/Imports.jsx';
 import Approvals from './pages/Approvals.jsx';
 import Notifications from './pages/Notifications.jsx';
-import OnlineUsers from './pages/OnlineUsers.jsx';
 import { useEffect, useState } from 'react';
 import { RestoreMonitor, readWatch } from './components/RestoreWizard.jsx';
 
@@ -59,7 +58,7 @@ export default function App() {
             <Route path="imports/:id" element={<ImportDetail />} />
             <Route path="users" element={<Guard perm="usr"><UserList /></Guard>} />
             <Route path="users/:id" element={<Guard perm="usr"><UserForm /></Guard>} />
-            <Route path="online" element={<Guard perm="usr"><OnlineUsers /></Guard>} />
+            <Route path="online" element={<Navigate to="/users?tab=online" replace />} />
             <Route path="logs" element={<Guard perm="log"><Logs /></Guard>} />
             <Route path="settings" element={<Guard perm="cfg"><Settings /></Guard>} />
             <Route path="profile" element={<Profile />} />
