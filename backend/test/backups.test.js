@@ -16,9 +16,11 @@ import { sealSecret, openSecret, writeAllowed, agentPaths } from '../src/backup/
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'TEST_DATABASE_URL not set';
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), 'ets-bk-state-'));
-for (const d of ['inbox', 'upload', 'restore']) fs.mkdirSync(path.join(STATE, d), { recursive: true });
+for (const d of ['inbox', 'upload', 'restore', 'backups']) fs.mkdirSync(path.join(STATE, d), { recursive: true });
 process.env.ETS_STATE_DIR = STATE;
 process.env.ETS_CONF_DIR = path.join(STATE, 'etc');
+const BACKUP = fs.realpathSync(path.join(STATE, 'backups'));   // the local artifact directory the API streams from
+process.env.ETS_BACKUP_DIR = BACKUP;
 
 // ================================================================= pure rules
 test('config: defaults are valid; unknown keys, bad values and out-of-range retention are refused', () => {
@@ -256,7 +258,13 @@ function client() {
     const data = (res.headers.get('content-type') || '').includes('json') ? await res.json() : await res.text();
     return { status: res.status, data };
   };
-  return { get: p => call('GET', p), post: (p, b = {}, h) => call('POST', p, b, h), put: (p, b) => call('PUT', p, b),
+  // a raw GET that exposes the response headers and the body as text (for the streamed downloads)
+  const getRaw = async p => {
+    const res = await fetch(base + p, { headers: { 'x-requested-with': 'ets', cookie } });
+    return { status: res.status, cd: res.headers.get('content-disposition'), ct: res.headers.get('content-type'),
+      cl: res.headers.get('content-length'), body: await res.text() };
+  };
+  return { get: p => call('GET', p), getRaw, post: (p, b = {}, h) => call('POST', p, b, h), put: (p, b) => call('PUT', p, b),
     login: (u, pw = 'Passw0rd-123') => call('POST', '/auth/login', { username: u, password: pw }) };
 }
 const as = async u => { const c = client(); assert.equal((await c.login(u)).status, 200, 'login ' + u); return c; };
@@ -502,6 +510,53 @@ test('upload: admin only, artifact names only, size limit, stored for the agent'
   r = await root.post(`/backups/upload?name=ets-20261022-090700.dump.gpg.meta&upload_id=${id}`, Buffer.alloc(70 * 1024));
   assert.equal(r.status, 413);
   assert.equal((await (await as('pm1')).post('/backups/upload?name=ets-20261022-090700.dump.gpg', Buffer.from('x'))).status, 403);
+});
+
+test('download: each kind streams the encrypted bytes, re-auth required, traversal / unknown names refused, audited', { skip }, async () => {
+  const files = {
+    'ets-20261022-090700.dump.gpg': 'DUMP-ENCRYPTED-BYTES',
+    'ets-config-20261021-120000.tar.gpg': 'CONFIG-ENCRYPTED-BYTES',
+    'ets-logs-20261021.tar.gpg': 'LOGS-ENCRYPTED-BYTES',
+  };
+  for (const [n, c] of Object.entries(files)) {
+    fs.writeFileSync(path.join(BACKUP, n), c);
+    fs.writeFileSync(path.join(BACKUP, n + '.sha256'), 'deadbeef  ' + n + '\n');
+  }
+  const root = await as('root');
+  // signed out → 401; a cfg override that is not an administrator → 403 (the strictest gate, like restore)
+  assert.equal((await client().get('/backups/download?file=ets-20261022-090700.dump.gpg&token=x')).status, 401);
+  assert.equal((await (await as('pm1')).post('/backups/download/authorize', { file: 'ets-20261022-090700.dump.gpg', ...PW })).status, 403);
+  assert.equal((await (await as('pm1')).get('/backups/download?file=ets-20261022-090700.dump.gpg&token=x')).status, 403);
+  // a GET without a valid token is refused even for an administrator (re-auth is mandatory)
+  assert.equal((await root.get('/backups/download?file=ets-20261022-090700.dump.gpg&token=nope')).status, 401);
+  // authorize needs the password
+  assert.equal((await root.post('/backups/download/authorize', { file: 'ets-20261022-090700.dump.gpg' })).status, 400);
+  // each kind: authorize, then stream the exact encrypted bytes with the right headers; the token also fetches its .sha256
+  for (const [n, c] of Object.entries(files)) {
+    const a = await root.post('/backups/download/authorize', { file: n, ...PW });
+    assert.equal(a.status, 200, JSON.stringify(a.data));
+    const q = t => `/backups/download?file=${encodeURIComponent(t)}&token=${encodeURIComponent(a.data.token)}`;
+    const d = await root.getRaw(q(n));
+    assert.equal(d.status, 200); assert.equal(d.body, c);
+    assert.equal(d.ct, 'application/octet-stream'); assert.equal(+d.cl, c.length);
+    assert.match(d.cd, new RegExp(`attachment; filename="${n.replace(/\./g, '\\.')}"`));
+    const sha = await root.getRaw(q(n + '.sha256'));
+    assert.equal(sha.status, 200); assert.match(sha.body, /^deadbeef/);
+  }
+  // path traversal, unknown names, and a well-formed name whose file is absent
+  assert.equal((await root.post('/backups/download/authorize', { file: '../../etc/passwd', ...PW })).data.error, 'invalid_file_name');
+  assert.equal((await root.post('/backups/download/authorize', { file: 'ets-20261022-090700.dump.gpg/../../x', ...PW })).data.error, 'invalid_file_name');
+  assert.equal((await root.post('/backups/download/authorize', { file: 'evil.sh', ...PW })).data.error, 'invalid_file_name');
+  assert.equal((await root.post('/backups/download/authorize', { file: 'ets-20261230-000000.dump.gpg', ...PW })).data.error, 'backup_file_not_found');
+  // a token is bound to its artifact and its owner: it cannot fetch another artifact, nor be used by another user
+  const a2 = await root.post('/backups/download/authorize', { file: 'ets-config-20261021-120000.tar.gpg', ...PW });
+  assert.equal((await root.getRaw(`/backups/download?file=ets-20261022-090700.dump.gpg&token=${encodeURIComponent(a2.data.token)}`)).status, 401);
+  assert.equal((await (await as('root2')).getRaw(`/backups/download?file=ets-config-20261021-120000.tar.gpg&token=${encodeURIComponent(a2.data.token)}`)).status, 401);
+  // the backup key / passphrase is never involved, and nothing of it leaks into the audit log
+  const au = (await pool.query(`SELECT action, entity_id, summary FROM audit_log WHERE action IN ('backup_download','backup_download_authorize') ORDER BY chain_seq`)).rows;
+  assert.ok(au.some(x => x.action === 'backup_download_authorize' && x.entity_id === 'ets-20261022-090700.dump.gpg'));
+  for (const n of Object.keys(files)) assert.ok(au.some(x => x.action === 'backup_download' && x.entity_id === n), 'download audited: ' + n);
+  assert.ok(au.some(x => x.action === 'backup_download' && x.entity_id === 'ets-20261022-090700.dump.gpg.sha256'));
 });
 
 test('notifications: S6 (interval-aware), S9 per destination, S10 failed / missing test restore, S11 restore finished', { skip }, async () => {

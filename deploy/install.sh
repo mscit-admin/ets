@@ -442,7 +442,9 @@ step "System user and directories"
 id -u ets >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin ets
 mkdir -p "$APP" "$CONF" "$LOGDIR" "$BACKUPS"
 # the ets service user must be able to enter /etc/ets to read ets.env (the file itself stays 640 root:ets)
-chown root:ets "$CONF"; chown ets:ets "$LOGDIR"; chown root:root "$BACKUPS"
+# the backup directory is root-owned but group ets, so the API (Settings → «النسخ الاحتياطي») can read and stream the
+# encrypted artifacts for download; the artifacts are written 640 root:ets by ets-backup — the API never gains write/root
+chown root:ets "$CONF"; chown ets:ets "$LOGDIR"; chown root:ets "$BACKUPS"
 chmod 750 "$CONF" "$LOGDIR" "$BACKUPS"
 
 step "Building the application (as the unprivileged user $BUILD_USER) and copying it to $APP"

@@ -50,6 +50,14 @@ const perUser = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeader
 const jobLimiter = perUser(+(process.env.ETS_BACKUP_JOB_LIMIT || 20), 10 * 60_000);
 const restoreLimiter = perUser(+(process.env.ETS_RESTORE_LIMIT || 10), 15 * 60_000);
 const uploadLimiter = perUser(10, 60 * 60_000);
+const downloadLimiter = perUser(+(process.env.ETS_BACKUP_DOWNLOAD_LIMIT || 30), 15 * 60_000);
+// Downloading an artifact needs a fresh re-authentication (password + 2FA): /download/authorize checks it and hands back
+// a short-lived token bound to this user and this artifact; the GET stream accepts only that token. In memory only (no
+// DB, no secret): the encrypted file leaving the server is exfiltration, so it is re-proved like the other sensitive
+// backup actions, even though the artifact stays encrypted and useless without the escrowed key.
+const DOWNLOAD_TTL_MS = 90_000;
+const downloadTokens = new Map();   // token → { userId, base, expires }
+function pruneDownloadTokens() { const now = Date.now(); for (const [k, v] of downloadTokens) if (v.expires < now) downloadTokens.delete(k); }
 
 // ---------------------------------------------------------------- helpers
 async function loadConfig() {
@@ -215,6 +223,57 @@ r.get('/jobs/:id', async (req, res) => {
   const j = (await query(`SELECT j.*, u.full_name AS by_name FROM backup_jobs j LEFT JOIN users u ON u.id=j.requested_by WHERE j.id=$1`, [idParam(req.params.id)])).rows[0];
   if (!j) throw notFound();
   res.json({ job: publicJob(j) });
+});
+
+// ---------------------------------------------------------------- download an artifact (every kind: dump / config / logs)
+// Resolve a name to a real file inside ETS_BACKUP_DIR: the encrypted .gpg artifact, or its non-secret .sha256 / .meta
+// sibling — nothing else. The same strict validation as /upload, plus a realpath check that refuses any symlink or path
+// that escapes the directory. The file is streamed AS-IS (always encrypted); the backup key is never read or needed.
+function resolveArtifact(name) {
+  const n = String(name || '');
+  if (n.includes('/') || n.includes('\\') || n.includes('\0')) throw new HttpError(400, 'invalid_file_name');
+  const base = n.replace(/\.(sha256|meta)$/, '');
+  if (!parseArtifact(base) || !/\.gpg(\.(sha256|meta))?$/.test(n)) throw new HttpError(400, 'invalid_file_name');
+  const dir = P().backupDir;
+  let realDir, real;
+  try { realDir = fs.realpathSync(dir); } catch { throw new HttpError(404, 'backup_file_not_found'); }
+  try { real = fs.realpathSync(path.join(dir, n)); } catch { throw new HttpError(404, 'backup_file_not_found'); }
+  if (real !== path.join(realDir, n)) throw new HttpError(400, 'invalid_file_name');   // a symlink / path leaving the dir
+  let stat;
+  try { stat = fs.lstatSync(real); } catch { throw new HttpError(404, 'backup_file_not_found'); }
+  if (!stat.isFile()) throw new HttpError(400, 'invalid_file_name');
+  return { file: real, name: n, base, size: stat.size };
+}
+
+// step 1: re-authenticate (password + 2FA) → a short-lived token for this artifact (and its .sha256 / .meta siblings)
+r.post('/download/authorize', downloadLimiter, async (req, res) => {
+  const { base } = resolveArtifact(req.body?.file);
+  await twoFactor(req);
+  pruneDownloadTokens();
+  const token = crypto.randomBytes(24).toString('base64url');
+  downloadTokens.set(token, { userId: req.user.id, base, expires: Date.now() + DOWNLOAD_TTL_MS });
+  await logAudit(req, { action: 'backup_download_authorize', entity: 'backup_file', entityId: base, summary: base, newValue: { file: base } });
+  res.json({ token, expires_in: Math.floor(DOWNLOAD_TTL_MS / 1000) });
+});
+
+// step 2: stream the encrypted bytes (never buffered); the token must match this user and this artifact
+r.get('/download', downloadLimiter, async (req, res) => {
+  const art = resolveArtifact(req.query.file);
+  pruneDownloadTokens();
+  const entry = downloadTokens.get(String(req.query.token || ''));
+  if (!entry || entry.userId !== req.user.id || entry.base !== art.base || entry.expires < Date.now()) {
+    throw new HttpError(401, 'download_reauth_required');
+  }
+  await logAudit(req, { action: 'backup_download', entity: 'backup_file', entityId: art.name, summary: `${art.name} (${art.size} bytes)`,
+    newValue: { name: art.name, size: art.size } });
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Length', String(art.size));
+  res.setHeader('Content-Disposition', `attachment; filename="${art.name}"`);   // the name is a strict ASCII artifact name
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  const stream = fs.createReadStream(art.file);
+  stream.on('error', () => { if (res.headersSent) res.destroy(); else res.status(404).json({ error: 'backup_file_not_found' }); });
+  stream.pipe(res);
 });
 
 // ---------------------------------------------------------------- restore

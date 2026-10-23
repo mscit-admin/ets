@@ -3,10 +3,10 @@
 // backup key / passphrase and its escrow, the backup files, «نسخ احتياطي الآن», «تحقق الآن» and the restore wizard.
 // Nothing here runs as root: the API stores the settings and queues jobs, the backup agent on the server carries them
 // out (backend/src/backup/agent.js); this page polls the jobs and shows their progress.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api } from '../lib/api.js';
+import { api, downloadFile } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 import { Alert, Card, Field, Indicator, Loading, Modal, toast, useLoad } from './ui.jsx';
 import { ProgressPanel, fmtBytes, useJob } from './ProgressPanel.jsx';
@@ -301,33 +301,59 @@ function DestTest({ d, job, res, disabled, onTest }) {
 }
 
 function BackupFiles({ local, dests, enabled }) {
-  const { t, fmtDate, lang } = useI18n();
+  const { t, fmtDate, lang, errText } = useI18n();
   const [kind, setKind] = useState('dump');
+  const [dl, setDl] = useState(null);      // { file, base } waiting for re-auth
+  const [busy, setBusy] = useState(null);  // the file name currently downloading
+  const tokens = useRef({});               // base artifact name → { token, expires } (a fresh re-auth covers its siblings)
   const rows = local.filter(f => f.kind === kind);
   const on = d => new Set(dests[d] || []);
   const sets = Object.fromEntries(enabled.map(d => [d, on(d)]));
+  // the files are encrypted (AES-256) and leave the server untouched — a valid token must match this user and artifact
+  const validToken = base => { const e = tokens.current[base]; return e && e.expires > Date.now() ? e.token : null; };
+  const stream = async (file, base, token) => {
+    setBusy(file);
+    try { await downloadFile(`/backups/download?file=${encodeURIComponent(file)}&token=${encodeURIComponent(token)}`, file); }
+    catch (e) { toast(errText(e), 'red'); tokens.current[base] = null; }  // expired / invalid: force a new re-auth next time
+    finally { setBusy(null); }
+  };
+  // ask for the artifact (base === f.name) or a sibling (file === base + '.sha256'); re-use a still-valid token
+  const download = async (file, base) => { const tk = validToken(base); if (tk) await stream(file, base, tk); else setDl({ file, base }); };
+  const authorize = async auth => {
+    const r = await api.post('/backups/download/authorize', { file: dl.base, ...auth });
+    tokens.current[dl.base] = { token: r.token, expires: Date.now() + (r.expires_in - 5) * 1000 };
+    const { file, base } = dl; setDl(null);
+    await stream(file, base, r.token);
+  };
   return (
     <Card title={t('bk_files')} actions={<span className="seg">{KINDS.map(k => <button key={k} className={'btn btn-sm ' + (kind === k ? 'btn-primary' : 'btn-default')} onClick={() => setKind(k)}>{t('bk_kind_file_' + k)} ({local.filter(f => f.kind === k).length})</button>)}</span>}>
       {!rows.length ? <p className="muted">{t('bk_files_none')}</p> : (
-        <div className="table-wrap">
-          <table className="table small">
-            <thead><tr><th>{t('bk_file_date')}</th><th>{t('bk_file_size')}</th><th>{t('bk_file_sha')}</th><th>{t('bk_file_key')}</th>
-              <th>{t('bk_file_local')}</th>{enabled.map(d => <th key={d}>{t('bk_dest_short_' + d)}</th>)}</tr></thead>
-            <tbody>
-              {rows.slice(0, 60).map(f => (
-                <tr key={f.name}>
-                  <td title={f.name}>{tsLabel(f.ts, fmtDate)}</td>
-                  <td dir="ltr" className="num">{fmtBytes(f.size, lang)}</td>
-                  <td><code dir="ltr" title={f.sha256 || ''}>{f.sha256 ? f.sha256.slice(0, 12) + '…' : '—'}</code></td>
-                  <td><code dir="ltr">{f.meta?.key_id || '—'}</code></td>
-                  <td>✓</td>
-                  {enabled.map(d => <td key={d}>{sets[d].has(f.name) ? '✓' : <span className="muted">—</span>}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="table-wrap">
+            <table className="table small">
+              <thead><tr><th>{t('bk_file_date')}</th><th>{t('bk_file_size')}</th><th>{t('bk_file_sha')}</th><th>{t('bk_file_key')}</th>
+                <th>{t('bk_file_local')}</th>{enabled.map(d => <th key={d}>{t('bk_dest_short_' + d)}</th>)}<th>{t('bk_download')}</th></tr></thead>
+              <tbody>
+                {rows.slice(0, 60).map(f => (
+                  <tr key={f.name}>
+                    <td title={f.name}>{tsLabel(f.ts, fmtDate)}</td>
+                    <td dir="ltr" className="num">{fmtBytes(f.size, lang)}</td>
+                    <td><code dir="ltr" title={f.sha256 || ''}>{f.sha256 ? f.sha256.slice(0, 12) + '…' : '—'}</code>
+                      {f.sha256 && <button className="btn btn-link btn-sm" disabled={!!busy} title={t('bk_download_sha')} onClick={() => download(f.name + '.sha256', f.name)}>SHA-256</button>}</td>
+                    <td><code dir="ltr">{f.meta?.key_id || '—'}</code></td>
+                    <td>✓</td>
+                    {enabled.map(d => <td key={d}>{sets[d].has(f.name) ? '✓' : <span className="muted">—</span>}</td>)}
+                    <td><button className="btn btn-default btn-sm" disabled={busy === f.name} title={t('bk_download_file')} onClick={() => download(f.name, f.name)}>
+                      {busy === f.name ? <span className="spinner sm" /> : <Icon name="download" size={14} />} {t('bk_download')}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted small mt-s">{t('bk_download_encrypted_hint')}</p>
+        </>
       )}
+      {dl && <ReauthModal hint={t('bk_download_hint')} confirmLabel={t('bk_download')} onClose={() => setDl(null)} onConfirm={authorize} />}
     </Card>
   );
 }

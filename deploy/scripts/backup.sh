@@ -55,6 +55,9 @@ done
 case "${PGHOST:-}" in ''|127.0.0.1|localhost|::1|/*) DB_LOCAL=1 ;; *) DB_LOCAL=0; export PGSSLMODE="${PGSSLMODE:-require}" ;; esac
 PW=$(bk_env_get "$ENVF" PGPASSWORD)
 DIR=${ETS_BACKUP_DIR:-$(bk_env_get "$ENVF" ETS_BACKUP_DIR)}; DIR=${DIR:-/var/backups/ets}
+# the group that may READ the encrypted artifacts: the API (Settings → «النسخ الاحتياطي») streams them for download.
+# The directory stays root-owned (no write for the group); default «ets», the service user's group.
+BK_GROUP=${ETS_RUN_AS:-$(bk_env_get "$ENVF" ETS_RUN_AS)}; BK_GROUP=${BK_GROUP:-ets}
 BK_KEY=${ETS_BACKUP_KEY:-$(bk_env_get "$ENVF" ETS_BACKUP_KEY)}; BK_KEY=${BK_KEY:-$CONF_DIR/backup.key}
 bk_load_conf "$BCONF" || exit 1
 # 1.11.0 and earlier: ETS_BACKUP_KEEP_DAYS in ets.env (used only when backup.conf does not exist yet)
@@ -235,7 +238,8 @@ fi
 mkdir -p "$(dirname "$LOCK")"
 exec 9>"$LOCK"
 flock -w "${ETS_BACKUP_LOCK_WAIT:-3600}" 9 || { echo "$(date -Is) another backup or restore is still running — skipped" >&2; exit 75; }
-mkdir -p "$DIR"; chmod 700 "$DIR"
+# root:ets 0750 so the API can read (and stream for download) the encrypted artifacts, but not write them
+mkdir -p "$DIR"; chgrp "$BK_GROUP" "$DIR" 2>/dev/null || true; chmod 750 "$DIR"
 WORK=$(mktemp -d); GNUPGHOME=$WORK/gnupg; mkdir -m 700 "$GNUPGHOME"; export GNUPGHOME
 STEP=start T0=$(date +%s)
 TS=$(date +%Y%m%d-%H%M%S)
@@ -263,6 +267,9 @@ seal() {   # FILE.part KIND [EXTRA_JSON] → FILE + FILE.sha256 + FILE.meta
   printf '{"format":1,"kind":"%s","key_id":%s,"created":%s,"size":%s,"app_version":%s,"hostname":%s,"app_secret_fp":%s%s}\n' \
     "$2" "$(bk_json_str "$KID")" "$(bk_json_str "$(date -Is)")" "$(stat -c %s "$1")" "$(bk_json_str "$APPVER")" \
     "$(bk_json_str "$HOSTN")" "$(bk_json_str "$APPFP")" "${3:+,$3}" >"$1.meta"
+  # group ets may read (for download via the web UI); still no group write, and the directory itself is 0750
+  chgrp "$BK_GROUP" "$1" "$1.sha256" "$1.meta" 2>/dev/null || true
+  chmod 640 "$1" "$1.sha256" "$1.meta" 2>/dev/null || true
 }
 
 # 1) database — with its size and row estimates (per table in the configuration manifest; totals in <dump>.meta)
