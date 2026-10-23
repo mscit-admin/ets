@@ -4,7 +4,7 @@
 // sees the section nor the data. Replaces the old bottom departments grid, whose purpose the top ERP wheel
 // already serves.
 //
-// A bar chart (scoped users per department) and three donuts (by role, account status, presence) built from the
+// A bar chart (scoped users per department) and four donuts (by role, account status, presence, two-factor auth) built from the
 // screen's own palette — the ERP-wheel navy and the indicator-pill colours (styles/app.css) — plus summary
 // NumberCards. Every slice / bar carries an SVG <title> tooltip (label · count · %), and the slices that map to a
 // Users view are links (role / status → /users, deleted → /users?tab=deleted, online → /users?tab=online).
@@ -61,6 +61,12 @@ export function UsersOverview() {
     { key: 'online', label: t('uo_online'), value: data.online, color: '#30a66d', href: '/users?tab=online' },
     { key: 'offline', label: t('uo_offline'), value: data.offline, color: '#c7c7c7' },
   ];
+  // Two-factor authentication: no 2FA filter on the Users screen, so these slices are display-only (no href).
+  const tfaSegs = [
+    { key: 'on', label: t('tfa_on'), value: data.tfa.enabled, color: '#30a66d' },
+    { key: 'exempt', label: t('tfa_exempt'), value: data.tfa.exempt, color: '#f0883a' },
+    { key: 'off', label: t('tfa_off'), value: data.tfa.off, color: '#7c7c7c' },
+  ];
 
   return (
     <section className="users-overview" aria-label={t('users_overview')}>
@@ -78,6 +84,7 @@ export function UsersOverview() {
         <Card><Donut title={t('users_by_role')} segments={roleSegs} /></Card>
         <Card><Donut title={t('users_by_status')} segments={statusSegs} /></Card>
         <Card><Donut title={t('users_presence_title')} segments={presenceSegs} /></Card>
+        <Card><Donut title={t('two_fa')} segments={tfaSegs} /></Card>
       </div>
     </section>
   );

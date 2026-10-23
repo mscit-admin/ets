@@ -30,6 +30,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.10] — 2026-10-23 — Users overview: two-factor donut
+
+### Added
+- **Frontend:** a fourth donut — **«التحقق بخطوتين» / Two-factor authentication** — in the dashboard Users
+  overview (`components/UsersOverview.jsx`), built from the `tfa` tally the endpoint already returns. Slices:
+  enabled (`tfa.enabled`, green), exempt (`tfa.exempt`, orange), not enabled (`tfa.off`, gray), reusing the same
+  `Donut` component, screen palette, legend, and `<title>` tooltip (label · count · percentage) as the sibling
+  donuts. The slices are display-only (no Users-screen filter maps to a 2FA state). Labels reuse the existing
+  `two_fa` / `tfa_on` / `tfa_exempt` / `tfa_off` i18n keys (Arabic and English); no new keys.
+
+### Upgrade notes
+- No database or backend change: the `GET /api/dashboard/users-overview` payload already carried `tfa`; only the
+  dashboard UI now renders it.
+
+---
+
 ## [1.12.9] — 2026-10-23 — dashboard users overview
 
 ### Added
