@@ -15,26 +15,34 @@ export function AuthProvider({ children }) {
   // answer of the latest one is applied, so an older answer can never undo a newer one (1.12.2).
   // A check that could not reach the server (network, 5xx, 429) keeps a signed-in state instead of showing the
   // sign-in page while the session may still be valid; the server refuses an ended session on the next request anyway.
-  const refresh = useCallback(async () => {
+  // When a signed-in session turns out to be gone — a 401 on any request or the live stream's session_ended
+  // (sessionLost), or a reason an earlier check already recorded — the sign-in page says why (`ended`) instead of
+  // appearing bare, so an expired session is always explained and never looks like a plain, unexplained logout
+  // (1.12.5). A deliberate sign-out (logout(), which calls refresh() without sessionLost) carries no such notice.
+  const refresh = useCallback(async ({ sessionLost = false } = {}) => {
     const my = ++seq.current;
+    const wasAuthed = meRef.current?.authenticated;
+    const endedReason = () => meRef.current?.ended || ((sessionLost && wasAuthed) ? 'ended' : undefined);
     try {
       const m = await api.get('/auth/me', { live: true });   // a check, never user activity
       if (my !== seq.current) return m;
-      setMe(m);
+      const reason = !m.authenticated && endedReason();
+      setMe(reason ? { ...m, ended: reason } : m);
       if (m.authenticated && m.stage === 'done' && m.user?.language) setLang(m.user.language);
       return m;
     } catch (e) {
       const cur = meRef.current;
       if (my !== seq.current) return cur || { authenticated: false };
       if (cur?.authenticated && e?.status !== 401) return cur;
-      const m = { authenticated: false };
+      const reason = endedReason();
+      const m = reason ? { authenticated: false, ended: reason } : { authenticated: false };
       setMe(m);
       return m;
     }
   }, [setLang]);
 
   useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { setUnauthorizedHandler(() => { refresh(); }); }, [refresh]);
+  useEffect(() => { setUnauthorizedHandler(() => { refresh({ sessionLost: true }); }); }, [refresh]);
 
   // Idle timeout: only real input extends the session; after the idle limit without input the session is ended on
   // the server and the sign-in page says why (lib/activity.js).

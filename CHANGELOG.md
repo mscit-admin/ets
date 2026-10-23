@@ -30,6 +30,30 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.5] — 2026-10-23 — the sign-in page always explains an expired session
+
+### Fixed
+- **Frontend:** when a session ended on the server and the browser learned of it through a background request —
+  a `401` on a data/presence poll, or the live stream's `session_ended` — rather than the idle tracker's own
+  timer, the sign-in page appeared bare with no explanation. It now shows the «انتهت الجلسة. سجّل الدخول مجدداً» /
+  "Your session has ended. Sign in again" notice in every case (`lib/auth.jsx`). The unauthorized handler passes
+  the end-of-session through as an `ended` reason (reusing the existing mechanism and i18n keys), and a refresh
+  never clobbers a more specific reason (`idle`, `expired`) that an in-flight check already recorded; a deliberate
+  sign-out still shows no notice. This closes the «no reload, no error» gap a user saw when a session expired while
+  the tab was backgrounded or the machine asleep — the expired session is surfaced promptly and in place (no
+  full-page reload) for foreground idle, return from background/sleep, absolute expiry, and a session ended
+  elsewhere. The server remains the sole authority; only the client-side notice changed.
+
+### Notes
+- Investigated a report of the page reloading by itself with `HTTP 499` on `GET /` and `/favicon.ico` after a
+  session expired. The app never reloads itself on expiry (it renders the sign-in page in place, confirmed by
+  E2E: zero self-navigations); the self-reload is the browser restoring a discarded or slept tab, and the `499`
+  is nginx recording that the browser aborted that in-flight navigation. Both `/` and `/favicon.ico` return
+  `index.html` (`text/html`) through the SPA fallback (`try_files $uri /index.html`; there is no `favicon.ico`
+  file, only `favicon.svg`) — expected, benign behaviour, not an application fault.
+
+---
+
 ## [1.12.4] — 2026-10-23 — «المتصلون الآن» as a tab inside the Users screen
 
 ### Changed
