@@ -152,7 +152,6 @@ function Sidebar({ open, onClose }) {
           <div className="side-section">
             <div className="side-label">{t('nav_admin')}</div>
             {can('usr') && link('/users', 'users', t('nav_users'))}
-            {can('usr') && link('/online', 'pulse', t('nav_online'))}
             {can('log') && link('/logs', 'logs', t('nav_logs'))}
             {can('cfg') && user?.fullScope && link('/settings', 'settings', t('nav_settings'))}
           </div>

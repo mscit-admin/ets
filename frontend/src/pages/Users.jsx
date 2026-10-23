@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api, path, isIdParam, notFoundError } from '../lib/api.js';
@@ -9,6 +9,33 @@ import { UserNotifyCard } from '../components/UserNotify.jsx';
 import { UserImport } from './UserImport.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { DeleteUsersDialog, RestoreUserDialog, undeletable } from '../components/DeleteUsers.jsx';
+import OnlineUsers from './OnlineUsers.jsx';
+
+// The Users screen has two top-level tabs: «المستخدمون» (user management) and «المتصلون الآن» (online users, 1.11.0).
+// The online tab is admin-only exactly as the old standalone /online route was (route guard 'usr' + the API's admin
+// check), so it is shown and reachable only when can('usr'); /online now redirects here (App.jsx). The active tab is
+// kept in the URL (?tab=online), like other screens that persist state in the query string.
+export function UserList() {
+  const { t } = useI18n();
+  const { can } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const showOnline = can('usr');                              // same permission the old online-users route required
+  const tab = params.get('tab') === 'online' && showOnline ? 'online' : 'users';
+  const setTab = v => setParams(v === 'online' ? { tab: 'online' } : {});
+  return (
+    <div>
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'users'} className={'tab' + (tab === 'users' ? ' active' : '')}
+          onClick={() => setTab('users')}>{t('nav_users')}</button>
+        {showOnline && (
+          <button type="button" role="tab" aria-selected={tab === 'online'} className={'tab' + (tab === 'online' ? ' active' : '')}
+            onClick={() => setTab('online')}>{t('nav_online')}</button>
+        )}
+      </div>
+      {tab === 'online' && showOnline ? <OnlineUsers /> : <UsersManage />}
+    </div>
+  );
+}
 
 function TfaBadge({ u }) {
   const { t } = useI18n();
@@ -16,7 +43,7 @@ function TfaBadge({ u }) {
   return u.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>;
 }
 
-export function UserList() {
+function UsersManage() {
   const { t, nm, errText, fmtDate } = useI18n();
   const { user: me } = useAuth();
   const [view, setView] = useState('active');               // 'active' | 'deleted' (1.7.0)
@@ -104,7 +131,7 @@ export function UserList() {
     <div>
       <PageHeader title={t('users_title')} icon="users">
         {online.data && (
-          <Link to="/online" className="btn btn-ghost btn-sm" title={t('ou_title')}>
+          <Link to="/users?tab=online" className="btn btn-ghost btn-sm" title={t('ou_title')}>
             <Indicator color={online.data.online ? 'green' : 'gray'}>{t('ou_now_online', { n: online.data.online })}</Indicator>
           </Link>
         )}
