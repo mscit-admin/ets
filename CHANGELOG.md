@@ -30,6 +30,59 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.10] — 2026-10-23 — Users overview: two-factor donut
+
+### Added
+- **Frontend:** a fourth donut — **«التحقق بخطوتين» / Two-factor authentication** — in the dashboard Users
+  overview (`components/UsersOverview.jsx`), built from the `tfa` tally the endpoint already returns. Slices:
+  enabled (`tfa.enabled`, green), exempt (`tfa.exempt`, orange), not enabled (`tfa.off`, gray), reusing the same
+  `Donut` component, screen palette, legend, and `<title>` tooltip (label · count · percentage) as the sibling
+  donuts. The slices are display-only (no Users-screen filter maps to a 2FA state). Labels reuse the existing
+  `two_fa` / `tfa_on` / `tfa_exempt` / `tfa_off` i18n keys (Arabic and English); no new keys.
+
+### Upgrade notes
+- No database or backend change: the `GET /api/dashboard/users-overview` payload already carried `tfa`; only the
+  dashboard UI now renders it.
+
+---
+
+## [1.12.9] — 2026-10-23 — dashboard users overview
+
+### Added
+- **Frontend:** a new **«نظرة عامة على المستخدمين» / Users overview** section on the dashboard
+  (`pages/Dashboard.jsx`), shown only to system administrators. Summary `NumberCard`s (total, active, online now),
+  a per-department bar chart of scoped users, and three hand-built SVG donuts — by role, account status
+  (active / disabled / deleted), and presence (online / offline). New reusable `components/Donut.jsx` in the
+  ERP-wheel style and `components/UsersOverview.jsx`; the figures reuse the existing screen palette (the ERP-wheel
+  navy from `lib/wheelGeometry.js` and the indicator-pill tones in `styles/app.css`) and lay out correctly in both
+  RTL and LTR. Each slice and bar carries an SVG `<title>` tooltip (label · count · percentage); the slices that
+  map to a Users view are links (role / status → `/users`, deleted → `/users?tab=deleted`, online →
+  `/users?tab=online`). New i18n keys under `i18n/messages.js` in both Arabic and English.
+- **Backend:** `GET /api/dashboard/users-overview` (`routes/dashboard.js`, `services/userStats.js`) returns
+  aggregated user statistics — **counts only, no per-user data** — computed in SQL with `GROUP BY` / `FILTER`
+  (lifecycle and 2FA tallies, users per role, scoped users per department, and distinct online users via the new
+  `onlineUserCount()` in `services/presence.js`).
+
+### Changed
+- **Frontend:** the dashboard's bottom departments grid — which duplicated the top ERP wheel — was **removed** and
+  replaced by the Users overview section.
+
+### Security
+- The Users overview section and its endpoint are gated by the **same permission as the Users screen**: `'usr'`
+  plus the admin role (`requireAuth, requirePerm('usr'), requireAdmin`, matching `routes/users.js` and
+  `routes/presence.js`, per ETS-SEC-004). A reader without `'usr'` does not render the section and the endpoint
+  returns 403. The payload carries no PII — aggregate counts only.
+
+### Tests
+- **Backend:** `test/dashboard-users-overview.test.js` — response shape, correct counts on seeded data (lifecycle,
+  2FA split, roles, per-department, online), and that the `'usr'` + admin gate is enforced (non-admin 403,
+  signed-out 401).
+
+### Upgrade notes
+- No database change: the endpoint is pure `SELECT` aggregation (no migration, no schema change).
+
+---
+
 ## [1.12.8] — 2026-10-23 — browser tab title follows the configured system name
 
 ### Fixed
@@ -2045,7 +2098,9 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/3177ecb...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/6d1c14a...HEAD
+[1.12.10]: https://github.com/mscit-admin/ets/compare/1e244b8...6d1c14a
+[1.12.9]: https://github.com/mscit-admin/ets/compare/3177ecb...1e244b8
 [1.12.8]: https://github.com/mscit-admin/ets/compare/bbf838f...3177ecb
 [1.12.7]: https://github.com/mscit-admin/ets/compare/badafd9...bbf838f
 [1.12.6]: https://github.com/mscit-admin/ets/compare/cc064d9...badafd9

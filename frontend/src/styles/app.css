@@ -252,6 +252,32 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .dept-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
+/* ---------- dashboard: users overview (1.12.9) ---------- */
+.users-overview { margin-bottom: 18px; }
+.uo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.uo-grid .card { margin: 0; }
+.donut-title { font-size: 13.5px; font-weight: 700; color: var(--gray-800); margin: 0 0 12px; }
+.donut-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.donut-svg { width: 132px; height: 132px; flex: none; }
+.donut-seg { transition: opacity .15s; }
+.donut-link { cursor: pointer; }
+.donut-link:hover .donut-seg, .donut-seg:hover { opacity: .82; }
+.donut-total { font-size: 24px; font-weight: 700; fill: var(--text); font-variant-numeric: tabular-nums; }
+.donut-sub { font-size: 10px; fill: var(--text-muted); }
+.donut-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 120px; display: grid; gap: 6px; font-size: 12.5px; }
+.donut-legend li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.dl-key { display: inline-flex; align-items: center; gap: 7px; color: var(--gray-700); min-width: 0; }
+.dl-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.dl-link { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; }
+.dl-link:hover { color: var(--primary-blue); }
+.donut-empty { margin: 6px 0 0; }
+.ubar-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.ubar-row { display: grid; grid-template-columns: minmax(70px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; }
+.ubar-name { color: var(--gray-700); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ubar-track { height: 10px; border-radius: 999px; background: var(--gray-200); overflow: hidden; }
+.ubar-fill { display: block; height: 100%; border-radius: 999px; min-width: 2px; }
+.ubar-val { color: var(--gray-800); }
+
 /* ---------- tables / list view ---------- */
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; }
