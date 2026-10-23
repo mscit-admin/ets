@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api, downloadText, path } from '../lib/api.js';
@@ -8,6 +9,11 @@ import { useBranding } from '../lib/branding.jsx';
 import { addPeriods } from '../components/SCurve.jsx';
 import { NotifySettingsCard } from '../components/NotifySettings.jsx';
 import { BackupSection } from '../components/BackupCenter.jsx';
+
+// Settings tabs: the page used to be one long scroll; the groups are now split across tabs.
+// The active tab lives in the URL (?tab=…). Old hash deep-links still work: #timeline/#notifications/#backups
+// open the right tab, and the sections keep their own scroll-into-view so landing there still jumps to them.
+const HASH_TAB = { timeline: 'general', notifications: 'notifications', backups: 'backup' };
 
 export default function Settings() {
   const { t, errText, fmtDate } = useI18n();
@@ -22,8 +28,31 @@ export default function Settings() {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
+  const [params, setParams] = useSearchParams();
 
   useEffect(() => { if (data) setS(data.settings); }, [data]);
+
+  // Tabs whose whole content the user cannot see are not shown. «النسخ الاحتياطي» is system-admin only
+  // (the API refuses everyone else); every other tab is available to anyone who can open Settings (perm "cfg").
+  const tabKeys = useMemo(() => {
+    const keys = ['general', 'security', 'notifications'];
+    if (user?.role === 'admin') keys.push('backup');
+    keys.push('advanced');
+    return keys;
+  }, [user?.role]);
+  // Active tab from ?tab=…, else mapped from an old hash deep-link, else the first visible tab.
+  const requested = params.get('tab');
+  const hashTab = HASH_TAB[window.location.hash.slice(1)];
+  const tab = (requested && tabKeys.includes(requested) && requested)
+    || (hashTab && tabKeys.includes(hashTab) && hashTab)
+    || tabKeys[0];
+  const selectTab = k => setParams(prev => { const n = new URLSearchParams(prev); n.set('tab', k); return n; }, { replace: true });
+  // #notifications has no self-scrolling owner on this page (unlike #timeline and #backups), so scroll it here
+  // once its tab is rendered and the settings have loaded.
+  useEffect(() => {
+    if (tab === 'notifications' && s && window.location.hash === '#notifications') document.getElementById('notifications')?.scrollIntoView();
+  }, [tab, !!s]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   if (!s) return null;
@@ -66,81 +95,94 @@ export default function Settings() {
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
-      {tl && sched.data?.can.timeline && <TimelineCard tl={tl} setTl={setTl} unit={sched.data.unit} />}
+      <div className="tabs" role="tablist">
+        {tabKeys.map(k => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={'tab' + (tab === k ? ' active' : '')}
+            onClick={() => selectTab(k)}>{t('set_tab_' + k)}</button>
+        ))}
+      </div>
 
-      <Card title={t('sec_2fa')}>
-        <div className="radio-list">
-          {['off', 'optional', 'required'].map(m => (
-            <label key={m} className={'role-opt' + (s['mfa.mode'] === m ? ' on' : '')}>
-              <input type="radio" name="mfa" checked={s['mfa.mode'] === m} onChange={() => set('mfa.mode', m)} />
-              <b>{t('mfa_' + m)}</b>
-            </label>
-          ))}
-        </div>
-        <div className="form-grid mt">
-          <Field label={t('mfa_issuer')}><input className="input" dir="ltr" value={s['mfa.issuer']} onChange={e => set('mfa.issuer', e.target.value)} /></Field>
-        </div>
-      </Card>
+      {tab === 'general' && <>
+        {tl && sched.data?.can.timeline && <TimelineCard tl={tl} setTl={setTl} unit={sched.data.unit} />}
 
-      <Card title={t('sec_approvals')}>
-        <label className="check"><input type="checkbox" checked={!!s['approval.edits_need_lead']}
-          onChange={e => set('approval.edits_need_lead', e.target.checked)} /> {t('edits_need_lead')}</label>
-        <div className="field-hint mt-s">{t('edits_need_lead_hint')}</div>
-      </Card>
-
-      <NotifySettingsCard s={s} set={set} />
-
-      <BrandingCard />
-
-      <Card title={t('sec_general')}>
-        <div className="form-grid">
-          <Field label={t('org_name_ar')}><input className="input" value={s['app.org_name_ar']} onChange={e => set('app.org_name_ar', e.target.value)} /></Field>
-          <Field label={t('org_name_en')}><input className="input" dir="ltr" value={s['app.org_name_en']} onChange={e => set('app.org_name_en', e.target.value)} /></Field>
-          <Field label={t('default_language')}>
-            <select className="input" value={s['app.default_language']} onChange={e => set('app.default_language', e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select>
-          </Field>
-        </div>
-      </Card>
-
-      <Card title={t('sec_security')}>
-        <div className="form-grid">
-          <Field label={t('password_min_length')}>{num('security.password_min_length', 10, 64)}</Field>
-        </div>
-      </Card>
-
-      <Card title={t('sec_logs')}>
-        <div className="form-grid">
-          <Field label={t('retention_days')}>{num('logs.retention_days', 30, 3650)}</Field>
-          <Field label={t('audit_retention_days')} hint={t('audit_retention_hint')}>{num('logs.audit_retention_days', 365, 10950)}</Field>
-          <Field label={t('access_retention_days')}>{num('logs.access_retention_days', 7, 3650)}</Field>
-        </div>
-      </Card>
-
-      <Card title={t('sec_data')}>
-        <div className="row gap wrap">
-          {can('exp') && <button className="btn btn-default btn-sm" onClick={exportData}><Icon name="download" size={14} /> {t('export_data')}</button>}
-          {can('imp') && (
-            <label className="btn btn-default btn-sm">
-              <Icon name="upload" size={14} /> {t('import_data_full')}
-              <input ref={fileRef} type="file" accept=".html,.htm,.json" hidden onChange={e => importFile(e.target.files[0])} />
-            </label>
-          )}
-        </div>
-      </Card>
-
-      {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
-      {user?.role === 'admin' && <BackupSection />}
-
-      {info.data && (
-        <Card title={t('sec_system')}>
-          <div className="kv">
-            <div><span>{t('version')}</span><span className="num">{info.data.app_version} · Node {info.data.node}</span></div>
-            <div><span>PostgreSQL</span><span className="small" dir="ltr">{info.data.database.version.split(' on ')[0]}</span></div>
-            <div><span>{t('db_size')}</span><span dir="ltr">{info.data.database.size} · {info.data.database.migration}</span></div>
-            <div><span>{t('uptime')}</span><span>{fmtDate(info.data.started_at)} ({Math.round(info.data.uptime_s / 3600)} h)</span></div>
+        <Card title={t('sec_general')}>
+          <div className="form-grid">
+            <Field label={t('org_name_ar')}><input className="input" value={s['app.org_name_ar']} onChange={e => set('app.org_name_ar', e.target.value)} /></Field>
+            <Field label={t('org_name_en')}><input className="input" dir="ltr" value={s['app.org_name_en']} onChange={e => set('app.org_name_en', e.target.value)} /></Field>
+            <Field label={t('default_language')}>
+              <select className="input" value={s['app.default_language']} onChange={e => set('app.default_language', e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select>
+            </Field>
           </div>
         </Card>
-      )}
+
+        <BrandingCard />
+      </>}
+
+      {tab === 'security' && <>
+        <Card title={t('sec_2fa')}>
+          <div className="radio-list">
+            {['off', 'optional', 'required'].map(m => (
+              <label key={m} className={'role-opt' + (s['mfa.mode'] === m ? ' on' : '')}>
+                <input type="radio" name="mfa" checked={s['mfa.mode'] === m} onChange={() => set('mfa.mode', m)} />
+                <b>{t('mfa_' + m)}</b>
+              </label>
+            ))}
+          </div>
+          <div className="form-grid mt">
+            <Field label={t('mfa_issuer')}><input className="input" dir="ltr" value={s['mfa.issuer']} onChange={e => set('mfa.issuer', e.target.value)} /></Field>
+          </div>
+        </Card>
+
+        <Card title={t('sec_approvals')}>
+          <label className="check"><input type="checkbox" checked={!!s['approval.edits_need_lead']}
+            onChange={e => set('approval.edits_need_lead', e.target.checked)} /> {t('edits_need_lead')}</label>
+          <div className="field-hint mt-s">{t('edits_need_lead_hint')}</div>
+        </Card>
+
+        <Card title={t('sec_security')}>
+          <div className="form-grid">
+            <Field label={t('password_min_length')}>{num('security.password_min_length', 10, 64)}</Field>
+          </div>
+        </Card>
+
+        <Card title={t('sec_logs')}>
+          <div className="form-grid">
+            <Field label={t('retention_days')}>{num('logs.retention_days', 30, 3650)}</Field>
+            <Field label={t('audit_retention_days')} hint={t('audit_retention_hint')}>{num('logs.audit_retention_days', 365, 10950)}</Field>
+            <Field label={t('access_retention_days')}>{num('logs.access_retention_days', 7, 3650)}</Field>
+          </div>
+        </Card>
+      </>}
+
+      {tab === 'notifications' && <NotifySettingsCard s={s} set={set} />}
+
+      {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
+      {tab === 'backup' && user?.role === 'admin' && <BackupSection />}
+
+      {tab === 'advanced' && <>
+        <Card title={t('sec_data')}>
+          <div className="row gap wrap">
+            {can('exp') && <button className="btn btn-default btn-sm" onClick={exportData}><Icon name="download" size={14} /> {t('export_data')}</button>}
+            {can('imp') && (
+              <label className="btn btn-default btn-sm">
+                <Icon name="upload" size={14} /> {t('import_data_full')}
+                <input ref={fileRef} type="file" accept=".html,.htm,.json" hidden onChange={e => importFile(e.target.files[0])} />
+              </label>
+            )}
+          </div>
+        </Card>
+
+        {info.data && (
+          <Card title={t('sec_system')}>
+            <div className="kv">
+              <div><span>{t('version')}</span><span className="num">{info.data.app_version} · Node {info.data.node}</span></div>
+              <div><span>PostgreSQL</span><span className="small" dir="ltr">{info.data.database.version.split(' on ')[0]}</span></div>
+              <div><span>{t('db_size')}</span><span dir="ltr">{info.data.database.size} · {info.data.database.migration}</span></div>
+              <div><span>{t('uptime')}</span><span>{fmtDate(info.data.started_at)} ({Math.round(info.data.uptime_s / 3600)} h)</span></div>
+            </div>
+          </Card>
+        )}
+      </>}
     </div>
   );
 }
