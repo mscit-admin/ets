@@ -142,7 +142,7 @@ const FIELD_PERM = {
 };
 const FIELD_OK = {
   progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
-  test_status: v => intIn(v, 0, 3), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 3),
+  test_status: v => intIn(v, 0, 3), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
   note: v => typeof v === 'string' && v.length <= 2000,
   item_type: v => ITEM_TYPES.includes(v),
 };

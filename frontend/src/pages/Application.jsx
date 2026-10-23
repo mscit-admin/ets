@@ -120,12 +120,13 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }
   );
 }
 
-function StatusSelect({ value, prefix, disabled, onChange, label }) {
+// review_status has six states (1.12.17); test / notification have four.
+function StatusSelect({ value, prefix, disabled, onChange, label, states = 4 }) {
   const { t } = useI18n();
   return (
     <select className={'input input-sm select-status s' + value} value={value} disabled={disabled} aria-label={label}
       onChange={e => onChange(parseInt(e.target.value, 10))}>
-      {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t(prefix + i)}</option>)}
+      {Array.from({ length: states }, (_, i) => <option key={i} value={i}>{t(prefix + i)}</option>)}
     </select>
   );
 }
@@ -428,7 +429,7 @@ export default function Application() {
                     </div>
                   </td>
                   <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
-                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
                   <td className="w-check">
                     <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNoteFor({ f })}
                       title={f.note || (needsNote(f) ? t('note_required_hint') : t('edit_note'))} aria-label={t('edit_note')}>

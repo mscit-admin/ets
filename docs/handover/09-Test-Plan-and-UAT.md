@@ -85,7 +85,7 @@ result and a screenshot to the defect list (§4).
 | C-03 | Open a department, then an application | Breadcrumb shows the path; functions listed with code, source, reference, vendor status | |
 | C-04 | Change a function's progress from 0 to 60 and press Enter | Saved; the application % updates; *Last change* shows your name | |
 | C-05 | Set test status to *Failed* and write a note | Saved; the note icon is highlighted | |
-| C-05b | Choose *Passed with note* (or notifications *Working with notes*, or review *Present with notes*) on an item without a note | The note window opens; **Save** is disabled until a note is typed; **Cancel** keeps the old status; after saving, status and note are both stored. The note cannot be cleared while such a status is set | |
+| C-05b | Choose *Passed with note* (or notifications *Working with notes*, or review *Notes*) on an item without a note | The note window opens; **Save** is disabled until a note is typed; **Cancel** keeps the old status; after saving, status and note are both stored. The note cannot be cleared while such a status is set | |
 | C-06 | Tick a disabled "from experience" item | It counts in the calculation; the application % changes | |
 | C-07 | **Bulk set** progress = 100 | All enabled functions become 100 % | |
 | C-08 | **Add function** with weight 1, progress 100, included | The impact table shows application / department / project before → after; after confirming the row appears with a new `C…` code and the percentages match the preview | |

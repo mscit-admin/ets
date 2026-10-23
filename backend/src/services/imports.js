@@ -7,6 +7,7 @@ import { passConflict, passRuleErrors } from './passRule.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 const int03 = v => clamp(v, 0, 3) | 0;
+const int05 = v => clamp(v, 0, 5) | 0;        // review_status has six states (1.12.17, migration 023)
 const text = v => (typeof v === 'string' ? v.slice(0, 2000) : '');
 
 // legacy key → [column, normaliser]
@@ -16,7 +17,7 @@ const FN_FIELDS = {
   on: ['enabled', v => !!v],
   t: ['test_status', int03],
   n: ['notif_status', int03],
-  rv: ['review_status', int03],
+  rv: ['review_status', int05],
   nt: ['note', text],
 };
 const REP_FIELDS = {

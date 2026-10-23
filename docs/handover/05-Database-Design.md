@@ -344,13 +344,19 @@ FROM edit_requests WHERE kind = 'move_application' AND status = 'pending';
 
 ## 4. Code values
 
-| Column | 0 | 1 | 2 | 3 |
-|---|---|---|---|---|
-| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress |
-| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed |
-| `functions.notif_status` | Not set | Working | Working with notes | Not working |
-| `functions.review_status` | Not needed | Present | Missing | Present with notes |
-| `app_reports.status` | Not needed | Delivered | Missing | With notes |
+| Column | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress | — | — |
+| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | — | — |
+| `functions.notif_status` | Not set | Working | Working with notes | Not working | — | — |
+| `functions.review_status` | No review needed | Present | Missing | Notes | Acknowledged | Approved |
+| `app_reports.status` | Not needed | Delivered | Missing | With notes | — | — |
+
+`functions.review_status` has **six** states since 1.12.17 (migration 023 widened the `CHECK` from `0..3` to
+`0..5`; the existing four kept their values, states 0 and 3 were relabelled — Arabic «لا توجد حاجة للمراجعة» and
+«ملاحظات», and «إطلاع» / «اعتماد» added). States 4 (إطلاع / Acknowledged) and 5 (اعتماد / Approved) are completed
+reviews: like Present (1) and Notes (3) they are **not** counted as «المراجعة غير موجودة» / review-missing — only
+state 2 (Missing) is. Choosing state 3 (Notes) still makes the item's note mandatory.
 
 `functions.source`: `design` (approved detailed design), `vendor_list` (vendor's function list),
 `experience` (gap added from experience, disabled by default), `custom` (added in ETS; codes `C0…`).

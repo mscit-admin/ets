@@ -30,6 +30,34 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.17] — 2026-10-23 — Two more review states: «إطلاع» and «اعتماد»
+
+### Added
+- **Two new review states for functions / report items**, so `functions.review_status` now has **six** states
+  instead of four: `4` «إطلاع» / "Acknowledged" and `5` «اعتماد» / "Approved". Both are **completed** reviews — like
+  `1` Present and `3` Notes they are **not** counted as «المراجعة غير موجودة» / review-missing; only `2` Missing is.
+  They appear as options in the review picker on the application page (`frontend/src/pages/Application.jsx`,
+  `StatusSelect`) with distinct badge colours — blue for «إطلاع», purple for «اعتماد» — and are labelled everywhere
+  a review value is shown (audit log `frontend/src/lib/audit.js`, Excel export `services/export-labels.js` +
+  `routes/export.js`, imports preview, project status), AR+EN (`frontend/src/i18n/messages.js` `rv_4`/`rv_5`).
+
+### Changed
+- **The two existing review states `0` and `3` were relabelled** (their numeric values are unchanged): Arabic
+  «لا تحتاج» → «لا توجد حاجة للمراجعة» and «موجودة مع ملاحظات» → «ملاحظات»; English "Not needed" → "No review needed"
+  and "Present with notes" → "Notes". Choosing `3` (Notes) still makes the item's note mandatory. States `1`
+  (Present/موجودة) and `2` (Missing/غير موجودة) are unchanged.
+- **Validation widened from `0–3` to `0–5`** on every path that writes `review_status`: the single-field and bulk
+  edit (`routes/tracker.js` `FIELD_OK`), the team-result import mapping (`services/imports.js`, new `int05`) and the
+  legacy save path (`services/legacy.js`). The test and notification statuses keep their four states (`0–3`).
+
+### Upgrade notes
+- **Database:** new migration `backend/src/db/migrations/023_review_status_states.sql` — widens the named CHECK
+  constraint `functions_review_status_check` on `functions.review_status` from `BETWEEN 0 AND 3` to `BETWEEN 0 AND 5`.
+  Forward-only and idempotent (`DROP CONSTRAINT IF EXISTS` then `ADD CONSTRAINT`); `DEFAULT 0` unchanged, no data
+  backfill. It runs with `update.sh` like any other migration; no operator action beyond running the migration.
+
+---
+
 ## [1.12.16] — 2026-10-23 — Move a whole application to another department
 
 ### Added

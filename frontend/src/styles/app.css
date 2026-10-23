@@ -111,6 +111,8 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .select-status.s2 { background: var(--green-bg); color: var(--green-text); }
 .select-status.s3 { background: var(--red-bg); color: var(--red-text); }
 .select-status.s1 { background: var(--orange-bg); color: var(--orange-text); }
+.select-status.s4 { background: var(--blue-bg); color: var(--blue-text); }      /* review: إطلاع / Acknowledged (1.12.17) */
+.select-status.s5 { background: var(--purple-bg); color: var(--purple-text); }  /* review: اعتماد / Approved (1.12.17) */
 
 /* ---------- indicator pills ---------- */
 .indicator-pill {
