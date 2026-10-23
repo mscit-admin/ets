@@ -48,6 +48,9 @@ describe('createApi', () => {
     expect((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject({ 'X-ETS-Live': '1' });
     await api.get('/tracker/summary');
     expect((fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1].headers).not.toHaveProperty('X-ETS-Live');
+    // server 1.12.2: only X-ETS-Activity extends the idle timeout — sent on the requests a person starts, never on automatic ones
+    expect((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].headers).not.toHaveProperty('X-ETS-Activity');
+    expect((fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1].headers).toMatchObject({ 'X-ETS-Activity': '1' });
   });
   it('a 401 on a data endpoint ends the session; on /auth/* it does not', async () => {
     const onUnauthorized = jest.fn();

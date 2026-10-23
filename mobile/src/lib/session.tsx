@@ -50,7 +50,8 @@ const client = createApi({ baseUrl: () => currentServer, onUnauthorized: code =>
 async function readMe(): Promise<{ me: Me; notice: string | null }> {
   if (!currentServer) return { me: { authenticated: false }, notice: null };
   try {
-    return { me: await client.get<Me>('/auth/me'), notice: null };
+    // a session check (start, resume, live stream, 401): never activity for the idle timeout
+    return { me: await client.get<Me>('/auth/me', { live: true }), notice: null };
   } catch (e) {
     // the server cannot be reached: signed out on this screen; the sign-in screen shows why
     const code = e instanceof ApiError && (e.code === 'network' || e.code === 'timeout') ? e.code : null;

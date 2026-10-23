@@ -159,6 +159,7 @@ export default function Login() {
     <AuthCard title={t('login_title')} sub={t('login_sub')}>
       <form onSubmit={login}>
         {err && <Alert>{errText(err)}</Alert>}
+        {!err && me?.ended && <Alert kind="orange">{t(me.ended === 'idle' ? 'session_ended_idle' : 'err_not_authenticated')}</Alert>}
         <label className="field">
           {/* username or e-mail address (1.6.0): a plain text field — type="email" would refuse a username */}
           <span className="field-label">{t('login_identifier')}</span>

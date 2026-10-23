@@ -9,14 +9,15 @@ export const setUnauthorizedHandler = fn => { onUnauthorized = fn; };
 // The live-updates stream ended with the session (lib/live.js): same handling as a 401 answer.
 export const notifyUnauthorized = () => onUnauthorized('session_ended');
 
-async function request(method, url, body, { live = false } = {}) {
+async function request(method, url, body, { live = false, activity = false } = {}) {
   let res;
   try {
     res = await fetch('/api' + url, {
       method,
       credentials: 'same-origin',
-      // X-ETS-Live: a reload triggered by live updates, not by the user (not activity for the idle timeout)
-      headers: { 'X-Requested-With': 'ets', ...(live ? { 'X-ETS-Live': '1' } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      // X-ETS-Live: a reload triggered by live updates, not by the user. X-ETS-Activity: genuine user input — the only
+      // thing that extends the server's idle timeout; sent by lib/activity.js alone (1.12.2)
+      headers: { 'X-Requested-With': 'ets', ...(live ? { 'X-ETS-Live': '1' } : {}), ...(activity ? { 'X-ETS-Activity': '1' } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {

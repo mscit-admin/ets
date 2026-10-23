@@ -229,7 +229,7 @@ The app signs in exactly like the website: `POST /api/auth/login`, then `/api/au
 - **Web preview:** checked in Chromium with `COOKIE_SECURE=true`. The browser received `__Host-ets_sid` (`secure=true`, `sameSite=Strict`), and every screen loaded with it.
 - **Result: no server change is needed.** The production CORS settings were not touched. The web preview avoids CORS by serving the app and proxying `/api` from a single HTTPS origin (`scripts/web-preview.mjs`).
 - A `401` outside `/api/auth/*` re-reads `/api/auth/me`, which returns the app to the sign-in screen with «انتهت الجلسة» / "Your session has ended". Server errors are shown with the shared `err_<code>` messages. Codes the app produces itself are `network`, `timeout`, `not_ets`, `url_*` and `no_server`.
-- Automatic reloads (live updates) send `X-ETS-Live: 1`, like the website's live reloads. They therefore never keep an idle session alive.
+- Automatic reloads (live updates, polling, presence, session checks) send `X-ETS-Live: 1`, like the website's live reloads. They therefore never keep an idle session alive. Since server 1.12.2 only requests with `X-ETS-Activity: 1` extend a session; the app sends it on every request a person starts (every request not marked `live`), so an app in use is never signed out, and an app left open is.
 
 ### Live updates
 

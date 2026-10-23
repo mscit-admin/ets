@@ -83,6 +83,18 @@ export async function loadUserContext(userId) {
   };
 }
 
+// Does this request report genuine user activity for the idle timeout? (see sessionMiddleware)
+export const isUserActivity = req => req.get('x-ets-activity') === '1' && req.get('x-ets-live') !== '1' &&
+  req.path !== '/events' && !(req.method === 'POST' && req.path === '/presence');
+
+// When an idle session ends if nobody acts before (last_seen_at + SESSION_IDLE_MINUTES), and its absolute end.
+export const sessionTiming = s => ({
+  idle_minutes: config.session.idleMinutes,
+  idle_expires_at: new Date(new Date(s.last_seen_at).getTime() + config.session.idleMinutes * 60_000).toISOString(),
+  expires_at: new Date(s.expires_at).toISOString(),
+  server_now: new Date().toISOString(),
+});
+
 // Attaches req.user / req.session when a valid session cookie is present.
 export async function sessionMiddleware(req, res, next) {
   const t = req.cookies?.[cookieName()];
@@ -113,12 +125,16 @@ export async function sessionMiddleware(req, res, next) {
   if (!user || !user.is_active) return next();
   req.session = s;
   req.user = user;
-  // Automatic requests do not count as activity for the idle timeout: the live-updates stream itself and the
-  // reloads it triggers (header X-ETS-Live: 1, frontend lib/live.js) — an open screen alone never keeps a session alive.
-  // Presence reports (POST /presence, 1.11.0) never count either, whatever headers they carry.
-  const automatic = req.path === '/events' || req.get('x-ets-live') === '1' || (req.method === 'POST' && req.path === '/presence');
-  if (!automatic && Date.now() - new Date(s.last_seen_at).getTime() > 60_000) {
-    query('UPDATE sessions SET last_seen_at=now() WHERE id=$1', [id]).catch(() => {});
+  // Idle timeout (1.12.2): only GENUINE USER ACTIVITY moves last_seen_at, and the client says so explicitly with
+  // X-ETS-Activity: 1 (opt-in). The web app sends it only from real input (pointer, key, wheel, touch; frontend
+  // lib/activity.js), the phone app on the requests a person starts (mobile/src/lib/api.ts). Everything else — data
+  // loads, polls, /auth/me checks, the live-updates stream and the reloads it triggers (X-ETS-Live: 1), presence
+  // reports — never extends a session, so an open screen or a forgotten tab cannot keep it alive. The stream and
+  // presence never count even with the header; X-ETS-Live wins over X-ETS-Activity.
+  // At most one write per 30 s and session; the web app pings at most once a minute, so each ping is written.
+  if (isUserActivity(req) && Date.now() - new Date(s.last_seen_at).getTime() > 30_000) {
+    s.last_seen_at = new Date();
+    query('UPDATE sessions SET last_seen_at=now() WHERE id=$1 AND revoked_at IS NULL', [id]).catch(() => {});
   }
   next();
 }

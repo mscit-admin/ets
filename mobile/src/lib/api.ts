@@ -49,8 +49,10 @@ export function createApi({ baseUrl, onUnauthorized, fetchImpl }: Config) {
         headers: {
           Accept: 'application/json',
           'X-Requested-With': 'ets',
-          // a reload by the app itself (polling), not by the user: not activity for the server's idle timeout
-          ...(opts.live ? { 'X-ETS-Live': '1' } : {}),
+          // a reload by the app itself (polling, live updates, session checks): X-ETS-Live, never activity for the
+          // server's idle timeout. Every other request is started by the person using the app (a screen opened, pull to
+          // refresh, a save): X-ETS-Activity, the only header that extends the session (server 1.12.2, opt-in)
+          ...(opts.live ? { 'X-ETS-Live': '1' } : { 'X-ETS-Activity': '1' }),
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
           ...opts.headers,
         },
