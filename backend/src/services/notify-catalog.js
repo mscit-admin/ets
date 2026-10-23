@@ -41,6 +41,7 @@ export const TYPES = {
   quality:           { code: 'T6', category: 'tracking', kind: 'periodic', severity: 'info', perms: ['tst'], scope: 'app', matrix: M('---++---.'), push: true, digest: true },
   excluded:          { code: 'T7', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
   moved_in:          { code: 'T8', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
+  app_moved_in:      { code: 'T9', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
   // ---- plan and schedule
   dept_behind:       { code: 'P1', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'dept', matrix: M('-++++----'), push: true, digest: true },
   dept_stalled:      { code: 'P2', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'dept', matrix: M('-++++----'), push: true, digest: true },

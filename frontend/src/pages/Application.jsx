@@ -12,7 +12,7 @@ import { MultiSelect } from '../components/MultiSelect.jsx';
 import { DisableReasonForm, DisabledReason } from '../components/DisableReason.jsx';
 import { ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
 import { RenameDialog } from '../components/RenameDialog.jsx';
-import { MoveDialog, MoveFields } from '../components/MoveDialog.jsx';
+import { MoveDialog, MoveFields, AppMoveDialog } from '../components/MoveDialog.jsx';
 import {
   DISABLE_REASONS, ITEM_TYPES, MOVE_MAX, SOURCES, SRC_COLOR, blockedItemKey, blockedItems,
   countDelta, emptyMove, emptyReason, moveReady, needsNote, noteProblem, noteReasons, passConflict, pctDelta, pctText, pendingByFunction,
@@ -120,12 +120,13 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }
   );
 }
 
-function StatusSelect({ value, prefix, disabled, onChange, label }) {
+// review_status has six states (1.12.17); test / notification have four.
+function StatusSelect({ value, prefix, disabled, onChange, label, states = 4 }) {
   const { t } = useI18n();
   return (
     <select className={'input input-sm select-status s' + value} value={value} disabled={disabled} aria-label={label}
       onChange={e => onChange(parseInt(e.target.value, 10))}>
-      {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t(prefix + i)}</option>)}
+      {Array.from({ length: states }, (_, i) => <option key={i} value={i}>{t(prefix + i)}</option>)}
     </select>
   );
 }
@@ -155,6 +156,7 @@ export default function Application() {
   const [confirm, setConfirm] = useState(null);   // {f, mode: 'remove' | 'restore' | 'toggle', enabled?}
   const [renaming, setRenaming] = useState(null);  // the item being renamed (1.9.1)
   const [moving, setMoving] = useState(null);      // the item being moved to another application (1.10.0)
+  const [movingApp, setMovingApp] = useState(false); // moving the whole application to another department (1.12.16)
   const [history, setHistory] = useState(null);    // the item whose move history is open
 
   useEffect(() => {
@@ -276,10 +278,19 @@ export default function Application() {
       {data.needs_approval && <Alert kind="blue">{t('edits_need_lead_notice')}</Alert>}
       <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
         {(can.pct || can.tst || can.tog || can.mov) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
+        {can.mov && <button className="btn btn-default btn-sm" onClick={() => setMovingApp(true)}><Icon name="move" size={14} /> {t('amv_button')}</button>}
         {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
         <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test, reason: filter.reason,
           item_type: filter.type, show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
       </PageHeader>
+
+      {a.moved_from && (
+        <div className="row-tags mb-s">
+          <span className="moved-chip" title={t('amv_badge_tip', { date: fmtDate(a.moved_from.moved_at), name: a.moved_from.moved_by_name || '—', reason: a.moved_from.reason })}>
+            <Icon name="move" size={12} /> {t('amv_badge', { dept: nm(a.moved_from, 'from_dept_name') || t('amv_badge_other') })}
+          </span>
+        </div>
+      )}
 
       <div ref={sentinelRef} className="sticky-sentinel" aria-hidden="true" />
       <div ref={stickyRef} className={'app-sticky' + (stuck ? ' stuck' : '')}>
@@ -418,7 +429,7 @@ export default function Application() {
                     </div>
                   </td>
                   <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
-                  <td><StatusSelect value={f.review_status} prefix="rv_" disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
                   <td className="w-check">
                     <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNoteFor({ f })}
                       title={f.note || (needsNote(f) ? t('note_required_hint') : t('edit_note'))} aria-label={t('edit_note')}>
@@ -440,6 +451,7 @@ export default function Application() {
       {adding && <AddModal app={a} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {renaming && <RenameDialog f={renaming} others={fns} onClose={() => setRenaming(null)} onDone={() => { setRenaming(null); reload(); }} />}
       {moving && <MoveDialog app={a} f={moving} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />}
+      {movingApp && <AppMoveDialog app={a} onClose={() => setMovingApp(false)} onDone={() => { setMovingApp(false); reload(); }} />}
       {history && <MoveHistory f={history} onClose={() => setHistory(null)} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {

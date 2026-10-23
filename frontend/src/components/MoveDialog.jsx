@@ -194,3 +194,128 @@ export function MoveDialog({ app, f, onClose, onDone }) {
     </Modal>
   );
 }
+
+// ---- moving a whole application to another department ("module") (1.12.16, backend services/app-move.js) ----
+// Destination departments the reader covers (GET /tracker/app-move-targets).
+function useAppTargets(appId) {
+  const [v, setV] = useState({ departments: null, error: null });
+  useEffect(() => {
+    let alive = true;
+    api.get(path`/tracker/app-move-targets?app_id=${appId}`).then(r => { if (alive) setV({ departments: r.departments, error: null }); })
+      .catch(e => { if (alive) setV({ departments: [], error: e }); });
+    return () => { alive = false; };
+  }, [appId]);
+  return v;
+}
+
+// Impact of moving the application to a department (debounced POST …/move-dept/preview); null while loading / none chosen.
+function useAppPreview(appId, deptId) {
+  const [v, setV] = useState({ data: null, error: null, loading: false });
+  useEffect(() => {
+    if (!deptId) { setV({ data: null, error: null, loading: false }); return undefined; }
+    let alive = true;
+    setV(x => ({ ...x, loading: true }));
+    const h = setTimeout(() => {
+      api.post(path`/tracker/applications/${appId}/move-dept/preview`, { to_department_id: deptId })
+        .then(r => { if (alive) setV({ data: r, error: null, loading: false }); }).catch(e => { if (alive) setV({ data: null, error: e, loading: false }); });
+    }, 250);
+    return () => { alive = false; clearTimeout(h); };
+  }, [appId, deptId]);
+  return v;
+}
+
+// Before → after table of an application move: the two departments' weight and the project.
+function AppMoveImpact({ impact }) {
+  const { t, nm } = useI18n();
+  if (!impact) return null;
+  return (
+    <div className="impact mv-impact">
+      <div className="impact-title">{t('mv_impact_title')}</div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th scope="col" /><th scope="col" className="num-col">{t('before')}</th><th scope="col" className="num-col">{t('after')}</th></tr></thead>
+          <tbody>
+            {impact.departments.map(d => (
+              <tr key={d.id}><th scope="row" className="mv-row-label">{t(d.role === 'source' ? 'amv_row_src' : 'amv_row_dst', { name: nm(d) })}</th>
+                <td className="num-col num">{num2(d.weight.before)}</td><td className="num-col num"><b>{num2(d.weight.after)}</b></td></tr>
+            ))}
+            <tr className="mv-moved"><th scope="row" className="mv-row-label">{t('amv_weight_moved')}</th><td /><td className="num-col num"><b>{num2(impact.app_weight)}</b></td></tr>
+            <tr><th scope="row" className="mv-row-label">{t('mv_row_project')}</th><td className="num-col num">{pc(impact.total.before)}%</td><td className="num-col num"><b>{pc(impact.total.after)}%</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small mv-note">{impact.mode === 'auto' ? t('amv_weight_auto') : t('amv_weight_rule')}</p>
+    </div>
+  );
+}
+
+// The «نقل التطبيق» action of the application header (pages/Application.jsx): pick the destination department
+// (module) and a required reason, see the impact, and move — directly or as a request for the two department leads.
+export function AppMoveDialog({ app, onClose, onDone }) {
+  const { t, nm, errText } = useI18n();
+  const uid = useId();
+  const [v, setV] = useState({ dept: '', reason: '', touched: false });
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const { departments, error } = useAppTargets(app.id);
+  const pv = useAppPreview(app.id, v.dept);
+  const rProblem = moveReasonProblem(v.reason);
+  const showReasonErr = !!rProblem && (tried || v.touched);
+  const len = v.reason.trim().length;
+  const ok = !!v.dept && !rProblem && !!pv.data && !pv.error && !pv.loading;
+  const run = async () => {
+    setTried(true);
+    if (!ok || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.post(path`/tracker/applications/${app.id}/move-dept`, { to_department_id: v.dept, reason: v.reason.trim() });
+      toast(r?.pending ? t('sent_for_approval') : t('amv_done'), r?.pending ? 'blue' : 'green');
+      onDone();
+    } catch (e) { setErr(e); setBusy(false); }
+  };
+  return (
+    <Modal title={t('amv_title')} onClose={onClose} wide
+      footer={<>
+        <button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn btn-primary" disabled={!ok || busy} onClick={run}>{t('amv_confirm')}</button>
+      </>}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <dl className="rn-current">
+        <div><dt>{t('application')}</dt><dd>{nm(app)}</dd></div>
+      </dl>
+      {error ? <Alert>{errText(error)}</Alert> : !departments ? <div className="muted small">{t('loading')}…</div>
+        : !departments.length ? <Alert kind="orange">{t('amv_no_targets')}</Alert> : (
+        <>
+          <div className="field">
+            <label className="field-label" htmlFor={uid + '-d'}>{t('amv_module')} *</label>
+            <select id={uid + '-d'} className="input" value={v.dept} required aria-required="true"
+              onChange={e => setV({ ...v, dept: e.target.value })}>
+              <option value="">{t('mv_module_pick')}</option>
+              {departments.map(d => <option key={d.id} value={d.id}>{nm(d)}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor={uid + '-r'}>{t('mv_reason')} *</label>
+            <textarea id={uid + '-r'} className={'input' + (showReasonErr ? ' input-required' : '')} rows={3} maxLength={REASON_MAX + 50}
+              value={v.reason} placeholder={t('amv_reason_placeholder')} required aria-required="true" aria-invalid={showReasonErr || undefined}
+              aria-describedby={uid + '-rh' + (showReasonErr ? ' ' + uid + '-re' : '')}
+              onChange={e => setV({ ...v, reason: e.target.value, touched: v.touched || !!e.target.value.trim() })}
+              onBlur={() => setV({ ...v, touched: true })} />
+            <span id={uid + '-rh'} className="field-hint dr-count">
+              <span>{t('mv_reason_hint', { min: REASON_MIN })}</span>
+              <bdi dir="ltr" className={len > REASON_MAX ? 'red-text' : ''} aria-live="polite">{len}/{REASON_MAX}</bdi>
+            </span>
+            {showReasonErr && <span id={uid + '-re'} className="field-hint red-text" role="alert">{t(rProblem, { min: REASON_MIN })}</span>}
+          </div>
+          {!v.dept ? <div className="impact muted small">{t('amv_impact_pick')}</div>
+            : pv.error ? <Alert>{errText(pv.error)}</Alert>
+              : pv.data ? <>
+                {pv.data.needs_approval && <Alert kind="blue">{t('amv_needs_approval')}</Alert>}
+                <AppMoveImpact impact={pv.data} />
+              </> : <div className="muted small">{t('loading')}…</div>}
+        </>
+      )}
+    </Modal>
+  );
+}

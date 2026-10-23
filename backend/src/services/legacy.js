@@ -60,7 +60,7 @@ export async function applyLegacy(c, p, userId) {
           disabled_at     = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN now() ELSE disabled_at END
         WHERE app_id=$1 AND code=$2 AND removed_at IS NULL`,
         [appId, code, clamp(v.w, 0, 1000), clamp(v.p, 0, 100), !!v.on, clamp(v.t, 0, 3) | 0,
-          typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', clamp(v.n, 0, 3) | 0, clamp(v.rv, 0, 3) | 0, userId]);
+          typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', clamp(v.n, 0, 3) | 0, clamp(v.rv, 0, 5) | 0, userId]);
       counts.functions += r.rowCount;
     }
   }

@@ -9,7 +9,7 @@
 //   S1 account_locked     an account's sign-in was paused → administrators
 //   S7 retention_reduced  a log retention setting was lowered → administrators
 import { query } from '../db/pool.js';
-import { hasPerm, canSeeApp } from '../middleware/auth.js';
+import { hasPerm, canSeeApp, coversDept } from '../middleware/auth.js';
 import { activeUsers, appMap, deliver, resolveExcept } from './notify.js';
 import { logger } from './logs.js';
 
@@ -28,8 +28,19 @@ export const requestCreated = safe('request_created', async rq => {
   const apps = await appMap();
   const app = apps.get(rq.app_id);
   if (!app) return;
-  const dst = rq.target_app_id ? apps.get(rq.target_app_id) : null;
   const by = await fullName(rq.requested_by);
+  // an application move (1.12.16) waits for the leads of both departments (apv_dept covering the whole department)
+  if (rq.kind === 'move_application') {
+    const entries = [];
+    for (const user of (await activeUsers()).filter(u => u.id !== rq.requested_by)) {
+      if (!(hasPerm(user, 'apv_dept') && (coversDept(user, rq.department_id) || coversDept(user, rq.target_department_id)))) continue;
+      entries.push({ user, dedupeKey: `approval_pending:app=${rq.app_id}`, mode: 'add', appId: rq.app_id, deptId: app.department_id,
+        link: '/approvals', params: { ...appParams(app), by_name: by, request_id: rq.id } });
+    }
+    await deliver('approval_pending', entries);
+    return;
+  }
+  const dst = rq.target_app_id ? apps.get(rq.target_app_id) : null;
   const approver = (u, a) => !!a && hasPerm(u, 'apv_dept') && canSeeApp(u, a);
   const entries = [];
   for (const user of (await activeUsers()).filter(u => u.id !== rq.requested_by)) {
@@ -112,6 +123,22 @@ export const itemsMovedIn = safe('items_moved_in', async (srcId, dstId, n, exclu
   await deliver('moved_in', users.map(user => ({ user, dedupeKey: `moved_in:app=${dstId}`, mode: 'add', count: n,
     appId: dstId, deptId: dst.department_id, link: `/app/${dstId}`,
     params: { ...appParams(dst), by_name: by, ...(src && canSeeApp(user, src) ? { from_app_id: src.id, from_app_ar: src.name_ar, from_app_en: src.name_en } : {}) } })));
+});
+
+// ---- T9: an application moved into a department (1.12.16). appId; fromDept / toDept ids; exclude: who moved / approved.
+// Everyone who can see the application in its new department is told (not the people who moved or approved it).
+export const applicationMovedIn = safe('application_moved_in', async (appId, fromDept, toDept, exclude = []) => {
+  const app = (await appMap()).get(appId);
+  if (!app) return;
+  const by = exclude[0] ? await fullName(exclude[0]) : null;
+  const depts = (await query('SELECT id, name_ar, name_en FROM departments WHERE id = ANY($1)', [[fromDept, toDept]])).rows;
+  const from = depts.find(d => d.id === fromDept), to = depts.find(d => d.id === toDept);
+  const users = (await activeUsers()).filter(u => !exclude.includes(u.id) && canSeeApp(u, app));
+  await deliver('app_moved_in', users.map(user => ({ user, dedupeKey: `app_moved_in:app=${appId}`, mode: 'add',
+    appId, deptId: toDept, link: `/app/${appId}`,
+    params: { ...appParams(app), by_name: by,
+      ...(from && coversDept(user, fromDept) ? { from_dept_id: fromDept, from_dept_ar: from.name_ar, from_dept_en: from.name_en } : {}),
+      ...(to ? { to_dept_id: toDept, to_dept_ar: to.name_ar, to_dept_en: to.name_en } : {}) } })));
 });
 
 // ---- S1: an account's sign-in was paused (services/lockout.js)

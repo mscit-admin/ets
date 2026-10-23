@@ -74,7 +74,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 ### Edit requests (migration 004)
 | Table | Purpose | Key columns |
 |---|---|---|
-| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`, `add_function`, `remove_function`, `restore_function`, `move_function` — 1.10.0), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result`; a move (1.10.0): `target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta` (see 3g) |
+| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`, `add_function`, `remove_function`, `restore_function`, `move_function` — 1.10.0, `move_application` — 1.12.16), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result`; a move (1.10.0 / 1.12.16): `target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta` (see 3g, 3i) |
 | `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied`, `meta` (jsonb, migration 013: the reason of a pending exclusion — `disabled_reason`, `disabled_note`, `duplicate_of: [{id, app_id, code}]` — applied on approval) |
 
 ### Branding (migration 003)
@@ -299,15 +299,64 @@ FROM user_presence p JOIN sessions s ON s.id = p.session_id JOIN users u ON u.id
 WHERE p.last_seen > now() - interval '2 minutes' AND s.revoked_at IS NULL AND s.expires_at > now();
 ```
 
+### 3i. Migration 022 — moving a whole application to another department (1.12.16)
+
+Moves an entire application (with all its functions / report items) from one department ("module", الإدارة) to
+another. The application keeps its id, weight and functions (they belong to it through `application_id`, which is
+untouched); only `applications.department_id` changes. The existing `mov` permission is reused — no new permission.
+
+- **`application_moves`** — one row per application moved, kept with the application (`app_id` → `applications`,
+  CASCADE); mirrors `function_moves`:
+
+| Column | Meaning |
+|---|---|
+| `from_department_id`, `to_department_id` | where the application was and where it went (`CHECK (from <> to)`) |
+| `weight_mode` | `fixed` \| `auto` at the time of the move |
+| `weight` | `numeric(6,2)`, ≥ 0: the application's weight when it moved (for the badge / history) |
+| `reason` | 1–500 characters |
+| `moved_by`, `moved_at`, `request_id` | who moved it (the requester when it was approved), when, and the `move_application` request if any |
+
+  Indexes: `(app_id, moved_at)` (the header badge, history), `(from_department_id)`, `(to_department_id)`.
+- **`edit_requests`**: `kind` may be `move_application`; it carries a destination **department** but **no** destination
+  application — `target_department_id` is set, `target_app_id` is NULL. The move-target check becomes a `CASE` over
+  `kind`: `move_function` → both `target_app_id` and `target_department_id` set; `move_application` → only
+  `target_department_id` set; every other kind → neither. Two-stage approval reuses `source_approved_by/at` (the source
+  department's lead) then `target_approved_by/at` (the destination's). `meta` (jsonb): `{reason, weight_mode, weight,
+  impact}` when requested. Partial index on `target_department_id` of pending requests. Its single item:
+  `kind 'application'`, `field 'move'`, `meta: {reason}` — so `edit_request_items` kind check now allows `application`.
+
+**Weight.** A department's weight is **derived** — the sum of its applications' weights (fixed mode), or the sum of
+their counted item weights (auto mode); there is no stored department weight and no department weight cap. Moving the
+application therefore transfers its weight with **no mutation**: the source department's total loses exactly the
+application's weight and the destination gains it, so the overall weight sum (independent of how applications are
+grouped into departments) is unchanged by construction — nothing can overflow or need clamping. One `move` audit row
+on `application`, plus — in fixed mode — the two departments' derived weight changes as `update` rows on `department`.
+
+```sql
+-- applications moved, newest first
+SELECT m.moved_at, m.app_id, m.from_department_id AS was, m.to_department_id AS now, m.weight, m.reason
+FROM application_moves m ORDER BY m.moved_at DESC;
+-- application-move requests still waiting, and for whom
+SELECT id, app_id, department_id AS from_dept, target_department_id AS to_dept,
+       CASE WHEN source_approved_by IS NULL THEN 'source dept lead' ELSE 'destination dept lead' END AS waits_for
+FROM edit_requests WHERE kind = 'move_application' AND status = 'pending';
+```
+
 ## 4. Code values
 
-| Column | 0 | 1 | 2 | 3 |
-|---|---|---|---|---|
-| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress |
-| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed |
-| `functions.notif_status` | Not set | Working | Working with notes | Not working |
-| `functions.review_status` | Not needed | Present | Missing | Present with notes |
-| `app_reports.status` | Not needed | Delivered | Missing | With notes |
+| Column | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress | — | — |
+| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | — | — |
+| `functions.notif_status` | Not set | Working | Working with notes | Not working | — | — |
+| `functions.review_status` | No review needed | Present | Missing | Notes | Acknowledged | Approved |
+| `app_reports.status` | Not needed | Delivered | Missing | With notes | — | — |
+
+`functions.review_status` has **six** states since 1.12.17 (migration 023 widened the `CHECK` from `0..3` to
+`0..5`; the existing four kept their values, states 0 and 3 were relabelled — Arabic «لا توجد حاجة للمراجعة» and
+«ملاحظات», and «إطلاع» / «اعتماد» added). States 4 (إطلاع / Acknowledged) and 5 (اعتماد / Approved) are completed
+reviews: like Present (1) and Notes (3) they are **not** counted as «المراجعة غير موجودة» / review-missing — only
+state 2 (Missing) is. Choosing state 3 (Notes) still makes the item's note mandatory.
 
 `functions.source`: `design` (approved detailed design), `vendor_list` (vendor's function list),
 `experience` (gap added from experience, disabled by default), `custom` (added in ETS; codes `C0…`).

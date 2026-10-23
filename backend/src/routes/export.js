@@ -61,7 +61,7 @@ function reasonText(L, m, appId) {
 const FIELD_KEY = { status: 'report_status', create: 'fn_add', removed: 'removed', name_en: 'name_en', item_type: 'item_type', move: 'move' };
 const fieldLabel = (t, f) => t(FIELD_KEY[f] || f);
 const itemLabel = (L, x) => (x.kind === 'report' ? L.t('kind_report') : x.kind === 'weight' ? L.t('kind_weight')
-  : x.field === 'create' ? L.t('fn_add') : [x.code, x.fn_name_ar].filter(Boolean).join(' '));
+  : x.kind === 'application' ? (x.app_id || L.t('application')) : x.field === 'create' ? L.t('fn_add') : [x.code, x.fn_name_ar].filter(Boolean).join(' '));
 
 // The Approvals filters (1.12.1) as a reader says them, for the sheet's second row (the audit row keeps the raw values).
 async function approvalFilterView(L, f) {
@@ -232,7 +232,8 @@ const REPORTS = {
       const rows = list.flatMap(rq => {
         const base = { id: rq.id, status: t('rq_' + rq.status), dept: L.nm(rq, 'dept_name'), app: L.nm(rq, 'app_name'), kind: t('rk_' + rq.kind),
           summary: rq.summary, by: rq.requested_by_name, at: rq.requested_at, dby: rq.decided_by_name, dat: rq.decided_at, reason: rq.reason,
-          to: rq.target_app_id ? `${L.nm(rq, 'target_app_name')} — ${L.nm(rq, 'target_dept_name')}` : '' };
+          to: rq.target_app_id ? `${L.nm(rq, 'target_app_name')} — ${L.nm(rq, 'target_dept_name')}`
+            : rq.kind === 'move_application' ? L.nm(rq, 'target_dept_name') : '' };
         if (!rq.items.length) return [base];
         return rq.items.map(i => ({ ...base, item: itemLabel(L, i), field: fieldLabel(t, i.field), before: fmtValue(L, i.kind, i.field, i.old_value),
           after: fmtValue(L, i.kind, i.field, i.new_value) + (i.field === 'enabled' && i.new_value === false ? ' — ' + reasonText(L, i.meta || {}, rq.app_id) : '')

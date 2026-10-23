@@ -30,6 +30,77 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.17] — 2026-10-23 — Two more review states: «إطلاع» and «اعتماد»
+
+### Added
+- **Two new review states for functions / report items**, so `functions.review_status` now has **six** states
+  instead of four: `4` «إطلاع» / "Acknowledged" and `5` «اعتماد» / "Approved". Both are **completed** reviews — like
+  `1` Present and `3` Notes they are **not** counted as «المراجعة غير موجودة» / review-missing; only `2` Missing is.
+  They appear as options in the review picker on the application page (`frontend/src/pages/Application.jsx`,
+  `StatusSelect`) with distinct badge colours — blue for «إطلاع», purple for «اعتماد» — and are labelled everywhere
+  a review value is shown (audit log `frontend/src/lib/audit.js`, Excel export `services/export-labels.js` +
+  `routes/export.js`, imports preview, project status), AR+EN (`frontend/src/i18n/messages.js` `rv_4`/`rv_5`).
+
+### Changed
+- **The two existing review states `0` and `3` were relabelled** (their numeric values are unchanged): Arabic
+  «لا تحتاج» → «لا توجد حاجة للمراجعة» and «موجودة مع ملاحظات» → «ملاحظات»; English "Not needed" → "No review needed"
+  and "Present with notes" → "Notes". Choosing `3` (Notes) still makes the item's note mandatory. States `1`
+  (Present/موجودة) and `2` (Missing/غير موجودة) are unchanged.
+- **Validation widened from `0–3` to `0–5`** on every path that writes `review_status`: the single-field and bulk
+  edit (`routes/tracker.js` `FIELD_OK`), the team-result import mapping (`services/imports.js`, new `int05`) and the
+  legacy save path (`services/legacy.js`). The test and notification statuses keep their four states (`0–3`).
+
+### Upgrade notes
+- **Database:** new migration `backend/src/db/migrations/023_review_status_states.sql` — widens the named CHECK
+  constraint `functions_review_status_check` on `functions.review_status` from `BETWEEN 0 AND 3` to `BETWEEN 0 AND 5`.
+  Forward-only and idempotent (`DROP CONSTRAINT IF EXISTS` then `ADD CONSTRAINT`); `DEFAULT 0` unchanged, no data
+  backfill. It runs with `update.sh` like any other migration; no operator action beyond running the migration.
+
+---
+
+## [1.12.16] — 2026-10-23 — Move a whole application to another department
+
+### Added
+- **Move an entire application (with all its functions / report items) from one department ("module", الإدارة) to
+  another.** A new «نقل التطبيق» / "Move application" action on the application header (users with `mov`) opens a dialog
+  to pick the destination department and a required reason (3–500 characters, spaces not counted — the item-move rule),
+  shows the before → after impact on both departments and the project, and moves the application — directly or through a
+  two-lead approval. The application keeps its id, weight, functions (ids, codes, values, statuses, provenance) and
+  everything else; only its `department_id` changes. A «منقول من …» badge on the header records where it came from.
+  - **Backend:** `services/app-move.js` (`moveApplication`, `moveAppNeedsApproval`, `checkAppMovable`, `appMovesOf`,
+    `approveAppMove`, `isDeptApprover`); endpoints `GET /tracker/app-move-targets`, `POST
+    /tracker/applications/:id/move-dept[/preview]` (`routes/tracker.js`). The application provenance is in
+    `application_moves` (mirrors `function_moves`).
+  - **Weight (fixed mode):** a department's weight is **derived** — the sum of its applications' weights — so the
+    application's weight follows it with **no mutation**: the source department's total decreases by exactly the
+    application's weight and the destination's increases by it, leaving the overall weight sum unchanged. There is no
+    stored department weight and no department weight cap, so nothing can overflow or need clamping. **Auto mode:** a
+    department's weight is the sum of its applications' counted item weights, which likewise follow the application —
+    nothing to transfer. One strict audit row for the application move (`move` on `application`), plus — in fixed mode —
+    the two departments' derived weight changes (`update` on `department`).
+  - **Approval:** a new request kind `move_application`. When the initiator is a lead (`apv_dept`) of BOTH departments,
+    holds `cfg`/`apv_final`, or approvals are off → the move applies directly; otherwise a request needs the SOURCE
+    department's team lead, then the DESTINATION department's (one approval when the same person leads both; never the
+    requester). On the final approval the move is applied in the requester's name (`routes/approvals.js`,
+    `services/edits.js`). The 1.12.1 Approvals filters/labels, the Excel export (`services/export-labels.js`,
+    `routes/export.js`) and the audit sentences (`frontend/src/lib/audit.js`) handle the new kind, AR+EN. A T9
+    `app_moved_in` alert tells the destination department's users (`services/notify-*`).
+  - **Permission:** the existing `mov` is reused — no new permission. A regular member granted `mov` who is not a lead
+    of both departments goes through the two-lead approval.
+  - **Guards (409):** the application already in the destination department (`move_same_dept`), a pending edit / move /
+    import request on the application or its items (`move_app_pending_request`), and a name already used by another
+    application of the destination department (`move_app_name_conflict`).
+
+### Upgrade notes
+- **Database:** new migration `backend/src/db/migrations/022_move_applications.sql` — creates `application_moves`,
+  adds `move_application` to the `edit_requests` kind check and extends the move-target check (a `move_application`
+  request carries a destination department but no destination application), extends `edit_request_items` kind check to
+  allow an `application` item, and indexes `edit_requests(target_department_id)` for pending rows. Forward-only and
+  idempotent (`CREATE TABLE IF NOT EXISTS`, `DROP CONSTRAINT IF EXISTS` then `ADD`); it runs with `update.sh` like any
+  other migration. No data backfill or operator action beyond running the migration.
+
+---
+
 ## [1.12.15] — 2026-10-23 — Dashboard: function-count stats moved inside the ERP card
 
 ### Changed
@@ -2205,7 +2276,9 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/cf5cb68...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/a587e3d...HEAD
+[1.12.17]: https://github.com/mscit-admin/ets/compare/6483caa...a587e3d
+[1.12.16]: https://github.com/mscit-admin/ets/compare/cf5cb68...6483caa
 [1.12.15]: https://github.com/mscit-admin/ets/compare/240d29c...cf5cb68
 [1.12.14]: https://github.com/mscit-admin/ets/compare/b6c4318...240d29c
 [1.12.13]: https://github.com/mscit-admin/ets/compare/b53272a...b6c4318

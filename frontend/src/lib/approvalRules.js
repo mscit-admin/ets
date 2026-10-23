@@ -34,14 +34,18 @@ export const showRenameReason = (i, items) => !!i.meta?.rename_reason &&
 // A move request (1.10.0) needs two approvals: the source application's team lead, then the destination's.
 //   sourceDone / targetDone: who signed and when; waitKey: the message of the stage still awaited (pending only).
 export function moveStage(rq) {
+  const app = rq.kind === 'move_application';     // department leads rather than application leads
   return {
     sourceDone: rq.source_approved_by_name ? { name: rq.source_approved_by_name, at: rq.source_approved_at } : null,
     targetDone: rq.target_approved_by_name ? { name: rq.target_approved_by_name, at: rq.target_approved_at } : null,
     waiting: rq.status === 'pending' ? (rq.source_approved_by ? 'target' : 'source') : null,
-    waitKey: rq.status === 'pending' ? (rq.source_approved_by ? 'mv_rq_wait_target' : 'mv_rq_wait_source') : null,
+    waitKey: rq.status === 'pending'
+      ? (rq.source_approved_by ? (app ? 'amv_rq_wait_target' : 'mv_rq_wait_target') : (app ? 'amv_rq_wait_source' : 'mv_rq_wait_source'))
+      : null,
   };
 }
 export const isMoveRequest = rq => rq.kind === 'move_function';
+export const isMoveAppRequest = rq => rq.kind === 'move_application';
 // Label of the approve button: «اعتماد», or for a move «اعتماد المصدر» / «اعتماد الوجهة» / «اعتماد المرحلتين».
 export const approveLabelKey = can => (can?.approve_as ? 'approve_' + can.approve_as : 'approve');
 export const canApproveAny = requests => (requests || []).some(r => r.can?.approve);

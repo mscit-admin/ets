@@ -1,5 +1,5 @@
 // Edits made in the screens that must wait for the department team lead (see migration 004).
-import { hasPerm, canSeeApp, loadUserContext } from '../middleware/auth.js';
+import { hasPerm, canSeeApp, coversDept, loadUserContext } from '../middleware/auth.js';
 import { getSetting } from './settings.js';
 import { logAudit } from './logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
@@ -32,6 +32,7 @@ const ITEM_PERM = {
   function: { progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog', name_ar: 'ren', name_en: 'ren', create: 'tog', removed: 'tog',
     test_status: 'tst', review_status: 'tst', note: 'tst', item_type: 'tog', move: 'mov' },
   report: { progress: 'rep', status: 'rep', note: 'rep' },
+  application: { move: 'mov' },      // a whole-application move (1.12.16): its single item carries the 'mov' permission
 };
 
 const NOTED = { test_status: 1, notif_status: 2, review_status: 3 };   // statuses "… with notes" (routes/tracker.js)
@@ -47,6 +48,11 @@ export async function requesterBlocked(c, rq) {
   if (rq.target_app_id) {
     const dst = (await c.query('SELECT id, department_id FROM applications WHERE id=$1', [rq.target_app_id])).rows[0];
     if (!dst || !canSeeApp(u, dst)) return 'requester_out_of_scope';
+  }
+  // an application move (1.12.16): the author must still hold 'mov' and cover the WHOLE destination department
+  if (rq.kind === 'move_application') {
+    if (!hasPerm(u, 'mov')) return 'requester_lacks_permission';
+    if (!rq.target_department_id || !coversDept(u, rq.target_department_id)) return 'requester_out_of_scope';
   }
   const items = (await c.query('SELECT kind, function_id, field, new_value, meta FROM edit_request_items WHERE request_id=$1', [rq.id])).rows;
   // the note that goes with a "with notes" status the author may set, and only while the function still has no
@@ -103,7 +109,9 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
 export async function requestContext(c, rq, req, extra = {}) {
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;
   return { via: 'edit_request', request_id: rq.id, app_id: rq.app_id, department_id: rq.department_id,
-    ...(rq.target_app_id ? { kind: rq.kind, to_app_id: rq.target_app_id, to_department_id: rq.target_department_id, move_reason: rq.meta?.reason ?? null } : {}),
+    ...(rq.target_app_id || rq.kind === 'move_application'
+      ? { kind: rq.kind, ...(rq.target_app_id ? { to_app_id: rq.target_app_id } : {}), to_department_id: rq.target_department_id, move_reason: rq.meta?.reason ?? null }
+      : {}),
     requested_by: userRef(await loadUser(c, rq.requested_by)), decided_by: userRef(req.user), ...extra, items: await namedItems(c, items) };
 }
 

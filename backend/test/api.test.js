@@ -181,6 +181,36 @@ test('a "with notes" status requires a note', { skip }, async () => {
   assert.equal((await c.post('/tracker/applications/att/bulk', { field: 'test_status', value: 1 })).data.error, 'note_required');
 });
 
+test('review_status: six states (1.12.17) — 4/5 persist, 6 rejected, only 2 counts as "review missing"', { skip }, async () => {
+  const c = client(); await c.login('root');
+  const f = (await pool.query(`SELECT id FROM functions WHERE app_id='att' AND code='D1'`)).rows[0];
+  const p = body => c.patch('/tracker/functions/' + f.id, body);
+  const rvOf = async () => (await pool.query('SELECT review_status FROM functions WHERE id=$1', [f.id])).rows[0].review_status;
+
+  // the two new states persist (no note required)
+  assert.equal((await p({ review_status: 4 })).status, 200);   // إطلاع / Acknowledged
+  assert.equal(await rvOf(), 4);
+  assert.equal((await p({ review_status: 5 })).status, 200);   // اعتماد / Approved
+  assert.equal(await rvOf(), 5);
+  // out of range is rejected and nothing changes
+  const bad6 = await p({ review_status: 6 });
+  assert.equal(bad6.status, 400);
+  assert.equal(bad6.data.error, 'invalid_value');
+  assert.equal(await rvOf(), 5);
+
+  // "review missing" (project-status + weekly quality scan) counts only state 2, never 4 / 5
+  const missing = async () => (await c.get('/tracker/project-status')).data.counts.review_missing;
+  await p({ review_status: 0 });
+  const base = await missing();
+  await p({ review_status: 2 });
+  assert.equal(await missing(), base + 1);                     // غير موجودة counts
+  await p({ review_status: 4 });
+  assert.equal(await missing(), base);                         // إطلاع is a completed review, not missing
+  await p({ review_status: 5 });
+  assert.equal(await missing(), base);                         // اعتماد is a completed review, not missing
+  await p({ review_status: 0 });                               // leave it as found
+});
+
 test('scope: HR editor cannot see or edit finance', { skip }, async () => {
   const c = client(); await c.login('hred');
   const sum = await c.get('/tracker/summary');
