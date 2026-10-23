@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './lib/auth.jsx';
+import { useI18n } from './i18n/index.jsx';
 import Layout from './components/Layout.jsx';
 import { Loading, ToastHost } from './components/ui.jsx';
 import Login, { ForcePasswordChange } from './pages/Login.jsx';
@@ -28,6 +29,19 @@ function Guard({ perm, children }) {
 
 export default function App() {
   const { me, ready } = useAuth();
+  // Browser tab title follows the configured system name, same source and language rule the header uses
+  // (me.org_name_*, surfaced by /auth/me): current-language name → the other language's → t('app_title').
+  // Updates on initial load, on a Settings save (refresh() reloads me) and on a UI-language switch. Before
+  // sign-in me carries no org name, so it stays the default — never a stale name. index.html keeps the same
+  // default as its pre-hydration <title>.
+  const { lang, t } = useI18n();
+  useEffect(() => {
+    const org = me?.authenticated ? me : null;
+    const pick = lang === 'en'
+      ? (org?.org_name_en || org?.org_name_ar)
+      : (org?.org_name_ar || org?.org_name_en);
+    document.title = (pick && pick.trim()) || t('app_title');
+  }, [me, lang, t]);
   // a restore started from Settings → «النسخ الاحتياطي» (1.12.0): its progress replaces every page until it is dismissed
   const [watch, setWatch] = useState(readWatch);
   useEffect(() => { const f = () => setWatch(readWatch()); window.addEventListener('ets-restore-watch', f); return () => window.removeEventListener('ets-restore-watch', f); }, []);
