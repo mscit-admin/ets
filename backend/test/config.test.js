@@ -137,6 +137,25 @@ test('assertConfig refuses a weak sslmode inside DATABASE_URL for a remote host'
   } finally { Object.assign(cfg.config.db, saved); }
 });
 
+test('TRUST_PROXY: trust-all values are refused, safe values stay quiet', () => {
+  const { trustProxyProblem } = cfg;
+  for (const bad of ['true', 'TRUE', ' true ', '0.0.0.0/0', '::/0', true]) {
+    assert.match(trustProxyProblem(bad), /TRUST_PROXY=/, `should reject ${JSON.stringify(bad)}`);
+  }
+  for (const ok of ['loopback', 'linklocal', 'uniquelocal', '1', '2', '10.0.0.5', '10.0.0.0/8',
+    '127.0.0.1, 10.0.0.5', '::1', '', undefined, null]) {
+    assert.equal(trustProxyProblem(ok), null, `should accept ${JSON.stringify(ok)}`);
+  }
+  // assertConfig refuses to start on a trust-all setting, like the other insecure-setting checks
+  const old = cfg.config.security.trustProxy;
+  try {
+    cfg.config.security.trustProxy = 'true';
+    assert.throws(() => cfg.assertConfig(), /TRUST_PROXY=true trusts every X-Forwarded-For/);
+    cfg.config.security.trustProxy = 'loopback';
+    assert.doesNotThrow(() => cfg.assertConfig());
+  } finally { cfg.config.security.trustProxy = old; }
+});
+
 test('2FA secret envelope: v2 with key id, tag length enforced, rotation via APP_SECRET_OLD', () => {
   const c = cfg.config;
   const first = c.appSecret;

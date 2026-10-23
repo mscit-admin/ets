@@ -187,7 +187,7 @@ The wizard writes this file. Edit it by hand only if needed, then run `sudo syst
 | `MAX_FAILED_LOGINS` (5), `LOCK_MINUTES` (15), `LOCKOUT_RESET_MINUTES` (60) | Failures before sign-in to an account pauses, longest pause, quiet time after which the failure count restarts |
 | `LOGIN_RATE_LIMIT` (30), `API_RATE_LIMIT` (600) | Password / 2FA checks per IP per 15 min (and failures per account); any API request per IP per minute |
 | `BCRYPT_ROUNDS` (12) | Password hashing cost, 10–14 |
-| `TRUST_PROXY` (`loopback`) | Which proxy may set the client IP (`X-Forwarded-For`): nginx on the same server. Never `true` — see §9 for a load balancer |
+| `TRUST_PROXY` (`loopback`) | Which proxy may set the client IP (`X-Forwarded-For`): nginx on the same server. Safe values: `loopback` (default), a hop count, or the proxy's IP/subnet (or a comma list). **Never `true`** (trust every header) — the service now refuses to start with it; see §9 for a load balancer |
 | `LOG_DIR`, `LOG_LEVEL`, `ACCESS_LOG_DB` | Logging |
 | `ETS_BACKUP_DIR`, `ETS_BACKUP_KEEP_DAYS` | Backups |
 
@@ -251,3 +251,7 @@ API `LOGIN_RATE_LIMIT` per 15 min, `API_RATE_LIMIT` per min) and in the logs.
   `LOGIN_RATE_LIMIT` / `API_RATE_LIMIT` in `ets.env` moderately and restart the service.
 - The API's counters are kept in memory and start again when the service restarts (for example after an
   update); the per-account sign-in pause is stored in the database and survives restarts.
+- **Safe `TRUST_PROXY` values** are `loopback` (default — nginx on this server), a hop count, or the proxy's exact
+  IP / subnet (or a comma-separated list of them). `TRUST_PROXY=true` (or an all-addresses CIDR such as `0.0.0.0/0`)
+  trusts every `X-Forwarded-For` header, so any client could choose the IP it appears to have — escaping the per-IP
+  login limit and falsifying the logs. The service refuses to start with such a value and names the fix.

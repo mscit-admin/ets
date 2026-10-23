@@ -30,6 +30,38 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.3] — 2026-10-23 — Trust-proxy safety guard against X-Forwarded-For spoofing
+
+### Security
+- **Backend:** the service now refuses to start when `TRUST_PROXY` is set to a **trust-all** value — `true` / `'true'`
+  or an all-addresses CIDR (`0.0.0.0/0`, `::/0`) — with a clear, actionable message (`config.js`,
+  `trustProxyProblem`, checked in `assertConfig`). Such a value would make Express trust the whole `X-Forwarded-For`
+  chain, so any client could set its own IP address: it would win a fresh per-IP login rate-limit bucket on every
+  request (defeating `LOGIN_RATE_LIMIT`, `middleware/ratelimit.js`) and write a false IP to the logs. The default
+  `loopback` (nginx on this server appends the real client address on the right, which Express takes), a hop count,
+  and a proxy IP / subnet / comma list stay valid and quiet. This matches how the app already refuses to start on
+  other insecure settings (a weak `APP_SECRET`, an unencrypted remote database). Before this change `TRUST_PROXY=true`
+  failed to start anyway, but with an obscure `invalid IP address: true` from the proxy parser.
+
+### Tests
+- **Tests:** `backend/test/trust-proxy.test.js` — with the default `TRUST_PROXY=loopback` (as the running server
+  bootstraps it), a client-supplied `X-Forwarded-For` that changes on every request does **not** win a fresh per-IP
+  login bucket: the per-IP limiter still answers `429` after `LOGIN_RATE_LIMIT`. The test fails if the code is changed
+  so `req.ip` follows the client header under the default config. It also checks the per-account rate limit and the
+  per-account lockout (`services/lockout.js`) still fire whatever the header says. `config.test.js` covers
+  `trustProxyProblem` (trust-all refused, safe values quiet) and that `assertConfig` throws on `TRUST_PROXY=true`.
+
+### Docs
+- **Docs:** `02-Installation-Guide.md` (§6 variable table, §9) and `06-Security.md` state the safe `TRUST_PROXY`
+  values and that the service refuses to start with `true` / an all-addresses CIDR.
+
+### Upgrade notes
+- No migration, no setting change. The default (`loopback`) is unchanged. Only deployments that had wrongly set
+  `TRUST_PROXY=true` are affected — those could not start before this change either; set `TRUST_PROXY=loopback` (and,
+  behind a load balancer, configure nginx `real_ip` for the balancer's addresses only — 02 §9).
+
+---
+
 ## [1.12.2] — 2026-10-22 — Sessions: idle timeout counts only real user activity
 
 ### Security
