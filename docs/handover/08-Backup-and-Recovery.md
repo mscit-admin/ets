@@ -27,8 +27,10 @@ fallback when the web UI cannot be used.
 
 ## 2. The backup files
 
-All in `/var/backups/ets` (root only, 700), every artifact **encrypted with gpg (AES-256, tamper-evident)** using the
-backup key:
+All in `/var/backups/ets` — the directory is `root:ets 0750` and each artifact is `root:ets 0640`: root (the backup
+agent) owns and writes them, and the service group `ets` may **read** them so the web UI can stream them for download
+(§5a). The API never gets write access or root. Every artifact is **encrypted with gpg (AES-256, tamper-evident)**
+using the backup key:
 
 | File | Content | When |
 |---|---|---|
@@ -151,6 +153,39 @@ existing `backup.conf` into the database once.
 Every change and every job request is in the change history with readable sentences (old → new; secrets as
 «(تغيّر — لا يُعرض)»). Changing destinations or credentials, creating the SSH key and setting a passphrase ask for the
 password (and the 2FA code) again. Job requests are rate-limited (20 per 10 minutes per administrator).
+
+### 5a. Downloading a backup file (added 1.12.14)
+
+Each row of the backup files table (database / configuration / logs) has a **⬇ تنزيل / Download** button, plus a
+**SHA-256** link to fetch the matching checksum file for integrity verification. The file is streamed **exactly as it
+is on disk — still gpg/AES-256 encrypted**; the server never decrypts it and never asks for or exposes the backup key.
+The file is useless to anyone without the escrowed key/passphrase (§6), which is the point — so keep the downloaded
+copy as carefully as the backups themselves.
+
+Because downloading the full encrypted database off the server is data exfiltration, it is gated exactly like the
+other sensitive backup actions: admin + `cfg`, and a fresh **re-authentication (password, plus the 2FA code when
+enabled)**. Two endpoints:
+
+* `POST /api/backups/download/authorize` `{ file }` — re-authenticates and returns a short-lived token
+  (≈90 s), bound to that administrator and that artifact (it also covers the artifact's `.sha256` / `.meta` siblings).
+* `GET  /api/backups/download?file=<name>&token=<token>` — streams the bytes (`Content-Disposition: attachment`,
+  `application/octet-stream`, `no-store`). The token is in memory only (no database, no secret). Rate-limited (30 per
+  15 minutes per administrator; `ETS_BACKUP_DOWNLOAD_LIMIT`).
+
+The file name is validated with the same strict pattern as uploads (`ets-….gpg`, optionally `.sha256` / `.meta`) and
+the resolved real path must stay inside `/var/backups/ets` (symlinks and `..` are refused). Every download — the
+authorization and each streamed file — is written to the change history (who, which file, when).
+
+**File access / deploy note:** the API runs as `ets` and historically could not read `/var/backups/ets` (it was
+`root:root 0700`). For download, new installs make the directory `root:ets 0750` and ets-backup writes artifacts
+`root:ets 0640` (read-only for the group; see §2). **On an existing server, grant the read once** (no service
+restart needed; the next backup run keeps new files correct):
+
+```bash
+sudo chgrp -R ets /var/backups/ets
+sudo chmod 0750 /var/backups/ets
+sudo find /var/backups/ets -maxdepth 1 -type f -exec chmod 0640 {} +
+```
 
 ## 6. Key escrow — do this now, and check it every year
 

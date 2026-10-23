@@ -30,6 +30,46 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.14] — 2026-10-23 — Download encrypted backup files from the backup screen
+
+### Added
+- **Backend:** two endpoints in `routes/backups.js` to download a backup artifact of any kind (database `dump`,
+  `config`, `logs`) from Settings → «النسخ الاحتياطي». `POST /api/backups/download/authorize` `{file}`
+  re-authenticates (password + 2FA) and returns a short-lived (~90 s) token bound to that administrator and that
+  artifact; `GET /api/backups/download?file=<name>&token=<token>` then **streams the file exactly as it is on disk —
+  still gpg/AES-256 encrypted** (`Content-Disposition: attachment`, `application/octet-stream`, `no-store`,
+  streamed never buffered). The artifact's `.sha256` / `.meta` siblings are downloadable with the same token for
+  integrity verification. Rate-limited (30 per 15 minutes per administrator; `ETS_BACKUP_DOWNLOAD_LIMIT`).
+- **Frontend:** a ⬇ «تنزيل / Download» button and a **SHA-256** checksum link on every row of the backup files table
+  (database / configuration / logs) in `components/BackupCenter.jsx`, reusing the existing `ReauthModal` for the
+  password (+ 2FA) prompt and the `downloadFile` helper. A hint states the files are encrypted (AES-256) and need the
+  backup key/passphrase to restore. New AR/EN strings `bk_download*` and `err_download_reauth_required`.
+
+### Security
+- The download path **never decrypts** an artifact, never reads, requires or exposes the backup key/passphrase, and
+  logs no secret. Downloading the full encrypted database off the server is data exfiltration, so it is gated like the
+  strictest existing backup actions: admin + `cfg`, plus a fresh re-authentication (password, and the 2FA code when
+  enabled) — the GET accepts only an in-memory, user- and artifact-bound token (no database, no secret), error
+  `download_reauth_required` otherwise. File names are validated with the same strict `parseArtifact` + `.gpg`
+  pattern as `/upload`, and the resolved **real path** (`realpathSync`) must stay inside `ETS_BACKUP_DIR`, so `..`,
+  absolute paths and symlinks escaping the directory are refused (`invalid_file_name` / `backup_file_not_found`).
+  Both the authorization and each streamed file are written to the change history (`backup_download_authorize`,
+  `backup_download`: who, which file, when).
+
+### Upgrade notes
+- **Deployment:** so the unprivileged API (`ets`) can read the artifacts it streams, `/var/backups/ets` is now
+  `root:ets 0750` and `ets-backup` writes each artifact `root:ets 0640` (read-only for the group — the API still
+  gets **no write access and no root**). New installs get this from `deploy/install.sh` and `deploy/scripts/backup.sh`.
+  **On an existing server grant the read once** (no service restart needed; later backup runs keep new files correct):
+  ```bash
+  sudo chgrp -R ets /var/backups/ets
+  sudo chmod 0750 /var/backups/ets
+  sudo find /var/backups/ets -maxdepth 1 -type f -exec chmod 0640 {} +
+  ```
+  No database migration.
+
+---
+
 ## [1.12.13] — 2026-10-23 — Users overview: summary card beside the donut, stats as rows
 
 ### Changed
