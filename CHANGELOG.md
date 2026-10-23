@@ -1957,7 +1957,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/8d0af85...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/3d0f83e...HEAD
+[1.12.3]: https://github.com/mscit-admin/ets/compare/8d0af85...3d0f83e
 [1.12.2]: https://github.com/mscit-admin/ets/compare/91587f6...8d0af85
 [1.12.1]: https://github.com/mscit-admin/ets/compare/4eab0ae...91587f6
 [1.12.0]: https://github.com/mscit-admin/ets/compare/2435711...4eab0ae
