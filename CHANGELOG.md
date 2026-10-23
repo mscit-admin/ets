@@ -30,6 +30,24 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.13] — 2026-10-23 — Users overview: summary card beside the donut, stats as rows
+
+### Changed
+- **Frontend:** the dashboard Users overview (`components/UsersOverview.jsx`) now lays the combined
+  «المستخدمون» KPI card and the «عرض حسب» breakdown-donut card **side by side in one row** (new `.uo-row`
+  flex container in `styles/app.css`) instead of stacking them vertically; the row follows the page direction
+  (summary leading, donut trailing) in both Arabic (RTL) and English (LTR) and **wraps back to a stack** on
+  narrow / phone widths. The summary keeps a compact width (`flex: 1 1 280px; max-width: 360px`) so the donut
+  cell (`flex: 1 1 360px`) gets the room it needs, replacing the donut card's former `max-width: 540px` centring.
+- **Frontend:** the combined «المستخدمون» KPI card now shows its five figures (total / active / online /
+  disabled / deleted) as a **vertical list of rows** — each `.uo-stat` is a `space-between` row with the label on
+  the leading side and the number on the trailing side, separated by a subtle divider — instead of a horizontal
+  row of centred columns. Same figures, colours (`.nc-value` green/blue/orange/red) and links (online →
+  `/users?tab=online`, deleted → `/users?tab=deleted`); `space-between` and logical properties keep it correct in
+  RTL and LTR.
+
+---
+
 ## [1.12.12] — 2026-10-23 — Users overview: one donut with a dimension selector
 
 ### Changed
@@ -2136,7 +2154,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/b53272a...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/b6c4318...HEAD
+[1.12.13]: https://github.com/mscit-admin/ets/compare/b53272a...b6c4318
 [1.12.12]: https://github.com/mscit-admin/ets/compare/83d44aa...b53272a
 [1.12.11]: https://github.com/mscit-admin/ets/compare/6d1c14a...83d44aa
 [1.12.10]: https://github.com/mscit-admin/ets/compare/1e244b8...6d1c14a
