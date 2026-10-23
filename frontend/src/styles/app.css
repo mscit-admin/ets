@@ -257,11 +257,17 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 /* Combined headline KPI card — stat grid flows with the page direction (RTL/LTR) via logical properties. */
 .uo-summary { margin: 0 0 16px; }
 .uo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px 20px; }
-.uo-stat { display: flex; flex-direction: column; gap: 2px; }
+/* each stat is a self-contained unit: number directly above its label, both centred, so the pair reads as one
+   block and stays grouped in RTL and LTR alike (the number keeps its own ltr digits via .nc-value). */
+.uo-stat { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; }
+.uo-stat .nc-value, .uo-stat .nc-label { width: 100%; text-align: center; }
 .uo-stat-link { text-decoration: none; border-radius: var(--radius); margin: -6px -8px; padding: 6px 8px; transition: background .12s; }
 .uo-stat-link:hover { background: var(--gray-100); }
-.uo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-.uo-grid .card { margin: 0; }
+/* single breakdown donut: one constrained, centred card so it never looks lost in a wide empty area. */
+.uo-dim-card { max-width: 540px; margin: 0 auto; }
+.uo-dim-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 14px; }
+.uo-dim-label { font-size: 12.5px; font-weight: 600; color: var(--gray-700); }
+.uo-dim-select { max-width: 260px; }
 .donut-title { font-size: 13.5px; font-weight: 700; color: var(--gray-800); margin: 0 0 12px; }
 .donut-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .donut-svg { width: 132px; height: 132px; flex: none; }
@@ -277,12 +283,6 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .dl-link { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; }
 .dl-link:hover { color: var(--primary-blue); }
 .donut-empty { margin: 6px 0 0; }
-.ubar-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
-.ubar-row { display: grid; grid-template-columns: minmax(70px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; }
-.ubar-name { color: var(--gray-700); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ubar-track { height: 10px; border-radius: 999px; background: var(--gray-200); overflow: hidden; }
-.ubar-fill { display: block; height: 100%; border-radius: 999px; min-width: 2px; }
-.ubar-val { color: var(--gray-800); }
 
 /* ---------- tables / list view ---------- */
 .table-wrap { overflow-x: auto; }
