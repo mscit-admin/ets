@@ -112,6 +112,50 @@ weekly test restore and `/etc/cron.d/ets-backup` is gone; `/etc/ets/backup.conf`
 Settings → «النسخ الاحتياطي» shows the agent working; confirm the escrow of the backup key there; set up the offsite
 destinations (08 §4); the first hourly run keeps the existing dailies (08 §3).
 
+## 3a. Promote a version to production (1.12.19, Phase 2)
+
+The one-button test→production pipeline. Design and the full operator setup are in
+[13 — Release Promotion](13-Release-Promotion-Design.md) (§8a for keys, deploy keys, unit install/enable and the
+staging dry-run rehearsal that MUST pass before first real use). Two ROOT agents do all privileged work; the API
+(user `ets`) only records a signed intent — exactly the backup trust split.
+
+**Normal promotion (happy path):**
+
+1. On the **test** server UI: Settings → «الترقية والنشر», pick the released version (newer than production), review
+   the what-changed / Upgrade notes, press Promote, pass password + OTP re-auth and type the version to confirm.
+2. `ets-release-publisher` (test, root) signs the manifest, pushes the signed tag `v<version>` and
+   `deploy/production-release.json(+.sig)`, and the row goes to `publishing`. Watch `/var/log/ets-release-publisher.log`.
+3. `ets-deploy-agent` (production, root) fetches, verifies (signature, ancestor, newer, fresh/nonce, prev-match),
+   takes a **pre-deploy backup**, checks out the tag, runs `update.sh`, and **health-gates** `/api/health`. Watch
+   `/var/log/ets-deploy-agent.log`.
+4. On success the prod agent signs + pushes `production-status.json`; the publisher pulls it and the test UI goes
+   green (`succeeded`). An S-REL alert goes to admins (Phase 3 wires the alert class).
+
+**If the deploy fails the health gate:**
+
+* **No migration ran + `AUTO_ROLLBACK=on`** → the agent auto code-rolls-back (checkout prev commit + `update.sh`),
+  ends `rolled_back`. No DB action needed.
+* **A migration ran** → the agent STOPS at `failed`, records `backup_ref` and `needs_db_restore=true`. The schema is
+  ahead of the old code, so a **DB restore is required** (§5.3): on production, roll the code back and restore the
+  pre-deploy backup:
+
+  ```bash
+  sudo git -C /opt/ets-src checkout <prev tag>       # e.g. the version in production-status.json prev_version
+  sudo ETS_ENV_FILE=/etc/ets/ets.env /usr/local/sbin/ets-deploy-agent dry-run   # confirm state first
+  sudo ets-restore <backup_ref from the failed row / status>   # restores the pre-deploy DB (data since then is lost)
+  cd /opt/ets-src && sudo bash deploy/scripts/update.sh         # redeploy the previous code
+  ```
+
+  (Automatic DB rollback is deliberately **not** done; it is the Phase-3 / manual path.)
+
+**Manual rollback (break-glass):** the Rollback button on the test UI records a `rollback` intent to the previous
+version; the same pipeline runs in reverse with the §5.3 DB caveat shown before confirming.
+
+**Diagnostics:** `systemctl status ets-release-publisher.timer ets-deploy-agent.timer`; the two agent logs;
+`ets-deploy-agent dry-run` on production verifies the current signal without deploying (reports `already_current`
+when prod already runs it); a rejected signal is logged with its reason (`unknown_signer`, `non_ancestor`,
+`downgrade`, `stale`, `replayed_nonce`, `prev_mismatch`) and nothing is deployed.
+
 ## 4. Periodic tasks
 
 | Frequency | Task |

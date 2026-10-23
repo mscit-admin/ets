@@ -1,0 +1,11 @@
+[Unit]
+Description=ETS release publisher — poll for promotion requests and pull production status every 60 s
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+AccuracySec=10s
+Unit=ets-release-publisher.service
+
+[Install]
+WantedBy=timers.target

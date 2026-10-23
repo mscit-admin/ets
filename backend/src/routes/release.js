@@ -102,6 +102,13 @@ const OPEN = ['requested', 'publishing', 'deploying'];
 const signKey = () => { try { return fs.readFileSync(appConfig.release.signKeyFile, 'utf8'); } catch { return null; } };
 const signingReady = () => !!signKey();
 
+// Wake the root publisher (ets-release-publisher.path watches /var/lib/ets/inbox/.release-wake); otherwise the timer
+// picks the row up within 60 s. A separate wake file from the backup agent's .wake so the two .path units never cross.
+const STATE_DIR = process.env.ETS_STATE_DIR || '/var/lib/ets';
+function wake() {
+  try { fs.writeFileSync(path.join(STATE_DIR, 'inbox', '.release-wake'), String(Date.now()), { mode: 0o600 }); } catch { /* the timer picks it up */ }
+}
+
 // ---------------------------------------------------------------- GET /versions
 r.get('/versions', async (req, res) => {
   const st = await agentStatus();
@@ -213,7 +220,8 @@ async function recordIntent(req, res, { intent }) {
   }
   await logSystem('release_requested', `production ${intent} requested: ${version} (${commit.slice(0, 10)})`,
     { promotion_id: Number(row.id), version, commit, intent, by: req.user.username });
-  res.status(202).json({ promotion: publicPromotion(row), phase: 1, note: 'Phase 1 records the promotion request; the real deploy agents are wired in Phase 2.' });
+  wake();   // Phase 2: ets-release-publisher re-reads, signs, pushes; Phase 1 only records the intent.
+  res.status(202).json({ promotion: publicPromotion(row), note: 'Promotion recorded; the root release agents sign, push and deploy it (see docs/handover/13).' });
 }
 
 r.post('/promote', promoteLimiter, (req, res) => recordIntent(req, res, { intent: 'deploy' }));

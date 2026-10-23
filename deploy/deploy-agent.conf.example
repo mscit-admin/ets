@@ -1,0 +1,39 @@
+# /etc/ets/deploy-agent.conf  — PRODUCTION server, ets-deploy-agent (1.12.19, Phase 2). Root-owned, mode 600.
+# Read as DATA (KEY=value), never executed. NO secrets here — only paths and switches. Copy to
+# /etc/ets/deploy-agent.conf, fill it in, then: systemctl enable --now ets-deploy-agent.timer ets-deploy-agent.path
+
+# The git WORKING COPY on production (a real clone that update.sh runs from — NOT /opt/ets, the rsync build copy).
+REPO_DIR=/opt/ets-src
+REPO_REMOTE=origin
+BRANCH=main
+
+# Read-only pull credential for `git fetch` (a read deploy key, or omit if the repo is reachable without one over the
+# VPN). PULL_KEY is preferred for fetch; DEPLOY_KEY (write) is used to PUSH the status file back.
+PULL_KEY=/etc/ets/prod-pull-key
+DEPLOY_KEY=/etc/ets/prod-status-deploy-key
+
+# The ONLY release signers this production box will trust. Paste the test server's release-sign.pub into this dir
+# (one *.pub per trusted signer; rotation = add/remove files). A signal signed by anything else is rejected.
+SIGNERS_DIR=/etc/ets/release-trust
+
+# The PROD status signing key (Ed25519) that signs production-status.json. Root 600; public half → the test server's
+# STATUS_SIGNERS_DIR so the publisher can verify the status it pulls.
+STATUS_KEY=/etc/ets/deploy-status.key
+
+# Replay / staleness window (days) and the downgrade/replay guards are enforced by verify.mjs.
+FRESHNESS_DAYS=14
+
+# Automatic rollback on a FAILED health check. 'on': if NO migration ran, the agent checks out the previous commit
+# and re-runs update.sh (code rollback). If a migration ran, the schema is ahead of the old code, so the agent STOPS
+# at 'failed' and records backup_ref + needs_db_restore=true — the DB rollback (ets-restore <backup_ref>) is the §5.3
+# manual / Phase-3 path and is NEVER done automatically. 'off': stop at 'failed' and wait for a one-click rollback.
+AUTO_ROLLBACK=on
+
+# Health gate: where and how long to poll after update.sh (PORT is read from ets.env if HEALTH_URL is unset).
+# PORT=3000
+# HEALTH_URL=http://127.0.0.1:3000/api/health
+HEALTH_TIMEOUT=120
+UPDATE_TIMEOUT=3600
+
+# ets-backup command for the mandatory pre-deploy backup (default /usr/local/bin/ets-backup).
+# BACKUP_CMD=/usr/local/bin/ets-backup

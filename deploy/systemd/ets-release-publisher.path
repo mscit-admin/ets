@@ -1,0 +1,11 @@
+# The API touches /var/lib/ets/inbox/.release-wake when an admin records a promotion: the publisher starts at once
+# instead of within 60 s. A separate wake file from the backup agent's .wake so the two .path units never cross-fire.
+[Unit]
+Description=ETS release publisher — start when the web UI records a promotion
+
+[Path]
+PathChanged=/var/lib/ets/inbox/.release-wake
+Unit=ets-release-publisher.service
+
+[Install]
+WantedBy=paths.target

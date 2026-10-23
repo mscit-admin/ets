@@ -1,0 +1,12 @@
+# On production the timer poll (every 30 s) is the primary driver — the agent fetches and then acts. This .path unit
+# lets an operator (or a VPN-side cron that runs `git fetch`) wake the agent at once by touching
+# /var/lib/ets/inbox/.deploy-wake, without waiting for the next poll.
+[Unit]
+Description=ETS deploy agent — start at once when poked
+
+[Path]
+PathChanged=/var/lib/ets/inbox/.deploy-wake
+Unit=ets-deploy-agent.service
+
+[Install]
+WantedBy=paths.target

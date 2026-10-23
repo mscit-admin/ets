@@ -1,0 +1,32 @@
+# /etc/ets/release-publisher.conf  — TEST server, ets-release-publisher (1.12.19, Phase 2). Root-owned, mode 600.
+# Read as DATA (KEY=value), never executed. NO secrets here — only paths; the keys live in their own root-600 files.
+# Copy this to /etc/ets/release-publisher.conf and fill it in, then: systemctl enable --now
+#   ets-release-publisher.timer ets-release-publisher.path
+
+# The git WORKING COPY the publisher operates on (a real clone, NOT /opt/ets which is an rsync build copy). The
+# publisher fetches, resets to the branch, tags, writes the signal and pushes from here.
+REPO_DIR=/opt/ets-src
+REPO_REMOTE=origin
+BRANCH=main
+
+# The write-restricted git push credential (ssh deploy key with WRITE on github.com/mscit-admin/ets, OR an https
+# remote with a fine-grained PAT baked into the remote URL). Root 600; never in the repo. Used only to push the tag
+# and the signal — authenticity is the Ed25519 signature, not this key, so a leak cannot forge a deploy.
+DEPLOY_KEY=/etc/ets/release-deploy-key
+
+# Signing: the release private key (set via ETS_RELEASE_SIGN_KEY, default /etc/ets/release-sign.key) is used by the
+# API to sign the manifest; the publisher re-verifies against these allow-listed signer public keys before pushing.
+SIGNERS_DIR=/etc/ets/release-trust
+
+# The PROD status key's public half(s) — the publisher verifies the pulled production-status.json against these.
+STATUS_SIGNERS_DIR=/etc/ets/status-trust
+
+# Annotated SIGNED tag per release (the confirmed decision). Needs git user.signingkey + gpg configured for root.
+# Set to off to fall back to an annotated (unsigned) tag if gpg is not available.
+TAG_SIGN=on
+
+# Identity for the signal commit the publisher makes.
+GIT_NAME=ETS release publisher
+GIT_EMAIL=release@ets.local
+
+FRESHNESS_DAYS=14
