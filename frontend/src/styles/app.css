@@ -707,6 +707,37 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .erp-scale { display: grid; gap: 4px; max-width: 320px; }
 .erp-scale-bar { height: 8px; border-radius: 999px; }
 .erp-scale-ends { display: flex; justify-content: space-between; color: var(--text-muted); }
+/* ERP footer stats (moved inside the ERP card): four accent-tinted stat tiles with a subtle 3D splash.
+   Gradients are horizontally symmetric so the look is identical in RTL and LTR; layout uses flex-wrap + logical padding. */
+.erp-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; padding: 14px 16px 2px; border-top: 1px solid var(--border); }
+.erp-stat {
+  --acc: var(--erp-navy); --acc-bg: var(--it-fn-bg);
+  flex: 1 1 160px; min-width: 150px;
+  display: grid; align-content: start; gap: 2px;
+  padding: 14px 16px; border-radius: var(--radius-lg);
+  background:
+    radial-gradient(78% 95% at 50% -22%, color-mix(in srgb, var(--acc) 16%, #fff), transparent 62%),
+    radial-gradient(120% 88% at 50% 118%, color-mix(in srgb, var(--acc-bg) 85%, #fff), transparent 58%),
+    linear-gradient(180deg, #fff 0%, color-mix(in srgb, var(--acc-bg) 42%, #fff) 100%);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, .05),
+    0 10px 18px -12px color-mix(in srgb, var(--acc) 42%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, .85),
+    inset 0 0 0 1px color-mix(in srgb, var(--acc) 15%, var(--border));
+  transition: box-shadow .15s, transform .15s;
+}
+.erp-stat.green { --acc: var(--green-text); --acc-bg: var(--green-bg); }
+.erp-stat.blue { --acc: var(--blue-text); --acc-bg: var(--blue-bg); }
+.erp-stat.orange { --acc: var(--orange-text); --acc-bg: var(--orange-bg); }
+.erp-stat .nc-value { font-size: 26px; }
+.erp-stat:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, .05),
+    0 14px 22px -12px color-mix(in srgb, var(--acc) 52%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, .9),
+    inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, var(--border));
+}
 .live-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px;
   background: var(--gray-bg); color: var(--gray-text); white-space: nowrap; }
 .live-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--gray-500); }
@@ -723,10 +754,14 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   .erp-name { font-size: 16px; }
   .erp-state { font-size: 14px; }
   .erp-row { grid-template-columns: 30px minmax(0, 1fr) 48px 56px; gap: 8px; }
+  .erp-stats { gap: 10px; }
+  .erp-stat { flex-basis: calc(50% - 5px); min-width: 0; padding: 12px 14px; } /* clean 2x2 on narrow */
 }
 @media (prefers-reduced-motion: reduce) {
   .erp-chip.flash rect { animation: none; stroke: #f2b233; stroke-width: 3; }
   .erp-row-bar i, .erp-wedge { transition: none; }
+  .erp-stat { transition: none; }
+  .erp-stat:hover { transform: none; }
 }
 
 /* ---- exclusion reason (1.5.0): reason form, searchable multi-select, badge on excluded rows ---- */

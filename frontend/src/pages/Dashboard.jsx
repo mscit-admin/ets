@@ -11,7 +11,7 @@ import { Icon } from '../components/Icon.jsx';
 import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { projectHealth } from '../lib/health.js';
 import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
-import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
+import { Card, ErrorBox, Indicator, Loading, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { UsersOverview } from '../components/UsersOverview.jsx';
 
@@ -84,15 +84,27 @@ export default function Dashboard() {
             <ErpLegend segments={segments} />
           </div>
         </div>
+        <div className="erp-stats">
+          <div className="erp-stat">
+            <span className="nc-label">{t('functions_counted')}</span>
+            <b className="nc-value">{counts.functions}</b>
+            {counts.report_items > 0 && <span className="nc-sub">{t('plus_report_items', { n: counts.report_items })}</span>}
+          </div>
+          <div className="erp-stat green">
+            <span className="nc-label">{t('completed_functions')}</span>
+            <b className="nc-value green">{counts.done}</b>
+          </div>
+          <div className="erp-stat blue">
+            <span className="nc-label">{t('tested_ok')}</span>
+            <b className="nc-value blue">{tests[2]}</b>
+            <span className="nc-sub">{tests[1]} {t('ts_1')} · {tests[3]} {t('ts_3')}</span>
+          </div>
+          <div className="erp-stat orange">
+            <span className="nc-label">{t('with_notes')}</span>
+            <b className="nc-value orange">{counts.notes}</b>
+          </div>
+        </div>
       </section>
-
-      <div className="grid-cards">
-        <NumberCard label={t('functions_counted')} value={counts.functions}
-          sub={counts.report_items > 0 ? t('plus_report_items', { n: counts.report_items }) : undefined} />
-        <NumberCard label={t('completed_functions')} value={counts.done} color="green" />
-        <NumberCard label={t('tested_ok')} value={tests[2]} sub={`${tests[1]} ${t('ts_1')} · ${tests[3]} ${t('ts_3')}`} color="blue" />
-        <NumberCard label={t('with_notes')} value={counts.notes} color="orange" />
-      </div>
 
       {ps && (() => {
         const m = scheduleModel({ ...ps.schedule, current_pct: ps.total.pct });
