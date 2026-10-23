@@ -30,6 +30,19 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.11] — 2026-10-23 — Users overview: one combined KPI card
+
+### Changed
+- **Frontend:** the dashboard Users overview (`components/UsersOverview.jsx`) now shows the headline user figures
+  in a **single «المستخدمون» / Users KPI card** instead of three separate `NumberCard`s. The one card presents
+  total, active, online now, disabled and deleted as a row of stat items (big number + short label) reusing the
+  existing `NumberCard` typography and colour accents (`.uo-stats` / `.uo-stat` in `styles/app.css`). The online
+  and deleted figures are links (`/users?tab=online`, `/users?tab=deleted`) with the same navigate-on-plain-click
+  behaviour as the donut slices; the grid lays out correctly in both RTL and LTR via logical properties. The bar
+  chart and the four donuts are unchanged. New i18n key `uo_summary` (AR/EN). No backend or API change.
+
+---
+
 ## [1.12.10] — 2026-10-23 — Users overview: two-factor donut
 
 ### Added
@@ -2098,7 +2111,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/6d1c14a...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/83d44aa...HEAD
+[1.12.11]: https://github.com/mscit-admin/ets/compare/6d1c14a...83d44aa
 [1.12.10]: https://github.com/mscit-admin/ets/compare/1e244b8...6d1c14a
 [1.12.9]: https://github.com/mscit-admin/ets/compare/3177ecb...1e244b8
 [1.12.8]: https://github.com/mscit-admin/ets/compare/bbf838f...3177ecb

@@ -254,6 +254,12 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 
 /* ---------- dashboard: users overview (1.12.9) ---------- */
 .users-overview { margin-bottom: 18px; }
+/* Combined headline KPI card — stat grid flows with the page direction (RTL/LTR) via logical properties. */
+.uo-summary { margin: 0 0 16px; }
+.uo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 14px 20px; }
+.uo-stat { display: flex; flex-direction: column; gap: 2px; }
+.uo-stat-link { text-decoration: none; border-radius: var(--radius); margin: -6px -8px; padding: 6px 8px; transition: background .12s; }
+.uo-stat-link:hover { background: var(--gray-100); }
 .uo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .uo-grid .card { margin: 0; }
 .donut-title { font-size: 13.5px; font-weight: 700; color: var(--gray-800); margin: 0 0 12px; }
