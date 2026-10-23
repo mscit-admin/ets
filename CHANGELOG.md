@@ -30,6 +30,47 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.6] — 2026-10-23 — Settings screen organized into tabs
+
+### Changed
+- **Frontend:** the Settings screen is no longer one long scroll — its sections are grouped into tabs
+  (`pages/Settings.jsx`): «عام» (المخطط الزمني، عام، الهوية), «الأمان والجلسة» (التحقق بخطوتين، الاعتماد، الأمان،
+  حفظ السجلّات), «الإشعارات» (الجدولة والعتبات ومصفوفة السياسات), «النسخ الاحتياطي» (للمدير فقط), «متقدّم» (تصدير/
+  استيراد البيانات، معلومات النظام). The active tab is kept in the query string (`/settings?tab=security`), matching
+  the Users and Approvals screens. Pure layout/navigation change — no setting's behaviour, API call or data changed.
+- **Permissions preserved exactly:** every section keeps its existing guard; the «النسخ الاحتياطي» tab appears only
+  for an administrator, and export/import buttons stay gated by `exp`/`imp`.
+
+### Upgrade notes
+- No migration, no setting change. Old deep-links still work: `/settings#backups`, `#notifications`, `#timeline`
+  (and `/settings?restored=1#backups` from the restore wizard) open the matching tab and still scroll into view.
+
+---
+
+## [1.12.5] — 2026-10-23 — the sign-in page always explains an expired session
+
+### Fixed
+- **Frontend:** when a session ended on the server and the browser learned of it through a background request —
+  a `401` on a data/presence poll, or the live stream's `session_ended` — rather than the idle tracker's own
+  timer, the sign-in page appeared bare with no explanation. It now shows the «انتهت الجلسة. سجّل الدخول مجدداً» /
+  "Your session has ended. Sign in again" notice in every case (`lib/auth.jsx`). The unauthorized handler passes
+  the end-of-session through as an `ended` reason (reusing the existing mechanism and i18n keys), and a refresh
+  never clobbers a more specific reason (`idle`, `expired`) that an in-flight check already recorded; a deliberate
+  sign-out still shows no notice. This closes the «no reload, no error» gap a user saw when a session expired while
+  the tab was backgrounded or the machine asleep — the expired session is surfaced promptly and in place (no
+  full-page reload) for foreground idle, return from background/sleep, absolute expiry, and a session ended
+  elsewhere. The server remains the sole authority; only the client-side notice changed.
+
+### Notes
+- Investigated a report of the page reloading by itself with `HTTP 499` on `GET /` and `/favicon.ico` after a
+  session expired. The app never reloads itself on expiry (it renders the sign-in page in place, confirmed by
+  E2E: zero self-navigations); the self-reload is the browser restoring a discarded or slept tab, and the `499`
+  is nginx recording that the browser aborted that in-flight navigation. Both `/` and `/favicon.ico` return
+  `index.html` (`text/html`) through the SPA fallback (`try_files $uri /index.html`; there is no `favicon.ico`
+  file, only `favicon.svg`) — expected, benign behaviour, not an application fault.
+
+---
+
 ## [1.12.4] — 2026-10-23 — «المتصلون الآن» as a tab inside the Users screen
 
 ### Changed
@@ -1976,7 +2017,9 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/c1285ef...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/badafd9...HEAD
+[1.12.6]: https://github.com/mscit-admin/ets/compare/cc064d9...badafd9
+[1.12.5]: https://github.com/mscit-admin/ets/compare/c1285ef...cc064d9
 [1.12.4]: https://github.com/mscit-admin/ets/compare/3d0f83e...c1285ef
 [1.12.3]: https://github.com/mscit-admin/ets/compare/8d0af85...3d0f83e
 [1.12.2]: https://github.com/mscit-admin/ets/compare/91587f6...8d0af85
