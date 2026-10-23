@@ -30,6 +30,49 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.16] — 2026-10-23 — Move a whole application to another department
+
+### Added
+- **Move an entire application (with all its functions / report items) from one department ("module", الإدارة) to
+  another.** A new «نقل التطبيق» / "Move application" action on the application header (users with `mov`) opens a dialog
+  to pick the destination department and a required reason (3–500 characters, spaces not counted — the item-move rule),
+  shows the before → after impact on both departments and the project, and moves the application — directly or through a
+  two-lead approval. The application keeps its id, weight, functions (ids, codes, values, statuses, provenance) and
+  everything else; only its `department_id` changes. A «منقول من …» badge on the header records where it came from.
+  - **Backend:** `services/app-move.js` (`moveApplication`, `moveAppNeedsApproval`, `checkAppMovable`, `appMovesOf`,
+    `approveAppMove`, `isDeptApprover`); endpoints `GET /tracker/app-move-targets`, `POST
+    /tracker/applications/:id/move-dept[/preview]` (`routes/tracker.js`). The application provenance is in
+    `application_moves` (mirrors `function_moves`).
+  - **Weight (fixed mode):** a department's weight is **derived** — the sum of its applications' weights — so the
+    application's weight follows it with **no mutation**: the source department's total decreases by exactly the
+    application's weight and the destination's increases by it, leaving the overall weight sum unchanged. There is no
+    stored department weight and no department weight cap, so nothing can overflow or need clamping. **Auto mode:** a
+    department's weight is the sum of its applications' counted item weights, which likewise follow the application —
+    nothing to transfer. One strict audit row for the application move (`move` on `application`), plus — in fixed mode —
+    the two departments' derived weight changes (`update` on `department`).
+  - **Approval:** a new request kind `move_application`. When the initiator is a lead (`apv_dept`) of BOTH departments,
+    holds `cfg`/`apv_final`, or approvals are off → the move applies directly; otherwise a request needs the SOURCE
+    department's team lead, then the DESTINATION department's (one approval when the same person leads both; never the
+    requester). On the final approval the move is applied in the requester's name (`routes/approvals.js`,
+    `services/edits.js`). The 1.12.1 Approvals filters/labels, the Excel export (`services/export-labels.js`,
+    `routes/export.js`) and the audit sentences (`frontend/src/lib/audit.js`) handle the new kind, AR+EN. A T9
+    `app_moved_in` alert tells the destination department's users (`services/notify-*`).
+  - **Permission:** the existing `mov` is reused — no new permission. A regular member granted `mov` who is not a lead
+    of both departments goes through the two-lead approval.
+  - **Guards (409):** the application already in the destination department (`move_same_dept`), a pending edit / move /
+    import request on the application or its items (`move_app_pending_request`), and a name already used by another
+    application of the destination department (`move_app_name_conflict`).
+
+### Upgrade notes
+- **Database:** new migration `backend/src/db/migrations/022_move_applications.sql` — creates `application_moves`,
+  adds `move_application` to the `edit_requests` kind check and extends the move-target check (a `move_application`
+  request carries a destination department but no destination application), extends `edit_request_items` kind check to
+  allow an `application` item, and indexes `edit_requests(target_department_id)` for pending rows. Forward-only and
+  idempotent (`CREATE TABLE IF NOT EXISTS`, `DROP CONSTRAINT IF EXISTS` then `ADD`); it runs with `update.sh` like any
+  other migration. No data backfill or operator action beyond running the migration.
+
+---
+
 ## [1.12.15] — 2026-10-23 — Dashboard: function-count stats moved inside the ERP card
 
 ### Changed

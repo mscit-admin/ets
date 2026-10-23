@@ -44,7 +44,7 @@ const ar = {
   st_pending: 'بانتظار الاعتماد', st_applied: 'معتمدة ومطبّقة', st_rejected: 'مرفوضة', st_superseded: 'استُبدلت بملف أحدث',
   st_no_changes: 'بلا تغييرات',
   rk_function: 'تعديل وظيفة', rk_bulk: 'تعديل جماعي', rk_report: 'التقارير', rk_add_function: 'إضافة وظيفة',
-  rk_remove_function: 'إزالة وظيفة', rk_restore_function: 'استعادة وظيفة', rk_move_function: 'نقل بنود',
+  rk_remove_function: 'إزالة وظيفة', rk_restore_function: 'استعادة وظيفة', rk_move_function: 'نقل بنود', rk_move_application: 'نقل تطبيق',
   kind_report: 'التقارير', kind_weight: 'وزن التطبيق', fn_add: 'إضافة وظيفة', fn_removed: 'مُزالة', fn_present: 'موجودة',
   target_reports: 'التقارير',
   // project status indicators
@@ -113,7 +113,7 @@ const en = {
   st_pending: 'Awaiting approval', st_applied: 'Approved and applied', st_rejected: 'Rejected', st_superseded: 'Replaced by a newer file',
   st_no_changes: 'No changes',
   rk_function: 'Function edit', rk_bulk: 'Bulk edit', rk_report: 'Reports', rk_add_function: 'Add function',
-  rk_remove_function: 'Remove function', rk_restore_function: 'Restore function', rk_move_function: 'Move items',
+  rk_remove_function: 'Remove function', rk_restore_function: 'Restore function', rk_move_function: 'Move items', rk_move_application: 'Move application',
   kind_report: 'Reports', kind_weight: 'Application weight', fn_add: 'Add function', fn_removed: 'Removed', fn_present: 'Present',
   target_reports: 'Reports',
   k_overall: 'Overall project progress', k_fn_only: 'Functions only', k_functions: 'Functions counted',

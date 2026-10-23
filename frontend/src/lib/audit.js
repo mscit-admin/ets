@@ -220,6 +220,29 @@ export function makeAudit({ t, lang }) {
         if (ctx.bulk) notes.push(t('au_move_bulk', { n: ctx.count ?? '' }));
         break;
       }
+      case 'move:application': {
+        // «نقل أحمد التطبيق «الخدمة الذاتية» من «الموارد البشرية» إلى «المالية» — نُقل وزن 5.00 — السبب: «…»»
+        const n = r.new_value || {};
+        const appName = (lang === 'en' && ctx.app_name_en) || ctx.app_name_ar || ctx.app_name_en || r.entity_id || '';
+        const dnm = k => (lang === 'en' && ctx[k + '_name_en']) || ctx[k + '_name_ar'] || ctx[k + '_name_en'] || ctx[k + '_id'] || '';
+        const w = +ctx.app_weight || 0;
+        const weight = ctx.weight_mode === 'auto' ? t('au_amove_weight_auto') : t('au_amove_weight', { share: share2(w) });
+        text = t('au_amove', { who: person({ full_name: r.full_name, username: r.username }), app: quote(appName),
+          from: dnm('from_dept'), to: dnm('to_dept'), weight, reason: quote(short(String(n.reason ?? ''), 200)) });
+        if (ctx.src_dept_weight && ctx.dst_dept_weight && ctx.weight_mode !== 'auto') {
+          notes.push(t('au_amove_weights', { src: dnm('from_dept'), src_from: num(ctx.src_dept_weight.before), src_to: num(ctx.src_dept_weight.after),
+            dst: dnm('to_dept'), dst_from: num(ctx.dst_dept_weight.before), dst_to: num(ctx.dst_dept_weight.after) }));
+        }
+        break;
+      }
+      case 'update:department': {
+        lines = diff(r.old_value, r.new_value);
+        const side = ctx.side === 'source' ? 'from' : 'to';
+        const dnm2 = (lang === 'en' && ctx[side + '_dept_name_en']) || ctx[side + '_dept_name_ar'] || ctx[side + '_dept_name_en'] || ctx[side + '_dept_id'] || r.entity_id;
+        text = lines.length === 1 && lines[0].field === 'weight' ? t('au_update_dept_weight', { dept: quote(dnm2), from: lines[0].from, to: lines[0].to }) : null;
+        if (ctx.move && ctx.reason) notes.push(t('au_weight_move', { reason: ctx.reason }) + (ctx.move_reason ? ' — ' + quote(short(String(ctx.move_reason), 200)) : ''));
+        break;
+      }
       case 'create:function': text = t('au_create_function', { ...vars, fn: r.fn_code ? fn : fnName(r.new_value || {}) });
         lines = ['item_type', 'weight', 'progress', 'enabled', 'reference', 'name_en'].filter(k => r.new_value?.[k] != null && r.new_value[k] !== '')
           .map(k => ({ field: k, label: fieldLabel(k), from: '', to: fmt(k, r.new_value[k]) }));
@@ -336,6 +359,13 @@ export function makeAudit({ t, lang }) {
       case 'edit_request:edit_request': {
         items = itemLines(ctx.items);
         const only = ctx.items?.length === 1 ? ctx.items[0] : null;
+        if (ctx.kind === 'move_application') {
+          // an application move request (1.12.16): «طلب نقل التطبيق «…» من hr إلى fin — السبب: «…»»
+          text = t('au_edit_request_app_move', { app: app || ctx.app_id, from: ctx.department_id || '', to: ctx.to_department_id || '',
+            reason: quote(short(String(ctx.reason ?? only?.meta?.reason ?? ''), 200)) });
+          items = null;
+          break;
+        }
         if (ctx.to_app_id && ctx.items?.every(i => i.field === 'move')) {
           // a move request (1.10.0): «طلب نقل «D7 …» من ess إلى acc — السبب: «…»»
           const first = ctx.items[0];

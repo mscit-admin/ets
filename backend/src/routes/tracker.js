@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
-import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept } from '../middleware/auth.js';
+import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept, coversDept } from '../middleware/auth.js';
 import { summarize, sCurve, CALC_FUNCTIONS_SQL, ITEM_TYPES, itemCounts, reportsOverview } from '../services/calc.js';
 import { allSettings, invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
@@ -11,9 +11,10 @@ import { createFunction, newFunctionData, removeFunction, restoreFunction } from
 import { PASS, passConflict, passRuleError, itemList } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
-import { functionsExcluded, itemsMovedIn } from '../services/notify-events.js';
+import { functionsExcluded, itemsMovedIn, applicationMovedIn } from '../services/notify-events.js';
 import { MOVE_MAX, parseMoveReason, moveNeedsApproval, weightTransfer, destinationWeight, checkMovable, applyMove, movesOf }
   from '../services/move.js';
+import { moveApplication, moveAppNeedsApproval, checkAppMovable, appMovesOf } from '../services/app-move.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
 import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
@@ -114,8 +115,13 @@ export async function applicationData(user, id) {
   // the item here (the badge «منقول من …»)
   const moves = await movesOf({ query }, user, fns.rows.map(f => f.id));
   const movedFrom = f => [...(moves.get(f.id) || [])].reverse().find(m => m.to_app_id === a.id) || null;
+  // the application itself moved here from another department (1.12.16): its moves, oldest first; app_moved_from = the
+  // most recent one that brought it into its current department (the header badge «منقول من …»)
+  const appMoves = (await appMovesOf({ query }, user, [a.id])).get(a.id) || [];
+  const appMovedFrom = [...appMoves].reverse().find(m => m.to_department_id === a.department_id) || null;
   return {
-    application: { ...a, calc: v.calc.applications.find(x => x.id === a.id) },
+    application: { ...a, calc: v.calc.applications.find(x => x.id === a.id),
+      ...(appMoves.length ? { moves: appMoves, moved_from: appMovedFrom } : {}) },
     department: dept.rows[0],
     functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [],
       ...(moves.has(f.id) ? { moves: moves.get(f.id), moved_from: movedFrom(f) } : {}) })),
@@ -665,6 +671,78 @@ r.post('/applications/:id/bulk-move/preview', requirePerm('mov'), async (req, re
 r.post('/applications/:id/bulk-move', requirePerm('mov'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   await doMove(req, res, a, moveIds(req.body?.function_ids));
+});
+
+// ---- moving a whole application to another department ("module") (1.12.16, services/app-move.js) ----
+// Departments a user may move an application INTO: every department whose WHOLE scope they cover, but the current one.
+r.get('/app-move-targets', requirePerm('mov'), async (req, res) => {
+  const appId = str(req.query.app_id, 40);
+  if (!appId) throw bad('invalid_value', { field: 'app_id' });
+  const cur = await getApp(req.user, appId);
+  const d = (await query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments ORDER BY sort')).rows;
+  res.json({ current: { app_id: cur.id, department_id: cur.department_id },
+    departments: d.filter(x => x.id !== cur.department_id && coversDept(req.user, x.id)).map(({ sort: _s, ...x }) => x) });
+});
+
+// The common checks of an application move → { dst, reason }: a different destination department the user covers, a
+// required reason (same rule as an item move), no pending request / import on the application or its items.
+async function appMovePlan(req, app, { needReason }) {
+  const toDept = str(req.body?.to_department_id, 50);
+  if (!toDept) throw bad('invalid_value', { field: 'to_department_id' });
+  const dst = (await query('SELECT * FROM departments WHERE id=$1', [toDept])).rows[0];
+  if (!dst) throw bad('unknown_department', { id: toDept });
+  if (!coversDept(req.user, dst.id)) throw new HttpError(403, 'out_of_scope', { department: toDept });
+  if (dst.id === app.department_id) throw bad('move_same_dept');
+  const reason = needReason ? parseMoveReason(req.body?.reason) : null;
+  await checkAppMovable({ query }, app.id);
+  return { dst, reason };
+}
+
+// Before → after of the two departments and the project (reader's scope) of moving the application to dstDept.
+async function appMoveImpact(user, app, dst) {
+  const v = await loadVisible(user);
+  const mode = v.settings['calc.weight_mode'] === 'auto' ? 'auto' : 'fixed';
+  const applications = v.apps.map(a => (a.id === app.id ? { ...a, department_id: dst.id } : a));
+  const after = summarize({ departments: v.departments, applications, functions: v.functions, reports: v.reports, settings: v.settings });
+  const pair = (b, x, k) => ({ before: b?.[k] ?? 0, after: x?.[k] ?? 0 });
+  const deptRow = (id, role) => {
+    const d = v.departments.find(x => x.id === id) || (id === dst.id ? dst : null);
+    const b = v.calc.departments.find(x => x.id === id), x = after.departments.find(y => y.id === id);
+    return { id, role, name_ar: d?.name_ar, name_en: d?.name_en, is_base: d?.is_base, pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight') };
+  };
+  const appCalcRow = v.calc.applications.find(x => x.id === app.id);
+  return { mode, app_weight: mode === 'auto' ? (appCalcRow?.weight ?? 0) : +app.weight,
+    departments: [deptRow(app.department_id, 'source'), deptRow(dst.id, 'destination')],
+    total: pair(v.calc.total, after.total, 'pct') };
+}
+
+r.post('/applications/:id/move-dept/preview', requirePerm('mov'), async (req, res) => {
+  const a = await getApp(req.user, req.params.id);
+  const { dst } = await appMovePlan(req, a, { needReason: false });
+  res.json({ ...await appMoveImpact(req.user, a, dst), needs_approval: await moveAppNeedsApproval(req.user, a.department_id, dst.id) });
+});
+
+// Direct move, or a 'move_application' request for the two department leads (202). Live changes and the T9 alert after COMMIT.
+r.post('/applications/:id/move-dept', requirePerm('mov'), async (req, res) => {
+  const a = await getApp(req.user, req.params.id);
+  const { dst, reason } = await appMovePlan(req, a, { needReason: true });
+  const impact = await appMoveImpact(req.user, a, dst);
+  if (await moveAppNeedsApproval(req.user, a.department_id, dst.id)) {
+    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'move_application',
+      summary: `${a.id} → ${dst.id}`,
+      target: { appId: null, deptId: dst.id },
+      meta: { reason, weight_mode: impact.mode, weight: impact.app_weight, impact },
+      items: [{ kind: 'application', app_id: a.id, field: 'move',
+        old_value: { department_id: a.department_id }, new_value: { department_id: dst.id, name_ar: dst.name_ar, name_en: dst.name_en },
+        meta: { reason } }] }));
+    await publishChange({ dept_id: a.department_id, app_id: a.id });    // "awaiting approval" badge
+    return res.status(202).json({ pending: true, request_id: rq.id, impact });
+  }
+  const out = await tx(c => moveApplication(c, req, { appId: a.id, dstDeptId: dst.id, reason }));
+  await publishChange({ dept_id: a.department_id });                   // after COMMIT: the source department's total
+  await publishChange({ dept_id: dst.id, app_id: a.id });              // the destination, with the moved application
+  await applicationMovedIn(a.id, a.department_id, dst.id, [req.user.id]);   // T9
+  res.json({ moved: true, weight: out.weight, impact });
 });
 
 // ---- weights & calculation parameters ----

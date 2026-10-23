@@ -114,7 +114,11 @@ export default function Approvals() {
       {error ? <ErrorBox error={error} /> : loading && !data ? <Loading /> : !data.requests.length
         ? <Card><Empty>{filtered ? t('rqf_none') : t('no_requests')}</Empty></Card> : data.requests.map(rq => (
         <Card key={rq.id} className="req-card"
-          title={rq.kind === 'move_function'
+          title={rq.kind === 'move_application'
+            ? <span className="link-row mv-route"><Icon name="move" size={15} /> {t('amv_rq_title', {
+              app: nm(rq, 'app_name'), from: nm(rq, 'dept_name'), to: nm(rq, 'target_dept_name') })}
+            <Indicator color="purple">{t('rq_kind_move_application')}</Indicator></span>
+            : rq.kind === 'move_function'
             ? <span className="link-row mv-route"><Icon name="move" size={15} /> {t('mv_rq_title', {
               from: `${nm(rq, 'app_name')} (${nm(rq, 'dept_name')})`, to: `${nm(rq, 'target_app_name')} (${nm(rq, 'target_dept_name')})` })}
             <Indicator color="purple">{t('rq_kind_move_function')}</Indicator></span>
@@ -131,6 +135,8 @@ export default function Approvals() {
           {rq.status === 'rejected' && <Alert kind="red">{t('rejected_by', { name: rq.decided_by_name })}: {rq.reason}</Alert>}
           {rq.status === 'applied' && <Alert kind="green">{t('approved_by', { name: rq.decided_by_name })} · {fmtDate(rq.decided_at)}</Alert>}
           {rq.kind === 'move_function' && <MoveRequest rq={rq} />}
+          {rq.kind === 'move_application' && <MoveAppRequest rq={rq} />}
+          {rq.kind !== 'move_application' && (
           <div className="table-wrap">
             <table className="table req-items">
               <thead><tr><th>{t('functions')}</th><th>{t('field')}</th><th>{t('before')}</th><th>{t('after')}</th></tr></thead>
@@ -157,6 +163,7 @@ export default function Approvals() {
               </tbody>
             </table>
           </div>
+          )}
         </Card>
       ))}
       {dlg && <RejectModal onClose={() => setDlg(null)} onSubmit={reason => act(dlg.rq, 'reject', { reason })} />}
@@ -199,6 +206,44 @@ function MoveRequest({ rq }) {
       </div>
       {rq.status === 'pending' && now && now.still_in_source === false && <Alert kind="red">{t('mv_rq_moved_out')}</Alert>}
       {m.impact && <MoveImpact impact={m.impact} />}
+    </div>
+  );
+}
+
+// An application move request (1.12.16): its reason, which department lead approved / is awaited, and the impact on
+// the two departments and the project computed when it was requested.
+function MoveAppRequest({ rq }) {
+  const { t, nm, fmtDate } = useI18n();
+  const m = rq.meta || {};
+  const st = moveStage(rq);
+  const impact = m.impact;
+  return (
+    <div className="mv-request">
+      {m.reason && <div className="req-reason"><span><b>{t('mv_reason')}:</b> <span className="rn-reason-text">{m.reason}</span></span></div>}
+      <div className="mv-stage" role="status">
+        {st.sourceDone && <span className="green-text">✓ {t('amv_rq_source_done', { name: st.sourceDone.name, date: fmtDate(st.sourceDone.at) })}</span>}
+        {st.targetDone && <span className="green-text">✓ {t('amv_rq_target_done', { name: st.targetDone.name, date: fmtDate(st.targetDone.at) })}</span>}
+        {st.waitKey && <b>⏳ {t(st.waitKey)}</b>}
+      </div>
+      {impact && (
+        <div className="impact mv-impact">
+          <div className="impact-title">{t('mv_impact_title')}</div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th scope="col" /><th scope="col" className="num-col">{t('before')}</th><th scope="col" className="num-col">{t('after')}</th></tr></thead>
+              <tbody>
+                {impact.departments.map(d => (
+                  <tr key={d.id}><th scope="row" className="mv-row-label">{t(d.role === 'source' ? 'amv_row_src' : 'amv_row_dst', { name: nm(d) })}</th>
+                    <td className="num-col num">{(+d.weight.before).toFixed(2)}</td><td className="num-col num"><b>{(+d.weight.after).toFixed(2)}</b></td></tr>
+                ))}
+                <tr className="mv-moved"><th scope="row" className="mv-row-label">{t('amv_weight_moved')}</th><td /><td className="num-col num"><b>{(+(impact.app_weight || 0)).toFixed(2)}</b></td></tr>
+                <tr><th scope="row" className="mv-row-label">{t('mv_row_project')}</th><td className="num-col num">{pc(impact.total.before)}%</td><td className="num-col num"><b>{pc(impact.total.after)}%</b></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="muted small mv-note">{impact.mode === 'auto' ? t('amv_weight_auto') : t('amv_weight_rule')}</p>
+        </div>
+      )}
     </div>
   );
 }
