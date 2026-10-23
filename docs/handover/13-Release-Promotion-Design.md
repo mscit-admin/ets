@@ -1,4 +1,4 @@
-# 12 — Release Promotion (Test → Production) — Design & Implementation Plan
+# 13 — Release Promotion (Test → Production) — Design & Implementation Plan
 
 > **Status: PHASE 1 IMPLEMENTED (1.12.18).** The in-app foundation of §8 Phase 1 is built and tested: migration
 > `024_release_promotion.sql` (`release_promotions`, `release_agent_status`), the pure manifest + Ed25519 sign/verify
