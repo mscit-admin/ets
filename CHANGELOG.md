@@ -30,6 +30,25 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.4] — 2026-10-23 — «المتصلون الآن» as a tab inside the Users screen
+
+### Changed
+- **Frontend:** the «المتصلون الآن» (online users) screen is no longer a separate page or sidebar item — it is now
+  the second tab inside the Users screen (`pages/Users.jsx`, `components/Layout.jsx`). The active tab is kept in the
+  query string (`/users?tab=online`), matching how other screens persist state. Live-presence logic in
+  `pages/OnlineUsers.jsx` is reused unchanged.
+- **Permissions:** the tab's label and its content are both gated by `can('usr')` (the same admin-only check that
+  guarded the old route), so a user without that permission can neither see nor activate the tab, including by URL.
+
+### Removed
+- **Frontend:** the standalone online-users sidebar entry.
+
+### Upgrade notes
+- No migration, no setting change. Old links and the backend presence screen-link to `/online` still work: the old
+  route now redirects to `/users?tab=online` (`App.jsx`).
+
+---
+
 ## [1.12.3] — 2026-10-23 — Trust-proxy safety guard against X-Forwarded-For spoofing
 
 ### Security
