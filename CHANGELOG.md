@@ -2045,7 +2045,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/bbf838f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/3177ecb...HEAD
+[1.12.8]: https://github.com/mscit-admin/ets/compare/bbf838f...3177ecb
 [1.12.7]: https://github.com/mscit-admin/ets/compare/badafd9...bbf838f
 [1.12.6]: https://github.com/mscit-admin/ets/compare/cc064d9...badafd9
 [1.12.5]: https://github.com/mscit-admin/ets/compare/c1285ef...cc064d9
