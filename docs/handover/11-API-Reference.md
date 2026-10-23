@@ -276,6 +276,17 @@ The API never runs anything as root: it stores the configuration and queues jobs
 | POST | `/backups/restore/run` | `{inspect_id, items (inspected ones), confirm: <host name> \| «استرجاع» \| RESTORE}` → 202 `{job}` (`restore_run`); the same administrator, within 15 minutes of the inspection. 400 `confirmation_phrase_mismatch`, 409 `inspection_expired`. Every administrator gets S11 |
 | GET | `/backups/restore/status` | the progress file of the current / last restore. While the API is stopped nginx serves the same file at `GET /api/restore-status.json` (header `X-ETS-Status: 1`, no session; no secrets) |
 
+## Release & deploy — `/release` (1.12.18, **Phase 1**; permission `cfg` **and** role `admin`, 403 otherwise)
+Records a **signed promotion intent** only. The API never deploys: it runs unprivileged, holds no push credential, and in Phase 1 the agent is **mocked** — nothing is pushed to git, no tag is created, no checkout or deploy happens. See [13 — Release Promotion Design](13-Release-Promotion-Design.md). Signing key / allow-list come from `ETS_RELEASE_SIGN_KEY`, `ETS_RELEASE_SIGNERS_DIR` (never in the DB or repo).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/release/versions` | `{phase: 1, production: {version, commit, deployed_at, stale}, test: {version, resolved}, signing_ready, versions: [{version, date, title, summary (what-changed from CHANGELOG), commit, commit_source tag\|release_commit, promotable}]}`. Released versions are resolved to a commit by **an annotated tag `v<x.y.z>` when present, else the `release <x.y.z>` commit**; only resolvable versions are listed, `promotable` = newer than production |
+| GET | `/release/status` | `{phase: 1, production, agent: {seen_at, ok, apply_error}, current: <promotion>, in_flight, signing_ready}`. `current` is the newest promotion row |
+| GET | `/release/history` | `{promotions: [<promotion>]}` — newest first, 50 max (the operator audit view). A `<promotion>` carries `{id, version, commit, prev_version, prev_commit, intent, auto_rollback, status requested\|publishing\|deploying\|succeeded\|failed\|rolled_back\|cancelled, signer (key id), backup_ref, requested_by, by_name, authorized_at, manifest, progress, result, error, …}` |
+| POST | `/release/promote` | `{version, confirm: <version>, auto_rollback?: bool (default true), password, code? \| recovery_code?}`. Admin + **re-auth (password + OTP)** + confirm (type the version). Resolves the commit, computes `prev_*` from the recorded production version, Ed25519-**signs** the manifest and writes a `release_promotions` row with status `requested` → 202 `{promotion, phase: 1, note}`. **Mocked: no real deploy.** 400 `invalid_version` / `unknown_version` / `confirmation_phrase_mismatch` / `wrong_password` / `mfa_code_required` / `invalid_code`; 409 `not_newer` / `promotion_in_flight` (one in flight); 503 `release_signing_unavailable`; 10 per hour per administrator (`ETS_RELEASE_PROMOTE_LIMIT`). Audited `release_promote` |
+| POST | `/release/rollback` | as `/promote` with `intent: rollback` — records a signed rollback intent to the previous (older, `prev`-matching) version. 409 `nothing_to_roll_back` / `rollback_not_older`. Audited `release_rollback` |
+
 ## System — `/system` (permission `cfg`, full scope)
 | Method | Path | Description |
 |---|---|---|

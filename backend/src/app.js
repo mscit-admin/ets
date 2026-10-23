@@ -23,6 +23,7 @@ import deviceRoutes from './routes/devices.js';
 import presenceRoutes from './routes/presence.js';
 import dashboardRoutes from './routes/dashboard.js';
 import backupRoutes from './routes/backups.js';
+import releaseRoutes from './routes/release.js';
 import { pairRouter, mobileRouter } from './routes/mobile.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
@@ -71,6 +72,7 @@ export function createApp() {
   api.use('/presence', presenceRoutes);            // online users: own reports, the administrators' list (1.11.0)
   api.use('/dashboard', dashboardRoutes);          // dashboard aggregates: users overview (admins only, 1.12.9)
   api.use('/backups', backupRoutes);               // Settings → «النسخ الاحتياطي»: configuration, jobs, restore (1.12.0)
+  api.use('/release', releaseRoutes);              // Settings → «الترقية والنشر»: promotion intent (Phase 1, 1.12.18)
   api.use(notFoundHandler);
   app.use('/api', api);
 
