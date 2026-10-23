@@ -30,6 +30,59 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.20] — 2026-10-23 — Release promotion pipeline — Phase 3 (feature-complete: rollback, health gating, history)
+
+The test→production release-promotion pipeline (design in `docs/handover/13-Release-Promotion-Design.md`) is now
+**feature-complete**. Phase 3 adds the operator-facing finish: a full history view, an extended health gate that
+explains WHY a deploy failed, the completed auto-rollback decision with the manual DB-restore guidance, the current
+production/agent-freshness display, and release-event alerts. **Live use still requires operator setup** (keys,
+deploy credentials, systemd units — see `docs/handover/13` §8a and `docs/handover/10` §3a/§3b); nothing new is enabled
+automatically.
+
+### Added
+- **Promotion history view** (`frontend/src/components/ReleasePromotion.jsx`): an expandable per-promotion table —
+  version, who authorized, time, final status, backup_ref, the phase progression and the health-check detail; RTL,
+  Arabic + English.
+- **Extended health gate** (`backend/src/release/deploy-agent.js`): a readiness sweep (app `/api/health`, an optional
+  known endpoint `READY_URL`, the database reachable, migrations applied) with a configurable timeout + exponential
+  retry/backoff (`HEALTH_TIMEOUT`, `HEALTH_RETRY_DELAY`, `HEALTH_RETRY_MAX`, `HEALTH_REQUIRE`). The **pure, unit-tested
+  reducer `evaluateHealth()`** (`backend/src/services/release.js`) turns the probe results into a pass/fail verdict +
+  human-readable summary, recorded in the promotion `result` / signed `production-status.json` so the Release screen
+  shows the failing check.
+- **Completed auto-rollback decision** (`rollbackDecision()`, pure + unit-tested, `backend/src/services/release.js`):
+  `{auto_rollback, migration_ran, health_passed, backup_ref, prev_commit}` → `none` | `code_rollback` | `stop` |
+  `stop_needs_db_restore`. A migration-after-failure stops at `failed` and records the exact `ets-restore <backup_ref>`
+  command; the Release screen surfaces it in a **«استرجاع قاعدة البيانات»** guidance panel (manual — DB rollback is
+  never automatic, per design §5.3). The «تراجع» rollback button drives a code-rollback promotion and shows in history.
+- **Current production + agent-freshness display**: the Release screen shows the deployed version/commit, last deploy
+  time and the deploy-agent heartbeat with a **staleness warning** when production has not reported recently. The
+  read-only `GET /api/release/status` serves this on both servers (on production it reads that server's own
+  `release_agent_status`); no separate prod endpoint was needed.
+- **S-REL notification class** (`release_event`, **S12**): a production promotion **started / succeeded / failed /
+  rolled_back** alerts every administrator (`backend/src/services/notify-catalog.js`, `notify-text.js`,
+  `notify-events.js`; Notifications page filter + `nt_release_event` label, AR/EN). **failed / rolled_back are
+  critical** (phone); started / succeeded informational. `started` is sent by the API on `/promote`; the terminal
+  stages by the test-side publisher when it pulls the signed production status.
+
+### Changed
+- `GET /api/release/versions` and `/status` now report **`phase: 3`** (the API-contract marker; the pipeline is
+  complete). The Phase-1 note on the Release screen is replaced with a feature-complete note.
+
+### Tests
+- Unit tests for `evaluateHealth` (pass / failed-check / no-checks / required-not-run), `rollbackDecision` (every
+  branch of the table), `releaseNotifyStage` + `releaseStageSeverity`; API tests for `phase: 3`, the history row shape
+  and the S12 `started` alert firing on `/promote` (`backend/test/release.test.js`).
+
+### Upgrade notes
+- **No new migration.** `release_promotions.progress`/`result` (migration **024**) already carry the health verdict
+  and the rollback action; `release_event` (S12) is a code-only notification type. The latest migration remains **024**.
+- No operator action is required by this release itself. The live pipeline still needs the Phase-2 operator setup
+  (`docs/handover/13` §8a); the new **DB-restore-after-failed-migration** procedure is documented in
+  `docs/handover/10` **§3b** and is linked from the Release screen's guidance panel. Optional deploy-agent config keys
+  (`READY_URL`, `HEALTH_RETRY_DELAY`, `HEALTH_RETRY_MAX`, `HEALTH_REQUIRE`) default sensibly when unset.
+
+---
+
 ## [1.12.19] — 2026-10-23 — Release promotion pipeline — Phase 2 (the root agents, signing & systemd)
 
 ### Added

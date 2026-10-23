@@ -61,6 +61,10 @@ export const TYPES = {
   backup_offsite:    { code: 'S9', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   backup_verify:     { code: 'S10', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   restore_event:     { code: 'S11', category: 'system', kind: 'event', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
+  // release promotion to production (1.12.20): a promotion started / succeeded / failed / rolled back. The deploy is
+  // the single most sensitive action in the system (docs/handover/13 §4.3 — S-REL); failed / rolled_back are raised
+  // critical per-event (services/release.js releaseStageSeverity), started / succeeded informational.
+  release_event:     { code: 'S12', category: 'system', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('!........'), push: true },
 };
 // Not a policy type: replaces the alerts above the hourly cap (notify.rate_cap_per_hour) of one user.
 export const RATE_CAPPED = 'rate_capped';

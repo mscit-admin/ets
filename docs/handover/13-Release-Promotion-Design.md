@@ -1,5 +1,33 @@
 # 13 — Release Promotion (Test → Production) — Design & Implementation Plan
 
+> **Status: PHASE 3 IMPLEMENTED (1.12.20) — THE PIPELINE IS FEATURE-COMPLETE.** Phase 3 adds, and unit-tests where it
+> can: the **full promotion history view** (expandable rows: version, authorizer, time, final status, backup_ref and
+> the phase progression — `frontend/src/components/ReleasePromotion.jsx`); the **extended health gate** — a readiness
+> sweep (app `/api/health`, an optional known endpoint, the database reachable, migrations applied) with a configurable
+> timeout + exponential retry/backoff, whose **pure decision reducer `evaluateHealth()`** (`backend/src/services/
+> release.js`) records WHY a deploy failed into the promotion `result` and the signed `production-status.json`; the
+> **completed auto-rollback story** — a **pure decision table `rollbackDecision()`** returning `none` | `code_rollback`
+> | `stop` | `stop_needs_db_restore`, with the §5.3 migration-after-failure case stopping at `failed` and surfacing
+> the exact `ets-restore <backup_ref>` command in the Release screen's **«استرجاع قاعدة البيانات»** guidance panel (DB
+> rollback is **never** automatic); a **one-click «تراجع» rollback** that drives a code-rollback promotion; the
+> **current-production + agent-freshness display** with a staleness warning; and the **S-REL (S12 `release_event`)
+> notification class** — promotion started / succeeded / failed / rolled_back to all administrators, failed /
+> rolled_back raised **critical**. The `/api/release` responses now carry **`phase: 3`**. **No new migration was
+> needed** — `release_promotions.progress`/`result` (migration 024) already carry the health verdict and the
+> rollback action, and `release_event` is a code-only notification type.
+>
+> **Sandbox-tested (Phase 3):** `evaluateHealth` (all branches: pass / failed-check / no-checks / required-not-run),
+> `rollbackDecision` (every row of the table), `releaseNotifyStage` + `releaseStageSeverity`, that `/api/release`
+> returns `phase: 3` and the history row shape, and that `/promote` raises the S12 `started` alert to admins
+> (`backend/test/release.test.js`). **OPERATOR-VERIFIED ONLY** (unchanged from Phase 2 — no prod, no VPN, no systemd in
+> the sandbox): the real readiness probing against a live production server, the real `update.sh`/health/rollback, the
+> actual `ets-restore` DB rollback after a failed migration, and the publisher pulling back a terminal status to raise
+> the succeeded/failed/rolled_back alert. The pure reducers those paths call are unit-tested.
+>
+> **Phase 4 (optional, not built):** dual-control (two signers) per §9.3.
+>
+> ----
+>
 > **Status: PHASE 2 IMPLEMENTED (1.12.19) — OPERATOR-VERIFIED.** The two ROOT agents, the signed-tag/push mechanism,
 > the shared no-shell verifier and the systemd units are built, delivered and unit-tested where they can be (the pure
 > verifier). They mirror the `ets-backup-agent` trust split exactly. **What is sandbox-tested:** the shared verifier
@@ -489,16 +517,29 @@ Each phase is independently shippable. Sizes are rough (S ≈ ½ day, M ≈ 1–
 * **Testable here:** the pure sign/verify/canon and allow-list logic (unit). **Operator-verified:** the actual push/
   pull, checkout, `update.sh`, health, and the systemd wiring — on the real servers, via the §8a rehearsal.
 
-### Phase 3 — Rollback, health gating, history polish — **size M**
+### Phase 3 — Rollback, health gating, history polish — **size M** — ✅ IMPLEMENTED in 1.12.20
 
-* **Files:** rollback branch in `deploy-agent.js` (code rollback + the §5.3 DB-restore path reusing `ets-restore`);
-  health-gate timeout + log capture; S-REL notification class in `backend/src/services/notify-catalog.js` /
-  `notify-events.js`; the history table + status back-channel polish in `ReleasePromotion.jsx`; prod read-only
-  `/api/release/status`.
-* **Build:** automatic (or one-click, per mode) rollback with the migration caveat handled; mandatory alerts; the
-  history/audit view; the back-channel status surfaced on both servers.
-* **Testable here:** rollback **decision** logic and the migration-head comparison (unit), notification rendering, UI.
-  **Operator-verified:** a real failed deploy → real rollback → real DB restore, in the §8a rehearsal.
+* **Files:** `rollbackDecision()` + `evaluateHealth()` + `releaseNotifyStage()` (pure, `backend/src/services/release.js`);
+  the rollback/health branch rewired in `backend/src/release/deploy-agent.js` to call them (code rollback + the §5.3
+  DB-restore STOP path with the exact `ets-restore` command recorded); the terminal S-REL fire in
+  `backend/src/release/publisher.js`; the S-REL notification class (`release_event` / S12) in
+  `backend/src/services/notify-catalog.js`, `notify-text.js`, `notify-events.js` (+ the Notifications page filter and
+  the `nt_release_event` label); the expandable history, production/agent-freshness banner, DB-restore guidance panel
+  and one-click rollback in `frontend/src/components/ReleasePromotion.jsx` (+ `rel_*` i18n AR/EN);
+  `backend/test/release.test.js`.
+* **Build:** auto (or one-click, per mode) rollback with the migration caveat handled as a **manual** restore-from-
+  backup; mandatory S-REL alerts; the history/audit view with per-row detail; the back-channel status + staleness
+  surfaced on the test screen.
+* **Prod read-only `/api/release/status`:** **no separate endpoint was added — the existing `GET /api/release/status`
+  IS the read-only status.** It is a `GET` that never triggers a deploy, served by the same codebase on both servers;
+  on **production** it reads that server's own `release_agent_status` (which the prod `ets-deploy-agent` writes
+  directly) plus the local `/var/lib/ets/release/status.json`, so a prod admin sees the deployed version/commit, last
+  deploy time and the agent heartbeat/staleness without a cross-server call. On the **test** server the same endpoint
+  additionally returns the open/last promotion row (`current`) and the pulled prod status. The pulled, signed
+  `production-status.json` + `release_agent_status` therefore suffice; a bespoke prod endpoint would duplicate this.
+* **Tested here:** `rollbackDecision` (all branches), `evaluateHealth` (all branches), `releaseNotifyStage`/severity,
+  the `phase: 3` + history shape, and the S12 `started` alert on `/promote` (unit + API). **Operator-verified:** a real
+  failed deploy → real rollback → real `ets-restore` DB restore, in the §8a rehearsal.
 
 ---
 

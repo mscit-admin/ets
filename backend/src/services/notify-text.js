@@ -164,6 +164,28 @@ const T = {
       body: [p.by ? (l === 'ar' ? `بواسطة: ${p.by}` : `By: ${p.by}`) : null, p.created ? (l === 'ar' ? `نسخة: ${String(p.created).slice(0, 16).replace('T', ' ')}` : `Backup: ${String(p.created).slice(0, 16).replace('T', ' ')}`) : null]
         .filter(Boolean).join(' · ') || null };
   },
+  release_event: (l, p) => {
+    const roll = p.intent === 'rollback';
+    const st = {
+      started: roll ? ['بدأ تراجع الإنتاج إلى إصدار سابق', 'A production rollback started']
+        : ['بدأت ترقية الإنتاج', 'A production promotion started'],
+      succeeded: roll ? ['اكتمل تراجع الإنتاج بنجاح', 'The production rollback succeeded']
+        : ['نجحت ترقية الإنتاج', 'The production promotion succeeded'],
+      failed: ['فشلت ترقية الإنتاج', 'The production deploy failed'],
+      rolled_back: ['فشل النشر وتم التراجع إلى الإصدار السابق', 'The deploy failed and was rolled back'],
+    }[p.stage] || ['حدث في نشر الإنتاج', 'Production deploy event'];
+    const needsRestore = p.stage === 'failed' && p.needs_db_restore;
+    return {
+      title: l === 'ar' ? st[0] : st[1],
+      body: [
+        p.version ? (l === 'ar' ? `الإصدار ${p.version}` : `version ${p.version}`) : null,
+        p.by ? (l === 'ar' ? `بواسطة: ${p.by}` : `by ${p.by}`) : null,
+        needsRestore ? (l === 'ar' ? `يلزم استرجاع قاعدة البيانات: ${p.restore_command || 'ets-restore <backup_ref>'}`
+          : `DB restore required: ${p.restore_command || 'ets-restore <backup_ref>'}`) : null,
+        !needsRestore && p.error ? String(p.error).slice(0, 160) : null,
+      ].filter(Boolean).join(' · ') || null,
+    };
+  },
   retention_reduced: (l, p) => ({
     title: l === 'ar' ? 'خُفّضت مدة الاحتفاظ بالسجلات' : 'Log retention was reduced',
     body: `${p.key}: ${p.from} → ${p.to}${p.by ? (l === 'ar' ? ` · بواسطة ${p.by}` : ` · by ${p.by}`) : ''}` }),

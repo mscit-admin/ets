@@ -180,3 +180,80 @@ export function verifyManifest({ manifest, signature }, { allowedSigners = [], d
   }
   return { ok: true };
 }
+
+// ================================================================= Phase 3: pure deploy-decision logic
+// These functions carry NO IO (no HTTP, no git, no DB): the production deploy agent (backend/src/release/
+// deploy-agent.js) does the actual readiness probing and git/update.sh work, then hands the collected results to
+// these pure reducers to decide pass/fail and the rollback action. Kept here so they are unit-tested
+// (backend/test/release.test.js) WITHOUT a live production server — the §7 "testable here" column.
+
+// Extended health gate (§5.1 "verifying" + the design's "show WHY a deploy failed"). The agent runs one or more
+// readiness PROBES — the app serves /api/health, an optional second known endpoint, the database is reachable, and
+// migrations are applied — and passes their raw results here as [{ name, ok, detail }]. evaluateHealth reduces them
+// to a single verdict with a human-readable summary that is recorded in the promotion progress/result and the signed
+// production-status.json, so the Release screen can show exactly which check failed.
+//   required: the probe names that MUST pass (default: every probe present). A required probe that is missing from
+//   the list counts as a failure (the agent could not even run it).
+export function evaluateHealth(probes, { required = null } = {}) {
+  const list = Array.isArray(probes) ? probes : [];
+  const checks = list.map(c => ({
+    name: String(c?.name || ''),
+    ok: !!c?.ok,
+    detail: c?.detail == null ? null : String(c.detail).slice(0, 500),
+  }));
+  const req = Array.isArray(required) && required.length ? required : checks.map(c => c.name);
+  const failed = checks.filter(c => req.includes(c.name) && !c.ok).map(c => c.name);
+  const missing = req.filter(n => !checks.some(c => c.name === n));
+  const passed = checks.length > 0 && failed.length === 0 && missing.length === 0;
+  const bad = [...failed, ...missing.map(m => `${m} (not run)`)];
+  return {
+    passed,
+    checks,
+    failed,
+    missing,
+    summary: passed ? `all ${checks.length} readiness checks passed`
+      : checks.length === 0 ? 'no readiness checks ran'
+        : `readiness failed: ${bad.join(', ')}`,
+  };
+}
+
+// The completed auto-rollback decision table (§5.2–§5.3). PURE: given the facts the agent gathered, decide the single
+// next action. DB rollback is NEVER automatic — a migration-after-failure can only be undone by restore-from-backup
+// (manual, per §5.3), so the function returns `stop_needs_db_restore` with the exact operator command instead.
+//   inputs: { auto_rollback, migration_ran, health_passed, backup_ref, prev_commit }
+//   action ∈ { none | code_rollback | stop | stop_needs_db_restore }
+//     none                  the deploy is healthy — nothing to undo.
+//     code_rollback         unhealthy, no migration ran, auto_rollback on, a previous commit exists → check out the
+//                           previous commit and redeploy (safe: the schema matches the old code).
+//     stop_needs_db_restore unhealthy AND a migration ran → the schema is ahead of the old code; code rollback alone
+//                           is UNSAFE. Stop at failed and surface the manual `ets-restore <backup_ref>` command.
+//     stop                  unhealthy, no migration, but auto_rollback is off (operator inspects first) OR there is no
+//                           previous commit to roll back to (first deploy). Stop at failed; no DB restore needed.
+export function rollbackDecision({ auto_rollback = true, migration_ran = false, health_passed = false,
+  backup_ref = null, prev_commit = null } = {}) {
+  if (health_passed) return { action: 'none', needs_db_restore: false, reason: 'healthy' };
+  if (migration_ran) {
+    return {
+      action: 'stop_needs_db_restore',
+      needs_db_restore: true,
+      backup_ref: backup_ref || null,
+      restore_command: `ets-restore ${backup_ref || '<backup_ref>'}`,
+      reason: 'health_failed_after_migration',
+    };
+  }
+  if (auto_rollback && prev_commit) {
+    return { action: 'code_rollback', needs_db_restore: false, prev_commit, reason: 'health_failed_code_rollback' };
+  }
+  return { action: 'stop', needs_db_restore: false, reason: auto_rollback ? 'no_prev_commit' : 'auto_rollback_off' };
+}
+
+// Which S-REL (S12 release_event) stage, if any, a promotion status transition should alert on. PURE so the "fires on
+// the right transitions" rule is unit-tested without the agents. The terminal transitions are high-signal (the caller
+// maps failed/rolled_back to a critical severity); a repeat of the same status, or any non-interesting hop, is null.
+const TERMINAL_STAGE = { succeeded: 'succeeded', failed: 'failed', rolled_back: 'rolled_back' };
+export function releaseNotifyStage(oldStatus, newStatus) {
+  if (oldStatus === newStatus) return null;
+  return TERMINAL_STAGE[newStatus] || null;
+}
+// Severity for a release_event stage (failed / rolled_back are high-signal; started / succeeded are informational).
+export const releaseStageSeverity = stage => (stage === 'failed' || stage === 'rolled_back' ? 'critical' : 'info');
