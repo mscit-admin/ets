@@ -30,6 +30,51 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.18] — 2026-10-23 — Release promotion pipeline — Phase 1 (in-app foundation)
+
+### Added
+- **Test→production release promotion pipeline, PHASE 1** (the in-app foundation; design in
+  `docs/handover/13-Release-Promotion-Design.md`). An administrator proves a version on the test server and records a
+  **signed promotion request** to production from a new Settings tab. **No production deploy happens yet** — in Phase 1
+  the deploy agent is mocked: nothing is pushed to git, no tag is created, no checkout/`update.sh`/health-check runs.
+  The real root agents, signing-key install and systemd units are **Phase 2**.
+- **Backend:** `backend/src/services/release.js` — pure, unit-tested manifest + **Ed25519 sign/verify** logic (Node
+  `crypto`), reusing `canon()` from `backend/src/backup/config.js` for the canonical signed bytes. Verification checks
+  (§3.1 of the design): signature against an **allow-listed signer**, **downgrade** block (strictly-newer version),
+  **replay** block (freshness window + one-time nonce), and **prev-state** match are **full**; **commit membership** is
+  partial — format + resolves-to-a-known-release is checked, the full `git merge-base --is-ancestor` ancestor check is
+  a documented **Phase 2 stub** (needs the root agent's git working copy).
+- **Backend:** `backend/src/routes/release.js` mounted at `/api/release` (admin-only: `cfg` + role `admin`).
+  `GET /versions` (released versions resolved to a commit by an annotated tag `v<x.y.z>` when present, else the
+  `release <x.y.z>` commit, each with its what-changed summary from `CHANGELOG.md`), `GET /status`, `GET /history`,
+  and `POST /promote` / `POST /rollback` — each guarded by **re-authentication (password + OTP)** reusing
+  `reauth()` from `routes/auth.js` (the same re-auth as the backup restore/escrow flow), a confirm-the-version step,
+  a per-admin rate limit and a full audit (`logAudit` / `logSystem`). `/promote` signs the manifest and writes a
+  `release_promotions` row with status `requested`; the actual publish/deploy is mocked. An `auto_rollback` boolean
+  (default `true`) is stored for Phase 3 to honour.
+- **Frontend:** Settings → «الترقية والنشر» / "Release & deploy" tab (admin-only),
+  `frontend/src/components/ReleasePromotion.jsx` — current production/test state banner, a version picker with the
+  what-changed preview, the `auto_rollback` toggle (default on), a «ترقية إلى الإنتاج» button that opens the existing
+  password+OTP `ReauthModal` with a type-the-version confirm, and the current status + history. Clearly labelled as
+  recording a promotion request (Phase 1). RTL, AR+EN (`frontend/src/i18n/messages.js`, `rel_*` + `set_tab_release`).
+
+### Upgrade notes
+- **Database:** new migration `backend/src/db/migrations/024_release_promotion.sql` — creates `release_promotions`
+  (the promotion intent + lifecycle record, including the signed `manifest`/`signature`, `nonce`, `signer`,
+  `prev_*`, `auto_rollback` and a `status` of `requested`/`publishing`/`deploying`/`succeeded`/`failed`/`rolled_back`/
+  `cancelled`) and `release_agent_status` (the latest state the Phase 2 deploy agent reports back, plus the last
+  applied `nonce`). Forward-only and idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`); a **unique partial index** keeps
+  at most one promotion in flight. No data backfill; runs with `update.sh` like any other migration.
+- **This is Phase 1 (foundation only): no production deploy is performed.** New config/env keys (keys live only in
+  root-owned files, never in the DB or the repo — same secrets rule as backups): `ETS_RELEASE_SIGN_KEY` (path to the
+  Ed25519 release private-key PEM, default `/etc/ets/release-sign.key`; when unset/unreadable the promote button is
+  disabled and `/promote` returns `release_signing_unavailable`), `ETS_RELEASE_SIGNERS_DIR` (allow-listed signer
+  public-key PEMs, default `/etc/ets/release-trust`), `ETS_RELEASE_FRESHNESS_DAYS` (replay window, default 14) and
+  `ETS_RELEASE_PROMOTE_LIMIT` (per-admin promote rate, default 10/hour). **Generating the signing key, the
+  write-restricted deploy key and installing the root agents/systemd units are Phase 2** (design §8a).
+
+---
+
 ## [1.12.17] — 2026-10-23 — Two more review states: «إطلاع» and «اعتماد»
 
 ### Added

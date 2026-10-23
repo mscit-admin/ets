@@ -92,6 +92,18 @@ export const config = {
     certSha256: env('TLS_CERT_SHA256', '').replace(/:/g, '').trim().toLowerCase(),
     pairRateLimit: Math.max(1, int('PAIR_RATE_LIMIT', 5)),
   },
+  // Release promotion (1.12.18, test→production pipeline — docs/handover/13-Release-Promotion-Design.md). PHASE 1
+  // records a signed promotion intent only; the keys are NEVER in the database or the repo (same secrets rule as
+  // backups). ETS_RELEASE_SIGN_KEY = path to the Ed25519 release private key PEM, root 600, on the TEST server
+  // (/etc/ets/release-sign.key); when unset or unreadable the promote button is disabled and /promote returns
+  // release_signing_unavailable. ETS_RELEASE_SIGNERS_DIR = directory of allow-listed signer public-key PEM files
+  // (*.pub; /etc/ets/release-trust) — the verification allow-list. ETS_RELEASE_FRESHNESS_DAYS = the replay window.
+  // (The actual key generation, the write-restricted deploy key and the root agents are Phase 2.)
+  release: {
+    signKeyFile: env('ETS_RELEASE_SIGN_KEY', path.join(env('ETS_CONF_DIR', '/etc/ets'), 'release-sign.key')),
+    signersDir: env('ETS_RELEASE_SIGNERS_DIR', path.join(env('ETS_CONF_DIR', '/etc/ets'), 'release-trust')),
+    freshnessDays: Math.max(1, int('ETS_RELEASE_FRESHNESS_DAYS', 14)),
+  },
 };
 
 // Known example / placeholder values (e.g. backend/.env.example) and obviously non-random strings.

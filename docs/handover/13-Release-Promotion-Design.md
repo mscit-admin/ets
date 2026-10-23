@@ -1,7 +1,31 @@
 # 12 — Release Promotion (Test → Production) — Design & Implementation Plan
 
-> **Status: DESIGN ONLY.** This document specifies a feature that is **not yet built**. No application code, no
-> migration, no version bump and no CHANGELOG entry accompany it. It is written to be built in the staged plan of §8,
+> **Status: PHASE 1 IMPLEMENTED (1.12.18).** The in-app foundation of §8 Phase 1 is built and tested: migration
+> `024_release_promotion.sql` (`release_promotions`, `release_agent_status`), the pure manifest + Ed25519 sign/verify
+> logic `backend/src/services/release.js`, the admin-only `/api/release/*` endpoints
+> (`backend/src/routes/release.js`), the Settings → «الترقية والنشر» screen
+> (`frontend/src/components/ReleasePromotion.jsx`), and `backend/test/release.test.js`. **Phases 2–3 (the root agents,
+> signing-key install, systemd units, real git push/pull/checkout/update.sh, health gate and rollback) are NOT built.**
+> In Phase 1 the agent is **mocked**: a promotion is RECORDED as a signed intent (status `requested`) — nothing is
+> pushed to git, no tag is created, no deploy happens. The confirmed user decisions are applied: version→commit
+> resolution prefers an annotated tag `v<x.y.z>` else the `release <x.y.z>` commit; promote requires a single admin +
+> re-auth (password + OTP); and an `auto_rollback` boolean (default true) is stored for Phase 3 to honour.
+>
+> **Config/env keys added in Phase 1** (keys live only in root-owned files, never in the DB or the repo — same secrets
+> rule as backups): `ETS_RELEASE_SIGN_KEY` (path to the Ed25519 release private-key PEM, default
+> `/etc/ets/release-sign.key`; when unset/unreadable the promote button is disabled and `/promote` returns
+> `release_signing_unavailable`), `ETS_RELEASE_SIGNERS_DIR` (directory of allow-listed signer public-key PEMs, default
+> `/etc/ets/release-trust`), `ETS_RELEASE_FRESHNESS_DAYS` (replay window, default 14) and `ETS_RELEASE_PROMOTE_LIMIT`
+> (per-admin promote rate limit, default 10/hour). Actual key generation and the deploy key are Phase 2 (§8a.1).
+>
+> **What is a full check vs. a documented stub in Phase 1** (`services/release.js`): signature-against-allow-listed-
+> signer, downgrade (strictly-newer version), freshness window + one-time nonce (replay), and prev-state match are
+> **full**. **Commit membership is partial:** Phase 1 verifies the 40-hex format and that the commit **resolves to a
+> known release** (from tags / CHANGELOG release commits); the full ancestor check
+> (`git merge-base --is-ancestor <commit> origin/HEAD`) is a **Phase 2 stub** because it needs the root agent's fetched
+> git working copy, which the unprivileged API does not have.
+>
+> *(Original design note, retained for Phases 2–3.)* This document specifies a feature built in the staged plan of §8,
 > each stage shippable and (where possible) unit-testable in this repository.
 
 A system administrator tests a new ETS version on the **test server**, then — from the **admin screen** — presses one
@@ -404,7 +428,7 @@ the dry-run rehearsal in §8/§8a on the actual servers.
 
 Each phase is independently shippable. Sizes are rough (S ≈ ½ day, M ≈ 1–2 days, L ≈ 3–5 days of focused work).
 
-### Phase 1 — In-app foundation (fully testable here) — **size M**
+### Phase 1 — In-app foundation (fully testable here) — **size M** — ✅ IMPLEMENTED in 1.12.18
 
 * **Files:** `backend/src/db/migrations/024_release_promotion.sql`; `backend/src/routes/release.js` (new, mounted in
   `backend/src/app.js`); `backend/src/services/release.js` (manifest build/canon/verify as pure functions, reusing

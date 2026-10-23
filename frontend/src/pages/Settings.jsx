@@ -9,6 +9,7 @@ import { useBranding } from '../lib/branding.jsx';
 import { addPeriods } from '../components/SCurve.jsx';
 import { NotifySettingsCard } from '../components/NotifySettings.jsx';
 import { BackupSection } from '../components/BackupCenter.jsx';
+import { ReleaseSection } from '../components/ReleasePromotion.jsx';
 
 // Settings tabs: the page used to be one long scroll; the groups are now split across tabs.
 // The active tab lives in the URL (?tab=…). Old hash deep-links still work: #timeline/#notifications/#backups
@@ -36,7 +37,7 @@ export default function Settings() {
   // (the API refuses everyone else); every other tab is available to anyone who can open Settings (perm "cfg").
   const tabKeys = useMemo(() => {
     const keys = ['general', 'security', 'notifications'];
-    if (user?.role === 'admin') keys.push('backup');
+    if (user?.role === 'admin') keys.push('backup', 'release');
     keys.push('advanced');
     return keys;
   }, [user?.role]);
@@ -158,6 +159,7 @@ export default function Settings() {
 
       {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
       {tab === 'backup' && user?.role === 'admin' && <BackupSection />}
+      {tab === 'release' && user?.role === 'admin' && <ReleaseSection />}
 
       {tab === 'advanced' && <>
         <Card title={t('sec_data')}>
