@@ -2276,7 +2276,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/6483caa...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/a587e3d...HEAD
+[1.12.17]: https://github.com/mscit-admin/ets/compare/6483caa...a587e3d
 [1.12.16]: https://github.com/mscit-admin/ets/compare/cf5cb68...6483caa
 [1.12.15]: https://github.com/mscit-admin/ets/compare/240d29c...cf5cb68
 [1.12.14]: https://github.com/mscit-admin/ets/compare/b6c4318...240d29c
