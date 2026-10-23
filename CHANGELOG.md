@@ -30,6 +30,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.7] — 2026-10-23 — «المستخدمون المحذوفون» promoted to a top tab
+
+### Changed
+- **Frontend:** the deleted-users list is now a top-level tab on the Users screen (`pages/Users.jsx`), sitting
+  between «المستخدمون» (active) and «المتصلون الآن» (online): «المستخدمون» · «المستخدمون المحذوفون» · «المتصلون
+  الآن». It replaces the inner active/deleted sub-tab row, which is removed. The tab is kept in the query string
+  (`/users?tab=deleted`), matching the online tab (`?tab=online`); active stays the default with no param. The
+  fetch (`/users?deleted=1`), the per-row restore action with its blocked-restore reasons, and the deleted export
+  are unchanged. The deleted tab is visible to anyone who can open the Users screen (the `usr` route guard),
+  exactly as the old sub-tab was; the online tab stays admin-only via `can('usr')`. Pure navigation/placement
+  change — no API call or data behaviour changed.
+
+---
+
 ## [1.12.6] — 2026-10-23 — Settings screen organized into tabs
 
 ### Changed

@@ -11,28 +11,35 @@ import { ExportButton } from '../components/ExportButton.jsx';
 import { DeleteUsersDialog, RestoreUserDialog, undeletable } from '../components/DeleteUsers.jsx';
 import OnlineUsers from './OnlineUsers.jsx';
 
-// The Users screen has two top-level tabs: «المستخدمون» (user management) and «المتصلون الآن» (online users, 1.11.0).
-// The online tab is admin-only exactly as the old standalone /online route was (route guard 'usr' + the API's admin
-// check), so it is shown and reachable only when can('usr'); /online now redirects here (App.jsx). The active tab is
-// kept in the URL (?tab=online), like other screens that persist state in the query string.
+// The Users screen has three top-level tabs: «المستخدمون» (active user management), «المستخدمون المحذوفون»
+// (deleted users, promoted to a top tab in 1.12.7 — previously an inner sub-tab) and «المتصلون الآن» (online
+// users, 1.11.0). The online tab is admin-only exactly as the old standalone /online route was (route guard 'usr'
+// + the API's admin check), so it is shown and reachable only when can('usr'); /online now redirects here
+// (App.jsx). The deleted tab has no extra guard beyond the 'usr' route guard that already gates the whole Users
+// screen — it is visible to anyone who can open Users, exactly as the old inner sub-tab was. The active tab is
+// kept in the URL (?tab=online / ?tab=deleted; active is the default with no param), like other screens that
+// persist state in the query string.
 export function UserList() {
   const { t } = useI18n();
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
   const showOnline = can('usr');                              // same permission the old online-users route required
-  const tab = params.get('tab') === 'online' && showOnline ? 'online' : 'users';
-  const setTab = v => setParams(v === 'online' ? { tab: 'online' } : {});
+  const raw = params.get('tab');
+  const tab = raw === 'online' && showOnline ? 'online' : raw === 'deleted' ? 'deleted' : 'users';
+  const setTab = v => setParams(v === 'users' ? {} : { tab: v });
   return (
     <div>
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'users'} className={'tab' + (tab === 'users' ? ' active' : '')}
           onClick={() => setTab('users')}>{t('nav_users')}</button>
+        <button type="button" role="tab" aria-selected={tab === 'deleted'} className={'tab' + (tab === 'deleted' ? ' active' : '')}
+          onClick={() => setTab('deleted')}>{t('deleted_users')}</button>
         {showOnline && (
           <button type="button" role="tab" aria-selected={tab === 'online'} className={'tab' + (tab === 'online' ? ' active' : '')}
             onClick={() => setTab('online')}>{t('nav_online')}</button>
         )}
       </div>
-      {tab === 'online' && showOnline ? <OnlineUsers /> : <UsersManage />}
+      {tab === 'online' && showOnline ? <OnlineUsers /> : tab === 'deleted' ? <DeletedUsers /> : <UsersManage />}
     </div>
   );
 }
@@ -43,77 +50,72 @@ function TfaBadge({ u }) {
   return u.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>;
 }
 
+// Deleted users (soft-deleted). Promoted from an inner sub-tab to a top tab in 1.12.7; behaviour is unchanged —
+// same `/users?deleted=1` fetch, same restore action and blocked-restore reasons. No bulk selection here (deleted
+// rows only offer per-row restore), unlike the active list.
+function DeletedUsers() {
+  const { t, nm, fmtDate } = useI18n();
+  const { data, error, loading, reload } = useLoad(() => api.get('/users?deleted=1'), []);
+  const [restoring, setRestoring] = useState(null);
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorBox error={error} />;
+  return (
+    <div>
+      <PageHeader title={t('users_title')} icon="users">
+        <ExportButton report="users" params={{ deleted: 1 }} adminOnly />
+      </PageHeader>
+      <Card>
+        {!data.users.length ? <p className="muted">{t('no_deleted_users')}</p> : (
+          <div className="table-wrap">
+            <table className="table list-view">
+              <thead>
+                <tr>
+                  <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('deleted_at')}</th>
+                  <th className="hide-mobile">{t('deleted_by')}</th><th>{t('delete_reason')}</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {data.users.map(u => {
+                  const blocked = u.username_taken ? 'restore_username_taken' : u.email_taken ? 'restore_email_taken' : null;
+                  return (
+                    <tr key={u.id}>
+                      <td><b>{u.full_name}</b> <Indicator color="gray">{t('deleted_marker')}</Indicator></td>
+                      <td dir="ltr" className="code">{u.username}</td>
+                      <td>{nm(u, 'role_name')}</td>
+                      <td className="muted small">{fmtDate(u.deleted_at)}</td>
+                      <td className="hide-mobile">{u.deleted_by_name || u.deleted_by_username || '—'}</td>
+                      <td className="small del-reason-cell">{u.delete_reason}</td>
+                      <td>
+                        <span title={blocked ? t(blocked) : undefined}>
+                          <button className="btn btn-default btn-sm" disabled={!!blocked} onClick={() => setRestoring(u)}>
+                            <Icon name="restore" size={14} /> {t('restore_user')}
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      {restoring && <RestoreUserDialog user={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); reload(); }} />}
+    </div>
+  );
+}
+
 function UsersManage() {
   const { t, nm, errText, fmtDate } = useI18n();
   const { user: me } = useAuth();
-  const [view, setView] = useState('active');               // 'active' | 'deleted' (1.7.0)
-  const { data, error, loading, reload } = useLoad(() => api.get(view === 'deleted' ? '/users?deleted=1' : '/users'), [view]);
+  const { data, error, loading, reload } = useLoad(() => api.get('/users'), []);
   const online = useLoad(() => api.get('/presence/count'), []);     // «متصل الآن (n)» (1.11.0)
   const [sel, setSel] = useState(new Set());
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState(null);            // users in the delete dialog
-  const [restoring, setRestoring] = useState(null);
   const nav = useNavigate();
-  const tabs = (
-    <div className="tabs" role="tablist">
-      {['active', 'deleted'].map(v => (
-        <button key={v} type="button" role="tab" aria-selected={view === v} className={'tab' + (view === v ? ' active' : '')}
-          onClick={() => { setView(v); setSel(new Set()); }}>
-          {t(v === 'active' ? 'users_current' : 'deleted_users')}
-        </button>
-      ))}
-    </div>
-  );
-  if (loading && (!data || !!data.deleted !== (view === 'deleted'))) return <div>{tabs}<Loading /></div>;
-  if (error) return <div>{tabs}<ErrorBox error={error} /></div>;
-
-  if (view === 'deleted') {
-    return (
-      <div>
-        <PageHeader title={t('users_title')} icon="users">
-          <ExportButton report="users" params={{ deleted: 1 }} adminOnly />
-        </PageHeader>
-        {tabs}
-        <Card>
-          {!data.users.length ? <p className="muted">{t('no_deleted_users')}</p> : (
-            <div className="table-wrap">
-              <table className="table list-view">
-                <thead>
-                  <tr>
-                    <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('deleted_at')}</th>
-                    <th className="hide-mobile">{t('deleted_by')}</th><th>{t('delete_reason')}</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.users.map(u => {
-                    const blocked = u.username_taken ? 'restore_username_taken' : u.email_taken ? 'restore_email_taken' : null;
-                    return (
-                      <tr key={u.id}>
-                        <td><b>{u.full_name}</b> <Indicator color="gray">{t('deleted_marker')}</Indicator></td>
-                        <td dir="ltr" className="code">{u.username}</td>
-                        <td>{nm(u, 'role_name')}</td>
-                        <td className="muted small">{fmtDate(u.deleted_at)}</td>
-                        <td className="hide-mobile">{u.deleted_by_name || u.deleted_by_username || '—'}</td>
-                        <td className="small del-reason-cell">{u.delete_reason}</td>
-                        <td>
-                          <span title={blocked ? t(blocked) : undefined}>
-                            <button className="btn btn-default btn-sm" disabled={!!blocked} onClick={() => setRestoring(u)}>
-                              <Icon name="restore" size={14} /> {t('restore_user')}
-                            </button>
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-        {restoring && <RestoreUserDialog user={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); reload(); }} />}
-      </div>
-    );
-  }
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorBox error={error} />;
 
   const blockedOf = u => undeletable(u, me, data.users);
   const selectable = data.users.filter(u => !blockedOf(u));
@@ -139,7 +141,6 @@ function UsersManage() {
         <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
         <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>
       </PageHeader>
-      {tabs}
       {importing && <UserImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); reload(); }} />}
       <Card title={t('two_fa')} actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
         <div className="row gap wrap">
