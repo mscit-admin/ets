@@ -209,6 +209,29 @@ export function assertConfig() {
   dbSslOptions();   // fails early on an unknown mode or an unreadable certificate file
   const m = mobileConfigProblem(config.mobile);
   if (m) throw new Error(m);
+  const tp = trustProxyProblem(config.security.trustProxy);
+  if (tp) throw new Error(tp);
+}
+
+// TRUST_PROXY (app.set('trust proxy', …) in app.js) decides which hop's address becomes req.ip and so the key of the
+// per-IP login limit (middleware/ratelimit.js) and the IP in the logs. Trusting the whole X-Forwarded-For chain lets
+// any client set its own address: it picks a fresh rate-limit bucket on every request (defeating the per-IP login
+// limit) and writes a false IP to the logs. 'loopback' (the default — nginx on this server), 'linklocal',
+// 'uniquelocal', a hop count, or a proxy IP / CIDR / comma list are all safe and stay quiet. → why a value is unsafe,
+// or null. Mirrors appSecretProblem / mobileConfigProblem; assertConfig refuses to start on a non-null result, as it
+// does for the other insecure settings (a weak APP_SECRET, an unencrypted remote database). See
+// docs/handover/02-Installation-Guide.md §9.
+export function trustProxyProblem(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  // trust-all forms: boolean true, the string "true", and the "all addresses" CIDRs
+  if (value === true || v === 'true' || v === '0.0.0.0/0' || v === '::/0') {
+    return `TRUST_PROXY=${value === true ? 'true' : value} trusts every X-Forwarded-For header, so any client could ` +
+      `set its own IP address and bypass the per-IP login rate limit (and falsify the logs). ` +
+      `Keep TRUST_PROXY=loopback (nginx on this server); behind a load balancer leave it at loopback and configure ` +
+      `nginx real_ip for the balancer's addresses only, or set TRUST_PROXY to the exact hop count or the proxy's ` +
+      `IP/subnet — never true. See docs/handover/02-Installation-Guide.md §9.`;
+  }
+  return null;
 }
 
 // PUBLIC_BASE_URL / TLS_CERT_SHA256 (see config.mobile): → why a value is unusable, or null.

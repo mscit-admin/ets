@@ -30,6 +30,57 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.4] — 2026-10-23 — «المتصلون الآن» as a tab inside the Users screen
+
+### Changed
+- **Frontend:** the «المتصلون الآن» (online users) screen is no longer a separate page or sidebar item — it is now
+  the second tab inside the Users screen (`pages/Users.jsx`, `components/Layout.jsx`). The active tab is kept in the
+  query string (`/users?tab=online`), matching how other screens persist state. Live-presence logic in
+  `pages/OnlineUsers.jsx` is reused unchanged.
+- **Permissions:** the tab's label and its content are both gated by `can('usr')` (the same admin-only check that
+  guarded the old route), so a user without that permission can neither see nor activate the tab, including by URL.
+
+### Removed
+- **Frontend:** the standalone online-users sidebar entry.
+
+### Upgrade notes
+- No migration, no setting change. Old links and the backend presence screen-link to `/online` still work: the old
+  route now redirects to `/users?tab=online` (`App.jsx`).
+
+---
+
+## [1.12.3] — 2026-10-23 — Trust-proxy safety guard against X-Forwarded-For spoofing
+
+### Security
+- **Backend:** the service now refuses to start when `TRUST_PROXY` is set to a **trust-all** value — `true` / `'true'`
+  or an all-addresses CIDR (`0.0.0.0/0`, `::/0`) — with a clear, actionable message (`config.js`,
+  `trustProxyProblem`, checked in `assertConfig`). Such a value would make Express trust the whole `X-Forwarded-For`
+  chain, so any client could set its own IP address: it would win a fresh per-IP login rate-limit bucket on every
+  request (defeating `LOGIN_RATE_LIMIT`, `middleware/ratelimit.js`) and write a false IP to the logs. The default
+  `loopback` (nginx on this server appends the real client address on the right, which Express takes), a hop count,
+  and a proxy IP / subnet / comma list stay valid and quiet. This matches how the app already refuses to start on
+  other insecure settings (a weak `APP_SECRET`, an unencrypted remote database). Before this change `TRUST_PROXY=true`
+  failed to start anyway, but with an obscure `invalid IP address: true` from the proxy parser.
+
+### Tests
+- **Tests:** `backend/test/trust-proxy.test.js` — with the default `TRUST_PROXY=loopback` (as the running server
+  bootstraps it), a client-supplied `X-Forwarded-For` that changes on every request does **not** win a fresh per-IP
+  login bucket: the per-IP limiter still answers `429` after `LOGIN_RATE_LIMIT`. The test fails if the code is changed
+  so `req.ip` follows the client header under the default config. It also checks the per-account rate limit and the
+  per-account lockout (`services/lockout.js`) still fire whatever the header says. `config.test.js` covers
+  `trustProxyProblem` (trust-all refused, safe values quiet) and that `assertConfig` throws on `TRUST_PROXY=true`.
+
+### Docs
+- **Docs:** `02-Installation-Guide.md` (§6 variable table, §9) and `06-Security.md` state the safe `TRUST_PROXY`
+  values and that the service refuses to start with `true` / an all-addresses CIDR.
+
+### Upgrade notes
+- No migration, no setting change. The default (`loopback`) is unchanged. Only deployments that had wrongly set
+  `TRUST_PROXY=true` are affected — those could not start before this change either; set `TRUST_PROXY=loopback` (and,
+  behind a load balancer, configure nginx `real_ip` for the balancer's addresses only — 02 §9).
+
+---
+
 ## [1.12.2] — 2026-10-22 — Sessions: idle timeout counts only real user activity
 
 ### Security
@@ -1925,7 +1976,9 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/8d0af85...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/c1285ef...HEAD
+[1.12.4]: https://github.com/mscit-admin/ets/compare/3d0f83e...c1285ef
+[1.12.3]: https://github.com/mscit-admin/ets/compare/8d0af85...3d0f83e
 [1.12.2]: https://github.com/mscit-admin/ets/compare/91587f6...8d0af85
 [1.12.1]: https://github.com/mscit-admin/ets/compare/4eab0ae...91587f6
 [1.12.0]: https://github.com/mscit-admin/ets/compare/2435711...4eab0ae
