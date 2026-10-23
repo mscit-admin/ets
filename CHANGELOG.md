@@ -30,6 +30,23 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.6] — 2026-10-23 — Settings screen organized into tabs
+
+### Changed
+- **Frontend:** the Settings screen is no longer one long scroll — its sections are grouped into tabs
+  (`pages/Settings.jsx`): «عام» (المخطط الزمني، عام، الهوية), «الأمان والجلسة» (التحقق بخطوتين، الاعتماد، الأمان،
+  حفظ السجلّات), «الإشعارات» (الجدولة والعتبات ومصفوفة السياسات), «النسخ الاحتياطي» (للمدير فقط), «متقدّم» (تصدير/
+  استيراد البيانات، معلومات النظام). The active tab is kept in the query string (`/settings?tab=security`), matching
+  the Users and Approvals screens. Pure layout/navigation change — no setting's behaviour, API call or data changed.
+- **Permissions preserved exactly:** every section keeps its existing guard; the «النسخ الاحتياطي» tab appears only
+  for an administrator, and export/import buttons stay gated by `exp`/`imp`.
+
+### Upgrade notes
+- No migration, no setting change. Old deep-links still work: `/settings#backups`, `#notifications`, `#timeline`
+  (and `/settings?restored=1#backups` from the restore wizard) open the matching tab and still scroll into view.
+
+---
+
 ## [1.12.5] — 2026-10-23 — the sign-in page always explains an expired session
 
 ### Fixed
