@@ -30,6 +30,19 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.11] — 2026-10-23 — Users overview: one combined KPI card
+
+### Changed
+- **Frontend:** the dashboard Users overview (`components/UsersOverview.jsx`) now shows the headline user figures
+  in a **single «المستخدمون» / Users KPI card** instead of three separate `NumberCard`s. The one card presents
+  total, active, online now, disabled and deleted as a row of stat items (big number + short label) reusing the
+  existing `NumberCard` typography and colour accents (`.uo-stats` / `.uo-stat` in `styles/app.css`). The online
+  and deleted figures are links (`/users?tab=online`, `/users?tab=deleted`) with the same navigate-on-plain-click
+  behaviour as the donut slices; the grid lays out correctly in both RTL and LTR via logical properties. The bar
+  chart and the four donuts are unchanged. New i18n key `uo_summary` (AR/EN). No backend or API change.
+
+---
+
 ## [1.12.10] — 2026-10-23 — Users overview: two-factor donut
 
 ### Added

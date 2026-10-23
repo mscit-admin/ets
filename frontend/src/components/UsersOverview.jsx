@@ -4,16 +4,35 @@
 // sees the section nor the data. Replaces the old bottom departments grid, whose purpose the top ERP wheel
 // already serves.
 //
-// A bar chart (scoped users per department) and four donuts (by role, account status, presence, two-factor auth) built from the
-// screen's own palette — the ERP-wheel navy and the indicator-pill colours (styles/app.css) — plus summary
-// NumberCards. Every slice / bar carries an SVG <title> tooltip (label · count · %), and the slices that map to a
-// Users view are links (role / status → /users, deleted → /users?tab=deleted, online → /users?tab=online).
+// One combined «المستخدمون» / Users KPI card (headline figures: total, active, online, disabled, deleted), a bar
+// chart (scoped users per department) and four donuts (by role, account status, presence, two-factor auth), all
+// built from the screen's own palette — the ERP-wheel navy and the indicator-pill colours (styles/app.css). Every
+// slice / bar carries an SVG <title> tooltip (label · count · %), and the figures / slices that map to a Users
+// view are links (KPI online → /users?tab=online, deleted → /users?tab=deleted; role / status → /users).
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { useLiveUpdates } from '../lib/live.js';
 import { pc } from '../lib/format.js';
-import { Card, ErrorBox, Loading, NumberCard, useLoad } from './ui.jsx';
+import { Card, ErrorBox, Loading, useLoad } from './ui.jsx';
 import { Donut } from './Donut.jsx';
+
+// One headline figure inside the combined «المستخدمون» / Users KPI card: big number + short label, reusing the
+// NumberCard typography (.nc-value / .nc-label) and its colour accents. When a figure maps to a Users view it is
+// a link (same navigate-on-plain-click behaviour as the donut slices), otherwise it is display-only.
+function Stat({ label, value, color, href }) {
+  const navigate = useNavigate();
+  const inner = (
+    <>
+      <div className={'nc-value ' + (color || '')}>{value}</div>
+      <div className="nc-label">{label}</div>
+    </>
+  );
+  return href
+    ? <a className="uo-stat uo-stat-link" href={href}
+         onClick={e => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); navigate(href); }}>{inner}</a>
+    : <div className="uo-stat">{inner}</div>;
+}
 
 // Distinct, readable fills drawn from the existing screen palette (ERP-wheel navy + indicator-pill tones).
 const ROLE_FILLS = ['#24508a', '#2a78d6', '#30a66d', '#f0883a', '#6e46c6', '#0f7c8c', '#e24c4c', '#a07b07', '#7c7c7c'];
@@ -71,11 +90,15 @@ export function UsersOverview() {
   return (
     <section className="users-overview" aria-label={t('users_overview')}>
       <h2 className="section-title">{t('users_overview')}</h2>
-      <div className="grid-cards">
-        <NumberCard label={t('total_users')} value={data.total} />
-        <NumberCard label={t('active_users')} value={data.active} color="green" />
-        <NumberCard label={t('nav_online')} value={data.online} color="blue" />
-      </div>
+      <Card title={t('uo_summary')} className="uo-summary">
+        <div className="uo-stats">
+          <Stat label={t('total_users')} value={data.total} />
+          <Stat label={t('active_users')} value={data.active} color="green" />
+          <Stat label={t('nav_online')} value={data.online} color="blue" href="/users?tab=online" />
+          <Stat label={t('inactive')} value={data.inactive} color="orange" />
+          <Stat label={t('uo_deleted')} value={data.deleted} color="red" href="/users?tab=deleted" />
+        </div>
+      </Card>
       <div className="uo-grid">
         <Card className="uo-bars">
           <h4 className="donut-title">{t('users_by_dept')}</h4>
