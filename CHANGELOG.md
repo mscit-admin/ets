@@ -2000,7 +2000,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/c1285ef...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/cc064d9...HEAD
+[1.12.5]: https://github.com/mscit-admin/ets/compare/c1285ef...cc064d9
 [1.12.4]: https://github.com/mscit-admin/ets/compare/3d0f83e...c1285ef
 [1.12.3]: https://github.com/mscit-admin/ets/compare/8d0af85...3d0f83e
 [1.12.2]: https://github.com/mscit-admin/ets/compare/91587f6...8d0af85
