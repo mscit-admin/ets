@@ -236,6 +236,15 @@ export async function presenceCounts() {
   return r;
 }
 
+/** Distinct users online right now (valid session, last report within the online window). Counts only — no names,
+ *  no rows — for the dashboard users-overview donut (routes/dashboard.js). */
+export async function onlineUserCount() {
+  return (await query(`SELECT count(DISTINCT p.user_id)::int AS n
+    FROM user_presence p JOIN sessions s ON s.id=p.session_id JOIN users u ON u.id=p.user_id
+    WHERE ${VALID} AND p.last_seen > now() - make_interval(secs => $2)`,
+  [config.session.idleMinutes, ONLINE_SECONDS])).rows[0].n;
+}
+
 /** Periodic clean-up; one API process at a time. → { presence, daily } rows deleted, or { skipped: 'locked' }. */
 export async function cleanupPresence() {
   const c = await pool.connect();

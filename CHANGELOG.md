@@ -30,6 +30,43 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.9] — 2026-10-23 — dashboard users overview
+
+### Added
+- **Frontend:** a new **«نظرة عامة على المستخدمين» / Users overview** section on the dashboard
+  (`pages/Dashboard.jsx`), shown only to system administrators. Summary `NumberCard`s (total, active, online now),
+  a per-department bar chart of scoped users, and three hand-built SVG donuts — by role, account status
+  (active / disabled / deleted), and presence (online / offline). New reusable `components/Donut.jsx` in the
+  ERP-wheel style and `components/UsersOverview.jsx`; the figures reuse the existing screen palette (the ERP-wheel
+  navy from `lib/wheelGeometry.js` and the indicator-pill tones in `styles/app.css`) and lay out correctly in both
+  RTL and LTR. Each slice and bar carries an SVG `<title>` tooltip (label · count · percentage); the slices that
+  map to a Users view are links (role / status → `/users`, deleted → `/users?tab=deleted`, online →
+  `/users?tab=online`). New i18n keys under `i18n/messages.js` in both Arabic and English.
+- **Backend:** `GET /api/dashboard/users-overview` (`routes/dashboard.js`, `services/userStats.js`) returns
+  aggregated user statistics — **counts only, no per-user data** — computed in SQL with `GROUP BY` / `FILTER`
+  (lifecycle and 2FA tallies, users per role, scoped users per department, and distinct online users via the new
+  `onlineUserCount()` in `services/presence.js`).
+
+### Changed
+- **Frontend:** the dashboard's bottom departments grid — which duplicated the top ERP wheel — was **removed** and
+  replaced by the Users overview section.
+
+### Security
+- The Users overview section and its endpoint are gated by the **same permission as the Users screen**: `'usr'`
+  plus the admin role (`requireAuth, requirePerm('usr'), requireAdmin`, matching `routes/users.js` and
+  `routes/presence.js`, per ETS-SEC-004). A reader without `'usr'` does not render the section and the endpoint
+  returns 403. The payload carries no PII — aggregate counts only.
+
+### Tests
+- **Backend:** `test/dashboard-users-overview.test.js` — response shape, correct counts on seeded data (lifecycle,
+  2FA split, roles, per-department, online), and that the `'usr'` + admin gate is enforced (non-admin 403,
+  signed-out 401).
+
+### Upgrade notes
+- No database change: the endpoint is pure `SELECT` aggregation (no migration, no schema change).
+
+---
+
 ## [1.12.8] — 2026-10-23 — browser tab title follows the configured system name
 
 ### Fixed

@@ -13,10 +13,11 @@ import { projectHealth } from '../lib/health.js';
 import { StatusBadge, useInsightText } from './ProjectStatus.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, Pct, ProgressBar, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { UsersOverview } from '../components/UsersOverview.jsx';
 
 export default function Dashboard() {
   const { t, nm, fmtDay } = useI18n();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const sum = useLoad(o => api.get('/tracker/summary', o), []);
   const pendingL = useLoad(o => api.get('/imports/pending-count', o), []);
   const editsL = useLoad(o => api.get('/approvals/pending-count', o), []);
@@ -115,26 +116,7 @@ export default function Dashboard() {
         );
       })()}
 
-      <h2 className="section-title">{t('departments')}</h2>
-      <div className="grid-depts">
-        {departments.map(d => (
-          <Link key={d.id} to={'/department/' + d.id} className="dept-card">
-            <div className="dept-top">
-              <span className="dept-icon" style={{ color: d.color, background: d.color + '1a' }}><Icon name={d.emblem} size={22} /></span>
-              <div className="dept-name">
-                <b>{nm(d)}</b>
-                <span>{t('apps_count', { n: d.apps })}{d.is_base ? ' · ' + t('base_dept') : ''}</span>
-              </div>
-              <div className="dept-pct"><Pct value={d.pct} /></div>
-            </div>
-            <ProgressBar value={d.pct} />
-            <div className="dept-foot">
-              <span>{t('weight')}: <b className="num">{pc(d.weight)}</b></span>
-              <span>{t('dept_share')}: <b className="num">{pc(total.weight ? (d.weight / total.weight) * 100 : 0)}%</b></span>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {can('usr') && <UsersOverview />}
 
       <div className="grid-2">
         <Card title={t('lowest_apps')}>
