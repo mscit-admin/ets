@@ -30,6 +30,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.8] — 2026-10-23 — browser tab title follows the configured system name
+
+### Fixed
+- **Frontend:** the browser tab title now follows the configured system name instead of the static
+  `index.html` `<title>`. A single effect in `App.jsx` sets `document.title` from `me.org_name_ar` /
+  `me.org_name_en` (the same source and current-language rule the header uses in `components/Layout.jsx`):
+  the current UI language's name, falling back to the other language's name and then to `t('app_title')`.
+  Empty/whitespace-only names fall through to the default, so an all-empty config never yields a blank tab
+  title. It updates on initial load once `/auth/me` is available, on a Settings → General save (`refresh()`
+  reloads `me`) and on a UI-language switch. Before sign-in `me` carries no org name, so the title stays the
+  default rather than a stale name. `index.html` keeps the same string as its pre-hydration default.
+
+---
+
 ## [1.12.7] — 2026-10-23 — «المستخدمون المحذوفون» promoted to a top tab
 
 ### Changed
@@ -2031,7 +2045,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/bbf838f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/3177ecb...HEAD
+[1.12.8]: https://github.com/mscit-admin/ets/compare/bbf838f...3177ecb
 [1.12.7]: https://github.com/mscit-admin/ets/compare/badafd9...bbf838f
 [1.12.6]: https://github.com/mscit-admin/ets/compare/cc064d9...badafd9
 [1.12.5]: https://github.com/mscit-admin/ets/compare/c1285ef...cc064d9
