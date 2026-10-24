@@ -90,10 +90,14 @@ export async function seed({ log = console.log } = {}) {
         [d.id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base, d.sort]);
     }
     for (const a of cat.applications) {
+      // department_id is set ONLY on the first INSERT (initial catalog placement); it is intentionally LEFT OUT of the
+      // ON CONFLICT update because an application may have been moved to another department (1.12.16, application_moves)
+      // and a move OWNS department_id thereafter — re-asserting EXCLUDED.department_id on each deploy would revert the
+      // move. This mirrors the functions/function_moves guard below, and how user-owned `weight` is also not refreshed.
       await c.query(`INSERT INTO applications(id,department_id,name_ar,name_en,sub_ar,icon,default_weight,weight,
           note_ar,addendum,scope_cut,extra_module,sort)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12)
-        ON CONFLICT (id) DO UPDATE SET department_id=EXCLUDED.department_id, name_ar=EXCLUDED.name_ar,
+        ON CONFLICT (id) DO UPDATE SET name_ar=EXCLUDED.name_ar,
           name_en=EXCLUDED.name_en, sub_ar=EXCLUDED.sub_ar, icon=EXCLUDED.icon,
           default_weight=EXCLUDED.default_weight, note_ar=EXCLUDED.note_ar, addendum=EXCLUDED.addendum,
           scope_cut=EXCLUDED.scope_cut, extra_module=EXCLUDED.extra_module, sort=EXCLUDED.sort`,
