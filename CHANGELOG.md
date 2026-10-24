@@ -30,6 +30,23 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.22] — 2026-10-24 — Fix: re-seeding reverted a moved application's department
+
+### Fixed
+- **Database/Seed:** the idempotent catalog seed (`backend/src/db/seed.js`), which runs on every deploy, reset each
+  application's `department_id` back to the catalog value on conflict — silently **reverting any «نقل التطبيق إلى
+  إدارة أخرى» move (1.12.16)** on the next update. The applications upsert no longer touches `department_id` on
+  conflict: the catalog department is the **initial placement only** (applied on first INSERT); after that a move
+  (`application_moves`) owns it — mirroring how the functions seed already respects `function_moves` and how user-owned
+  `weight` is left untouched. Catalog display fields (names, icon, sort…) still refresh, and brand-new catalog apps are
+  still placed correctly.
+
+### Upgrade notes
+- No migration. After deploying this version, re-apply any application move that an earlier deploy reverted (the move
+  then persists across future updates). Item moves (`function_moves`) were never affected.
+
+---
+
 ## [1.12.21] — 2026-10-24 — «نجح» auto-sets 100 %
 
 ### Changed
@@ -2452,7 +2469,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/5763be8...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/fe414d0...HEAD
+[1.12.22]: https://github.com/mscit-admin/ets/compare/5763be8...fe414d0
 [1.12.21]: https://github.com/mscit-admin/ets/compare/1bcef55...5763be8
 [1.12.20]: https://github.com/mscit-admin/ets/compare/958dbed...1bcef55
 [1.12.19]: https://github.com/mscit-admin/ets/compare/ddc5999...958dbed
