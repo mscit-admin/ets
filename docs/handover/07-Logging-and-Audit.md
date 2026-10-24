@@ -62,6 +62,15 @@ the wrong field, so it is never stored as typed (database, files, journal, expor
 lower-cased name (key derived from `APP_SECRET`), e.g. `?g***#5f2c0e9a71b3`: repeated attempts with the same name
 share the same value, so they can still be grouped. Names of real accounts are stored as they are.
 
+**Brute-force / enumeration alerts (periodic check, admins only).** The notification scan (`notify_scan`, every 15 min)
+raises two complementary security alerts from these rows: **S2 `failed_logins`** — too many failed sign-ins in 15
+minutes **per source IP** and, separately, **all addresses together**, over `notify.failed_logins_threshold` (any
+failure type); and **S13 `distributed_logins`** (1.12.23) — the **TOTAL `login_unknown_user` across ALL source IPs**
+in `notify.distributed_login_window_min` (default 15 min) over `notify.distributed_login_threshold` (default 20). S13
+catches **distributed account enumeration** spread thin over many IPs (a few attempts each, no single IP tripping S2's
+per-IP check); its alert names the total count and the number of distinct IPs. Both are admin-only and in-app only
+(ETS-SEC-047), critical, and fire at most once per window. Thresholds are editable in Settings → «الإشعارات» → العتبات.
+
 ## 2. Audit trail (`audit_log`)
 
 Every change made through the API is recorded **in the same transaction as the change itself** (or, for an

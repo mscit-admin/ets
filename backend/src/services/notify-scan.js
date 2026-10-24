@@ -2,7 +2,8 @@
 // takes a PostgreSQL advisory lock and gives up when another API process holds it (the unique open-summary index
 // is the second line of defence). Each job remembers its last run in notify_state ('job:<name>').
 //
-//   security  every run      S2 failed sign-ins (15 min, per address and all together), S5 refused requests and
+//   security  every run      S2 failed sign-ins (15 min, per address and all together), S13 distributed login probing
+//                            (total «login_unknown_user» across all addresses in the window), S5 refused requests and
 //                            S8 server errors (last hour)
 //   backups   every run      S6 local backup late, S9 offsite copy late / failing (per destination), S10 weekly test
 //                            restore failed or missing, S11 a restore finished (1.12.0; services/backup-status.js)
@@ -306,7 +307,7 @@ const LOGIN_FAIL = `NOT success AND (event IN ('login_bad_password','login_unkno
 async function securityChecks(ctx) {
   const { s, now } = ctx;
   const admins = reach(ctx, 'failed_logins');
-  const out = { failed_logins: 0, access_denied: 0, server_errors: 0 };
+  const out = { failed_logins: 0, distributed_logins: 0, access_denied: 0, server_errors: 0 };
   const N = s['notify.failed_logins_threshold'];
   const rows = (await query(`SELECT host(ip) AS ip, count(*)::int AS n FROM auth_log WHERE ts > now() - interval '15 minutes' AND ${LOGIN_FAIL} GROUP BY 1`)).rows;
   const entries = [];
@@ -318,6 +319,19 @@ async function securityChecks(ctx) {
     for (const user of admins) entries.push({ user, dedupeKey: `failed_logins:all:${hourKey(now)}`, count: total, link: '/logs?tab=auth', params: { minutes: 15 } });
   }
   if (entries.length) { await deliver('failed_logins', entries); out.failed_logins = entries.length; }
+  // S13 (1.12.23): a DISTRIBUTED login-probing pattern — the TOTAL «معرّف غير موجود» (login_unknown_user) across ALL
+  // source IPs in the window ≥ the threshold, catching an attack spread thin over many IPs that S2's per-IP check
+  // (GROUP BY ip) never trips. Headline metric = the unknown-user total; we also report the number of DISTINCT IPs.
+  // Fires at most once per window: the dedupe key is the window bucket, so re-runs in the same window update one row.
+  const dWin = s['notify.distributed_login_window_min'], dN = s['notify.distributed_login_threshold'];
+  const dAdmins = reach(ctx, 'distributed_logins');
+  const du = (await query(`SELECT count(*)::int AS total, count(DISTINCT ip)::int AS ips FROM auth_log
+    WHERE ts > now() - make_interval(mins => $1) AND event='login_unknown_user' AND NOT success`, [dWin])).rows[0];
+  if (du.total >= dN) {
+    const bucket = Math.floor(now.getTime() / (dWin * 60000));
+    const e = dAdmins.map(user => ({ user, dedupeKey: `distributed_logins:${bucket}`, count: du.total, link: '/logs?tab=auth', params: { ips: du.ips, minutes: dWin } }));
+    await deliver('distributed_logins', e); out.distributed_logins = e.length;
+  }
   const denied = (await query(`SELECT count(*)::int AS n FROM auth_log WHERE ts > now() - interval '1 hour' AND event IN ('access_denied','csrf_rejected')`)).rows[0].n;
   if (denied >= s['notify.access_denied_threshold']) {
     const e = reach(ctx, 'access_denied').map(user => ({ user, dedupeKey: `access_denied:${hourKey(now)}`, count: denied, link: '/logs?tab=auth' }));

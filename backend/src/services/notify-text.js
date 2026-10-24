@@ -12,13 +12,14 @@ const AR_NOUN = {
   day: ['يوم واحد', 'يومان', 'أيام', 'يوماً'],
   hour: ['ساعة واحدة', 'ساعتان', 'ساعات', 'ساعة'],
   attempt: ['محاولة واحدة', 'محاولتان', 'محاولات', 'محاولة'],
+  address: ['عنوان واحد', 'عنوانان', 'عناوين', 'عنواناً'],
   error: ['خطأ واحد', 'خطآن', 'أخطاء', 'خطأً'],
   batch: ['ملف واحد', 'ملفان', 'ملفات', 'ملفاً'],
   alert: ['تنبيه واحد', 'تنبيهان', 'تنبيهات', 'تنبيهاً'],
 };
 const EN_NOUN = {
   fn: ['function', 'functions'], rep: ['report', 'reports'], item: ['item', 'items'], req: ['request', 'requests'],
-  day: ['day', 'days'], hour: ['hour', 'hours'], attempt: ['attempt', 'attempts'], error: ['error', 'errors'],
+  day: ['day', 'days'], hour: ['hour', 'hours'], attempt: ['attempt', 'attempts'], address: ['address', 'addresses'], error: ['error', 'errors'],
   batch: ['file', 'files'], alert: ['alert', 'alerts'],
 };
 const n0 = v => (Number.isFinite(+v) ? Math.round(+v) : 0);
@@ -132,6 +133,11 @@ const T = {
   failed_logins: (l, p, n) => ({
     title: l === 'ar' ? 'محاولات دخول فاشلة كثيرة' : 'Many failed sign-ins',
     body: l === 'ar' ? `${ar(n, 'attempt')} خلال ${p.minutes || 15} دقيقة${p.ip ? ` من ${p.ip}` : ' (كل العناوين)'}` : `${en(n, 'attempt')} in ${p.minutes || 15} minutes${p.ip ? ` from ${p.ip}` : ' (all addresses)'}` }),
+  distributed_logins: (l, p, n) => ({
+    title: l === 'ar' ? 'نمط محاولات دخول موزّع' : 'Distributed login-probing pattern',
+    body: l === 'ar'
+      ? `${ar(n, 'attempt')} بمعرّف غير موجود من ${ar(p.ips, 'address')} خلال ${p.minutes || 15} دقيقة — يُحتمل هجوم موزّع لتفادي حدّ المحاولات`
+      : `${en(n, 'attempt')} with an unknown user id from ${en(p.ips, 'address')} in ${p.minutes || 15} minutes — likely a distributed attack to evade the per-IP limit` }),
   audit_integrity: (l, p) => ({
     title: l === 'ar' ? 'خلل في سلامة سجلّ التدقيق' : 'Audit log integrity check failed',
     body: l === 'ar' ? `الجداول: ${(p.tables || []).join('، ') || '—'}` : `Tables: ${(p.tables || []).join(', ') || '—'}` }),

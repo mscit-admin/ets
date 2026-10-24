@@ -232,7 +232,8 @@ Types: `approval_pending` (A1), `approval_overdue` (A2), `request_decided` (A3),
 `quality` (T6), `excluded` (T7), `moved_in` (T8, 1.10.0), `dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
 `account_locked` (S1), `failed_logins` (S2), `audit_integrity` (S3), `email_index` (S4), `access_denied` (S5),
 `backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), `backup_offsite` (S9, 1.12.0), `backup_verify` (S10),
-`restore_event` (S11), `release_event` (S12, 1.12.20 — production promotion started/succeeded/failed/rolled_back; failed/rolled_back critical), and `rate_capped` (above the hourly cap).
+`restore_event` (S11), `release_event` (S12, 1.12.20 — production promotion started/succeeded/failed/rolled_back; failed/rolled_back critical),
+`distributed_logins` (S13, 1.12.23 — a DISTRIBUTED login-probing pattern: the TOTAL `login_unknown_user` across ALL source IPs in a window ≥ `notify.distributed_login_threshold`, complementing the per-IP S2; admin only, in-app only, critical), and `rate_capped` (above the hourly cap).
 The policy itself is the setting `notify.policy` (`PUT /settings`). The live stream `/events` also sends
 `notif_changed` `{unread, top_severity}` to the user's own streams when their alerts change (no content).
 
