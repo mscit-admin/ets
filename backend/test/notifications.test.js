@@ -464,6 +464,59 @@ test('S2 failed sign-ins and S6 backup missing → administrators only; S6 close
   assert.equal((await (await as('root')).put('/settings', { 'notify.policy': { backup_missing: { roles: { admin: false } } } })).status, 400);
 });
 
+test('S13 distributed login probing: total login_unknown_user across all IPs ≥ threshold → admins only, once per window; S2 unchanged', { skip }, async () => {
+  await clean();
+  // auth_log is strictly append-only and its BEFORE INSERT trigger forces ts := now() (no back-dated rows), so the
+  // test is monotonic: one fixed fixture of 22 «login_unknown_user» attempts spread 2-per-IP across 11 IPs, and we
+  // toggle firing purely via the threshold / window settings. The run takes ~100 ms, so every row stays inside the
+  // window throughout.
+  const base = (await pool.query(`SELECT count(*)::int AS n FROM auth_log WHERE event='login_unknown_user' AND NOT success AND ts > now() - interval '15 minutes'`)).rows[0].n;
+  assert.equal(base, 0, 'no pre-existing unknown-user attempts in the window');
+  for (let ip = 0; ip < 11; ip++) for (let j = 0; j < 2; j++) await pool.query(`INSERT INTO auth_log(username, event, success, ip) VALUES ('x','login_unknown_user',false,$1)`, [`10.1.0.${ip}`]);
+  await setSetting('notify.distributed_login_window_min', 15);
+  // S2's threshold is set HIGHER so its per-IP AND all-together branches stay silent on this spread: only S13 fires,
+  // demonstrating S13 catches a distributed unknown-user attack that evades S2's general failed-login threshold.
+  await setSetting('notify.failed_logins_threshold', 50);
+  // below threshold: 22 < 30 → no alert
+  await setSetting('notify.distributed_login_threshold', 30);
+  await scan.runScan({ force: [] });
+  assert.equal((await open('root', 'distributed_logins')).length, 0, 'below threshold: no alert');
+  // at/over threshold: 22 ≥ 20
+  await setSetting('notify.distributed_login_threshold', 20);
+  await scan.runScan({ force: [] });
+  const d = await open('root', 'distributed_logins');
+  assert.equal(d.length, 1, 'distributed alert raised');
+  assert.equal(d[0].count, 22, 'headline = total unknown-user attempts');
+  assert.equal(d[0].params.ips, 11, 'distinct IP count');
+  assert.equal(d[0].params.minutes, 15, 'window reported');
+  assert.equal(d[0].severity, 'critical');
+  assert.equal((await rows('pm1', 'distributed_logins')).length, 0, 'non-admin never receives it');
+  // the in-app body names counts/IPs; the title does not
+  const t = (await (await as('root')).get('/notifications')).data.items.find(i => i.type === 'distributed_logins');
+  assert.ok(!t.title.includes('11') && !t.title.includes('22'), 'no counts in the title');
+  assert.ok(t.body.includes('11'), 'body names the distinct IPs');
+  // S2 (neither the per-IP GROUP BY ip branch nor the all-together branch) is tripped: its threshold is 50 > 22
+  assert.equal((await open('root', 'failed_logins')).length, 0, 'S2 unchanged — its general threshold is not reached');
+  // dedup: a second run in the same window does not create a second row
+  await scan.runScan({ force: [] });
+  assert.equal((await open('root', 'distributed_logins')).length, 1, 'at most once per window');
+  // threshold honored: raising it above the total stops a fresh window from firing
+  await clean();
+  await setSetting('notify.distributed_login_threshold', 100);
+  await scan.runScan({ force: [] });
+  assert.equal((await open('root', 'distributed_logins')).length, 0, 'threshold honored');
+  // window honored: the configured window drives the SQL interval and is reported in the alert params
+  await clean();
+  await setSetting('notify.distributed_login_threshold', 20);
+  await setSetting('notify.distributed_login_window_min', 30);
+  await scan.runScan({ force: [] });
+  const d30 = await open('root', 'distributed_logins');
+  assert.equal(d30.length, 1, 'fires under the wider window');
+  assert.equal(d30[0].params.minutes, 30, 'configured window reported');
+  await setSetting('notify.distributed_login_window_min', 15);
+  await setSetting('notify.failed_logins_threshold', 20);
+});
+
 test('S1 account paused → administrators; S7 retention lowered → administrators', { skip }, async () => {
   await clean();
   const c = client();

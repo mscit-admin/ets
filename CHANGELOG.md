@@ -30,6 +30,27 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.23] — 2026-10-24 — S13: distributed login-probing alert
+
+### Added
+- **Backend/Notifications:** a new security alert **S13 `distributed_logins`** (admin only, in-app only, critical)
+  for a **DISTRIBUTED login-probing pattern** — when the **TOTAL `login_unknown_user` («معرّف غير موجود») across ALL
+  source IPs combined** in a window exceeds a threshold, even when no single IP trips the per-IP **S2 `failed_logins`**
+  (`backend/src/services/notify-catalog.js`, `notify-scan.js` security check). The scan sums unknown-user attempts over
+  the window and reports the total count and the number of distinct IPs; it fires **at most once per window** (dedupe
+  key = the window bucket). Two configurable settings, editable in **Settings → «الإشعارات» → العتبات**:
+  `notify.distributed_login_threshold` (default `20`) and `notify.distributed_login_window_min` (default `15`). AR/EN
+  text and the `nt_distributed_logins` / `ns_distributed_login_*` labels added; the type appears in the Notifications
+  page filter and the policy matrix. No migration (settings keys default via the seed, `ON CONFLICT DO NOTHING`).
+
+### Security
+- **Catches distributed account enumeration that evades the per-IP S2 check** (ETS-SEC-047 eligibility: admin role
+  only). A real pen-test spread a handful of unknown-user attempts across ≈11 IPs so no single IP reached the per-IP
+  threshold; S13 sums across all IPs to detect exactly this. It **complements, not replaces,** S2's per-IP and
+  all-together branches.
+
+---
+
 ## [1.12.22] — 2026-10-24 — Fix: re-seeding reverted a moved application's department
 
 ### Fixed

@@ -13,7 +13,8 @@ const THRESHOLDS = [
   ['notify.stuck_days', 3, 90], ['notify.untested_days', 1, 60], ['notify.failed_retest_days', 1, 60], ['notify.not_started_days', 7, 180],
   ['notify.approval_remind_hours', 4, 168], ['notify.approval_escalate_days', 1, 30], ['notify.import_overdue_days', 1, 30],
   ['notify.dept_risk_gap', 1, 50], ['notify.dept_delay_gap', 1, 50], ['notify.dept_stalled_points', 0, 10, 0.1], ['notify.close_warning_days', 1, 180],
-  ['notify.failed_logins_threshold', 5, 500], ['notify.access_denied_threshold', 5, 1000], ['notify.server_errors_threshold', 1, 1000],
+  ['notify.failed_logins_threshold', 5, 500], ['notify.distributed_login_threshold', 5, 1000], ['notify.distributed_login_window_min', 5, 240],
+  ['notify.access_denied_threshold', 5, 1000], ['notify.server_errors_threshold', 1, 1000],
   ['notify.backup_max_age_hours', 2, 168], ['notify.offsite_max_age_hours', 2, 168], ['notify.rate_cap_per_hour', 5, 500], ['notify.retention_days', 30, 730], ['notify.device_idle_days', 7, 365],
 ];
 

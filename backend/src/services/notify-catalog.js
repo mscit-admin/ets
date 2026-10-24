@@ -50,6 +50,9 @@ export const TYPES = {
   // ---- security and system: the admin role only (ETS-SEC-047), never granted to another role by any setting
   account_locked:    { code: 'S1', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   failed_logins:     { code: 'S2', category: 'security', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('+........'), push: false },
+  // S13 (1.12.23): a DISTRIBUTED login-probing pattern — the TOTAL «معرّف غير موجود» (login_unknown_user) across ALL
+  // source IPs in a window exceeds a threshold, even when no single IP trips the per-IP S2. Complements S2, admin only.
+  distributed_logins: { code: 'S13', category: 'security', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   audit_integrity:   { code: 'S3', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   email_index:       { code: 'S4', category: 'system', kind: 'periodic', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: true },
   access_denied:     { code: 'S5', category: 'security', kind: 'periodic', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
@@ -152,6 +155,8 @@ export const NOTIFY_DEFAULTS = {
   'notify.dept_stalled_points': 0.5,       // P2: change over 30 days at most this many points
   'notify.close_warning_days': 30,         // P4
   'notify.failed_logins_threshold': 20,    // S2: failed sign-ins in 15 minutes (one address, or all together)
+  'notify.distributed_login_threshold': 20, // S13: total «login_unknown_user» across ALL addresses in the window below
+  'notify.distributed_login_window_min': 15, // S13: the window (minutes) the distributed total is measured over
   'notify.access_denied_threshold': 30,    // S5: refusals in one hour
   'notify.server_errors_threshold': 10,    // S8: server errors in one hour
   'notify.backup_max_age_hours': 2,        // S6 (hourly backups since 1.12.0; never less than the interval + 1 h)
@@ -179,6 +184,8 @@ export const NOTIFY_RULES = {
   'notify.dept_stalled_points': v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10,
   'notify.close_warning_days': intRule(1, 180),
   'notify.failed_logins_threshold': intRule(5, 500),
+  'notify.distributed_login_threshold': intRule(5, 1000),
+  'notify.distributed_login_window_min': intRule(5, 240),
   'notify.access_denied_threshold': intRule(5, 1000),
   'notify.server_errors_threshold': intRule(1, 1000),
   'notify.backup_max_age_hours': intRule(2, 168),

@@ -393,6 +393,7 @@ the same keys as the original tracker page, which is what makes import possible.
 | `notify.approval_remind_hours` / `approval_escalate_days` / `import_overdue_days` | `48` / `5` / `3` |
 | `notify.dept_risk_gap` / `dept_delay_gap` / `dept_stalled_points` / `close_warning_days` | `5` / `15` / `0.5` / `30` |
 | `notify.failed_logins_threshold` / `access_denied_threshold` / `server_errors_threshold` / `backup_max_age_hours` | `20` / `30` / `10` / `26` |
+| `notify.distributed_login_threshold` / `distributed_login_window_min` (S13, 1.12.23) | `20` / `15` — total `login_unknown_user` across ALL IPs in the window |
 | `notify.rate_cap_per_hour` / `retention_days` / `device_idle_days` | `50` / `180` / `90` |
 | `notify.policy` | `{}` = the default matrix (03 §3a); validated: no ineligible cell on, no mandatory cell off |
 
