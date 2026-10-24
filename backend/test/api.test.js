@@ -154,7 +154,7 @@ test('2FA: admin exemption and global off', { skip }, async () => {
 test('permissions: tester may set test status but not progress', { skip }, async () => {
   const c = client(); await c.login('tester');
   const f = (await pool.query(`SELECT id FROM functions WHERE app_id='per' AND code='D0'`)).rows[0];
-  await pool.query('UPDATE functions SET progress=100 WHERE id=$1', [f.id]);   // «نجح» needs 100 % (1.8.1)
+  await pool.query('UPDATE functions SET progress=100 WHERE id=$1', [f.id]);   // already 100: no auto-bump, items stay 2
   assert.equal((await c.patch('/tracker/functions/' + f.id, { progress: 50 })).status, 403);
   const ok = await c.patch('/tracker/functions/' + f.id, { test_status: 2, note: 'checked' });
   assert.equal(ok.status, 202);                                   // data-entry edit → waits for the team lead
@@ -162,6 +162,14 @@ test('permissions: tester may set test status but not progress', { skip }, async
   const items = (await pool.query(`SELECT field, new_value FROM edit_request_items WHERE function_id=$1 ORDER BY field`, [f.id])).rows;
   assert.deepEqual(items.map(i => [i.field, i.new_value]), [['note', 'checked'], ['test_status', 2]]);
   assert.equal((await pool.query('SELECT test_status FROM functions WHERE id=$1', [f.id])).rows[0].test_status, 0);
+  // «نجح» below 100 %: the tester may still choose it; the server adds the progress bump (1.12.21) although the tester
+  // has no progress permission — the request carries «نجح» together with progress 100
+  await pool.query(`UPDATE edit_requests SET status='withdrawn' WHERE status='pending'`);
+  await pool.query('UPDATE functions SET progress=40, test_status=0 WHERE id=$1', [f.id]);
+  const auto = await c.patch('/tracker/functions/' + f.id, { test_status: 2 });
+  assert.equal(auto.status, 202);
+  const it2 = (await pool.query(`SELECT field, new_value FROM edit_request_items WHERE request_id=$1 ORDER BY field`, [auto.data.request_id])).rows;
+  assert.deepEqual(it2.map(i => [i.field, Number(i.new_value)]), [['progress', 100], ['test_status', 2]]);
 });
 
 test('a "with notes" status requires a note', { skip }, async () => {

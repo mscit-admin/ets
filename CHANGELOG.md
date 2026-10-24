@@ -30,6 +30,32 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.21] — 2026-10-24 — «نجح» auto-sets 100 %
+
+### Changed
+
+- **Frontend + Backend.** Choosing the test status «نجح» (`test_status: 2`, plain pass) on an item below 100 % now
+  **auto-sets its progress to 100 %** and saves both together, instead of blocking with `pass_needs_100_now` /
+  `pass_requires_100` — reversing the 1.8.1 "no auto-fill" behaviour (the user no longer has to enter 100 % first).
+  A confirmation is shown before the auto-fill: a dialog for a single item (`PassFillModal`) and a confirmation step
+  in the bulk modal; cancelling saves nothing. Applies to the single-item change (`PATCH /tracker/functions/:id`), the
+  bulk set (`POST /tracker/applications/:id/bulk`, `field: "test_status"`) and the edit-request approval path (the
+  request carries both `test_status: 2` and `progress: 100`). The **server is the single source of truth**:
+  `withPassProgress(cur, changes)` (`backend/src/services/passRule.js`) adds `progress: 100` whenever a write sets
+  «نجح» below 100, after the per-field permission check so a user with only `tst` (not `pct`) can mark «نجح». A bulk
+  «نجح» brings every newly-passed item to 100 % but leaves an item already «نجح» below 100 % (a pre-1.8.1 conflict)
+  untouched.
+- The guard that a passed item's progress **cannot be lowered** below 100 while it stays «نجح»
+  (`progress_below_100_while_passed`) is unchanged, and **imports** keep the 1.8.1 rule (a row setting «نجح» below
+  100 % is still a row error — imports are not auto-filled).
+
+### Docs
+
+- `docs/handover/04-User-Guide-AR.md` and `docs/handover/11-API-Reference.md` updated to describe the auto-set
+  behaviour (single + bulk) in place of the old "enter 100 % first" block.
+
+---
+
 ## [1.12.20] — 2026-10-23 — Release promotion pipeline — Phase 3 (feature-complete: rollback, health gating, history)
 
 The test→production release-promotion pipeline (design in `docs/handover/13-Release-Promotion-Design.md`) is now

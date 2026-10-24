@@ -15,13 +15,13 @@ import { RenameDialog } from '../components/RenameDialog.jsx';
 import { MoveDialog, MoveFields, AppMoveDialog } from '../components/MoveDialog.jsx';
 import {
   DISABLE_REASONS, ITEM_TYPES, MOVE_MAX, SOURCES, SRC_COLOR, blockedItemKey, blockedItems,
-  countDelta, emptyMove, emptyReason, moveReady, needsNote, noteProblem, noteReasons, passConflict, pctDelta, pctText, pendingByFunction,
-  pendingDetails, pendingLifecycle, pendingSummary, progressPassProblem, reasonBody, reasonProblem, statusPassProblem, typeOf,
+  PASS, countDelta, emptyMove, emptyReason, moveReady, needsNote, noteProblem, noteReasons, passAutoFill, passConflict, pctDelta, pctText, pendingByFunction,
+  pendingDetails, pendingLifecycle, pendingSummary, progressPassProblem, reasonBody, reasonProblem, typeOf,
 } from '../lib/itemRules.js';
 
-// The rules of an edit — required notes, «نجح» = 100 % (1.8.1, also enforced by the server: nothing is filled in
-// automatically, the user enters 100 % first, then picks «نجح»), reasons, pending values — are in lib/itemRules.js,
-// shared with the mobile app.
+// The rules of an edit — required notes, «نجح» = 100 % (1.8.1, auto-filled since 1.12.21: choosing «نجح» brings the
+// progress up to 100 % after a confirmation, the server sets both together), reasons, pending values — are in
+// lib/itemRules.js, shared with the mobile app.
 
 // "reason" filter values: the reasons a user picks, 'import', and 'none' (excluded before 1.5.0, no reason recorded)
 const REASON_FILTER = [...DISABLE_REASONS, 'import', 'none'];
@@ -158,6 +158,7 @@ export default function Application() {
   const [moving, setMoving] = useState(null);      // the item being moved to another application (1.10.0)
   const [movingApp, setMovingApp] = useState(false); // moving the whole application to another department (1.12.16)
   const [history, setHistory] = useState(null);    // the item whose move history is open
+  const [passFill, setPassFill] = useState(null);  // confirm «نجح» auto-fill to 100 % (1.12.21): { f }
 
   useEffect(() => {
     if (!data) return;
@@ -232,10 +233,13 @@ export default function Application() {
   // (the reports track counts as one more item of weight 1) — same as the Excel export
   const partW = f => (typeOf(f) === 'report' ? calc.reportWeight || 0 : calc.typeWeight?.function || 0);
 
-  const patch = async (f, body) => {
+  // body is sent to the server; optimistic holds extra fields shown on the row at once but NOT sent — used for the
+  // «نجح» auto-fill (1.12.21): the server sets progress=100 itself (its single source of truth, and so a tester with
+  // only the test-status permission is not blocked on the progress field), the reload then confirms it.
+  const patch = async (f, body, optimistic) => {
     const n = (inflight.current.get(f.id) || 0) + 1;
     inflight.current.set(f.id, n);
-    setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body } : x)));
+    setFns(list => list.map(x => (x.id === f.id ? { ...x, ...body, ...optimistic } : x)));
     const done = () => { const k = inflight.current.get(f.id) - 1; if (k > 0) inflight.current.set(f.id, k); else inflight.current.delete(f.id); };
     try {
       const r = await api.patch(path`/tracker/functions/${f.id}`, body);
@@ -254,12 +258,10 @@ export default function Application() {
   // A "with notes" status on an item without a note opens the note window first;
   // status and note are then saved together (cancel = no change).
   const setStatus = (f, field, v) => {
-    // «نجح» below 100 %: not saved, the list goes back to its value (controlled select), and the alert says why
-    const problem = statusPassProblem(f, field, v);
-    if (problem) {
-      toast(t(problem.key, problem.vars), 'red');
-      return;
-    }
+    // Choosing «نجح» below 100 %: confirm first, then auto-set the progress to 100 % with the status (1.12.21). On
+    // cancel nothing is saved — the select is controlled by f.test_status, so it goes back to its value on its own.
+    // «نجح» (2) needs no note (only «نجح مع ملاحظة» (1) does), so this path never opens the note window.
+    if (passAutoFill(f, field, v)) { setPassFill({ f }); return; }
     const after = { ...f, [field]: v };
     if (needsNote(after) && !(f.note || '').trim()) setNoteFor({ f, pending: { [field]: v } });
     else patch(f, { [field]: v });
@@ -453,6 +455,8 @@ export default function Application() {
       {moving && <MoveDialog app={a} f={moving} onClose={() => setMoving(null)} onDone={() => { setMoving(null); reload(); }} />}
       {movingApp && <AppMoveDialog app={a} onClose={() => setMovingApp(false)} onDone={() => { setMovingApp(false); reload(); }} />}
       {history && <MoveHistory f={history} onClose={() => setHistory(null)} />}
+      {passFill && <PassFillModal f={passFill.f} onClose={() => setPassFill(null)}
+        onConfirm={async () => { const f = passFill.f; setPassFill(null); await patch(f, { test_status: PASS }, { progress: 100 }); }} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {
           // including again needs no reason: saved like the other cells; an exclusion is saved by the dialog itself
@@ -486,6 +490,22 @@ function NoteModal({ f, pending, canEdit, onClose, onSave }) {
   );
 }
 
+// Confirm the «نجح» auto-fill (1.12.21): choosing «نجح» on an item below 100 % brings its progress up to 100 %.
+// Confirm → the status and the progress are saved together; cancel → nothing is saved (the select reverts on its own).
+function PassFillModal({ f, onClose, onConfirm }) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const run = async () => { setBusy(true); try { await onConfirm(); } catch { setBusy(false); } };
+  return (
+    <Modal title={t('pass_fill_title')} onClose={onClose}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn btn-primary" onClick={run} disabled={busy}>{t('pass_fill_confirm')}</button></>}>
+      <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
+      <Alert kind="blue">{t('pass_fill_msg', { progress: pctText(f.progress) })}</Alert>
+    </Modal>
+  );
+}
+
 // Bulk set: progress / test status of every counted function, exclude chosen functions with one reason, or set the
 // type (function / report) of chosen items.
 function BulkModal({ app, can, onClose, onDone }) {
@@ -498,7 +518,9 @@ function BulkModal({ app, can, onClose, onDone }) {
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [passAsk, setPassAsk] = useState(false);        // confirm the «نجح» auto-fill to 100 % before applying (1.12.21)
   const exclude = field === 'exclude', retype = field === 'item_type', move = field === 'move';
+  const bulkPass = field === 'test_status' && +value === PASS;
   const [mv, setMv] = useState(emptyMove);               // move (1.10.0): module, application, reason
   const [mvPreview, setMvPreview] = useState(null);
   const moveIds = useMemo(() => chosen.map(x => x.id), [chosen]);
@@ -524,6 +546,9 @@ function BulkModal({ app, can, onClose, onDone }) {
       if (!chosen.length) return;
       body = { field: 'item_type', value: toType, function_ids: chosen.map(x => x.id) };
     }
+    // Bulk «نجح»: confirm first — every affected item below 100 % is brought up to 100 % (1.12.21). Cancel the modal
+    // to do nothing; the server sets the progress (its single source of truth).
+    if (bulkPass && !passAsk) { setPassAsk(true); return; }
     setBusy(true); setErr(null);
     try {
       const r = await api.post(path`/tracker/applications/${app.id}/bulk`, body);
@@ -539,7 +564,7 @@ function BulkModal({ app, can, onClose, onDone }) {
         <button className={'btn ' + (exclude ? 'btn-danger' : 'btn-primary')}
           disabled={busy || (exclude && !!noteProblem(why)) || (move && (!chosen.length || chosen.length > MOVE_MAX || !moveReady(mv, mvPreview)))} onClick={run}>
           {exclude ? t('confirm_exclude_n', { n: chosen.length }) : retype ? t('confirm_type_n', { n: chosen.length })
-            : move ? t('mv_confirm_n', { n: chosen.length }) : t('apply')}</button></>}>
+            : move ? t('mv_confirm_n', { n: chosen.length }) : passAsk ? t('bulk_pass_fill_confirm') : t('apply')}</button></>}>
       {err && <Alert>{errText(err)}
         {blockedItems(err).length > 0 && <>
           <div className="mt-s"><b>{t('bulk_blocked_items', { n: err.data.count ?? blockedItems(err).length })}</b></div>
@@ -550,7 +575,7 @@ function BulkModal({ app, can, onClose, onDone }) {
         </>}
       </Alert>}
       <Field label={t('bulk_set')}>
-        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); setTried(false); setErr(null); }}>
+        <select className="input" value={field} onChange={e => { setField(e.target.value); setValue(e.target.value === 'progress' ? 100 : 2); setTried(false); setErr(null); setPassAsk(false); }}>
           {can.pct && <option value="progress">{t('bulk_progress')}</option>}
           {can.tst && <option value="test_status">{t('bulk_test')}</option>}
           {can.tog && <option value="exclude">{t('bulk_exclude')}</option>}
@@ -559,7 +584,8 @@ function BulkModal({ app, can, onClose, onDone }) {
         </select>
       </Field>
       {field === 'progress' && <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>}
-      {field === 'test_status' && <Field label={t('test_status')}><select className="input" value={value} onChange={e => setValue(e.target.value)}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+      {field === 'test_status' && <Field label={t('test_status')}><select className="input" value={value} onChange={e => { setValue(e.target.value); setPassAsk(false); }}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+      {bulkPass && <Alert kind={passAsk ? 'orange' : 'blue'}>{t(passAsk ? 'bulk_pass_fill_confirm_msg' : 'bulk_pass_fill_msg')}</Alert>}
       {exclude && <>
         <Alert kind="blue">{t('exclude_msg')}</Alert>
         <div className="field">
