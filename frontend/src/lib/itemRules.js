@@ -23,21 +23,25 @@ export const NOTE_FIELD_MAX = 2000;
 export const noteReasons = (t, after) => Object.entries(NOTE_REQUIRED).filter(([k, v]) => after[k] === v)
   .map(([k, v]) => `${t(k)}: ${t(STATUS_PREFIX[k] + v)}`);
 
-// ---- «نجح» needs 100 % (1.8.1)
-// The test status «نجح» (2) only at 100 %, and no progress below 100 on a passed item. «نجح مع ملاحظة» (1) has no
-// progress rule. Nothing is filled in automatically: the user enters 100 % first, then picks «نجح». Items passed below
-// 100 % before 1.8.1 are flagged (passConflict).
+// ---- «نجح» = 100 % (1.8.1, auto-filled since 1.12.21)
+// The test status «نجح» (2) means the item is 100 % done. Choosing «نجح» no longer needs 100 % first: selecting it now
+// brings the progress up to 100 automatically (the web screen asks to confirm, then the server sets both together —
+// the server is the single source of truth). The progress of a passed item still cannot be *lowered* below 100 while
+// it stays «نجح» (progressPassProblem). «نجح مع ملاحظة» (1) has no progress rule. Items passed below 100 % before
+// 1.8.1 are flagged (passConflict). statusPassProblem is kept for the mobile app, which still blocks «نجح» below 100.
 export const PASS = 2;
 export const passConflict = f => f.test_status === PASS && +f.progress < 100;
 // 80 → "80", 82.5 → "82.5" (alerts)
 export const pctText = v => String(Math.round((+v || 0) * 100) / 100);
-// The message (key + values) when this status cannot be saved on item f, else null.
+// Does choosing this status mean «نجح» (PASS) on an item below 100 %? → the web screen confirms, then auto-sets 100 %.
+export const passAutoFill = (f, field, v) => field === 'test_status' && v === PASS && +f.progress < 100;
+// (mobile, still blocking) The message (key + values) when this status cannot be saved on item f, else null.
 export const statusPassProblem = (f, field, v) =>
   (field === 'test_status' && v === PASS && +f.progress < 100 ? { key: 'pass_needs_100_now', vars: { progress: pctText(f.progress) } } : null);
-// The message when this progress cannot be saved on item f, else null.
+// The message when this progress cannot be saved on item f, else null (lowering progress below 100 on a passed item).
 export const progressPassProblem = (f, v) =>
   (f.test_status === PASS && v < 100 ? { key: 'pass_lower_blocked', vars: { progress: pctText(v) } } : null);
-// The items a bulk set refused (server answer of pass_requires_100 / progress_below_100_while_passed), and their line.
+// The items a bulk set refused (server answer of progress_below_100_while_passed), and their line.
 export const blockedItems = e => (Array.isArray(e?.data?.items) ? e.data.items : []);
 export const blockedItemKey = x => (x.error === 'pass_requires_100' ? 'bulk_item_below_100' : 'bulk_item_passed');
 

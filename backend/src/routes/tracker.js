@@ -8,7 +8,7 @@ import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
-import { PASS, passConflict, passRuleError, itemList } from '../services/passRule.js';
+import { PASS, passConflict, passRuleError, withPassProgress, itemList } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
 import { functionsExcluded, itemsMovedIn, applicationMovedIn } from '../services/notify-events.js';
@@ -178,11 +178,16 @@ r.patch('/functions/:id', async (req, res) => {
     if (cur[k] !== v) changes[k] = v;
   }
   if (!Object.keys(changes).length) return res.json({ function: cur });
+  // Choosing «نجح» brings the item to 100 % in the same write (1.12.21): the progress bump is added here, after the
+  // per-field permission check, so it is covered by the test-status permission and travels with the change (direct
+  // edit, approval request, audit). It never lowers a progress; an item already «نجح» below 100 % is left untouched.
+  Object.assign(changes, withPassProgress(cur, changes));
   const after = { ...cur, ...changes };
   if (needsNote(after) && !String(after.note || '').trim()) {
     throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
   }
-  // «نجح» needs 100 % (1.8.1): checked here for a direct edit and for one sent for approval (checked again on approval)
+  // «نجح» = 100 % (1.8.1 / auto-filled 1.12.21): after the bump above, only a progress lowered below 100 on a passed
+  // item is still refused (progress_below_100_while_passed). Checked for a direct edit and one sent for approval.
   const passErr = passRuleError(cur, changes);
   if (passErr) throw bad(passErr, { progress: Number(after.progress), test_status: Number(after.test_status), code: cur.code });
   // excluding a function needs a reason; a duplicate names the function(s) it duplicates
@@ -285,51 +290,64 @@ r.post('/applications/:id/bulk', async (req, res) => {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
   }
-  await bulkPassCheck({ query }, a.id, field, value);         // «نجح» needs 100 % (1.8.1): all or nothing
+  await bulkPassCheck({ query }, a.id, field, value);         // lowering progress on a passed item: still all-or-nothing
+  // A bulk «نجح» also brings every newly-passed item (not yet «نجح») up to 100 % in the same operation (1.12.21).
+  const setPass = field === 'test_status' && Number(value) === PASS;
   if (await needsLeadApproval(req.user, a)) {
     const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
       .filter(x => Number(x.v) !== Number(value));
-    if (!rows.length) return res.json({ updated: 0 });
+    // progress bumps travel with the request so the approved result is «نجح» @ 100 %: only items becoming «نجح»
+    // (test_status <> PASS) and below 100 — an item already «نجح» is left untouched.
+    const bumps = setPass
+      ? (await query(`SELECT id, progress FROM functions WHERE app_id=$1 AND enabled AND test_status <> $2 AND progress < 100 ORDER BY sort, id`, [a.id, PASS])).rows
+      : [];
+    const items = [
+      ...rows.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field, old_value: x.v, new_value: value })),
+      ...bumps.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field: 'progress', old_value: Number(x.progress), new_value: 100 })),
+    ];
+    if (!items.length) return res.json({ updated: 0 });
     const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
-      summary: `${field} = ${value} (${rows.length})`,
-      items: rows.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field, old_value: x.v, new_value: value })) }));
+      summary: `${field} = ${value} (${rows.length})`, items }));
     publishChange({ dept_id: a.department_id, app_id: a.id });
     return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: rows.length });
   }
   const n = await tx(async c => {
-    const before = (await c.query(`SELECT id, code, name_ar, name_en, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
+    const before = (await c.query(`SELECT id, code, name_ar, name_en, progress, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
     await bulkPassCheck(c, a.id, field, value);              // again on the locked rows
-    const q = await c.query(`UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`,
-      [a.id, value, req.user.id]);
+    // For «نجح», also set progress = 100 — but only on rows that were not already «نجح» (test_status <> value), so an
+    // item already passed below 100 % keeps its progress. The CASE reads the pre-update test_status (same statement).
+    const sql = setPass
+      ? `UPDATE functions SET test_status=$2, progress = CASE WHEN test_status <> $2 THEN 100 ELSE progress END,
+         updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`
+      : `UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`;
+    const q = await c.query(sql, [a.id, value, req.user.id]);
     const changed = before.filter(x => Number(x.v) !== Number(value));
+    const items = changed.slice(0, 500).map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, code: x.code, name_ar: x.name_ar, name_en: x.name_en,
+      field, old: x.v, new: value }));
+    // the progress brought to 100 on the newly-passed items (audit reflects both fields)
+    if (setPass) for (const x of before) if (Number(x.v) !== PASS && Number(x.progress) < 100 && items.length < 1000) {
+      items.push({ kind: 'function', app_id: a.id, function_id: x.id, code: x.code, name_ar: x.name_ar, name_en: x.name_en, field: 'progress', old: Number(x.progress), new: 100 });
+    }
     await logAudit(req, { db: c, action: 'bulk_update', entity: 'application', entityId: a.id,
       summary: `${field} = ${value} on ${q.rowCount} functions`, newValue: { field, value },
-      context: { app_id: a.id, count: q.rowCount, changed: changed.length,
-        items: changed.slice(0, 500).map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, code: x.code, name_ar: x.name_ar, name_en: x.name_en,
-          field, old: x.v, new: value })) } });
+      context: { app_id: a.id, count: q.rowCount, changed: changed.length, items } });
     return q.rowCount;
   });
   publishChange({ dept_id: a.department_id, app_id: a.id });
   res.json({ updated: n });
 });
 
-// «نجح» needs 100 % (1.8.1) for a bulk set of every counted item of an application: refused (400) when it would set
-// «نجح» on an item below 100 % or a progress below 100 on a passed item, with the list of those items. Items already
-// passed below 100 % that the bulk set does not change (same value) are not counted.
+// «نجح» = 100 % for a bulk set (1.8.1 / auto-filled 1.12.21): a bulk «نجح» now succeeds and brings every newly-passed
+// item up to 100 % (handled in the UPDATE below), so it is no longer refused. Only a bulk progress below 100 is still
+// refused (400) when it would lower the progress of a passed item, with the list of those items.
 async function bulkPassCheck(c, appId, field, value) {
-  let rows = [];
-  if (field === 'test_status' && value === PASS) {
-    rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
-      WHERE app_id=$1 AND enabled AND test_status <> $2 AND progress < 100 ORDER BY sort, id`, [appId, PASS])).rows;
-  } else if (field === 'progress' && value < 100) {
-    rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
-      WHERE app_id=$1 AND enabled AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
-  }
+  if (!(field === 'progress' && value < 100)) return;
+  const rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
+    WHERE app_id=$1 AND enabled AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
   if (!rows.length) return;
-  const error = field === 'test_status' ? 'pass_requires_100' : 'progress_below_100_while_passed';
   const items = rows.map(x => ({ function_id: x.id, app_id: appId, code: x.code, name_ar: x.name_ar, name_en: x.name_en, item_type: x.item_type,
-    progress: Number(field === 'progress' ? value : x.progress), current_progress: Number(x.progress), test_status: field === 'test_status' ? value : x.test_status, error }));
-  throw bad(error, { bulk: true, count: items.length, items: items.slice(0, 200), list: itemList(items.map(x => ({ code: x.code }))) });
+    progress: Number(value), current_progress: Number(x.progress), test_status: x.test_status, error: 'progress_below_100_while_passed' }));
+  throw bad('progress_below_100_while_passed', { bulk: true, count: items.length, items: items.slice(0, 200), list: itemList(items.map(x => ({ code: x.code }))) });
 }
 
 // Reason of an exclusion as carried by a pending request item (edit_request_items.meta), applied on approval.

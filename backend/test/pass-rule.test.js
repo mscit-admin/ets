@@ -83,25 +83,22 @@ async function reset(progress = [], tests = []) {
   return (await pool.query(`SELECT * FROM functions WHERE app_id='ess' ORDER BY sort, id`)).rows;
 }
 
-test('single edit: «نجح» needs 100 %, in both directions; «نجح مع ملاحظة» has no progress rule', { skip }, async () => {
+test('single edit: «نجح» auto-sets the progress to 100 %; lowering a passed progress is still refused; «نجح مع ملاحظة» has no progress rule', { skip }, async () => {
   const [f, g, h, k] = await reset();
   const lead = await as('lead_hr');
   const p = (x, body) => lead.patch('/tracker/functions/' + x.id, body);
-  // «نجح» at 80 % → refused, nothing saved
+  // «نجح» at 80 % → accepted, the progress is brought up to 100 automatically (1.12.21, reversing the 1.8.1 block)
   let r = await p(f, { test_status: 2 });
-  assert.equal(r.status, 400);
-  assert.equal(r.data.error, 'pass_requires_100');
-  assert.equal(r.data.progress, 80);
-  assert.equal((await fnRow(f.id)).test_status, 0);
-  // progress 100 first, then «نجح» → accepted
-  assert.equal((await p(f, { progress: 100 })).status, 200);
-  assert.equal((await p(f, { test_status: 2 })).status, 200);
+  assert.equal(r.status, 200);
+  assert.deepEqual([+r.data.function.progress, r.data.function.test_status], [100, 2]);
   // «نجح» with progress 100 in the same request → accepted (whatever the order of the fields)
   r = await p(g, { test_status: 2, progress: 100 });
   assert.equal(r.status, 200);
   assert.deepEqual([+r.data.function.progress, r.data.function.test_status], [100, 2]);
-  // «نجح» with a progress below 100 in the same request → refused
-  assert.equal((await p(h, { test_status: 2, progress: 90 })).data.error, 'pass_requires_100');
+  // «نجح» with a progress below 100 in the same request → «نجح» wins, the progress is coerced to 100
+  r = await p(h, { test_status: 2, progress: 90 });
+  assert.equal(r.status, 200);
+  assert.deepEqual([+r.data.function.progress, r.data.function.test_status], [100, 2]);
   // lowering the progress of a passed item → refused, with the message's own code
   r = await p(f, { progress: 90 });
   assert.equal(r.status, 400);
@@ -127,51 +124,62 @@ test('report items follow the same rule', { skip }, async () => {
   const [f] = await reset();
   const lead = await as('lead_hr');
   assert.equal((await lead.patch('/tracker/functions/' + f.id, { item_type: 'report' })).status, 200);
-  assert.equal((await lead.patch('/tracker/functions/' + f.id, { test_status: 2 })).data.error, 'pass_requires_100');
-  assert.equal((await lead.patch('/tracker/functions/' + f.id, { progress: 100, test_status: 2 })).status, 200);
+  const r1 = await lead.patch('/tracker/functions/' + f.id, { test_status: 2 });   // «نجح» auto-sets 100 %
+  assert.equal(r1.status, 200);
+  assert.deepEqual([+r1.data.function.progress, r1.data.function.test_status], [100, 2]);
   assert.equal((await lead.patch('/tracker/functions/' + f.id, { progress: 50 })).data.error, 'progress_below_100_while_passed');
   const row = await fnRow(f.id);
   assert.deepEqual([row.item_type, +row.progress, row.test_status], ['report', 100, 2]);
 });
 
-test('bulk set: all or nothing, with the list of the items that block it', { skip }, async () => {
-  const fs = await reset([100, 80, 100, 50, 100, 100, 100], [0, 0, 0, 0, 0, 0, 0]);
+test('bulk set: «نجح» brings every newly-passed item to 100 %; lowering a passed progress is still refused', { skip }, async () => {
+  await reset([100, 80, 100, 50, 100, 100, 100], [0, 0, 0, 0, 0, 0, 0]);
   const lead = await as('lead_hr');
+  // bulk «نجح» → succeeds; every item becomes «نجح» and the ones below 100 (80, 50) are brought to 100 (1.12.21)
   let r = await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 });
-  assert.equal(r.status, 400);
-  assert.equal(r.data.error, 'pass_requires_100');
-  assert.equal(r.data.count, 2);
-  assert.deepEqual(r.data.items.map(x => [x.code, x.current_progress]), [[fs[1].code, 80], [fs[3].code, 50]]);
-  assert.equal(r.data.list, `${fs[1].code}, ${fs[3].code}`);
-  assert.equal((await one(`SELECT count(*)::int AS n FROM functions WHERE app_id='ess' AND test_status=2`)).n, 0);   // nothing changed
-  // the same for a member (the request is not even created)
-  const member = await as('member_hr');
-  r = await member.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 });
-  assert.equal(r.data.error, 'pass_requires_100');
-  assert.equal((await one(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending'`)).n, 0);
-  // progress 100 for all, then «نجح» for all → accepted
-  assert.equal((await lead.post('/tracker/applications/ess/bulk', { field: 'progress', value: 100 })).data.updated, 7);
-  assert.equal((await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 })).data.updated, 7);
-  // a progress below 100 on passed items → refused, listing them
+  assert.equal(r.status, 200);
+  assert.equal(r.data.updated, 7);
+  assert.equal((await one(`SELECT count(*)::int AS n FROM functions WHERE app_id='ess' AND test_status=2`)).n, 7);
+  assert.equal((await one(`SELECT min(progress)::int AS m FROM functions WHERE app_id='ess' AND enabled`)).m, 100);
+  // a progress below 100 on passed items → still refused, listing them
   r = await lead.post('/tracker/applications/ess/bulk', { field: 'progress', value: 80 });
+  assert.equal(r.status, 400);
   assert.equal(r.data.error, 'progress_below_100_while_passed');
   assert.equal(r.data.count, 7);
-  assert.equal((await one(`SELECT min(progress)::int AS m FROM functions WHERE app_id='ess'`)).m, 100);
+  assert.equal((await one(`SELECT min(progress)::int AS m FROM functions WHERE app_id='ess' AND enabled`)).m, 100);
+  // a member's bulk «نجح» goes to approval and carries both the status and the progress bumps; approving sets 100 %
+  const fs2 = await reset([100, 60, 70, 100, 100, 100, 100], [0, 0, 0, 0, 0, 0, 0]);
+  const member = await as('member_hr');
+  r = await member.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 });
+  assert.equal(r.status, 202);
+  assert.ok(r.data.request_id);
+  const items = (await pool.query(`SELECT field, new_value FROM edit_request_items WHERE request_id=$1`, [r.data.request_id])).rows;
+  assert.equal(items.filter(x => x.field === 'test_status').length, 7);                 // «نجح» for every item
+  assert.deepEqual(items.filter(x => x.field === 'progress').map(x => Number(x.new_value)).sort(), [100, 100]);  // the two below 100 bumped
+  assert.equal((await lead.post(`/approvals/${r.data.request_id}/approve`)).status, 200);
+  assert.equal((await one(`SELECT count(*)::int AS n FROM functions WHERE app_id='ess' AND test_status=2`)).n, 7);
+  assert.equal((await one(`SELECT min(progress)::int AS m FROM functions WHERE app_id='ess' AND enabled`)).m, 100);
+  assert.equal(+(await fnRow(fs2[1].id)).progress, 100);
   // an excluded item is not concerned by a bulk set (it only changes counted items)
-  await pool.query(`UPDATE functions SET enabled=false, test_status=0, progress=10 WHERE id=$1`, [fs[0].id]);
-  await pool.query(`UPDATE functions SET test_status=0 WHERE app_id='ess'`);
+  const fs3 = await reset();
+  await pool.query(`UPDATE functions SET enabled=false, test_status=0, progress=10 WHERE id=$1`, [fs3[0].id]);
   assert.equal((await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 })).data.updated, 6);
-  assert.equal((await fnRow(fs[0].id)).test_status, 0);
+  const off = await fnRow(fs3[0].id);
+  assert.deepEqual([off.test_status, +off.progress], [0, 10]);
 });
 
 test('approval requests: checked at submit, and again on approval against the values of the moment', { skip }, async () => {
   const [f, g, h] = await reset([80, 100, 100]);
   const member = await as('member_hr'), lead = await as('lead_hr');
-  // submit: «نجح» at 80 % is refused at once, no request is created
+  // submit: «نجح» at 80 % now goes to approval and the request carries the progress bump (test_status + progress=100)
   let r = await member.patch('/tracker/functions/' + f.id, { test_status: 2 });
-  assert.equal(r.status, 400);
-  assert.equal(r.data.error, 'pass_requires_100');
-  assert.equal((await one(`SELECT count(*)::int AS n FROM edit_requests WHERE status='pending'`)).n, 0);
+  assert.equal(r.status, 202);
+  const fit = (await pool.query(`SELECT field, new_value FROM edit_request_items WHERE request_id=$1 ORDER BY field`, [r.data.request_id])).rows;
+  assert.deepEqual(fit.map(x => [x.field, Number(x.new_value)]), [['progress', 100], ['test_status', 2]]);
+  const fa = await lead.post(`/approvals/${r.data.request_id}/approve`);
+  assert.equal(fa.status, 200);
+  const frow = await fnRow(f.id);
+  assert.deepEqual([+frow.progress, frow.test_status], [100, 2]);
   // submit OK at 100 %; then the lead lowers the progress (allowed: not passed yet); approval → 409, nothing applied
   r = await member.patch('/tracker/functions/' + g.id, { test_status: 2 });
   assert.equal(r.status, 202);
