@@ -332,6 +332,15 @@ application's weight and the destination gains it, so the overall weight sum (in
 grouped into departments) is unchanged by construction — nothing can overflow or need clamping. One `move` audit row
 on `application`, plus — in fixed mode — the two departments' derived weight changes as `update` rows on `department`.
 
+**Re-seed.** The seed (`npm run seed`, run on every deploy via `npm run setup`) treats an application's
+`department_id` as **initial-placement-only**: the catalog department is applied on the first `INSERT`, but
+`department_id` is intentionally left out of the applications `ON CONFLICT (id) DO UPDATE SET …`, so re-seeding does
+**not** reset a moved application back to its catalog department — a move owns the column thereafter. This mirrors the
+`function_moves` guard for moved items and the way user-owned `weight` is never refreshed. Catalog-owned display
+fields (names, `sub_ar`, `icon`, `default_weight`, `note_ar`, `addendum`, `scope_cut`, `extra_module`, `sort`) are
+still refreshed from the catalog on every re-seed; a brand-new catalog application is still placed by its
+`department_id` because that is an `INSERT`, not a conflict.
+
 ```sql
 -- applications moved, newest first
 SELECT m.moved_at, m.app_id, m.from_department_id AS was, m.to_department_id AS now, m.weight, m.reason
