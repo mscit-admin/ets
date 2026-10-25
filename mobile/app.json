@@ -2,7 +2,7 @@
   "expo": {
     "name": "ETS",
     "slug": "ets-mobile",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ets",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "ly.ets.mobile",
-      "versionCode": 2,
+      "versionCode": 3,
       "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#171717",

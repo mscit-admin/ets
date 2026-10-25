@@ -6,6 +6,28 @@ versions: [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] — Phase 3: in-app messaging (الرسائل)
+
+### Added
+- **Messages («الرسائل»):** the in-app messaging shipped on the web in 1.12.26, mirrored in the app and reusing the
+  `/api/messages` API as-is (no backend change). A new «الرسائل» tab with an unread badge (`GET /messages/unread-count`):
+  - **Inbox** — the received private 1:1 conversations (sender, subject / preview, time, unread dot), pull to refresh,
+    tap → the thread (`GET /messages/inbox`).
+  - **Thread** — a chat-style conversation, RTL-correct (the caller's own posts aligned to the end, the other party's
+    to the start); opening marks the caller's side read (`GET /messages/threads/:id`), a reply box appends a post
+    (`POST /messages/threads/:id/reply`); a 403 (not a party), 404 or closed thread is handled gracefully.
+  - **Sent** (only with the `msg` permission) — the broadcasts the user authored, with recipient / reply counts and an
+    unread-reply dot (`GET /messages/sent`), drilling into the per-recipient threads (`GET /messages/sent/:id`).
+  - **Compose** (only with `msg`) — a new message: a searchable individuals picker (`GET /messages/recipients?q=`,
+    reusing `MultiPicker`), «الكل», by department and by role (from `GET /messages/compose-meta`, combinable), the live
+    resolved recipient count (`POST /messages/resolve`), an optional subject and a required body, then
+    `POST /messages`.
+  - The unread badge (`src/lib/msgCount.tsx`) and the open lists refresh on the live stream (reconnect, foreground,
+    fallback poll) and on every `message_received` / `message_reply` notification; all automatic reloads use
+    `X-ETS-Live: 1`. Compose and Sent are gated on `msg`; everyone has the inbox and can reply
+    (`src/app/(tabs)/messages/*`, message types in `src/lib/types.ts`, the tab in `src/app/(tabs)/_layout.tsx`;
+    tests `__tests__/messages.test.ts`).
+
 ### Changed
 - Requests a person starts send `X-ETS-Activity: 1`; automatic ones (polling, live reloads, presence, the session
   check `GET /auth/me`) send `X-ETS-Live: 1`. Server 1.12.2 extends the idle timeout only on `X-ETS-Activity`, so an app

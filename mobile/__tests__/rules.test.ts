@@ -52,7 +52,7 @@ describe('notes of "… with notes" statuses', () => {
     expect(needsNote(item({ notif_status: 2 }))).toBe(true);
     expect(needsNote(item({ review_status: 3 }))).toBe(true);
     expect(needsNote(item({ test_status: 2, notif_status: 1, review_status: 1 }))).toBe(false);
-    expect(noteReasons(t, item({ test_status: 1, review_status: 3 }))).toEqual([`${t('test_status')}: Passed with note`, `${t('review_status')}: Present with notes`]);
+    expect(noteReasons(t, item({ test_status: 1, review_status: 3 }))).toEqual([`${t('test_status')}: Passed with note`, `${t('review_status')}: ${t('rv_3')}`]);
   });
 });
 

@@ -103,3 +103,45 @@ export type Notif = {
 };
 export type NotifList = { items: Notif[]; next_before: number | null };
 export type NotifCount = { unread: number; critical: number; top_severity: Severity | null };
+
+// Messaging (1.12.26 web; mirrored on mobile 0.3.0). Shapes of /api/messages answers (backend/src/services/messages.js).
+/** GET /messages/unread-count — the nav badge; `replies` is 0 unless the caller holds 'msg'. */
+export type MsgUnread = { inbox: number; replies: number; total: number };
+/** GET /messages/inbox → threads — a received conversation. */
+export type InboxThread = {
+  id: number; broadcast_id: number; subject: string | null; last_post_at: string; created_at: string;
+  unread: boolean; from_name: string; from_username: string; preview: string; last_mine: boolean;
+};
+/** GET /messages/sent → broadcasts — a broadcast the caller authored. */
+export type SentBroadcast = {
+  id: number; subject: string | null; preview: string; audience: unknown; recipient_count: number;
+  created_at: string; reply_count: number; unread_replies: number;
+};
+/** GET /messages/sent/:id — the per-recipient threads of one broadcast. */
+export type BroadcastThreads = {
+  broadcast: { id: number; subject: string | null; preview: string; created_at: string; recipient_count: number };
+  threads: {
+    id: number; recipient_id: number; recipient_name: string; recipient_username: string;
+    last_post_at: string; created_at: string; unread: boolean; post_count: number; preview: string;
+  }[];
+};
+export type MsgParty = { id: number; full_name: string; username: string };
+export type MsgPost = { id: number; author_id: number; author_name: string; body: string; created_at: string; mine: boolean };
+/** GET /messages/threads/:id — a thread the caller is a party to (also marks the caller's side read). */
+export type ThreadData = {
+  thread: {
+    id: number; broadcast_id: number; subject: string | null; created_at: string; last_post_at: string;
+    closed_at: string | null; side: 'author' | 'recipient'; author: MsgParty; recipient: MsgParty;
+  };
+  posts: MsgPost[];
+};
+/** A person the compose picker may message (GET /messages/recipients, POST /messages/resolve). */
+export type Recipient = { id: number; full_name: string; username: string; role: string };
+/** GET /messages/compose-meta — the departments and roles the sender may target. */
+export type ComposeMeta = {
+  departments: { id: string; name_ar: string; name_en: string; short_ar?: string; short_en?: string }[];
+  roles: { id: string; name_ar: string; name_en: string }[];
+  total_recipients: number;
+};
+export type ResolveResult = { count: number; recipients: Recipient[] };
+export type SendResult = { broadcast_id: number; sent: number };
