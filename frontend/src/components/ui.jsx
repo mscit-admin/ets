@@ -60,21 +60,24 @@ export function NumberCard({ label, value, sub, color }) {
   );
 }
 
-export function Modal({ title, onClose, children, footer, wide }) {
+// blocking: a mandatory modal that cannot be dismissed — no X, no backdrop click, no Escape (the force-alert gate).
+// onClose is then optional and never called by the chrome.
+export function Modal({ title, onClose, children, footer, wide, blocking = false }) {
   const { t } = useI18n();
   const ref = useRef(null);
   useEffect(() => {
-    const k = e => { if (e.key === 'Escape') onClose(); };
+    const k = e => { if (e.key === 'Escape' && !blocking) onClose?.(); };
     document.addEventListener('keydown', k);
     (ref.current?.querySelector('.modal-body textarea, .modal-body input, .modal-body select') || ref.current?.querySelector('button'))?.focus();
     return () => document.removeEventListener('keydown', k);
-  }, [onClose]);
+  }, [onClose, blocking]);
   return (
-    <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className={'modal-backdrop' + (blocking ? ' blocking' : '')}
+      onMouseDown={blocking ? undefined : e => { if (e.target === e.currentTarget) onClose?.(); }}>
       <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="btn-icon" onClick={onClose} aria-label={t('close')}><Icon name="x" /></button>
+          {!blocking && <button className="btn-icon" onClick={onClose} aria-label={t('close')}><Icon name="x" /></button>}
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

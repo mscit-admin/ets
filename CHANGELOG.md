@@ -30,6 +30,58 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.29] — 2026-10-25 — Alert messages & tree views / التنبيهات الإلزامية والعرض الشجري
+
+Extends the in-app messaging of 1.12.26 with a new **alert** message kind («تنبيه»): a message that pops up as a
+**mandatory, blocking modal** in front of the recipient and requires a structured response (acknowledge or working-on-it,
+plus an optional note) before they can keep using the app. Alerts and messages are also now shown as a branching
+**tree**. Same `msg` permission, same scope-limited recipient picker, and all the private 1:1 / scope / authz
+guarantees of 1.12.26 are preserved.
+
+### Added
+- **Database — migration 028 (`028_message_alerts.sql`):** `message_broadcasts.kind` (`message`|`alert`, default
+  `message`); `message_threads` gains `kind` (a denormalised copy for the hot pending-alert lookup), `response_status`
+  (`ack`|`working`, null = unanswered), `response_note` and `responded_at`; a partial index
+  `message_threads_pending_alert` on `(recipient_id, last_post_at) WHERE kind='alert' AND response_status IS NULL`.
+- **Backend — alerts (`services/messages.js`, `routes/messages.js`):** `POST /messages` takes `kind` and, for an
+  alert, creates an alert-kind broadcast + threads and fires `alert_received`; audited as **`alert_send`**. New
+  endpoints `GET /messages/pending-alert` (the recipient's next unanswered alert for the blocking popup),
+  `POST /messages/threads/:id/respond` (`{status, note?}` — recipient only, alert only, once; sets the response, posts
+  the note, notifies the sender; `400 not_alert`/`already_responded`/`bad_status`, `403` non-recipient),
+  `GET /messages/alerts/mine` (recipient view), `GET /messages/alerts/sent` (+counts) and `GET /messages/alerts/sent/:id`
+  (the tree with each recipient's status + posts). `GET /messages/unread-count` now also reports `pending_alerts`.
+- **Notifications — `alert_received` (M3, severity warning) and `alert_response` (M4):** M3 tells the recipient of a
+  new alert; M4 tells the sender when a recipient responds (`ack`/`working`). Category `messages`, scope `self`, phone
+  allowed; AR + EN added to the catalog, text, events and the Notifications page. The mandatory popup is the primary
+  channel; these are the bell / push backup.
+- **Frontend — mandatory-alert gate (`components/AlertGate.jsx`, mounted app-level in `App.jsx`):** a blocking `Modal`
+  (no X, no backdrop-close, no Escape — new `blocking` prop on `components/ui.jsx` `Modal`) showing the alert's
+  subject/body + sender, a two-option status dropdown and an optional note. It checks `GET /pending-alert` on load,
+  reacts live via the notification SSE stream, and polls as a backup; after a response it loops to the next pending
+  alert until none remain. Robust against network errors (a failed check/submit shows a retry and never lets the user
+  bypass a truly-pending alert).
+- **Frontend — Messages (`pages/Messages.jsx`):** compose gains a «رسالة / تنبيه» type switch; a new «التنبيهات» tab
+  (recipient: my alerts + my response; sender: each alert as a tree with per-recipient status and `N موافق / M أنتظر /
+  K لم يردّوا` counts); messages and alerts render as a branching tree (root → nested replies / per-recipient branches),
+  RTL-correct. The nav badge turns prominent (red) when a mandatory alert is pending.
+
+### Changed
+- **Backend:** the message inbox and the `/sent` list are now scoped to `kind='message'` (alerts live in their own
+  tab); `unread-count.total` includes `pending_alerts`.
+
+### Upgrade notes
+- Run migration **028** (`backend/src/db/migrations/028_message_alerts.sql`) — forward-only and idempotent; `update.sh`
+  applies it. No new settings. **Web only**; the mobile app is unchanged (a follow-up).
+
+### Tests
+- **Backend (`test/alerts.test.js`):** sending an alert creates an alert-kind broadcast + threads and `alert_received`;
+  `/pending-alert` returns it; `/respond` (ack/working + note) sets the status/note/`responded_at` and notifies the
+  sender (`alert_response`); second response rejected; non-recipient 403; bad status 400; a plain message is not an
+  alert; `/alerts/sent/:id` shows per-recipient status + counts; private 1:1 preserved; `unread-count.pending_alerts`;
+  a user without `msg` cannot send an alert but can receive and respond.
+
+---
+
 ## [1.12.28] — 2026-10-25 — Returned edit requests, on-leave & substitute / إعادة طلبات التعديل، الإجازة والبديل
 
 When a team lead **rejects** an edit-request approval it is no longer a dead reject: the request is **returned** to
@@ -2652,7 +2704,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/a0f3a18...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/ccaae0f...HEAD
+[1.12.29]: https://github.com/mscit-admin/ets/compare/a0f3a18...ccaae0f
 [1.12.28]: https://github.com/mscit-admin/ets/compare/c35905a...a0f3a18
 [1.12.27]: https://github.com/mscit-admin/ets/compare/134bf9b...c35905a
 [1.12.26]: https://github.com/mscit-admin/ets/compare/b2043e3...134bf9b

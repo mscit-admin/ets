@@ -59,6 +59,12 @@ export const TYPES = {
   // 'msg'. A recipient is told of a NEW message; the other party of a REPLY (recipient → sender, sender → recipient).
   message_received: { code: 'M1', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
   message_reply:     { code: 'M2', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
+  // ALERT messages (1.12.29): a «تنبيه» — a mandatory, blocking in-app popup requiring a response. The popup is the
+  // primary channel; these alerts are the bell / push backup. Per-user DIRECTED (scope 'self'), every role eligible
+  // and on (anyone can receive/respond to an alert, like a message). alert_received → the recipient (severity
+  // warning, so it stands out); alert_response → the alert's sender when a recipient responds (ack | working).
+  alert_received:    { code: 'M3', category: 'messages', kind: 'event', severity: 'warning', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
+  alert_response:    { code: 'M4', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
   // ---- security and system: the admin role only (ETS-SEC-047), never granted to another role by any setting
   account_locked:    { code: 'S1', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   failed_logins:     { code: 'S2', category: 'security', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('+........'), push: false },

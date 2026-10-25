@@ -125,7 +125,8 @@ function Sidebar({ open, onClose }) {
           </NavLink>
           <NavLink to="/messages" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
             <Icon name="inbox" size={16} /><span>{t('nav_messages')}</span>
-            {msgs?.total > 0 && <span className="side-badge" title={t('msg_badge_title', { n: msgs.total })}>{msgs.total}</span>}
+            {msgs?.total > 0 && <span className={'side-badge' + (msgs.pending_alerts > 0 ? ' alert' : '')}
+              title={msgs.pending_alerts > 0 ? t('alert_badge_title', { n: msgs.pending_alerts }) : t('msg_badge_title', { n: msgs.total })}>{msgs.total}</span>}
           </NavLink>
         </div>
         <div className="side-section">

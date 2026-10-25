@@ -209,6 +209,16 @@ const T = {
   message_reply: (l, p) => ({
     title: l === 'ar' ? `رد جديد من ${p.from_name || '—'}` : `New reply from ${p.from_name || '—'}`,
     body: p.subject ? (l === 'ar' ? p.subject : p.subject) : (p.preview || null) }),
+  alert_received: (l, p) => ({
+    title: l === 'ar' ? `تنبيه جديد من ${p.from_name || '—'}` : `New alert from ${p.from_name || '—'}`,
+    body: p.subject || p.preview || (l === 'ar' ? 'يتطلب ردّك' : 'Requires your response') }),
+  alert_response: (l, p) => {
+    const st = p.status === 'ack'
+      ? (l === 'ar' ? 'موافق على التنبيه' : 'acknowledged')
+      : (l === 'ar' ? 'أنتظر — أعمل على المنصة' : 'working on it');
+    return { title: l === 'ar' ? `استجاب ${p.from_name || '—'}: ${st}` : `${p.from_name || '—'} responded: ${st}`,
+      body: [p.subject || null, p.note ? (l === 'ar' ? `ملاحظة: ${p.note}` : `Note: ${p.note}`) : null].filter(Boolean).join(' · ') || null };
+  },
   retention_reduced: (l, p) => ({
     title: l === 'ar' ? 'خُفّضت مدة الاحتفاظ بالسجلات' : 'Log retention was reduced',
     body: `${p.key}: ${p.from} → ${p.to}${p.by ? (l === 'ar' ? ` · بواسطة ${p.by}` : ` · by ${p.by}`) : ''}` }),

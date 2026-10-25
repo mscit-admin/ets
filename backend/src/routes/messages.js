@@ -11,7 +11,13 @@
 //   GET  /sent/:id        the per-recipient threads of one of the caller's broadcasts (author only)
 //   GET  /threads/:id     a thread the caller is a party to; marks it read for the caller's side
 //   POST /threads/:id/reply   append a reply (author or recipient of that thread only)
-//   GET  /unread-count    the nav badge: unread received threads (+ unread replies for 'msg' users)
+//   GET  /unread-count    the nav badge: unread received threads (+ unread replies for 'msg' users, + pending alerts)
+// Alerts (1.12.29): an alert is a message kind that pops up as a mandatory blocking modal and needs a response.
+//   GET  /pending-alert   the caller's next unresponded mandatory alert, or null (the blocking popup)
+//   GET  /alerts/mine     the caller's received alerts with their own response (recipient view)
+//   GET  /alerts/sent     the caller's authored alert broadcasts with response counts (requirePerm 'msg')
+//   GET  /alerts/sent/:id one alert with every recipient's response + posts, for the tree (author only)
+//   POST /threads/:id/respond  the alert thread's recipient answers (status ack|working + optional note)
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { requireAuth, requirePerm, hasPerm } from '../middleware/auth.js';
@@ -20,8 +26,9 @@ import { query } from '../db/pool.js';
 import { logAudit } from '../services/logs.js';
 import { HttpError, bad, idParam, str } from '../utils/http.js';
 import {
-  BODY_MAX, SUBJECT_MAX, normAudience, audienceEmpty, resolveAudience, visibleRecipients,
+  BODY_MAX, SUBJECT_MAX, normAudience, audienceEmpty, resolveAudience, visibleRecipients, normKind,
   sendBroadcast, inbox, sent, broadcastThreads, loadThread, threadPosts, markThreadRead, sideOf, addReply, unreadCount,
+  pendingAlert, respondAlert, alertSent, alertsSent, myAlerts,
 } from '../services/messages.js';
 
 const r = Router();
@@ -42,17 +49,21 @@ function readMessage(b) {
   return { subject, body };
 }
 
-// POST / — send. Resolves the audience against the sender's scope, drops out-of-scope ids, excludes the sender.
+// POST / — send a message OR an alert. kind: 'message' (default) | 'alert'. An alert pops up as a mandatory,
+// blocking modal in front of each recipient and requires a response. Both need 'msg' and the same scope-limited
+// audience; both are rate-limited and audited (alert sends audited as 'alert_send').
 r.post('/', requirePerm('msg'), sendLimiter, async (req, res) => {
   const { subject, body } = readMessage(req.body);
+  const kind = normKind(req.body?.kind);
   const audience = normAudience(req.body?.audience);
   if (audienceEmpty(audience)) throw bad('invalid_value', { field: 'audience' });
   const { recipients, resolved } = await resolveAudience(req.user, audience);
   if (!recipients.length) throw bad('no_recipients');
   const out = await tx(async c => {
-    const r2 = await sendBroadcast(c, req.user, { subject, body, recipients, audience: resolved });
-    await logAudit(req, { db: c, action: 'message_send', entity: 'message_broadcast', entityId: r2.broadcast_id,
-      summary: subject || body.slice(0, 120), newValue: { recipient_count: r2.sent, audience: resolved } });
+    const r2 = await sendBroadcast(c, req.user, { subject, body, recipients, audience: resolved, kind });
+    await logAudit(req, { db: c, action: kind === 'alert' ? 'alert_send' : 'message_send', entity: 'message_broadcast',
+      entityId: r2.broadcast_id, summary: subject || body.slice(0, 120),
+      newValue: { kind, recipient_count: r2.sent, audience: resolved } });
     return r2;
   });
   res.status(201).json(out);
@@ -108,6 +119,39 @@ r.get('/sent/:id', requirePerm('msg'), async (req, res) => {
   res.json(data);
 });
 
+// ---- Alerts (1.12.29) ----
+// GET /pending-alert — the caller's next PENDING mandatory alert (or null). Used by the blocking popup on load and
+// after each response. Any user (receiving/responding needs no permission).
+r.get('/pending-alert', async (req, res) => res.json({ alert: await pendingAlert(req.user.id) }));
+
+// GET /alerts/mine — the caller's received alerts with their own response (recipient «التنبيهات» view). Any user.
+r.get('/alerts/mine', async (req, res) => res.json({ alerts: await myAlerts(req.user.id) }));
+
+// GET /alerts/sent — the caller's authored alert broadcasts with response counts (sender «التنبيهات» view).
+r.get('/alerts/sent', requirePerm('msg'), async (req, res) => res.json({ alerts: await alertsSent(req.user.id) }));
+
+// GET /alerts/sent/:id — one of the caller's alert broadcasts with every recipient's response + posts (the TREE).
+r.get('/alerts/sent/:id', requirePerm('msg'), async (req, res) => {
+  const data = await alertSent(idParam(req.params.id), req.user.id);
+  if (!data) throw new HttpError(404, 'not_found');
+  res.json(data);
+});
+
+// POST /threads/:id/respond — the alert thread's RECIPIENT answers with a status (ack | working) + optional note.
+// Only the recipient of an unresponded ALERT thread; notifies the sender. 400 for a non-alert / already-responded /
+// bad status, 403 for anyone but the recipient.
+r.post('/threads/:id/respond', replyLimiter, async (req, res) => {
+  const t = await loadThread(idParam(req.params.id), req.user.id);
+  if (!t) throw new HttpError(404, 'not_found');
+  if (t.forbidden) throw new HttpError(403, 'forbidden');
+  if (t.recipient_id !== req.user.id) throw new HttpError(403, 'forbidden');   // only the recipient responds
+  const status = typeof req.body?.status === 'string' ? req.body.status : '';
+  const note = typeof req.body?.note === 'string' ? req.body.note : null;
+  const out = await tx(c => respondAlert(c, t, req.user, status, note));
+  if (out.error) throw bad(out.error);
+  res.status(201).json(out);
+});
+
 // GET /threads/:id — a thread the caller is a party to (author or recipient). 403 for anyone else: no cross-recipient
 // leakage. Marks the caller's own side read.
 r.get('/threads/:id', async (req, res) => {
@@ -119,8 +163,9 @@ r.get('/threads/:id', async (req, res) => {
   const posts = await threadPosts(t.id);
   res.json({
     thread: {
-      id: t.id, broadcast_id: t.broadcast_id, subject: t.subject, created_at: t.created_at, last_post_at: t.last_post_at,
-      closed_at: t.closed_at, side,
+      id: t.id, broadcast_id: t.broadcast_id, subject: t.subject, kind: t.kind, created_at: t.created_at,
+      last_post_at: t.last_post_at, closed_at: t.closed_at, side,
+      response_status: t.response_status, response_note: t.response_note, responded_at: t.responded_at,
       author: { id: t.author_id, full_name: t.author_name, username: t.author_username },
       recipient: { id: t.recipient_id, full_name: t.recipient_name, username: t.recipient_username },
     },

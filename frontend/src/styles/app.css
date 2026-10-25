@@ -1117,3 +1117,49 @@ textarea.mono { width: 100%; resize: vertical; }
 .msg-post-body { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 .msg-reply { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--border); padding-top: 12px; }
 .msg-reply textarea { flex: 1; resize: vertical; }
+
+/* ---- alerts & tree views (1.12.29) ---- */
+/* segmented control (رسالة / تنبيه ; الواردة / المُرسَلة) */
+.msg-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
+.msg-seg-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer;
+  padding: 6px 14px; font: inherit; color: var(--text-muted); }
+.msg-seg-btn.on { background: var(--acc-bg); color: var(--acc); font-weight: 600; }
+.btn-warn { background: #e8a73c; border-color: #e8a73c; color: #fff; }
+.btn-warn:hover { background: #d9992f; border-color: #d9992f; }
+
+/* threaded tree: the root at the start, each reply/branch nested beneath with a connector line (RTL: on the right) */
+.msg-tree { list-style: none; margin: 0 0 12px; padding: 0; }
+.msg-node { position: relative; padding-inline-start: 26px; padding-bottom: 12px; }
+.msg-node::before { content: ""; position: absolute; inset-inline-start: 7px; top: 4px; bottom: 0; border-inline-start: 2px solid var(--border); }
+.msg-node:last-child::before { bottom: auto; height: 10px; }
+.msg-node.root { padding-bottom: 14px; }
+.msg-node-dot { position: absolute; inset-inline-start: 2px; top: 4px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--acc-bg); border: 2px solid var(--acc); }
+.msg-node.root > .msg-node-dot { background: var(--acc); }
+.msg-node.mine > .msg-node-dot { border-color: var(--primary-blue); }
+.msg-node .msg-post { max-width: 100%; }
+.msg-tree.sender .msg-node.branch .msg-node-dot { background: var(--card-bg, #fff); }
+.msg-branch-head { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: start; background: none; border: 0; cursor: default; font: inherit; color: inherit; padding: 2px 0; }
+.msg-branch-head.as-button { cursor: pointer; }
+.msg-branch-head.as-button:hover .msg-row-title { color: var(--acc); }
+.msg-subtree { margin-top: 8px; padding-inline-start: 4px; }
+
+/* response status badges */
+.alert-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.alert-badge.ack { background: #e3f4ea; color: #1f7a48; }
+.alert-badge.working { background: #fdf0db; color: #9a6410; }
+.alert-badge.pending { background: var(--gray-100, #eee); color: var(--text-muted); }
+.alert-counts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.alert-response-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fdf7ec; border: 1px solid #f0dcb4;
+  border-radius: var(--radius-lg); padding: 8px 12px; margin-bottom: 12px; }
+.alert-note { background: var(--acc-bg); border-radius: var(--radius-lg); padding: 8px 12px; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+.alert-no-reply { color: var(--text-muted); }
+
+/* the mandatory blocking popup (AlertGate) */
+.modal-backdrop.blocking { background: rgba(20, 20, 30, 0.6); }
+.alert-gate-from { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
+.alert-gate-subject { margin: 0 0 8px; font-size: 16px; }
+.alert-gate-body { white-space: pre-wrap; word-break: break-word; line-height: 1.6; background: var(--acc-bg); border-radius: var(--radius-lg); padding: 12px; }
+.alert-note-hint { background: #fdf7ec; border: 1px solid #f0dcb4; border-radius: var(--radius-lg); padding: 6px 10px; }
+/* a pending mandatory alert makes the nav badge prominent */
+.side-badge.alert { background: #e24c4c; color: #fff; }
