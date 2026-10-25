@@ -30,6 +30,49 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.26] — 2026-10-25 — in-app messaging / الرسائل
+
+### Added
+- **In-app messaging (new «الرسائل» / "Messages" screen):** a user with the new permission `msg` composes a message
+  and sends it to selected recipients — specific individuals (searchable multi-select), everyone, by department or
+  by role (combinable) — and each recipient gets a **private 1:1 conversation** with the sender and can reply,
+  forming a back-and-forth thread. A message sent to "everyone" becomes a **separate private thread per recipient**:
+  a recipient never sees another recipient's thread or replies. Backend `backend/src/services/messages.js` +
+  `backend/src/routes/messages.js` mounted at `/api/messages`: `POST /` (send, `msg`, rate-limited, audited),
+  `POST /resolve` + `GET /recipients` + `GET /compose-meta` (compose, `msg`), `GET /inbox`, `GET /sent` (`msg`),
+  `GET /sent/:id` (author only), `GET /threads/:id` (party only — 403 otherwise, marks read),
+  `POST /threads/:id/reply` (party only), `GET /unread-count` (nav badge). Three new tables (`message_broadcasts`,
+  `message_threads`, `message_posts`). Frontend `frontend/src/pages/Messages.jsx` (lazy-loaded; inbox / sent /
+  compose / chat-style thread view with a reply box, RTL), a nav entry with an unread badge, AR+EN i18n.
+- **New permission `msg` («إرسال الرسائل» / "Send messages"):** grantable per user (Users permission editor,
+  `perm_msg` AR/EN). It grants the ability to **send within the sender's own visible scope only** — it never widens
+  who the sender can see: the recipient set is always intersected with the sender's scope (the existing
+  `canSee` / scope model), so a scoped sender can never message a user outside it and a full-scope sender reaches
+  everyone. Receiving and replying need **no** permission.
+- **Two new notifications** (category `messages`): `message_received` (M1 — a new message, to the recipient) and
+  `message_reply` (M2 — a reply, to the other party: recipient → sender, sender → recipient). Both are per-user
+  **directed** alerts (scope `self`, no permission gate, severity info, phone allowed). Added to the catalog
+  (`notify-catalog.js`), text (`notify-text.js`, AR/EN), events (`notify-events.js`), the Notifications page filter
+  and the bell / profile category tabs (`ncat_messages`, `nt_message_received`, `nt_message_reply`, AR/EN), and the
+  policy matrix (derived from the catalog).
+
+### Changed
+- **Database:** `notifications.category` now also accepts `messages` (was `tracking / approvals / plan / security /
+  system`).
+
+### Upgrade notes
+- **Migration 026** (`026_messaging.sql`, forward-only and idempotent like 025) creates `message_broadcasts`,
+  `message_threads` and `message_posts` with their indexes, grants the new permission `msg` to the **admin role
+  only** (a new capability — not copied from any per-user override, like `mov` / `ren`), and widens the
+  `notifications_category_check` constraint to include `messages`. Runs automatically on deploy (`update.sh` →
+  `db/migrate.js`). The seed run at every start also lists `msg` for the admin role, so a fresh install agrees.
+- Grant `msg` to any non-admin who should be able to send (e.g. a department lead) from Users → user →
+  «إرسال الرسائل». Optional send/reply rate limits: `ETS_MESSAGE_SEND_LIMIT` (default 60/h), `ETS_MESSAGE_REPLY_LIMIT`
+  (default 240/h).
+- Messaging is **web-first**; display on the Android app may be added later.
+
+---
+
 ## [1.12.25] — 2026-10-25 — «إعادة الاختبار» test status & its tester alert
 
 ### Added
@@ -2547,7 +2590,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/b2043e3...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/134bf9b...HEAD
+[1.12.26]: https://github.com/mscit-admin/ets/compare/b2043e3...134bf9b
 [1.12.25]: https://github.com/mscit-admin/ets/compare/1545ce3...b2043e3
 [1.12.24]: https://github.com/mscit-admin/ets/compare/00a0a55...1545ce3
 [1.12.23]: https://github.com/mscit-admin/ets/compare/fe414d0...00a0a55

@@ -219,7 +219,7 @@ Changes that send `tracker_changed`: function edits (%, weight, test / notificat
 ## Notifications — `/notifications` (signed in, 1.9.0)
 | Method | Path | Description |
 |---|---|---|
-| GET | `/` | `?unread=1&category=approvals\|tracking\|plan\|security\|system&type=<type>&severity=info\|warning\|critical&before=<id>&limit=1..100&lang=ar\|en` → `{items:[{id, type, category, severity, title, body, link, count, created_at, updated_at, read}], next_before}` — newest first; title / body rendered by the server in `lang` (default: the user's language); only rows the user may see now |
+| GET | `/` | `?unread=1&category=approvals\|tracking\|plan\|messages\|security\|system&type=<type>&severity=info\|warning\|critical&before=<id>&limit=1..100&lang=ar\|en` → `{items:[{id, type, category, severity, title, body, link, count, created_at, updated_at, read}], next_before}` — newest first; title / body rendered by the server in `lang` (default: the user's language); only rows the user may see now |
 | GET | `/count` | `{unread, critical, top_severity}` (the bell) |
 | POST | `/:id/read` · `/:id/unread` | → `{marked}` (0 for a row that is not the user's or not visible) |
 | POST | `/read-all` | `{ids?:[..]}` (≤ 500) — every visible unread alert, or these → `{marked}` |
@@ -232,12 +232,30 @@ Types: `approval_pending` (A1), `approval_overdue` (A2), `request_decided` (A3),
 `quality` (T6), `excluded` (T7), `moved_in` (T8, 1.10.0), `app_moved_in` (T9, 1.12.16),
 `retest` (T10, 1.12.25 — items in test status «إعادة الاختبار» / Needs re-testing (4) for more than `notify.retest_days`; testers only (perm `tst`), warning, digest),
 `dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
+`message_received` (M1, 1.12.26 — a new in-app message, to the recipient) and `message_reply` (M2, 1.12.26 — a reply, to the other party); both category `messages`, scope `self` (directed, no permission gate), severity info, phone allowed,
 `account_locked` (S1), `failed_logins` (S2), `audit_integrity` (S3), `email_index` (S4), `access_denied` (S5),
 `backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), `backup_offsite` (S9, 1.12.0), `backup_verify` (S10),
 `restore_event` (S11), `release_event` (S12, 1.12.20 — production promotion started/succeeded/failed/rolled_back; failed/rolled_back critical),
 `distributed_logins` (S13, 1.12.23 — a DISTRIBUTED login-probing pattern: the TOTAL `login_unknown_user` across ALL source IPs in a window ≥ `notify.distributed_login_threshold`, complementing the per-IP S2; admin only, in-app only, critical), and `rate_capped` (above the hourly cap).
 The policy itself is the setting `notify.policy` (`PUT /settings`). The live stream `/events` also sends
 `notif_changed` `{unread, top_severity}` to the user's own streams when their alerts change (no content).
+
+## Messages — `/messages` (in-app messaging, signed in, 1.12.26)
+Private 1:1 conversations. Sending needs permission `msg` and is limited to the sender's visible scope; receiving
+and replying need no permission. A user only ever sees threads they are a party to (author or recipient).
+
+| Method | Path | Perm | Description |
+|---|---|---|---|
+| POST | `/` | `msg` | `{subject?: ≤200, body: 1–4000, audience: {all?, users?:[int], depts?:[str], roles?:[str]}}` — resolve the audience **against the sender's scope** (out-of-scope ids/depts/roles contribute nothing; the sender is excluded), create the broadcast + one thread per recipient + the initial post, in a transaction, and fire `message_received` to each recipient → **201** `{broadcast_id, sent}`. `400 invalid_value` (empty body / empty audience), `400 no_recipients` (nothing resolved in scope), `403 forbidden` (`permission: "msg"`), `429 too_many_requests` (`ETS_MESSAGE_SEND_LIMIT`, default 60/h). Audited `message_send` / `message_broadcast` |
+| POST | `/resolve` | `msg` | `{audience}` → `{count, recipients:[{id, full_name, username, role}] (≤50)}` — preview the scope-limited recipient set for compose. No side effect |
+| GET | `/recipients?q=` | `msg` | `{recipients:[{id, full_name, username, role}] (≤50)}` — the individuals the sender may message, searchable |
+| GET | `/compose-meta` | `msg` | `{departments:[{id, name_ar, name_en, short_ar, short_en}], roles:[{id, name_ar, name_en}], total_recipients}` — only the departments / roles present among the sender's visible recipients |
+| GET | `/inbox` | — | `{threads:[{id, broadcast_id, subject, from_name, from_username, preview, last_post_at, created_at, unread}]}` — the caller's received conversations, newest first |
+| GET | `/sent` | `msg` | `{broadcasts:[{id, subject, preview, audience, recipient_count, reply_count, unread_replies, created_at}]}` — the caller's authored broadcasts |
+| GET | `/sent/:id` | `msg` | author only → `{broadcast:{id, subject, preview, recipient_count, created_at}, threads:[{id, recipient_id, recipient_name, recipient_username, preview, post_count, last_post_at, created_at, unread}]}`; `404` when not the caller's broadcast |
+| GET | `/threads/:id` | — | a thread the caller is a party to → `{thread:{id, broadcast_id, subject, side:"author"\|"recipient", author:{…}, recipient:{…}, created_at, last_post_at, closed_at}, posts:[{id, author_id, author_name, body, created_at, mine}]}`; marks the caller's side read. `403 forbidden` for a non-party (no cross-recipient leakage), `404` unknown |
+| POST | `/threads/:id/reply` | — | `{body: 1–4000}` — append a reply (author or recipient only); bump `last_post_at`; notify the OTHER party (`message_reply`) → **201** `{post_id}`. `403` non-party, `400 invalid_value` empty body, `400 thread_closed`, `429 too_many_requests` (`ETS_MESSAGE_REPLY_LIMIT`, default 240/h) |
+| GET | `/unread-count` | — | `{inbox, replies, total}` — the nav badge: unread received threads (`inbox`), and for `msg` users unread replies on sent threads (`replies`) |
 
 ## Devices — `/devices` (1.9.0)
 | Method | Path | Description |

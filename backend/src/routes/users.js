@@ -19,7 +19,7 @@ const r = Router();
 // User administration = system administrators only (owner decision, ETS-SEC-004): 'usr' AND the admin role.
 r.use(requireAuth, requirePerm('usr'), requireAdmin);
 
-const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final'];
+const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final', 'msg'];
 
 // Never includes secrets (password hash, TOTP secret), so rows can be returned as-is.
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,

@@ -186,7 +186,7 @@ SELECT app_id, code, name_ar FROM functions WHERE item_type = 'report' AND remov
 
 | Table | Purpose |
 |---|---|
-| `notifications` | one row per alert and recipient: `type`, `category` (approvals / tracking / plan / security / system), `severity` (info / warning / critical), `params` (ids, names in both languages, numbers — computed for that recipient's scope), `link` (internal path only, CHECK), `app_id` / `dept_id` (re-checked when read), `dedupe_key`, `count`, `created_at`, `updated_at`, `read_at`, `resolved_at` (a summary whose condition is gone). Unique open row per `(user_id, dedupe_key) WHERE read_at IS NULL` (`notifications_open_dedupe`). Not audit data |
+| `notifications` | one row per alert and recipient: `type`, `category` (approvals / tracking / plan / messages — 1.12.26 — / security / system), `severity` (info / warning / critical), `params` (ids, names in both languages, numbers — computed for that recipient's scope), `link` (internal path only, CHECK), `app_id` / `dept_id` (re-checked when read), `dedupe_key`, `count`, `created_at`, `updated_at`, `read_at`, `resolved_at` (a summary whose condition is gone). Unique open row per `(user_id, dedupe_key) WHERE read_at IS NULL` (`notifications_open_dedupe`). Not audit data |
 | `notification_prefs` | `user_id` → `prefs` `{muted:[type], mobile_muted:[type], digest:bool}` (personal choice, not audited) |
 | `notification_user_blocks` | `(user_id, type \| '*', channel 'all' \| 'mobile')` — administrator restrictions, block only |
 | `notify_state` | last run of each periodic job (`job:daily`, `job:digest`, `job:weekly`), last department / project status, close-date alert |
@@ -350,6 +350,31 @@ SELECT id, app_id, department_id AS from_dept, target_department_id AS to_dept,
        CASE WHEN source_approved_by IS NULL THEN 'source dept lead' ELSE 'destination dept lead' END AS waits_for
 FROM edit_requests WHERE kind = 'move_application' AND status = 'pending';
 ```
+
+### 3j. Migration 026 — in-app messaging (1.12.26)
+
+Private 1:1 conversations between a sender and each recipient. Forward-only and idempotent (like the recent
+migrations). It also grants the new permission `msg` to the **admin role only** (not copied from any per-user
+override — a new capability, like `mov` / `ren`) and widens the `notifications.category` CHECK to accept the new
+`messages` category.
+
+| Table | Purpose | Key columns |
+|---|---|---|
+| `message_broadcasts` | one row per compose action (the sender's "sent" view) | `author_id`, `subject` (nullable, ≤ 200), `body` (1–4000), `audience jsonb` (`{all?, users?:[ids], depts?:[ids], roles?:[ids]}` — what was chosen), `recipient_count` (actually resolved, scope-limited), `created_at` |
+| `message_threads` | one **private 1:1** conversation per (broadcast × recipient) | `broadcast_id` (nullable — allows a future ad-hoc thread), `author_id` (sender), `recipient_id`, `subject`, `created_at`, `last_post_at`, `author_read_at`, `recipient_read_at`, `closed_at`. `CHECK (author_id <> recipient_id)`, `UNIQUE (broadcast_id, recipient_id)` |
+| `message_posts` | one post (sender OR recipient); the broadcast's initial body is the first post of each thread | `thread_id`, `author_id` (the poster), `body` (1–4000), `created_at` |
+
+Indexes: a recipient's inbox (`recipient_id, last_post_at DESC`), a sender's threads (`author_id, last_post_at
+DESC`), the broadcast fan-out (`broadcast_id`), partial unread indexes per side (`recipient_read_at` / `author_read_at`
+behind `last_post_at`), and a thread's posts (`thread_id, created_at, id`).
+
+A message sent to many people becomes **one thread per recipient**; the server only ever returns a thread to its
+author or its one recipient (403 otherwise), so there is no cross-recipient visibility. The recipient set is always
+intersected with the sender's visible scope (`backend/src/services/messages.js` `canSeeUser`): a full-scope sender
+reaches everyone, a scoped sender reaches users whose department reach overlaps theirs (plus full-scope users);
+`msg` never widens who the sender can see. Receiving and replying need no permission. Two directed notifications
+fire (scope `self`): `message_received` (M1) to the recipient on send, `message_reply` (M2) to the other party on
+each reply.
 
 ## 4. Code values
 

@@ -24,6 +24,7 @@ import presenceRoutes from './routes/presence.js';
 import dashboardRoutes from './routes/dashboard.js';
 import backupRoutes from './routes/backups.js';
 import releaseRoutes from './routes/release.js';
+import messageRoutes from './routes/messages.js';
 import { pairRouter, mobileRouter } from './routes/mobile.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
@@ -73,6 +74,7 @@ export function createApp() {
   api.use('/dashboard', dashboardRoutes);          // dashboard aggregates: users overview (admins only, 1.12.9)
   api.use('/backups', backupRoutes);               // Settings → «النسخ الاحتياطي»: configuration, jobs, restore (1.12.0)
   api.use('/release', releaseRoutes);              // Settings → «الترقية والنشر»: promotion intent (Phase 1, 1.12.18)
+  api.use('/messages', messageRoutes);             // in-app messaging: compose, inbox, sent, threads, replies (1.12.26)
   api.use(notFoundHandler);
   app.use('/api', api);
 

@@ -13,7 +13,7 @@ const ROLES = [
   { id: 'admin', name_ar: 'مسؤول النظام', name_en: 'System Administrator', full_scope: true,
     description_ar: 'كل الشاشات والصلاحيات، وإدارة المستخدمين والسجلات',
     description_en: 'All screens and permissions, user and log administration',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'msg'] },
   { id: 'mgr', name_ar: 'مسؤول إدارة', name_en: 'Department Manager', full_scope: false,
     description_ar: 'كل تطبيقات إدارته: النسب والأوزان والاختبار والسجل',
     description_en: 'All applications of the department: progress, weights, testing, logs',

@@ -176,3 +176,14 @@ export const releaseEvent = safe('release_event', async (stage, promotion = {}) 
         ? `ets-restore ${promotion.backup_ref || '<backup_ref>'}` : null,
       error: promotion.error ? String(promotion.error).slice(0, 300) : null } })));
 });
+
+// ---- M1/M2 (1.12.26): in-app messaging. Per-user DIRECTED alerts (scope 'self'): a NEW message to the recipient,
+// a REPLY to the OTHER party (recipient reply → sender, sender reply → recipient). Each post is its own alert (a
+// unique dedupe key per post); the body carries the subject or a short preview. link opens the thread.
+export const messagePosted = safe('message_posted', async ({ type, toUserId, fromName, subject = null, preview = null, threadId, postId }) => {
+  if (!['message_received', 'message_reply'].includes(type) || !toUserId) return;
+  const [user] = await activeUsers([toUserId]);
+  if (!user) return;
+  await deliver(type, [{ user, dedupeKey: `${type}:thread=${threadId}:post=${postId}`, link: `/messages?thread=${threadId}`,
+    params: { from_name: fromName || null, subject: subject || null, preview: preview || null } }]);
+});

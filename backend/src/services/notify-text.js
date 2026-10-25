@@ -195,6 +195,12 @@ const T = {
       ].filter(Boolean).join(' · ') || null,
     };
   },
+  message_received: (l, p) => ({
+    title: l === 'ar' ? `رسالة جديدة من ${p.from_name || '—'}` : `New message from ${p.from_name || '—'}`,
+    body: p.subject ? (l === 'ar' ? p.subject : p.subject) : (p.preview || null) }),
+  message_reply: (l, p) => ({
+    title: l === 'ar' ? `رد جديد من ${p.from_name || '—'}` : `New reply from ${p.from_name || '—'}`,
+    body: p.subject ? (l === 'ar' ? p.subject : p.subject) : (p.preview || null) }),
   retention_reduced: (l, p) => ({
     title: l === 'ar' ? 'خُفّضت مدة الاحتفاظ بالسجلات' : 'Log retention was reduced',
     body: `${p.key}: ${p.from} → ${p.to}${p.by ? (l === 'ar' ? ` · بواسطة ${p.by}` : ` · by ${p.by}`) : ''}` }),
