@@ -2590,7 +2590,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/b2043e3...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/134bf9b...HEAD
+[1.12.26]: https://github.com/mscit-admin/ets/compare/b2043e3...134bf9b
 [1.12.25]: https://github.com/mscit-admin/ets/compare/1545ce3...b2043e3
 [1.12.24]: https://github.com/mscit-admin/ets/compare/00a0a55...1545ce3
 [1.12.23]: https://github.com/mscit-admin/ets/compare/fe414d0...00a0a55
