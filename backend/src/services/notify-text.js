@@ -71,6 +71,14 @@ const T = {
       body: l === 'ar' ? `تطبيق ${name(l, p, 'app')}${p.skipped ? ` · تخطّي ${p.skipped}` : ''}` : `${name(l, p, 'app')}${p.skipped ? ` · ${p.skipped} skipped` : ''}` }
     : { title: l === 'ar' ? `رُفض طلبك رقم ${p.request_id}` : `Your request #${p.request_id} was rejected`,
       body: (l === 'ar' ? `تطبيق ${name(l, p, 'app')}` : name(l, p, 'app')) + (p.reason ? (l === 'ar' ? ` · السبب: ${p.reason}` : ` · Reason: ${p.reason}`) : '') }),
+  request_returned: (l, p) => ({
+    title: l === 'ar' ? `أُعيد إليك طلب تعديل للمراجعة` : `An edit request was returned to you for review`,
+    body: [
+      l === 'ar' ? `طلب رقم ${p.request_id}` : `Request #${p.request_id}`,
+      p.on_behalf ? (l === 'ar' ? `بالنيابة عن ${p.requester_name || '—'}` : `on behalf of ${p.requester_name || '—'}`) : null,
+      p.reason ? (l === 'ar' ? `السبب: ${p.reason}` : `Reason: ${p.reason}`) : null,
+      p.app_id ? (l === 'ar' ? `تطبيق ${name(l, p, 'app')}` : name(l, p, 'app')) : null,
+    ].filter(Boolean).join(' · ') || null }),
   import_pending: (l, p) => ({
     title: l === 'ar' ? `ملف نتائج رقم ${p.batch_id} بانتظار اعتمادك` : `Result file #${p.batch_id} is waiting for your approval`,
     body: (p.target === 'reports' ? (l === 'ar' ? 'التقارير' : 'Reports') : (l === 'ar' ? `إدارة ${name(l, p, 'dept')}` : name(l, p, 'dept')))

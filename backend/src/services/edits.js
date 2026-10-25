@@ -105,6 +105,21 @@ export async function createRequest(c, req, { deptId, appId, kind, summary, item
   return r;
 }
 
+// Where a rejected (returned) request goes (1.12.28): back to its author, UNLESS the author is currently on leave
+// (on_leave true and, when a window is set, today within [leave_from, leave_to]) and has a substitute — then to the
+// substitute. If the author is on leave with no substitute (or the substitute is inactive / deleted), it falls back
+// to the author. → { to, substitute: bool, requester }.
+export async function computeReturnTo(c, rq) {
+  const requester = rq.requested_by;
+  const u = (await c.query(`SELECT substitute_user_id,
+      (on_leave AND (leave_from IS NULL OR leave_from <= current_date) AND (leave_to IS NULL OR leave_to >= current_date)) AS on_leave_now
+    FROM users WHERE id=$1`, [requester])).rows[0];
+  if (!u || !u.on_leave_now || !u.substitute_user_id) return { to: requester, substitute: false, requester };
+  // the substitute must be a usable account (active, not deleted); otherwise fall back to the author
+  const sub = (await c.query(`SELECT id FROM users WHERE id=$1 AND is_active AND deleted_at IS NULL`, [u.substitute_user_id])).rows[0];
+  return sub ? { to: sub.id, substitute: true, requester } : { to: requester, substitute: false, requester };
+}
+
 // Context of an audit row about a request: who asked, who decided, and the items with their before → after values.
 export async function requestContext(c, rq, req, extra = {}) {
   const items = (await c.query('SELECT * FROM edit_request_items WHERE request_id=$1 ORDER BY id', [rq.id])).rows;

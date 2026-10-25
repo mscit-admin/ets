@@ -30,6 +30,46 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.28] — 2026-10-25 — Returned edit requests, on-leave & substitute / إعادة طلبات التعديل، الإجازة والبديل
+
+When a team lead **rejects** an edit-request approval it is no longer a dead reject: the request is **returned** to
+its author for revision (resubmit or withdraw). If the author is **on leave** («في إجازة»), the returned request is
+routed to their pre-assigned **substitute** («البديل»), who acts on it on their behalf.
+
+### Added
+- **Backend — return flow (`routes/approvals.js`, `services/edits.js`):** a reject of a non-move request now sets
+  status **`returned`** (not `rejected`), stores `returned_reason` (required, 3–500 non-space chars), `returned_at`
+  and `returned_to`, and audits `edit_return`. `returned_to` = the author, unless the author is on leave (`on_leave`
+  and, when a window is set, today within `[leave_from, leave_to]`) with a usable substitute → then the substitute
+  (`services/edits.js` `computeReturnTo`); on leave with no usable substitute it falls back to the author. New
+  endpoints `POST /approvals/:id/resubmit` (→ `pending`, re-running the author's rights check, ETS-SEC-027; audit
+  `edit_resubmit`) and an extended `POST /approvals/:id/withdraw` (a returned request too), both limited to
+  `returned_to` or the original author (else 403). A returned request leaves the approvers' pending queue but is
+  visible to `returned_to`; `GET /approvals?returned=1` and `pending-count.returned_to_me` surface it.
+- **Backend — on-leave & substitute (`routes/users.js`):** `PATCH /users/:id` accepts `on_leave`, `leave_from`,
+  `leave_to` and `substitute_user_id` (administrators only; 400 `invalid_substitute` for self or an unknown user).
+- **Notification — `request_returned` (A7):** tells the `returned_to` user (author or substitute) that a request was
+  returned for review; category `approvals`, severity warning, scope `self`, phone allowed. AR «أُعيد إليك طلب تعديل
+  للمراجعة» + EN, added to the catalog, text, events, the Notifications page and the policy matrix.
+- **Frontend — Approvals (`pages/Approvals.jsx`):** the `returned` status joins the status filter and facets, a
+  «أُعيدت إليّ / Returned to me» filter, a returned banner (reason + where it was routed), and **Resubmit** /
+  **Withdraw** actions for the user it was returned to.
+- **Frontend — Users (`pages/Users.jsx`):** a «الإجازة والبديل / Leave and substitute» card on the user page
+  (admin only) — the «في إجازة» toggle, optional from/to dates and the substitute picker.
+
+### Changed
+- **Backend:** the reject reason now follows the 3–500 non-space rule (like move / rename / exclusion reasons) for a
+  returnable request; a move reject is unchanged (either application's lead, status `rejected`).
+
+### Database / Upgrade notes
+- **Migration 027** (`027_on_leave_return.sql`, forward-only and idempotent): `users` gains `on_leave`, `leave_from`,
+  `leave_to` and `substitute_user_id` (FK `users(id)` `ON DELETE SET NULL`, `CHECK (substitute_user_id <> id)`);
+  `edit_requests` gains the `returned` status (the `status` CHECK is widened, existing statuses kept), plus
+  `returned_reason`, `returned_at` and `returned_to` (FK `users(id)` `ON DELETE SET NULL`); a partial index backs the
+  "returned to me" lookup. Run via `update.sh` / `npm run migrate` as usual; no manual step.
+
+---
+
 ## [1.12.27] — 2026-10-25 — Messages on the mobile app / الرسائل في تطبيق الجوال
 
 ### Added

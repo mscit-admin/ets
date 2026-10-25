@@ -21,7 +21,7 @@ function useFmt() {
 // Filters of the screen (1.12.1), kept in the address (?status=&dept=…) so a filtered list can be shared or reloaded.
 // No «status» in the address means «pending»; «status=» (empty) means every status. The server applies them all
 // (routes/approvals.js) and still shows only the requests the user may see; the choices come from GET /approvals/facets.
-const FILTER_KEYS = ['status', 'mine', 'awaiting', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
+const FILTER_KEYS = ['status', 'mine', 'awaiting', 'returned', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
 const readFilters = params => Object.fromEntries(FILTER_KEYS.map(k => [k, k === 'status' && !params.has('status') ? 'pending' : params.get(k) || '']));
 const isFiltered = f => FILTER_KEYS.some(k => (k === 'status' ? f.status !== 'pending' : !!f[k]));
 
@@ -46,7 +46,7 @@ export default function Approvals() {
   });
   const [dlg, setDlg] = useState(null); // {req, mode:'reject'}
   const key = JSON.stringify(f);
-  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '' })), [key]);
+  const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '', returned: f.returned === '1' ? 1 : '' })), [key]);
   const facets = useLoad(() => api.get('/approvals/facets' + qs({ status: f.status })), [f.status]).data;
 
   const act = async (rq, action, body = {}) => {
@@ -104,6 +104,7 @@ export default function Approvals() {
           <label className="inline-field">{t('from')} <input className="input input-sm" type="date" value={f.from} max={f.to || undefined} onChange={e => setFilter('from', e.target.value)} /></label>
           <label className="inline-field">{t('to')} <input className="input input-sm" type="date" value={f.to} min={f.from || undefined} onChange={e => setFilter('to', e.target.value)} /></label>
           <label className="check"><input type="checkbox" checked={f.awaiting === '1'} onChange={e => setFilter('awaiting', e.target.checked ? '1' : '')} /> {t('rqf_awaiting')}</label>
+          <label className="check"><input type="checkbox" checked={f.returned === '1'} onChange={e => setFilter('returned', e.target.checked ? '1' : '')} /> {t('rqf_returned_to_me')}</label>
           <label className="check"><input type="checkbox" checked={f.mine === '1'} onChange={e => setFilter('mine', e.target.checked ? '1' : '')} /> {t('my_requests')}</label>
           {filtered && <button type="button" className="btn btn-default btn-sm" onClick={() => { setText(''); setParams({}, { replace: true }); }}>
             <Icon name="x" size={13} /> {t('rqf_clear')}</button>}
@@ -130,8 +131,16 @@ export default function Approvals() {
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
             {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t(approveLabelKey(rq.can))}</button>}
             {rq.can.reject && <button className="btn btn-default btn-xs" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
+            {rq.can.resubmit && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'resubmit')}>{t('resubmit')}</button>}
             {rq.can.withdraw && <button className="btn btn-default btn-xs" onClick={() => act(rq, 'withdraw')}>{t('withdraw')}</button>}
           </>}>
+          {rq.status === 'returned' && (
+            <Alert kind="orange">
+              {t('returned_by', { name: rq.decided_by_name })}: {rq.returned_reason || rq.reason}
+              {rq.returned_to_name && <div className="small">{t('returned_to_label')}: <b>{rq.returned_to_name}</b>
+                {rq.returned_to !== rq.requested_by && <> — {t('returned_to_substitute_note', { name: rq.requested_by_name })}</>}</div>}
+            </Alert>
+          )}
           {rq.status === 'rejected' && <Alert kind="red">{t('rejected_by', { name: rq.decided_by_name })}: {rq.reason}</Alert>}
           {rq.status === 'applied' && <Alert kind="green">{t('approved_by', { name: rq.decided_by_name })} · {fmtDate(rq.decided_at)}</Alert>}
           {rq.kind === 'move_function' && <MoveRequest rq={rq} />}

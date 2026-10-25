@@ -42,7 +42,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 | Table | Purpose | Key columns |
 |---|---|---|
 | `roles` | The nine roles | `id` (admin, pm, tm, mgr, lead, member, ed, qa, obs), `name_ar/en`, `full_scope` (true only for admin, pm, tm), `permissions text[]` |
-| `users` | Accounts | `username citext`, unique among accounts not deleted (3–60 of `A–Z a–z 0–9 . _ -`, never `@`, enforced by the API), `email citext` (optional; stored trimmed in lower case; **one account per address** — unique index `users_email_lower_uniq` on `lower(email)` where set, migration 014; sign-in accepts the username or the address), `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip`, `deleted_at` / `deleted_by` / `delete_reason` (migration 015: soft delete, see 3c) |
+| `users` | Accounts | `username citext`, unique among accounts not deleted (3–60 of `A–Z a–z 0–9 . _ -`, never `@`, enforced by the API), `email citext` (optional; stored trimmed in lower case; **one account per address** — unique index `users_email_lower_uniq` on `lower(email)` where set, migration 014; sign-in accepts the username or the address), `password_hash` (bcrypt, re-hashed at sign-in when the cost changes), `role_id`, `language`, `is_active`, `must_change_password`, `totp_secret` (AES-256-GCM, format `v2:<key id>:…` with a key derived from `APP_SECRET`; older `v1` values are still read), `totp_enabled`, `totp_exempt`, `totp_last_step` (a code is accepted once), `failed_attempts`, `locked_until` (end of the current sign-in pause), `last_failed_at` (migration 008: the counter restarts after `LOCKOUT_RESET_MINUTES` without failures), `last_login_at/ip`, `deleted_at` / `deleted_by` / `delete_reason` (migration 015: soft delete, see 3c); `on_leave`, `leave_from` / `leave_to` (date, optional window), `substitute_user_id` (FK `users(id)` `ON DELETE SET NULL`, `CHECK (substitute_user_id <> id)` — migration 027: «في إجازة» / «البديل», see 3k) |
 | `user_recovery_codes` | One-time 2FA backup codes | `code_hash` (`h1:` + HMAC-SHA-256, migration 008; older plain SHA-256 codes stay valid until used or regenerated), `used_at` |
 | `user_permissions` | Per-user override of a role permission | `(user_id, permission)`, `granted bool`. `usr` may be granted to the admin role only (migration 009 removed other grants, each recorded in the audit trail) |
 | `user_scopes` | Data scope | `(user_id, kind, ref_id)`, kind = `department` or `application`. Full scope comes from `roles.full_scope` only: a user of another role with **no rows sees nothing** (fail closed; migration 009 lists such users in `system_log`, event `scope_fail_closed`) |
@@ -74,7 +74,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 ### Edit requests (migration 004)
 | Table | Purpose | Key columns |
 |---|---|---|
-| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`, `add_function`, `remove_function`, `restore_function`, `move_function` — 1.10.0, `move_application` — 1.12.16), `status` (`pending`, `applied`, `rejected`, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result`; a move (1.10.0 / 1.12.16): `target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta` (see 3g, 3i) |
+| `edit_requests` | One edit by a data-entry user waiting for the team lead | `department_id`, `app_id`, `kind` (`function`, `bulk`, `report`, `add_function`, `remove_function`, `restore_function`, `move_function` — 1.10.0, `move_application` — 1.12.16), `status` (`pending`, `applied`, `rejected`, `returned` — 1.12.28, `superseded`, `withdrawn`), `requested_by/at`, `decided_by/at`, `reason`, `apply_result`; a move (1.10.0 / 1.12.16): `target_app_id`, `target_department_id`, `source_approved_by/at`, `target_approved_by/at`, `meta` (see 3g, 3i); a returned request (1.12.28, see 3k): `returned_reason`, `returned_at`, `returned_to` (FK `users(id)` `ON DELETE SET NULL`) |
 | `edit_request_items` | One changed value | `kind`, `app_id`, `function_id`, `field`, `old_value`, `new_value` (jsonb), `applied`, `meta` (jsonb, migration 013: the reason of a pending exclusion — `disabled_reason`, `disabled_note`, `duplicate_of: [{id, app_id, code}]` — applied on approval) |
 
 ### Branding (migration 003)
@@ -375,6 +375,38 @@ reaches everyone, a scoped sender reaches users whose department reach overlaps 
 `msg` never widens who the sender can see. Receiving and replying need no permission. Two directed notifications
 fire (scope `self`): `message_received` (M1) to the recipient on send, `message_reply` (M2) to the other party on
 each reply.
+
+### 3k. Migration 027 — on-leave / substitute and the returned status (1.12.28)
+
+Rejecting a lead's edit-request approval no longer closes the request as a dead reject: it **returns** it to the
+requester for revision, and — when the requester is on leave — to their pre-assigned substitute. Forward-only and
+idempotent (like the recent migrations).
+
+- **`users`** gains `on_leave boolean NOT NULL DEFAULT false`, `leave_from` / `leave_to date` (optional window) and
+  `substitute_user_id integer REFERENCES users(id) ON DELETE SET NULL` with `CHECK (substitute_user_id <> id)`
+  (`users_substitute_not_self`). All four are set by an administrator on the user page (`PATCH /users/:id`, admin
+  only). The substitute is pre-assigned, not chosen at rejection time.
+- **`edit_requests`** gains the status `returned` (the `status` CHECK is widened to
+  `pending|applied|rejected|returned|superseded|withdrawn`; the existing statuses are kept, nothing is remapped),
+  plus `returned_reason text`, `returned_at timestamptz` and `returned_to integer REFERENCES users(id) ON DELETE SET
+  NULL` (the user who should now act — the requester, or their substitute when on leave).
+- A partial index `edit_requests_returned_to` on `returned_to WHERE status = 'returned'` backs the "returned to me"
+  lookup.
+
+On reject (`POST /approvals/:id/reject`, a non-move request) the service sets `status = 'returned'`, stores the
+reason (3–500 non-space chars) and computes `returned_to`: the requester, UNLESS they are on leave (`on_leave` and,
+when a window is set, `current_date` within `[leave_from, leave_to]`) with a usable (active, non-deleted) substitute —
+then the substitute; on leave with no usable substitute it falls back to the requester. The `returned_to` user (or
+the original author) can **resubmit** it (→ `pending`, after the author's rights are re-checked — ETS-SEC-027) or
+**withdraw** it. A returned request is out of the approvers' pending queue but visible to `returned_to`. The notification
+`request_returned` (A7, category `approvals`, severity warning, scope `self`, phone allowed) tells the `returned_to`
+user.
+
+```sql
+-- requests returned to a given user, still awaiting their action
+SELECT id, app_id, returned_reason, returned_at FROM edit_requests
+WHERE status = 'returned' AND returned_to = $1 ORDER BY returned_at DESC;
+```
 
 ## 4. Code values
 

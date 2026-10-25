@@ -29,6 +29,10 @@ export const TYPES = {
   approval_pending:  { code: 'A1', category: 'approvals', kind: 'event', severity: 'warning', perms: ['apv_dept'], scope: 'approver', matrix: M('....!....'), push: true },
   approval_overdue:  { code: 'A2', category: 'approvals', kind: 'periodic', severity: 'warning', perms: ['apv_dept', 'apv_final'], scope: 'approvals', matrix: M('.++.!....'), push: true },
   request_decided:   { code: 'A3', category: 'approvals', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('...+.+++.'), push: true },
+  // A7 (1.12.28): a lead REJECTED (returned) an edit request → the user it was returned to (its author, or their
+  // substitute when the author is on leave) so they can revise / resubmit or withdraw it. A per-user directed alert
+  // (scope 'self'), every role eligible and on since the recipient can be any role (an author or a stand-in).
+  request_returned:  { code: 'A7', category: 'approvals', kind: 'event', severity: 'warning', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
   import_pending:    { code: 'A4', category: 'approvals', kind: 'event', severity: 'warning', perms: ['apv_dept', 'apv_final'], scope: 'import', matrix: M('.!!.!....'), push: true },
   import_result:     { code: 'A5', category: 'approvals', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++.++...'), push: true },
   import_overdue:    { code: 'A6', category: 'approvals', kind: 'periodic', severity: 'warning', perms: ['apv_dept', 'apv_final'], scope: 'approvals', matrix: M('.++.!....'), push: true },

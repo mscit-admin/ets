@@ -3,8 +3,8 @@
 // functions, no imports: used by pages/Approvals.jsx and the mobile app (mobile/src/shared/web.ts). The server decides
 // what each user may do (request.can.approve / reject / withdraw / approve_as); the screens only show it.
 
-export const RQ_STATUSES = ['pending', 'applied', 'rejected', 'superseded', 'withdrawn'];
-export const RQ_STATUS_COLOR = { pending: 'orange', applied: 'green', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
+export const RQ_STATUSES = ['pending', 'applied', 'returned', 'rejected', 'superseded', 'withdrawn'];
+export const RQ_STATUS_COLOR = { pending: 'orange', applied: 'green', returned: 'purple', rejected: 'red', superseded: 'gray', withdrawn: 'gray' };
 export const RQ_FIELD_LABEL = { progress: 'progress', weight: 'weight', enabled: 'enabled', test_status: 'test_status',
   notif_status: 'notif_status', review_status: 'review_status', note: 'note', status: 'report_status', name_ar: 'au_f_name_ar', name_en: 'au_f_name_en',
   create: 'fn_add', removed: 'fn_remove', item_type: 'item_type', move: 'mv_field' };
@@ -53,6 +53,7 @@ export const canApproveAny = requests => (requests || []).some(r => r.can?.appro
 // The toast after a decision ({ key, vars, kind }).
 export function decisionToast(r) {
   if (r?.applied) return { key: 'applied_result', vars: { a: r.applied_changes, s: r.skipped_changes }, kind: 'green' };
+  if (r?.returned) return { key: r.substitute ? 'rq_returned_to_sub' : 'rq_returned_to_author', vars: {}, kind: 'green' };
   if (r?.stage === 'source') return { key: 'mv_source_approved', vars: {}, kind: 'green' };
   return { key: 'saved', vars: {}, kind: 'green' };
 }

@@ -2,10 +2,10 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
 import { requireAuth, hasPerm, canSeeApp, coversDept } from '../middleware/auth.js';
-import { isAppApprover, applyRequest, requestContext, requesterBlocked } from '../services/edits.js';
+import { isAppApprover, applyRequest, requestContext, requesterBlocked, computeReturnTo } from '../services/edits.js';
 import { logAudit } from '../services/logs.js';
 import { publishChange, publishApps } from '../services/live.js';
-import { requestDecided, requestsSettled, itemsMovedIn, applicationMovedIn } from '../services/notify-events.js';
+import { requestDecided, requestsSettled, itemsMovedIn, applicationMovedIn, requestReturned, requestCreated } from '../services/notify-events.js';
 import { approveMove, currentShare } from '../services/move.js';
 import { approveAppMove, isDeptApprover } from '../services/app-move.js';
 import { PASS_RULE_CODES } from '../services/passRule.js';
@@ -45,12 +45,19 @@ function abilities(user, rq, apps) {
       approve_as: approve ? (stage === 'source' ? (dst ? 'both' : 'source') : 'target') : null };
   }
   const approver = isAppApprover(user, appOf(rq, apps)) && notMine;
-  return { approve: pending && approver, reject: pending && approver, withdraw: pending && rq.requested_by === user.id };
+  // a returned request (1.12.28): the lead sent it back to the requester, or to their substitute when on leave —
+  // that user (returned_to) and the original author may resubmit it (→ pending again) or withdraw it.
+  const returned = rq.status === 'returned';
+  const mineReturned = returned && (rq.returned_to === user.id || rq.requested_by === user.id);
+  return { approve: pending && approver, reject: pending && approver,
+    withdraw: (pending && rq.requested_by === user.id) || mineReturned, resubmit: mineReturned };
 }
 // Who may see a request: its author, the application's approvers, and readers of approvals with that application in
-// scope — for a move, with either of its applications in scope.
+// scope — for a move, with either of its applications in scope. A returned request is also seen by the user it was
+// returned to (its substitute, who is neither the author nor an approver).
 const visible = (user, rq, apps) => {
   if (rq.requested_by === user.id) return true;
+  if (rq.status === 'returned' && rq.returned_to === user.id) return true;
   // an application move is seen by the leads of either department and by full-scope / final approvers covering one
   if (isMoveApp(rq)) {
     return [rq.department_id, rq.target_department_id].some(dep => !!dep && coversDept(user, dep) &&
@@ -61,7 +68,7 @@ const visible = (user, rq, apps) => {
 };
 
 const COLS = `r.*, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en, a.name_ar AS app_name_ar, a.name_en AS app_name_en, a.icon,
-  ur.full_name AS requested_by_name, ud.full_name AS decided_by_name,
+  ur.full_name AS requested_by_name, ud.full_name AS decided_by_name, urt.full_name AS returned_to_name,
   ta.name_ar AS target_app_name_ar, ta.name_en AS target_app_name_en, ta.icon AS target_icon,
   td.name_ar AS target_dept_name_ar, td.name_en AS target_dept_name_en,
   usa.full_name AS source_approved_by_name, uta.full_name AS target_approved_by_name,
@@ -69,6 +76,7 @@ const COLS = `r.*, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en, a.name_
 const JOINS = `JOIN departments d ON d.id=r.department_id JOIN applications a ON a.id=r.app_id
   LEFT JOIN applications ta ON ta.id=r.target_app_id LEFT JOIN departments td ON td.id=r.target_department_id
   LEFT JOIN users ur ON ur.id=r.requested_by LEFT JOIN users ud ON ud.id=r.decided_by
+  LEFT JOIN users urt ON urt.id=r.returned_to
   LEFT JOIN users usa ON usa.id=r.source_approved_by LEFT JOIN users uta ON uta.id=r.target_approved_by`;
 
 async function items(ids) {
@@ -83,7 +91,7 @@ export const RQ_KINDS = ['function', 'bulk', 'report', 'add_function', 'remove_f
 // a changed field; 'name' is a rename (the Arabic or the English name)
 const FIELD_OF = f => (f === 'name_ar' || f === 'name_en' ? 'name' : f);
 const FIELDS_IN = f => (f === 'name' ? ['name_ar', 'name_en'] : [f]);
-export const RQ_FILTERS = ['status', 'mine', 'awaiting', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
+export const RQ_FILTERS = ['status', 'mine', 'awaiting', 'returned', 'dept', 'app', 'kind', 'field', 'requester', 'decided_by', 'from', 'to', 'q'];
 const userId = (v, field) => {
   if (!/^[0-9]{1,10}$/.test(v) || !isId(+v)) throw bad('invalid_value', { field });
   return +v;
@@ -95,6 +103,8 @@ function filterSql(user, qs) {
   const s = k => (typeof qs[k] === 'string' ? qs[k] : '');
   if (qs.status) add('r.status=?', str(qs.status, 20));
   if (qs.mine === '1') add('r.requested_by=?', user.id);
+  // «returned to me» (1.12.28): the requests a lead sent back for this user to act on (the requester or substitute)
+  if (qs.returned === '1') { add('r.returned_to=?', user.id); add('r.status=?', 'returned'); }
   // a move belongs to both of its departments / applications
   if (s('dept')) add('(r.department_id=? OR r.target_department_id=?)', str(qs.dept, 50));
   if (s('app')) add('(r.app_id=? OR r.target_app_id=?)', str(qs.app, 50));
@@ -178,22 +188,45 @@ r.get('/facets', async (req, res) => res.json(await facets(req.user, req.query))
 r.get('/pending-count', async (req, res) => {
   const rows = (await query(`SELECT id, department_id, app_id, requested_by, kind, target_app_id, target_department_id, source_approved_by FROM edit_requests WHERE status='pending'`)).rows;
   const apps = await allApps();
+  // returned to me (1.12.28): requests a lead sent back for this user (author or substitute) to act on
+  const returned = (await query(`SELECT count(*)::int AS n FROM edit_requests WHERE status='returned' AND returned_to=$1`, [req.user.id])).rows[0].n;
   res.json({
     awaiting_me: rows.filter(x => abilities(req.user, { ...x, status: 'pending' }, apps).approve).length,
     mine: rows.filter(x => x.requested_by === req.user.id).length,
+    returned_to_me: returned,
   });
 });
 
+// The reject reason is required and, when it RETURNS the request to its author (every kind but a move), uses the
+// same 3–500 rule as a move / rename / exclusion reason. A move reject keeps its older rule (any non-empty text).
+export const RETURN_REASON_MIN = 3, RETURN_REASON_MAX = 500;
+function returnReason(body) {
+  const v = str(body?.reason, RETURN_REASON_MAX);
+  if (v.replace(/\s/gu, '').length < RETURN_REASON_MIN) throw bad('reason_required', { min: RETURN_REASON_MIN });
+  return v;
+}
+const requireMoveReason = v => { if (!v) throw bad('reason_required'); return v; };
+
 async function decide(req, res, action) {
   const id = idParam(req.params.id);
-  const reason = str(req.body?.reason, 1000) || null;
-  if (action === 'reject' && !reason) throw bad('reason_required');
+  const moveReason = str(req.body?.reason, 1000) || null;
   const apps = await allApps();
   const out = await tx(async c => {
     const rq = (await c.query('SELECT * FROM edit_requests WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!rq) throw notFound();
     if (rq.status !== 'pending') throw bad('request_not_pending', { status: rq.status });
     if (!abilities(req.user, rq, apps)[action]) throw new HttpError(403, 'cannot_approve', { stage: action });
+    const move = isMove(rq) || isMoveApp(rq);
+    // a reject of a simple request RETURNS it to its author (or substitute); a move reject closes it as before
+    const reason = action === 'reject' ? (move ? requireMoveReason(moveReason) : returnReason(req.body)) : moveReason;
+    if (action === 'reject' && !move) {
+      const route = await computeReturnTo(c, rq);
+      await c.query(`UPDATE edit_requests SET status='returned', returned_reason=$2, returned_at=now(), returned_to=$3,
+        decided_by=$4, decided_at=now(), reason=$2 WHERE id=$1`, [id, reason, route.to, req.user.id]);
+      await logAudit(req, { db: c, action: 'edit_return', entity: 'edit_request', entityId: id, summary: reason,
+        context: await requestContext(c, rq, req, { reason, returned_to: route.to, substitute: route.substitute }) });
+      return { ok: true, returned: true, returned_to: route.to, substitute: route.substitute, app_id: rq.app_id, rq, status: 'returned', route, reason };
+    }
     if (action === 'approve') {
       // the author must still be allowed to make these changes (active, in scope, permissions) — ETS-SEC-027
       const blocked = await requesterBlocked(c, rq);
@@ -220,10 +253,12 @@ async function decide(req, res, action) {
     await c.query(`UPDATE edit_requests SET status=$2, decided_by=$3, decided_at=now(), reason=$4 WHERE id=$1`, [id, status, req.user.id, reason]);
     await logAudit(req, { db: c, action: `edit_${action}`, entity: 'edit_request', entityId: id, summary: reason,
       context: await requestContext(c, rq, req, { reason }) });
-    return { ok: true, app_id: rq.app_id, rq, status };
+    return { ok: true, app_id: rq.app_id, rq, status, reason };
   });
-  // alerts (after COMMIT): the author hears the decision; the approvers' «waiting» alert closes when nothing is left
-  await requestDecided(out.rq, { status: out.applied ? 'applied' : out.status, reason, result: out.result });
+  // alerts (after COMMIT): a returned request tells the user it went to (A7); every other decision tells the author
+  // (A3). Either way the approvers' «waiting» alert closes when nothing is left pending there.
+  if (out.returned) await requestReturned(out.rq, { reason: out.reason, returnedTo: out.route.to, substitute: out.route.substitute });
+  else await requestDecided(out.rq, { status: out.applied ? 'applied' : out.status, reason: out.reason, result: out.result });
   await requestsSettled(out.rq.app_id);
   if (out.rq.target_app_id) await requestsSettled(out.rq.target_app_id);
   // after COMMIT: applied changes, or the end of an "awaiting approval" badge — a move: both applications
@@ -238,13 +273,53 @@ async function decide(req, res, action) {
     const app = apps.find(a => a.id === out.app_id);
     publishChange(app ? { dept_id: app.department_id, app_id: app.id } : {});
   }
-  delete out.rq; delete out.result; delete out.status; delete out.app_id;
+  delete out.rq; delete out.result; delete out.status; delete out.app_id; delete out.route; delete out.reason;
   res.json(out);
 }
 
 r.post('/:id/approve', (req, res) => decide(req, res, 'approve'));
 r.post('/:id/reject', (req, res) => decide(req, res, 'reject'));
-r.post('/:id/withdraw', (req, res) => decide(req, res, 'withdraw'));
+
+// Withdraw (1.12.28): a still-pending request by its author, or a returned request by the user it was returned to
+// (requester or substitute) — it is closed. Resubmit: a returned request goes back to 'pending' and re-enters the
+// approval flow, after the author's current rights are re-checked (ETS-SEC-027), so a no-longer-allowed change
+// cannot be resubmitted. Only returned_to or the original author may act (abilities.withdraw / .resubmit).
+async function returnedAction(req, res, action) {
+  const id = idParam(req.params.id);
+  const apps = await allApps();
+  const out = await tx(async c => {
+    const rq = (await c.query('SELECT * FROM edit_requests WHERE id=$1 FOR UPDATE', [id])).rows[0];
+    if (!rq) throw notFound();
+    const can = abilities(req.user, rq, apps);
+    if (!can[action]) throw new HttpError(403, 'cannot_approve', { stage: action });
+    if (action === 'withdraw') {        // pending author withdraw still flows through decide(); this handles returned
+      if (rq.status === 'pending') return null;      // let the pending path handle it
+      await c.query(`UPDATE edit_requests SET status='withdrawn', decided_by=$2, decided_at=now() WHERE id=$1`, [id, req.user.id]);
+      await logAudit(req, { db: c, action: 'edit_withdraw', entity: 'edit_request', entityId: id, summary: 'withdrawn after return',
+        context: await requestContext(c, rq, req, { withdrawn_after_return: true }) });
+      return { ok: true, status: 'withdrawn', rq };
+    }
+    // resubmit
+    if (rq.status !== 'returned') throw bad('request_not_returned', { status: rq.status });
+    const blocked = await requesterBlocked(c, rq);
+    if (blocked) throw new HttpError(409, 'requester_not_allowed', { reason: blocked });
+    await c.query(`UPDATE edit_requests SET status='pending', requested_at=now(), returned_reason=NULL, returned_at=NULL,
+      returned_to=NULL, decided_by=NULL, decided_at=NULL, reason=NULL WHERE id=$1`, [id]);
+    await logAudit(req, { db: c, action: 'edit_resubmit', entity: 'edit_request', entityId: id, summary: 'resubmitted after return',
+      context: await requestContext(c, rq, req, { resubmitted: true }) });
+    return { ok: true, status: 'pending', rq };
+  });
+  if (out === null) return decide(req, res, 'withdraw');
+  const app = apps.find(a => a.id === out.rq.app_id);
+  if (out.status === 'pending') await requestCreated({ ...out.rq, status: 'pending' });   // A1: the approvers again
+  await requestsSettled(out.rq.app_id);
+  if (out.rq.target_app_id) await requestsSettled(out.rq.target_app_id);
+  publishChange(app ? { dept_id: app.department_id, app_id: app.id } : {});
+  res.json({ ok: true, status: out.status });
+}
+
+r.post('/:id/withdraw', (req, res) => returnedAction(req, res, 'withdraw'));
+r.post('/:id/resubmit', (req, res) => returnedAction(req, res, 'resubmit'));
 
 // Approve every pending request of a department the user leads (or a list of ids).
 r.post('/approve-all', async (req, res) => {

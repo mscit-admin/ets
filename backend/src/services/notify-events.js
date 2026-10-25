@@ -75,6 +75,20 @@ export const requestDecided = safe('request_decided', async (rq, { status, reaso
       applied: result?.applied ?? null, skipped: result?.skipped ?? null } }]);
 });
 
+// ---- A7 (1.12.28): a request was REJECTED and returned → the user it was returned to (the author, or their
+// substitute when the author is on leave). severity warning, scope self. substitute: routed to the stand-in.
+export const requestReturned = safe('request_returned', async (rq, { reason = null, returnedTo, substitute = false }) => {
+  if (!returnedTo) return;
+  const [user] = await activeUsers([returnedTo]);
+  if (!user) return;
+  const app = (await appMap()).get(rq.app_id);
+  const requesterName = substitute ? await fullName(rq.requested_by) : null;
+  await deliver('request_returned', [{ user, dedupeKey: `request_returned:${rq.id}:${Date.now()}`, link: '/approvals?returned=1',
+    appId: rq.app_id, deptId: app?.department_id,
+    params: { ...appParams(app), request_id: rq.id, reason: reason ? String(reason).slice(0, 300) : null,
+      on_behalf: !!substitute, requester_name: requesterName } }]);
+});
+
 // ---- A4: a result file waits for signatures. able(user) → can sign a stage now (routes/imports.js abilities()).
 export const importWaiting = safe('import_waiting', async (b, able) => {
   const key = `import_pending:batch=${b.id}`;

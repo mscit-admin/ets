@@ -8,7 +8,7 @@ import { publishSessionCheck, publishChange, publishApps } from '../services/liv
 import { requestContext } from '../services/edits.js';
 import { userRef, namedItems, loadUser as loadAuditUser } from '../services/audit.js';
 import { userImportJson } from '../middleware/body.js';
-import { HttpError, bad, notFound, str, idParam, isId } from '../utils/http.js';
+import { HttpError, bad, notFound, str, idParam, isId, isDate } from '../utils/http.js';
 import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../utils/importMatch.js';
 import { revokeDevices } from '../services/devices.js';
 import { requestsSettled } from '../services/notify-events.js';
@@ -24,7 +24,9 @@ const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'ex
 // Never includes secrets (password hash, TOTP secret), so rows can be returned as-is.
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,
   u.totp_enabled, u.totp_exempt, u.totp_enabled_at, u.failed_attempts, u.locked_until, u.last_login_at,
-  host(u.last_login_ip) AS last_login_ip, u.created_at, u.updated_at, u.password_changed_at`;
+  host(u.last_login_ip) AS last_login_ip, u.created_at, u.updated_at, u.password_changed_at,
+  u.on_leave, u.leave_from, u.leave_to, u.substitute_user_id,
+  (SELECT full_name FROM users s WHERE s.id=u.substitute_user_id) AS substitute_name`;
 
 r.get('/meta', async (req, res) => {
   const [roles, depts, apps] = await Promise.all([
@@ -98,7 +100,7 @@ async function emailIndexed(fn) {
 
 // keepUsername: the account's current username (update) — sent back unchanged it is not checked again, so an
 // account created before with a name the rules no longer accept (e.g. containing "@") can still be edited.
-async function validateCommon(body, { creating, keepUsername }) {
+async function validateCommon(body, { creating, keepUsername, selfId } = {}) {
   const out = {};
   if (creating || body.username !== undefined) {
     const un = str(body.username, 60);
@@ -122,8 +124,26 @@ async function validateCommon(body, { creating, keepUsername }) {
     out.role_id = body.role_id;
   }
   if (body.language !== undefined) { if (!['ar', 'en'].includes(body.language)) throw bad('invalid_language'); out.language = body.language; }
-  for (const k of ['is_active', 'must_change_password', 'totp_exempt']) {
+  for (const k of ['is_active', 'must_change_password', 'totp_exempt', 'on_leave']) {
     if (body[k] !== undefined) { if (typeof body[k] !== 'boolean') throw bad('invalid_value', { field: k }); out[k] = body[k]; }
+  }
+  // on-leave window (1.12.28): optional dates, each a YYYY-MM-DD string or null (clears it)
+  for (const k of ['leave_from', 'leave_to']) {
+    if (body[k] !== undefined) {
+      if (body[k] !== null && !isDate(body[k])) throw bad('invalid_value', { field: k });
+      out[k] = body[k] || null;
+    }
+  }
+  // pre-assigned substitute (1.12.28): an existing, non-deleted account other than this user
+  if (body.substitute_user_id !== undefined) {
+    const s = body.substitute_user_id;
+    if (s === null || s === '') out.substitute_user_id = null;
+    else {
+      if (!isId(s)) throw bad('invalid_value', { field: 'substitute_user_id' });
+      if (selfId && s === selfId) throw bad('invalid_substitute', { reason: 'self' });
+      if (!(await query('SELECT 1 FROM users WHERE id=$1 AND deleted_at IS NULL', [s])).rowCount) throw bad('invalid_substitute');
+      out.substitute_user_id = s;
+    }
   }
   return out;
 }
@@ -374,7 +394,7 @@ r.patch('/:id', async (req, res) => {
   const id = idParam(req.params.id);
   const before = await loadUser(id);
   const b = req.body || {};
-  const v = await validateCommon(b, { creating: false, keepUsername: before.username });
+  const v = await validateCommon(b, { creating: false, keepUsername: before.username, selfId: id });
   if (v.username && v.username.toLowerCase() !== before.username.toLowerCase() &&
       (await query('SELECT 1 FROM users WHERE username=$1 AND id<>$2 AND deleted_at IS NULL', [v.username, id])).rowCount) throw bad('username_taken');
   // only a changed address is checked: an account that already shares its address (data from before 1.6.0) can

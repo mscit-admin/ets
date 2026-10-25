@@ -218,6 +218,8 @@ function UserFormInner({ id }) {
   const { user: me } = useAuth();
   const nav = useNavigate();
   const meta = useLoad(() => api.get('/users/meta'), []);
+  // the pool of possible substitutes (1.12.28): active, non-deleted accounts other than this user
+  const people = useLoad(() => (isNew ? Promise.resolve({ users: [] }) : api.get('/users')), [id]);
   const usr = useLoad(() => (isNew ? Promise.resolve({ user: null }) : !isIdParam(id) ? Promise.reject(notFoundError())
     : api.get(path`/users/${id}`).then(d => (d?.user ? d : Promise.reject(notFoundError())))), [id]);
   const [f, setF] = useState(null);
@@ -232,9 +234,11 @@ function UserFormInner({ id }) {
     setF(u ? {
       username: u.username, full_name: u.full_name, email: u.email || '', role_id: u.role_id, language: u.language,
       is_active: u.is_active, must_change_password: u.must_change_password, totp_exempt: u.totp_exempt,
+      on_leave: u.on_leave, leave_from: u.leave_from ? u.leave_from.slice(0, 10) : '', leave_to: u.leave_to ? u.leave_to.slice(0, 10) : '',
+      substitute_user_id: u.substitute_user_id || '',
       scopes: u.scopes, overrides: u.overrides,
     } : { username: '', full_name: '', email: '', role_id: 'obs', language: '', is_active: true, must_change_password: true,
-      totp_exempt: false, scopes: [], overrides: [], password: '' });
+      totp_exempt: false, on_leave: false, leave_from: '', leave_to: '', substitute_user_id: '', scopes: [], overrides: [], password: '' });
   }, [usr.data]);
 
   if ((meta.loading && !meta.data) || (usr.loading && !usr.data) || !f) return meta.error || usr.error ? <ErrorBox error={meta.error || usr.error} /> : <Loading />;
@@ -254,6 +258,9 @@ function UserFormInner({ id }) {
     setBusy(true); setErr(null);
     try {
       const body = { ...f, email: f.email || '' };
+      body.leave_from = f.leave_from || null;
+      body.leave_to = f.leave_to || null;
+      body.substitute_user_id = f.substitute_user_id ? Number(f.substitute_user_id) : null;
       if (!isAdminRole) body.overrides = f.overrides.filter(o => !(o.permission === 'usr' && o.granted));
       if (!body.language) delete body.language;   // the server applies Settings → default language
       if (isNew) {
@@ -370,6 +377,24 @@ function UserFormInner({ id }) {
           ))}
         </div>
       </Card>
+
+      {!isNew && (
+        <Card title={t('leave_title')} actions={<span className="muted small">{t('leave_hint')}</span>}>
+          <label className="check"><input type="checkbox" checked={f.on_leave} onChange={e => setF({ ...f, on_leave: e.target.checked })} /> {t('on_leave')}</label>
+          <div className="form-grid mt">
+            <Field label={t('leave_from')} hint={t('leave_dates_hint')}><input className="input" type="date" value={f.leave_from} max={f.leave_to || undefined} onChange={e => setF({ ...f, leave_from: e.target.value })} /></Field>
+            <Field label={t('leave_to')}><input className="input" type="date" value={f.leave_to} min={f.leave_from || undefined} onChange={e => setF({ ...f, leave_to: e.target.value })} /></Field>
+            <Field label={t('substitute')} hint={t('substitute_hint')}>
+              <select className="input" value={f.substitute_user_id} onChange={e => setF({ ...f, substitute_user_id: e.target.value })}>
+                <option value="">{t('substitute_none')}</option>
+                {(people.data?.users || []).filter(p => p.id !== u.id && p.is_active).map(p => (
+                  <option key={p.id} value={p.id}>{p.full_name} ({p.username})</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </Card>
+      )}
 
       {!isNew && <UserNotifyCard u={u} self={self} onChanged={usr.reload} />}
 
