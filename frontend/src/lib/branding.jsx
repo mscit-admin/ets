@@ -30,12 +30,16 @@ export function BrandingProvider({ children }) {
     document.documentElement.style.setProperty('--navbar-h', Math.max(52, value.logoHeight + 20) + 'px');
   }, [value.logoHeight]);
 
-  // browser tab icon
+  // browser tab icon: only swap the existing <link rel="icon"> (from index.html) when a custom
+  // favicon/logo is uploaded. Leaving the default untouched avoids a second /favicon.svg request
+  // that would abort the one the browser already made from index.html (NS_BINDING_ABORTED).
   useEffect(() => {
-    let link = document.querySelector('link[rel="icon"]');
-    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    if (value.favicon === DEFAULT_ICON) return;
+    const link = document.querySelector('link[rel="icon"]');
+    if (!link) return;
+    if (value.favicon.endsWith('.svg')) link.type = 'image/svg+xml';
+    else link.removeAttribute('type');
     link.href = value.favicon;
-    link.type = value.favicon.endsWith('.svg') ? 'image/svg+xml' : '';
   }, [value.favicon]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

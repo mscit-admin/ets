@@ -3,24 +3,30 @@ import { useAuth } from './lib/auth.jsx';
 import { useI18n } from './i18n/index.jsx';
 import Layout from './components/Layout.jsx';
 import { Loading, ToastHost } from './components/ui.jsx';
+// Login (and ForcePasswordChange) stay eager: tiny and needed on the very first paint before auth resolves.
 import Login, { ForcePasswordChange } from './pages/Login.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Department from './pages/Department.jsx';
-import Application from './pages/Application.jsx';
-import Weights from './pages/Weights.jsx';
-import Reports from './pages/Reports.jsx';
-import Schedule from './pages/Schedule.jsx';
-import ProjectStatus from './pages/ProjectStatus.jsx';
-import Search from './pages/Search.jsx';
-import { UserForm, UserList } from './pages/Users.jsx';
-import Logs from './pages/Logs.jsx';
-import Settings from './pages/Settings.jsx';
-import Profile from './pages/Profile.jsx';
-import { ImportDetail, ImportList } from './pages/Imports.jsx';
-import Approvals from './pages/Approvals.jsx';
-import Notifications from './pages/Notifications.jsx';
-import { useEffect, useState } from 'react';
+// Authenticated pages are code-split: each loads on first navigation, shrinking the initial bundle.
+// Suspense fallback lives in Layout (around <Outlet/>), so the navbar/sidebar stay while a page loads.
+import { lazy, useEffect, useState } from 'react';
 import { RestoreMonitor, readWatch } from './components/RestoreWizard.jsx';
+
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Department = lazy(() => import('./pages/Department.jsx'));
+const Application = lazy(() => import('./pages/Application.jsx'));
+const Weights = lazy(() => import('./pages/Weights.jsx'));
+const Reports = lazy(() => import('./pages/Reports.jsx'));
+const Schedule = lazy(() => import('./pages/Schedule.jsx'));
+const ProjectStatus = lazy(() => import('./pages/ProjectStatus.jsx'));
+const Search = lazy(() => import('./pages/Search.jsx'));
+const UserList = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.UserList })));
+const UserForm = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.UserForm })));
+const Logs = lazy(() => import('./pages/Logs.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
+const Profile = lazy(() => import('./pages/Profile.jsx'));
+const ImportList = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportList })));
+const ImportDetail = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportDetail })));
+const Approvals = lazy(() => import('./pages/Approvals.jsx'));
+const Notifications = lazy(() => import('./pages/Notifications.jsx'));
 
 function Guard({ perm, children }) {
   const { can } = useAuth();

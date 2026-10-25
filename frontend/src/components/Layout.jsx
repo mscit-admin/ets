@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
@@ -6,7 +6,7 @@ import { api } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import { useBranding } from '../lib/branding.jsx';
-import { useLoad } from './ui.jsx';
+import { Loading, useLoad } from './ui.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
 import { usePresenceReporter } from '../lib/presence.js';
 
@@ -172,7 +172,7 @@ export default function Layout() {
       <Navbar onMenu={() => setOpen(o => !o)} />
       <div className="app-body">
         <Sidebar open={open} onClose={() => setOpen(false)} />
-        <main className="main"><ErrorBoundary><Outlet /></ErrorBoundary></main>
+        <main className="main"><ErrorBoundary><Suspense fallback={<Loading />}><Outlet /></Suspense></ErrorBoundary></main>
       </div>
     </div>
   );
