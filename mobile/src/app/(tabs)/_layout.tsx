@@ -11,6 +11,7 @@ import { useI18n } from '@/lib/i18n';
 import { LiveProvider } from '@/lib/liveContext';
 import { NotifCountProvider, badgeText, useNotifCount } from '@/lib/notifCount';
 import { ApprovalsCountProvider, useApprovalsCount } from '@/lib/approvalsCount';
+import { MsgCountProvider, useMsgCount } from '@/lib/msgCount';
 import { usePresence } from '@/lib/presenceHook';
 import { colors, fontFamily } from '@/theme';
 
@@ -18,9 +19,11 @@ function TabsInner() {
   const { t } = useI18n();
   const { count } = useNotifCount();
   const approvals = useApprovalsCount();
+  const msgs = useMsgCount();
   const insets = useSafeAreaInsets();
   usePresence();
   const waiting = approvals.count.awaiting_me;
+  const unreadMsgs = msgs.count.total;
   return (
     <Tabs
       screenOptions={{
@@ -45,6 +48,13 @@ function TabsInner() {
         tabBarBadgeStyle: { fontFamily: fontFamily(700), fontSize: 10.5, backgroundColor: colors.bellCritical },
         tabBarAccessibilityLabel: waiting ? `${t('m_tab_approvals')}: ${t('edits_awaiting_you', { n: waiting })}` : t('m_tab_approvals'),
       }} />
+      <Tabs.Screen name="messages" options={{
+        title: t('messages_title'),
+        tabBarIcon: ({ color, size }) => <Icon name="inbox" size={size} color={color} />,
+        tabBarBadge: unreadMsgs > 0 ? badgeText(unreadMsgs) : undefined,
+        tabBarBadgeStyle: { fontFamily: fontFamily(700), fontSize: 10.5, backgroundColor: colors.primaryBlue },
+        tabBarAccessibilityLabel: unreadMsgs ? `${t('messages_title')}: ${t('msg_badge_title', { n: badgeText(unreadMsgs) })}` : t('messages_title'),
+      }} />
       <Tabs.Screen name="notifications" options={{
         title: t('notifications'),
         tabBarIcon: ({ color, size }) => <Icon name="bell" size={size} color={color} />,
@@ -64,9 +74,11 @@ export default function TabsLayout() {
     <LiveProvider>
       <NotifCountProvider>
         <ApprovalsCountProvider>
-          <SheetHost>
-            <TabsInner />
-          </SheetHost>
+          <MsgCountProvider>
+            <SheetHost>
+              <TabsInner />
+            </SheetHost>
+          </MsgCountProvider>
         </ApprovalsCountProvider>
       </NotifCountProvider>
     </LiveProvider>

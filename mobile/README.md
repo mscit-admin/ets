@@ -40,7 +40,9 @@ The ETS mobile app for Android and iOS, built with React Native and Expo: sign i
 - **تفضيلات التنبيهات** في «حسابي»، وفتح الشاشة المعنية عند الضغط على تنبيه.
 - **تحديث مباشر:** تتحدّث الشاشات فور تغيّر البيانات على الخادم (بث الأحداث)، ويتوقف ذلك والتطبيق في الخلفية.
 
-**المرحلة الثالثة:** تثبيت شهادة الخادم (pinning)، وتوقيع رسمي ونشر على المتاجر، ونسخة iOS، وإشعارات فورية.
+**المرحلة الثالثة (هذا الإصدار، 0.3.0): الرسائل** — نفس ميزة المراسلة التي أُطلقت في الموقع (1.12.26)، بإعادة استخدام واجهة `/api/messages` كما هي (لا تغيير في الخادم): تبويب «الرسائل» مع شارة غير المقروء، وصندوق وارد للمحادثات الخاصة، ومحادثة بنمط الدردشة (باتجاه عربي صحيح) مع صندوق رد — وفتحها يعلّمها مقروءة. ولمن يملك صلاحية `msg` تبويب «المُرسَلة» (مع التنقل إلى محادثات المستلمين) وشاشة إنشاء رسالة (أفراد بالبحث، أو الكل، أو حسب الإدارة أو الدور، مع عدد المستلمين المحسوب، وموضوع اختياري ونص). يحصل الجميع على الوارد والرد.
+
+**لاحقاً:** تثبيت شهادة الخادم (pinning)، وتوقيع رسمي ونشر على المتاجر، ونسخة iOS، وإشعارات فورية.
 
 ### تنزيل التطبيق (APK)
 
@@ -109,7 +111,9 @@ A phone app that shows ETS the same way as the website: the same colours, the Ca
 - **Notification preferences** in My account; tapping an alert opens its screen.
 - **Live updates:** screens refresh as soon as data changes on the server (event stream), paused while the app is in the background.
 
-**Phase 3:** certificate pinning, release signing and store publishing, the iOS build, and push notifications.
+**Phase 3 (this release, 0.3.0): Messages** — the in-app messaging shipped on the web in 1.12.26, reusing the `/api/messages` API as-is (no backend change): a «Messages» tab with an unread badge, an **Inbox** of private conversations, a **chat-style thread** (RTL-correct) with a reply box that marks the thread read on open, and — for users with the `msg` permission — a **Sent** view that drills into per-recipient threads and a **Compose** flow (searchable individuals, everyone, by department or by role, a live resolved count, optional subject + body). Everyone has the inbox and can reply.
+
+**Later:** certificate pinning, release signing and store publishing, the iOS build, and push notifications.
 
 ### Download the app (APK)
 
@@ -161,6 +165,7 @@ The app trusts the system CAs and the CAs you install yourself, and it refuses u
 | TypeScript | 6.0.3, `strict` |
 | Android | minSdk 24, targetSdk 36, compileSdk 37 (Expo defaults) |
 | App id | `ly.ets.mobile` (Android package and iOS bundle id) |
+| App version | `0.3.0` (Android `versionCode` 3) |
 
 Every dependency is pinned to an exact version, and `package-lock.json` is committed. To upgrade, use `npx expo install --fix` for a new SDK, then pin the versions again.
 
@@ -297,4 +302,5 @@ A **debug** APK does not contain the JavaScript bundle. It loads the bundle from
 ### Phase 2 and 3 notes
 
 - **Phase 2 (done in 0.2.0):** editing by permission, approvals, the live stream, notification preferences and links, presence. Still on the website: 2FA management and password change in the profile, imports, reports, weights.
-- **Phase 3:** certificate pinning (SHA-256 of the server leaf, like ETS Alerts' `cert_sha256`, through a native OkHttp / `URLSession` hook or a pinning library); a release keystore in repository secrets; store listings; the iOS job; push notifications (FCM / APNs) reusing the device pairing of `/api/devices`; and replacing ETS Alerts.
+- **Phase 3 (done in 0.3.0):** in-app messaging (inbox, chat-style threads with reply, sent + compose for `msg` users), reusing the web `/api/messages` API. Still on the website: 2FA management and password change in the profile, imports, reports, weights.
+- **Later:** certificate pinning (SHA-256 of the server leaf, like ETS Alerts' `cert_sha256`, through a native OkHttp / `URLSession` hook or a pinning library); a release keystore in repository secrets; store listings; the iOS job; push notifications (FCM / APNs) reusing the device pairing of `/api/devices`; and replacing ETS Alerts.

@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.27] — 2026-10-25 — Messages on the mobile app / الرسائل في تطبيق الجوال
+
+### Added
+- **Mobile — Messages screen («الرسائل»):** the in-app messaging shipped on the web in 1.12.26 is now in the
+  React Native / Expo app (`mobile/`), reusing the `/api/messages` API as-is (no backend or web change). A new
+  «الرسائل» tab with an unread badge (`GET /api/messages/unread-count`): an **Inbox** of received private 1:1
+  conversations (sender, subject/preview, time, unread dot, pull-to-refresh → thread); a **chat-style thread view**
+  (RTL-correct, the caller's posts aligned to the end) with a reply box (`POST /messages/threads/:id/reply`) that
+  marks the thread read on open and handles the 403 / not-a-party and 404 cases; and — only for users with the `msg`
+  permission — a **Sent** view that drills into per-recipient threads (`GET /messages/sent`, `/sent/:id`) and a
+  **Compose** flow (searchable individuals via `/recipients`, everyone, by department / by role via `/compose-meta`,
+  the live resolved count via `/resolve`, optional subject + required body, `POST /messages`). The unread badge and
+  the open lists refresh on the app's live stream (reconnect / foreground / fallback poll) and whenever a
+  `message_received` / `message_reply` notification arrives; every automatic reload uses `X-ETS-Live: 1` (never
+  activity for the idle timeout), matching the app's existing convention. Compose and Sent are gated on `msg`;
+  everyone has the inbox and can reply. New: `mobile/src/app/(tabs)/messages/*`, `mobile/src/lib/msgCount.tsx`,
+  message types in `mobile/src/lib/types.ts`, the «الرسائل» tab in `mobile/src/app/(tabs)/_layout.tsx`; tests
+  `mobile/__tests__/messages.test.ts`. Mobile app version `0.3.0`, Android `versionCode` 3
+  (`mobile/package.json`, `mobile/app.json`); see `mobile/CHANGELOG.md`.
+
+---
+
 ## [1.12.26] — 2026-10-25 — in-app messaging / الرسائل
 
 ### Added
