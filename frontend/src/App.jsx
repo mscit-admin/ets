@@ -27,6 +27,7 @@ const ImportList = lazy(() => import('./pages/Imports.jsx').then(m => ({ default
 const ImportDetail = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportDetail })));
 const Approvals = lazy(() => import('./pages/Approvals.jsx'));
 const Notifications = lazy(() => import('./pages/Notifications.jsx'));
+const Messages = lazy(() => import('./pages/Messages.jsx'));
 
 function Guard({ perm, children }) {
   const { can } = useAuth();
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="settings" element={<Guard perm="cfg"><Settings /></Guard>} />
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="messages" element={<Messages />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

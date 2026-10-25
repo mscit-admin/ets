@@ -78,6 +78,8 @@ function Sidebar({ open, onClose }) {
   // batches waiting for this user's signature; refreshed on every page change
   const { data: pending } = useLoad(() => api.get('/imports/pending-count'), [loc.pathname]);
   const { data: edits } = useLoad(() => api.get('/approvals/pending-count'), [loc.pathname]);
+  // unread messages (inbox threads + unread replies for 'msg' users): refreshed on every page change
+  const { data: msgs } = useLoad(() => api.get('/messages/unread-count'), [loc.pathname]);
   useEffect(() => { onClose(); }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const link = (to, icon, label, end) => (
@@ -120,6 +122,10 @@ function Sidebar({ open, onClose }) {
           <NavLink to="/approvals" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
             <Icon name="check" size={16} /><span>{t('nav_approvals')}</span>
             {edits?.awaiting_me > 0 && <span className="side-badge" title={t('edits_awaiting_you', { n: edits.awaiting_me })}>{edits.awaiting_me}</span>}
+          </NavLink>
+          <NavLink to="/messages" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+            <Icon name="inbox" size={16} /><span>{t('nav_messages')}</span>
+            {msgs?.total > 0 && <span className="side-badge" title={t('msg_badge_title', { n: msgs.total })}>{msgs.total}</span>}
           </NavLink>
         </div>
         <div className="side-section">

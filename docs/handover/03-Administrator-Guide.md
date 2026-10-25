@@ -60,6 +60,7 @@ Roles other than the three full-scope roles **must** be given a scope, otherwise
 | `cfg` | إعدادات النظام / System settings | ✓ | | | | | | | |
 | `apv_dept` | اعتماد نتائج الإدارة (رئيس الفريق) / Approve department results (team lead) | | | | ✓ | | | | |
 | `apv_final` | الاعتماد النهائي (مدير المشروع / الفني) / Final approval (project / technical manager) | | ✓ | | | | | | |
+| `msg` | إرسال الرسائل / Send messages (1.12.26) | ✓ | | | | | | | |
 
 `ren` (1.9.2) is separate from `tog`: revoke it to stop a user renaming items while they still add, remove and
 include them, or grant it alone to let someone correct names without changing the list of items. On upgrade,
@@ -71,6 +72,16 @@ waits for the team lead.
 capability: migration 019 gives it to admin, pm, tm, mgr and lead only, and copies it from no per-user override —
 team members, editors, testers and observers do not get it. Grant it per user (Users → user → «نقل البنود») to
 let someone else request moves; revoke it to stop a lead or manager moving items.
+
+`msg` (1.12.26) lets a user compose a message and send it to recipients in the in-app **Messages** screen —
+specific individuals, everyone, by department or by role (combinable). It is a new capability: migration 026 gives
+it to the **admin role only** and copies it from no per-user override. Grant it per user (Users → user →
+«إرسال الرسائل») to let, say, a department lead send messages. `msg` grants the ability to **send** within the
+sender's own visible scope only — it never widens who the sender can see: the recipient set is always intersected
+with the sender's scope, so a scoped sender can never message a user outside it. Receiving a message and replying
+need **no** permission: anyone messaged can read and reply. Each recipient gets a private 1:1 conversation with the
+sender — a message sent to "everyone" becomes a separate private thread per recipient, and a recipient never sees
+another recipient's thread or replies.
 
 ### Import users from a file (1.1.0, drop-down lists and names since 1.1.1)
 To create many accounts at once: **Users → Import users** (استيراد مستخدمين).

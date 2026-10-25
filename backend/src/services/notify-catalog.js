@@ -15,7 +15,7 @@
 // S8) are in-app only by default. mandatory: the administrator makes the type mandatory for every role it is on for.
 
 export const ROLES = ['admin', 'pm', 'tm', 'mgr', 'lead', 'member', 'ed', 'qa', 'obs'];
-export const CATEGORIES = ['approvals', 'tracking', 'plan', 'security', 'system'];
+export const CATEGORIES = ['approvals', 'tracking', 'plan', 'messages', 'security', 'system'];
 export const SEVERITIES = ['info', 'warning', 'critical'];
 
 // matrix strings: one character per role of ROLES — '+' on, '-' eligible but off, '!' mandatory (locked), '.' not eligible
@@ -50,6 +50,11 @@ export const TYPES = {
   dept_stalled:      { code: 'P2', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'dept', matrix: M('-++++----'), push: true, digest: true },
   project_status:    { code: 'P3', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'project', matrix: M('-++......'), push: true, digest: true },
   close_approaching: { code: 'P4', category: 'plan', kind: 'periodic', severity: 'info', perms: [], scope: 'project', matrix: M('-++......'), push: true, digest: true },
+  // ---- messages (1.12.26): the in-app messaging feature. Per-user DIRECTED alerts (scope 'self'), not
+  // permission-gated — every role is eligible and on, since anyone can receive a message and reply even without
+  // 'msg'. A recipient is told of a NEW message; the other party of a REPLY (recipient → sender, sender → recipient).
+  message_received: { code: 'M1', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
+  message_reply:     { code: 'M2', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
   // ---- security and system: the admin role only (ETS-SEC-047), never granted to another role by any setting
   account_locked:    { code: 'S1', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   failed_logins:     { code: 'S2', category: 'security', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('+........'), push: false },
