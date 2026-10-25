@@ -10,7 +10,7 @@ import { Card, Empty, ErrorBox, Loading, PageHeader, toast } from '../components
 import { NotifRow } from '../components/NotificationBell.jsx';
 import { TABS } from '../lib/notifyTabs.js';
 
-const TYPES = ['approval_pending', 'approval_overdue', 'request_decided', 'import_pending', 'import_result', 'import_overdue',
+const TYPES = ['approval_pending', 'approval_overdue', 'request_decided', 'request_returned', 'import_pending', 'import_result', 'import_overdue',
   'stuck', 'untested', 'failed_retest', 'retest', 'pass_conflict', 'not_started', 'quality', 'excluded', 'moved_in', 'app_moved_in',
   'dept_behind', 'dept_stalled', 'project_status', 'close_approaching', 'message_received', 'message_reply',
   'account_locked', 'failed_logins', 'distributed_logins', 'audit_integrity', 'email_index', 'access_denied', 'backup_missing', 'retention_reduced', 'server_errors',

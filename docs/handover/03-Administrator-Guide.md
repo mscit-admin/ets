@@ -28,6 +28,19 @@ from 2FA in bulk.
    applications only, never the rest of the department.
 6. **Save**.
 
+### Leave and substitute (1.12.28)
+
+On a user's page the «الإجازة والبديل / Leave and substitute» card (editing an existing user, administrators only)
+holds:
+
+- **«في إجازة» / On leave** — mark the account as currently on leave, with an optional **from / to** window (leave
+  the dates empty for a leave with no fixed dates).
+- **«البديل» / Substitute** — a pre-assigned stand-in (any other active account). When a team lead **rejects** an
+  edit request by a user who is on leave (and, if a window is set, today falls inside it), the request is **returned
+  to the substitute** instead of the author, so the substitute can revise and resubmit — or withdraw — it on their
+  behalf. On leave with no substitute set (or an unusable one), the request simply returns to the author. See the
+  User Guide, «إعادة طلب التعديل» (the return / resubmit flow).
+
 | Role | Typical user | Scope |
 |---|---|---|
 | System Administrator | IT administrator of ETS (the only role with *Manage users*) | always full |

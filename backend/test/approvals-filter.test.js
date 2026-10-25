@@ -121,7 +121,7 @@ test('filters: department, application, requester, kind and changed field narrow
   assert.deepEqual(await seen(root, '?status=&field=progress&app=ess&requester=' + ids.member_hr), [rq.essProgress]);
   // with the status (pending by default on the screen)
   assert.deepEqual(await seen(root, '?status=pending&dept=hr'), sorted([rq.essProgress, rq.essProgress2, rq.move]));
-  assert.deepEqual(await seen(root, '?status=rejected'), [rq.perTest]);
+  assert.deepEqual(await seen(root, '?status=returned'), [rq.perTest]);   // a reject returns the request (1.12.28)
 });
 
 test('filters: decided by, dates and free text', { skip }, async () => {

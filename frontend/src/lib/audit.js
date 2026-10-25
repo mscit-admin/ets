@@ -391,7 +391,8 @@ export function makeAudit({ t, lang }) {
         if (ctx.reason) notes.push(t('au_approval_note', { note: ctx.reason }));
         items = itemLines(ctx.items);
         break;
-      case 'edit_approve:edit_request': case 'edit_reject:edit_request': case 'edit_withdraw:edit_request': {
+      case 'edit_approve:edit_request': case 'edit_reject:edit_request': case 'edit_withdraw:edit_request':
+      case 'edit_return:edit_request': case 'edit_resubmit:edit_request': {
         if (!ctx.via) break;
         const res = r.new_value || {};
         text = t('au_' + r.action, { ...vars, req: person(ctx.requested_by), applied: res.applied ?? '' });

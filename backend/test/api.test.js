@@ -444,12 +444,24 @@ test('direct edits by data-entry users wait for the department team lead only', 
   assert.ok(page.needs_approval);
   assert.ok(page.pending.some(p => p.function_id === f.id && p.field === 'progress' && p.new_value === 55));
   assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: '' })).data.error, 'reason_required');
-  assert.equal((await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: 'not tested yet' })).status, 200);
+  // reject now RETURNS the request to its author (1.12.28): status 'returned', returned_to the requester
+  const ret = (await lead.post(`/approvals/${r3.data.request_id}/reject`, { reason: 'not tested yet' })).data;
+  assert.equal(ret.returned, true); assert.equal(ret.substitute, false);
   assert.equal(+(await fn('D3')).progress, 40);
-  const rej = (await pool.query(`SELECT * FROM audit_log WHERE action='edit_reject' AND entity_id=$1`, [String(r3.data.request_id)])).rows[0];
+  const rqRow = (await pool.query('SELECT status, returned_reason, returned_to, requested_by FROM edit_requests WHERE id=$1', [r3.data.request_id])).rows[0];
+  assert.equal(rqRow.status, 'returned');
+  assert.equal(rqRow.returned_reason, 'not tested yet');
+  assert.equal(rqRow.returned_to, rqRow.requested_by);
+  const rej = (await pool.query(`SELECT * FROM audit_log WHERE action='edit_return' AND entity_id=$1`, [String(r3.data.request_id)])).rows[0];
   assert.equal(rej.context.reason, 'not tested yet');
   assert.equal(rej.context.requested_by.username, 'commember');
   assert.deepEqual(rej.context.items.map(i => [i.field, i.new]), [['progress', 55]]);
+  // the author resubmits it → back to pending and re-enters the approval flow, then withdraws it so the rest of
+  // the test (report + bulk) counts two pending requests as before
+  assert.equal((await member.post(`/approvals/${r3.data.request_id}/resubmit`)).data.status, 'pending');
+  assert.equal((await pool.query('SELECT status FROM edit_requests WHERE id=$1', [r3.data.request_id])).rows[0].status, 'pending');
+  assert.equal((await member.post(`/approvals/${r3.data.request_id}/withdraw`)).status, 200);
+  assert.equal((await pool.query('SELECT status FROM edit_requests WHERE id=$1', [r3.data.request_id])).rows[0].status, 'withdrawn');
   // reports and bulk by the member are pending too
   assert.equal((await member.patch('/tracker/reports/sal', { progress: 25 })).status, 202);
   const bulk = await member.post('/tracker/applications/sal/bulk', { field: 'progress', value: 100 });

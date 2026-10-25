@@ -356,11 +356,13 @@ test('A1 / A3: a request waiting → the team lead (merged per application); dec
   assert.equal(dec.length, 1); assert.equal(dec[0].params.decision, 'applied'); assert.equal(dec[0].severity, 'info');
   assert.equal((await open('lead_hr', 'approval_pending')).length, 1, 'one still pending');
   assert.equal((await lead.post(`/approvals/${r2.data.request_id}/reject`, { reason: 'not yet' })).status, 200);
-  const rej = (await open('mem_hr', 'request_decided')).find(x => x.params.decision === 'rejected');
-  assert.equal(rej.severity, 'warning'); assert.equal(rej.params.reason, 'not yet');
+  // a reject RETURNS the request to its author (1.12.28): an A7 request_returned alert, the pending alert closes
+  const ret = await open('mem_hr', 'request_returned');
+  assert.equal(ret.length, 1); assert.equal(ret[0].severity, 'warning');
+  assert.equal(ret[0].params.reason, 'not yet'); assert.equal(ret[0].params.on_behalf, false);
   assert.equal((await open('lead_hr', 'approval_pending')).length, 0, 'closed: nothing pending');
   const en = (await mem.get('/notifications?lang=en')).data.items.map(i => i.title);
-  assert.ok(en.includes(`Your request #${r2.data.request_id} was rejected`));
+  assert.ok(en.includes('An edit request was returned to you for review'));
   await setFns([f1, f2], { progress: 0 });
 });
 
@@ -419,7 +421,7 @@ test('A2: requests waiting → reminder to the lead after 48 h, escalation (crit
   const p = await open('pm1', 'approval_overdue');
   assert.equal(p.length, 1); assert.equal(p[0].params.stage, 'escalate');
   assert.match((await (await as('pm1')).get('/notifications')).data.items.find(i => i.type === 'approval_overdue').title, /^تصعيد: /);
-  await (await as('lead_hr')).post(`/approvals/${r.data.request_id}/reject`, { reason: 'x' });
+  await (await as('lead_hr')).post(`/approvals/${r.data.request_id}/reject`, { reason: 'resolved' });
   await digest();
   assert.equal((await open('lead_hr', 'approval_overdue')).length, 0);
   await setFns([f], { progress: 0 });
