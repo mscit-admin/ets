@@ -30,6 +30,25 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.24] — 2026-10-25 — faster first load & single favicon request
+
+### Changed
+- **Frontend/Build:** the SPA is now **code-split** for a smaller first load. Authenticated pages (Dashboard, Users,
+  Settings, Application, Approvals, Reports, Logs, …) load on first navigation via `React.lazy`, behind a single
+  `<Suspense fallback={<Loading/>}>` around the router outlet (`frontend/src/App.jsx`, `components/Layout.jsx`); React
+  and React-Router move to a long-lived `vendor` chunk via `build.rollupOptions.output.manualChunks`
+  (`frontend/vite.config.js`); and the Excel libraries stay dynamically imported (users-import only). The entry/app
+  chunk shrinks from **859 kB (≈246 kB gzip)** to **55 kB (≈16 kB gzip)**, and initial JS (entry + vendor + i18n)
+  is **≈540 kB raw / ≈164 kB gzip**; the rest loads per-page on demand.
+
+### Fixed
+- **Frontend/Branding:** the browser no longer issues a **second, aborted `favicon.svg` request** (`NS_BINDING_ABORTED`).
+  The branding effect now swaps `<link rel="icon">` only when a **custom favicon/logo is actually uploaded**, instead of
+  re-assigning the default icon's `href`/`type` on every load — which aborted the request the browser had already made
+  from `index.html`. The custom-favicon branding feature is unchanged (`frontend/src/lib/branding.jsx`).
+
+---
+
 ## [1.12.23] — 2026-10-24 — S13: distributed login-probing alert
 
 ### Added
