@@ -408,6 +408,40 @@ SELECT id, app_id, returned_reason, returned_at FROM edit_requests
 WHERE status = 'returned' AND returned_to = $1 ORDER BY returned_at DESC;
 ```
 
+### 3l. Migration 028 — alert messages and a response status (1.12.29)
+
+Extends the messaging of 026 with a new **alert** message kind («تنبيه») — a message that pops up as a **mandatory,
+blocking modal** in front of the recipient and requires a structured response before they can keep using the app.
+Forward-only and idempotent (like the recent migrations); the `messages` category already exists, so no CHECK is
+widened.
+
+- **`message_broadcasts`** gains `kind text NOT NULL DEFAULT 'message' CHECK (kind IN ('message','alert'))` — a
+  compose action is a message or an alert; every thread of that broadcast inherits the kind.
+- **`message_threads`** gains:
+  - `kind text NOT NULL DEFAULT 'message' CHECK (kind IN ('message','alert'))` — a **denormalised** copy of the
+    broadcast's kind, so the hot "pending mandatory alerts for me" lookup needs no join. Backfilled from the broadcast
+    for any pre-existing row and set by the service at thread creation.
+  - `response_status text CHECK (response_status IS NULL OR response_status IN ('ack','working'))` — the recipient's
+    chosen status (`NULL` = not yet responded; only meaningful for alert threads).
+  - `response_note text` — the optional note the recipient added with the response.
+  - `responded_at timestamptz` — when the recipient responded.
+- A partial index `message_threads_pending_alert` on `(recipient_id, last_post_at) WHERE kind = 'alert' AND
+  response_status IS NULL` serves the pending-alert lookup fast.
+
+Only the thread's **recipient** may respond, and only once, and only on an alert thread (`POST
+/messages/threads/:id/respond`, body `{status, note?}`); the status + optional note + `responded_at` are stored, the
+note (if any) is posted as a `message_post`, and the sender is notified. The sender's alert tree
+(`GET /messages/alerts/sent/:id`) reports each recipient's status with counts (`ack` / `working` / `pending`). Two
+directed notifications fire (scope `self`): `alert_received` (M3, severity warning) to the recipient on send,
+`alert_response` (M4) to the sender when a recipient responds. The private 1:1 / scope / authz guarantees of 026 are
+unchanged.
+
+```sql
+-- a recipient's pending mandatory alerts (what the blocking popup asks for), oldest first
+SELECT id, broadcast_id, subject FROM message_threads
+WHERE recipient_id = $1 AND kind = 'alert' AND response_status IS NULL ORDER BY created_at, id;
+```
+
 ## 4. Code values
 
 | Column | 0 | 1 | 2 | 3 | 4 | 5 |

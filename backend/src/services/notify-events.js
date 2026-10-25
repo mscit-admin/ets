@@ -195,9 +195,19 @@ export const releaseEvent = safe('release_event', async (stage, promotion = {}) 
 // a REPLY to the OTHER party (recipient reply → sender, sender reply → recipient). Each post is its own alert (a
 // unique dedupe key per post); the body carries the subject or a short preview. link opens the thread.
 export const messagePosted = safe('message_posted', async ({ type, toUserId, fromName, subject = null, preview = null, threadId, postId }) => {
-  if (!['message_received', 'message_reply'].includes(type) || !toUserId) return;
+  if (!['message_received', 'message_reply', 'alert_received'].includes(type) || !toUserId) return;
   const [user] = await activeUsers([toUserId]);
   if (!user) return;
   await deliver(type, [{ user, dedupeKey: `${type}:thread=${threadId}:post=${postId}`, link: `/messages?thread=${threadId}`,
     params: { from_name: fromName || null, subject: subject || null, preview: preview || null } }]);
+});
+
+// ---- M4 (1.12.29): an alert recipient RESPONDED → the alert's sender. The bell/push backup of the response (the
+// tree view is the primary channel). Carries the chosen status (ack | working) and an optional note preview.
+export const alertResponded = safe('alert_responded', async ({ toUserId, fromName, subject = null, status, note = null, threadId }) => {
+  if (!toUserId || !['ack', 'working'].includes(status)) return;
+  const [user] = await activeUsers([toUserId]);
+  if (!user) return;
+  await deliver('alert_response', [{ user, dedupeKey: `alert_response:thread=${threadId}:${status}`, link: `/messages?thread=${threadId}`,
+    params: { from_name: fromName || null, subject: subject || null, status, note: note || null } }]);
 });

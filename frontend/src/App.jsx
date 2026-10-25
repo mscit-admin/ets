@@ -9,6 +9,7 @@ import Login, { ForcePasswordChange } from './pages/Login.jsx';
 // Suspense fallback lives in Layout (around <Outlet/>), so the navbar/sidebar stay while a page loads.
 import { lazy, useEffect, useState } from 'react';
 import { RestoreMonitor, readWatch } from './components/RestoreWizard.jsx';
+import AlertGate from './components/AlertGate.jsx';
 
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Department = lazy(() => import('./pages/Department.jsx'));
@@ -63,6 +64,8 @@ export default function App() {
       ) : me.user.must_change_password ? (
         <Routes><Route path="*" element={<ForcePasswordChange />} /></Routes>
       ) : (
+        <>
+        <AlertGate />
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -88,6 +91,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
+        </>
       )}
     </BrowserRouter>
   );
