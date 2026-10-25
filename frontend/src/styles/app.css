@@ -17,6 +17,7 @@
   --orange-bg: #fff1e7; --orange-text: #c45c11;
   --red-bg: #fff0f0; --red-text: #cc2929;
   --yellow-bg: #fff7d3; --yellow-text: #a07b07;
+  --amber-bg: #fff3d6; --amber-text: #9a6700;
   --purple-bg: #f5f0ff; --purple-text: #6e46c6;
   --cyan-bg: #e6f9fb; --cyan-text: #0f7c8c;
   --gray-bg: #f3f3f3; --gray-text: #525252;
@@ -113,6 +114,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .select-status.s1 { background: var(--orange-bg); color: var(--orange-text); }
 .select-status.s4 { background: var(--blue-bg); color: var(--blue-text); }      /* review: إطلاع / Acknowledged (1.12.17) */
 .select-status.s5 { background: var(--purple-bg); color: var(--purple-text); }  /* review: اعتماد / Approved (1.12.17) */
+.select-status.ts_4 { background: var(--amber-bg); color: var(--amber-text); }  /* test: إعادة الاختبار / Needs re-testing (1.12.25) — overrides the shared s4 (blue) */
 
 /* ---------- indicator pills ---------- */
 .indicator-pill {
@@ -127,6 +129,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .indicator-pill.purple { background: var(--purple-bg); color: var(--purple-text); }
 .indicator-pill.cyan { background: var(--cyan-bg); color: var(--cyan-text); }
 .indicator-pill.gray { background: var(--gray-bg); color: var(--gray-text); }
+.indicator-pill.amber { background: var(--amber-bg); color: var(--amber-text); }
 .row-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 
 /* ---------- progress ---------- */
@@ -139,6 +142,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .stack-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--gray-200); }
 .stack-bar .seg.green { background: #30a66d; } .stack-bar .seg.orange { background: #f0883a; }
 .stack-bar .seg.red { background: #e24c4c; } .stack-bar .seg.gray { background: var(--gray-300); }
+.stack-bar .seg.amber { background: #e8a73c; }
 .legend { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; }
 .legend li { display: flex; justify-content: space-between; align-items: center; }
 .mini-tests { display: inline-flex; gap: 4px; }
@@ -147,6 +151,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .mini-tests .orange { background: var(--orange-bg); color: var(--orange-text); }
 .mini-tests .red { background: var(--red-bg); color: var(--red-text); }
 .mini-tests .gray { background: var(--gray-bg); color: var(--gray-text); }
+.mini-tests .amber { background: var(--amber-bg); color: var(--amber-text); }
 
 /* ---------- app shell ---------- */
 .navbar { position: sticky; top: 0; z-index: 30; height: var(--navbar-h); background: #fff; border-bottom: 1px solid var(--border); }

@@ -142,14 +142,16 @@ const FIELD_PERM = {
 };
 const FIELD_OK = {
   progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
-  test_status: v => intIn(v, 0, 3), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
+  test_status: v => intIn(v, 0, 4), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
   note: v => typeof v === 'string' && v.length <= 2000,
   item_type: v => ITEM_TYPES.includes(v),
 };
 
-// Statuses that mean "… with notes": choosing one makes the note mandatory.
-const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
-const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+// Statuses that mean "… with notes": choosing one makes the note mandatory. A field may have more than one such
+// value — test_status needs a note for both «نجح مع ملاحظة» (1) and «إعادة الاختبار» (4, 1.12.25).
+const NOTE_REQUIRED = { test_status: [1, 4], notif_status: [2], review_status: [3] };
+const notedValue = (k, v) => (NOTE_REQUIRED[k] || []).includes(v);
+const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k]) => notedValue(k, f[k]));
 
 r.patch('/functions/:id', async (req, res) => {
   const id = idParam(req.params.id);
@@ -168,7 +170,7 @@ r.patch('/functions/:id', async (req, res) => {
   // while the function has no note yet. Changing or replacing an existing note needs 'tst' (ETS-SEC-056: moving
   // the status away and back must not open a way to overwrite a note).
   const settingNotedStatus = !String(cur.note || '').trim() &&
-    Object.entries(NOTE_REQUIRED).some(([k, v]) => body[k] === v && hasPerm(req.user, FIELD_PERM[k]));
+    Object.keys(NOTE_REQUIRED).some(k => notedValue(k, body[k]) && hasPerm(req.user, FIELD_PERM[k]));
   const changes = {};
   for (const [k, v] of Object.entries(body)) {
     if (!Object.hasOwn(FIELD_PERM, k)) throw bad('unknown_field', { field: k });
@@ -184,7 +186,7 @@ r.patch('/functions/:id', async (req, res) => {
   Object.assign(changes, withPassProgress(cur, changes));
   const after = { ...cur, ...changes };
   if (needsNote(after) && !String(after.note || '').trim()) {
-    throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => after[k] === NOTE_REQUIRED[k]) });
+    throw bad('note_required', { fields: Object.keys(NOTE_REQUIRED).filter(k => notedValue(k, after[k])) });
   }
   // «نجح» = 100 % (1.8.1 / auto-filled 1.12.21): after the bump above, only a progress lowered below 100 on a passed
   // item is still refused (progress_below_100_while_passed). Checked for a direct edit and one sent for approval.
@@ -286,7 +288,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
   if (!['progress', 'test_status'].includes(field)) throw bad('unknown_field');
   if (!hasPerm(req.user, FIELD_PERM[field])) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM[field] });
   if (!FIELD_OK[field](value)) throw bad('invalid_value');
-  if (field === 'test_status' && value === NOTE_REQUIRED.test_status) {
+  if (field === 'test_status' && notedValue('test_status', Number(value))) {
     const missing = (await query(`SELECT count(*)::int AS n FROM functions WHERE app_id=$1 AND enabled AND btrim(note)=''`, [a.id])).rows[0].n;
     if (missing) throw bad('note_required', { fields: ['test_status'], missing });
   }

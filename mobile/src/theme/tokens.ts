@@ -23,6 +23,7 @@ export const pills = {
   orange: { bg: '#fff1e7', text: '#c45c11' },
   red: { bg: '#fff0f0', text: '#cc2929' },
   yellow: { bg: '#fff7d3', text: '#a07b07' },
+  amber: { bg: '#fff3d6', text: '#9a6700' },
   purple: { bg: '#f5f0ff', text: '#6e46c6' },
   cyan: { bg: '#e6f9fb', text: '#0f7c8c' },
   gray: { bg: '#f3f3f3', text: '#525252' },
@@ -32,7 +33,7 @@ export type PillName = keyof typeof pills;
 // Progress bar fills (.progress-bar.<colour>), chosen by pctColor()
 export const bars = { green: '#30a66d', blue: colors.primaryBlue, orange: '#f0883a', red: '#e24c4c', gray: colors.gray400 } as const;
 // Segments of the test status bar (.stack-bar .seg.<colour>)
-export const stackSeg = { green: '#30a66d', orange: '#f0883a', red: '#e24c4c', gray: colors.gray300, blue: '#2a78d6' } as const;
+export const stackSeg = { green: '#30a66d', orange: '#f0883a', red: '#e24c4c', gray: colors.gray300, blue: '#2a78d6', amber: '#e8a73c' } as const;
 
 export const radius = { sm: 6, md: 8, lg: 12, pill: 999 } as const;          // --radius 8px, --radius-lg 12px
 export const space = { xxs: 2, xs: 4, s: 6, m: 8, l: 12, xl: 16, xxl: 24 } as const;

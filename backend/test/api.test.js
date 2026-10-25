@@ -219,6 +219,37 @@ test('review_status: six states (1.12.17) — 4/5 persist, 6 rejected, only 2 co
   await p({ review_status: 0 });                               // leave it as found
 });
 
+test('test_status: five states (1.12.25) — «إعادة الاختبار» (4) needs a note, 5 rejected, 4 is not passed', { skip }, async () => {
+  const c = client(); await c.login('root');
+  const f = (await pool.query(`SELECT id FROM functions WHERE app_id='att' AND code='D2'`)).rows[0];
+  await pool.query(`UPDATE functions SET progress=50, test_status=0, note='' WHERE id=$1`, [f.id]);
+  const p = body => c.patch('/tracker/functions/' + f.id, body);
+  const tsOf = async () => (await pool.query('SELECT test_status, progress FROM functions WHERE id=$1', [f.id])).rows[0];
+
+  // «إعادة الاختبار» (4) requires a note like «نجح مع ملاحظة» (1): rejected without one, nothing changes
+  const noNote = await p({ test_status: 4 });
+  assert.equal(noNote.status, 400);
+  assert.equal(noNote.data.error, 'note_required');
+  assert.deepEqual(noNote.data.fields, ['test_status']);
+  assert.equal((await tsOf()).test_status, 0);
+  // 4 saved together with its note; it is NOT «نجح», so the progress is left untouched (no 100 % bump)
+  assert.equal((await p({ test_status: 4, note: 'retest after the fix' })).status, 200);
+  const after = await tsOf();
+  assert.equal(after.test_status, 4);
+  assert.equal(Number(after.progress), 50);
+  // out of range (5) is rejected and nothing changes
+  const bad = await p({ test_status: 5 });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.data.error, 'invalid_value');
+  assert.equal((await tsOf()).test_status, 4);
+  // 4 at 50 % is NOT a pass conflict (that rule counts only «نجح» = 2 below 100 %) and does not satisfy any pass rule
+  const isConflict = (await pool.query(`SELECT (test_status=2 AND progress<100) AS c FROM functions WHERE id=$1`, [f.id])).rows[0].c;
+  assert.equal(isConflict, false);
+  // bulk test_status=4 also needs a note on every affected item
+  assert.equal((await c.post('/tracker/applications/att/bulk', { field: 'test_status', value: 4 })).data.error, 'note_required');
+  await p({ test_status: 0, note: '' });                       // leave it as found
+});
+
 test('scope: HR editor cannot see or edit finance', { skip }, async () => {
   const c = client(); await c.login('hred');
   const sum = await c.get('/tracker/summary');

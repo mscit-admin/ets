@@ -163,7 +163,8 @@ async function trackingDigest(ctx) {
   const { now, s } = ctx;
   const fns = (await query(`SELECT id, app_id, item_type, progress, test_status, created_at, progress_changed_at, test_changed_at
     FROM functions WHERE enabled AND removed_at IS NULL`)).rows.map(f => ({ ...f, progress: +f.progress }));
-  const N = { stuck: s['notify.stuck_days'], untested: s['notify.untested_days'], failed: s['notify.failed_retest_days'], ns: s['notify.not_started_days'] };
+  const N = { stuck: s['notify.stuck_days'], untested: s['notify.untested_days'], failed: s['notify.failed_retest_days'],
+    retest: s['notify.retest_days'], ns: s['notify.not_started_days'] };
   const out = {};
   out.stuck = await summaries(ctx, 'stuck', group(fns, f => f.progress > 0 && f.progress < 100 && older(f.progress_changed_at, now, N.stuck),
     f => older(f.progress_changed_at, now, 2 * N.stuck)), { days: N.stuck, link: 'stuck' });
@@ -171,6 +172,9 @@ async function trackingDigest(ctx) {
     { days: N.untested, link: 'untested' });
   out.failed_retest = await summaries(ctx, 'failed_retest', group(fns, f => f.test_status === 3 && older(f.test_changed_at, now, N.failed)),
     { days: N.failed, link: 'failed' });
+  // T10 (1.12.25): items sitting in «إعادة الاختبار» (test_status 4) past notify.retest_days
+  out.retest = await summaries(ctx, 'retest', group(fns, f => f.test_status === 4 && older(f.test_changed_at, now, N.retest)),
+    { days: N.retest, link: 'retest' });
   out.pass_conflict = await summaries(ctx, 'pass_conflict', group(fns, passConflict), { days: 0, link: 'conflict' });
   // T5: once the project has started; catalog items have no created_at — their first recorded change counts
   const sch = (await query('SELECT start_date FROM schedule WHERE id=1')).rows[0];

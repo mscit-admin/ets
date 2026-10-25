@@ -94,6 +94,9 @@ const T = {
   failed_retest: (l, p, n) => ({
     title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} حالتها «فشل» دون إعادة اختبار منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} failed ${where(l, p)} and not tested again for more than ${en(p.days, 'day')}`,
     body: l === 'ar' ? 'حالة الاختبار «فشل»' : 'Test status “failed”' }),
+  retest: (l, p, n) => ({
+    title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} تحتاج إعادة اختبار منذ أكثر من ${ar(p.days, 'day')}` : `${items(l, p, n)} ${where(l, p)} need re-testing for more than ${en(p.days, 'day')}`,
+    body: l === 'ar' ? 'حالة الاختبار «إعادة الاختبار»' : 'Test status “needs re-testing”' }),
   pass_conflict: (l, p, n) => ({
     title: l === 'ar' ? `${items(l, p, n)} ${where(l, p)} حالتها «نجح» ونسبتها أقل من 100%` : `${items(l, p, n)} ${where(l, p)} passed with progress below 100%`,
     body: l === 'ar' ? 'صحّح النسبة إلى 100% أو غيّر حالة الاختبار' : 'Set the progress to 100% or change the test status' }),

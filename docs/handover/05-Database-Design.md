@@ -356,7 +356,7 @@ FROM edit_requests WHERE kind = 'move_application' AND status = 'pending';
 | Column | 0 | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|---|
 | `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress | — | — |
-| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | — | — |
+| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | Needs re-testing | — |
 | `functions.notif_status` | Not set | Working | Working with notes | Not working | — | — |
 | `functions.review_status` | No review needed | Present | Missing | Notes | Acknowledged | Approved |
 | `app_reports.status` | Not needed | Delivered | Missing | With notes | — | — |
@@ -366,6 +366,12 @@ FROM edit_requests WHERE kind = 'move_application' AND status = 'pending';
 «ملاحظات», and «إطلاع» / «اعتماد» added). States 4 (إطلاع / Acknowledged) and 5 (اعتماد / Approved) are completed
 reviews: like Present (1) and Notes (3) they are **not** counted as «المراجعة غير موجودة» / review-missing — only
 state 2 (Missing) is. Choosing state 3 (Notes) still makes the item's note mandatory.
+
+`functions.test_status` has **five** states since 1.12.25 (migration 025 widened the `CHECK` from `0..3` to
+`0..4`; the existing four kept their values). State 4 (إعادة الاختبار / Needs re-testing) is a **not-passed,
+needs-testing** state: like Not tested (0) it does **not** count as tested or passed (so the «نجح» = 100 % rule
+and `tested_ok` are unaffected, and it is not a pass conflict), it **requires a note** like Passed with note (1),
+and it drives the new tester alert **T10 `retest`** when an item stays in it longer than `notify.retest_days`.
 
 `functions.source`: `design` (approved detailed design), `vendor_list` (vendor's function list),
 `experience` (gap added from experience, disabled by default), `custom` (added in ETS; codes `C0…`).
@@ -389,7 +395,7 @@ the same keys as the original tracker page, which is what makes import possible.
 | `app.org_name_ar` / `app.org_name_en` | System names |
 | `app.default_language` | `"ar"` — login screen / new browsers and new users without a chosen language |
 | `notify.enabled` / `notify.timezone` / `notify.digest_hour` / `notify.work_days` | `true` / `"Africa/Tripoli"` / `8` / `[0,1,2,3,4]` (Sun–Thu) |
-| `notify.stuck_days` / `untested_days` / `failed_retest_days` / `not_started_days` | `14` / `7` / `7` / `30` |
+| `notify.stuck_days` / `untested_days` / `failed_retest_days` / `retest_days` / `not_started_days` | `14` / `7` / `7` / `3` (T10, 1.12.25) / `30` |
 | `notify.approval_remind_hours` / `approval_escalate_days` / `import_overdue_days` | `48` / `5` / `3` |
 | `notify.dept_risk_gap` / `dept_delay_gap` / `dept_stalled_points` / `close_warning_days` | `5` / `15` / `0.5` / `30` |
 | `notify.failed_logins_threshold` / `access_denied_threshold` / `server_errors_threshold` / `backup_max_age_hours` | `20` / `30` / `10` / `26` |

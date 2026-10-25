@@ -102,7 +102,7 @@ const REPORTS = {
         kv('k_overall', d.total.pct, 'pct'), kv('k_fn_only', d.total.fnPct, 'pct'),
         kv('k_start', d.schedule.start_date, 'text'), kv('k_end', d.schedule.end_date, 'text'), kv('k_periods', d.schedule.periods),
         kv('k_functions', c.functions), kv('k_done', c.done), kv('k_in_progress', c.in_progress), kv('k_not_started', c.not_started),
-        kv('k_notes', c.notes), kv('ts_2', c.tests[2]), kv('ts_1', c.tests[1]), kv('ts_3', c.tests[3]), kv('ts_0', c.tests[0]),
+        kv('k_notes', c.notes), kv('ts_2', c.tests[2]), kv('ts_1', c.tests[1]), kv('ts_3', c.tests[3]), kv('ts_4', c.tests[4]), kv('ts_0', c.tests[0]),
         kv('k_notif_bad', c.notif_bad), kv('k_review_missing', c.review_missing), kv('k_reports', c.reports), kv('k_report_items', c.report_items),
         kv('k_reports_done', c.reports_done), kv('k_reports_pct', c.reports_pct, 'pct'),
         kv('k_pending_edits', d.pending.edits), kv('k_pending_imports', d.pending.imports),

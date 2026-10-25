@@ -229,7 +229,9 @@ Changes that send `tracker_changed`: function edits (%, weight, test / notificat
 
 Types: `approval_pending` (A1), `approval_overdue` (A2), `request_decided` (A3), `import_pending` (A4), `import_result`
 (A5), `import_overdue` (A6), `stuck` (T1), `untested` (T2), `failed_retest` (T3), `pass_conflict` (T4), `not_started` (T5),
-`quality` (T6), `excluded` (T7), `moved_in` (T8, 1.10.0), `dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
+`quality` (T6), `excluded` (T7), `moved_in` (T8, 1.10.0), `app_moved_in` (T9, 1.12.16),
+`retest` (T10, 1.12.25 — items in test status «إعادة الاختبار» / Needs re-testing (4) for more than `notify.retest_days`; testers only (perm `tst`), warning, digest),
+`dept_behind` (P1), `dept_stalled` (P2), `project_status` (P3), `close_approaching` (P4),
 `account_locked` (S1), `failed_logins` (S2), `audit_integrity` (S3), `email_index` (S4), `access_denied` (S5),
 `backup_missing` (S6), `retention_reduced` (S7), `server_errors` (S8), `backup_offsite` (S9, 1.12.0), `backup_verify` (S10),
 `restore_event` (S11), `release_event` (S12, 1.12.20 — production promotion started/succeeded/failed/rolled_back; failed/rolled_back critical),
