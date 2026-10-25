@@ -172,6 +172,7 @@ export default function ProjectStatus() {
           <div className="kv wide">
             <div><span>{t('ts_2')} / {t('ts_1')}</span><span className="num">{c.tests[2]} / {c.tests[1]}</span></div>
             <div><span>{t('ts_3')}</span><span className={'num ' + (c.tests[3] ? 'red-text' : '')}>{c.tests[3]}</span></div>
+            <div><span>{t('ts_4')}</span><span className="num">{c.tests[4]}</span></div>
             <div><span>{t('ts_0')}</span><span className="num">{c.tests[0]}</span></div>
             <div><span>{t('with_notes')}</span><span className="num">{c.notes}</span></div>
             <div><span>{t('notif_status')}: {t('ns_3')}</span><span className={'num ' + (c.notif_bad ? 'red-text' : '')}>{c.notif_bad}</span></div>

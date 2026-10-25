@@ -172,6 +172,34 @@ test('T2 untested, T3 failed not re-tested, T4 «نجح» below 100 %: rules and
   await setFns([u1, u2, f1, c1, recent], { progress: 0, test_status: 0 });
 });
 
+test('T10 retest (1.12.25): items in «إعادة الاختبار» past notify.retest_days reach testers only; T2/T3 unaffected', { skip }, async () => {
+  await clean();
+  const [r1, r2, fresh] = await fnIds('rec', 3);
+  await setFns([r1, r2], { test_status: 4, note: 'retest' }, { testAgo: 5 });   // 5 days > default 3
+  await setFns([fresh], { test_status: 4, note: 'retest' }, { testAgo: 1 });    // too recent: not yet
+  await digest();
+  for (const u of ['mem_app', 'qa_hr', 'mem_hr', 'lead_hr']) {
+    const rt = await open(u, 'retest');
+    assert.equal(rt.length, 1, u + ' retest');
+    assert.equal(rt[0].count, 2); assert.equal(rt[0].app_id, 'rec');
+    assert.equal(rt[0].severity, 'warning'); assert.equal(rt[0].link, '/app/rec?filter=retest');
+  }
+  assert.equal((await open('mem_fin', 'retest')).length, 0, 'other department');
+  assert.equal((await open('obs_hr', 'retest')).length, 0, 'observer: not eligible');
+  // the text in Arabic and English
+  const ar = (await (await as('mem_app')).get('/notifications')).data.items.find(i => i.type === 'retest');
+  assert.match(ar.title, /تحتاج إعادة اختبار منذ أكثر من 3 أيام/);
+  const en = (await (await as('mem_app')).get('/notifications?lang=en')).data.items.find(i => i.type === 'retest');
+  assert.match(en.title, /need re-testing for more than 3 days/);
+  // state 4 does not trip untested (T2) or failed_retest (T3)
+  assert.equal((await open('mem_app', 'untested')).length, 0);
+  assert.equal((await open('mem_app', 'failed_retest')).length, 0);
+  // the summary closes once the items leave state 4
+  await setFns([r1, r2, fresh], { progress: 0, test_status: 0, note: '' });
+  await digest();
+  assert.equal((await open('mem_app', 'retest')).length, 0);
+});
+
 test('a summary read is not repeated within the interval unless it grows; mark read / unread / read-all', { skip }, async () => {
   await clean();
   const [a, b] = await fnIds('per', 2);

@@ -33,7 +33,7 @@ const ar = {
   // values
   yes: 'نعم', no: 'لا', on: 'مفعّل', off: 'غير مفعّل', active: 'نشط', inactive: 'موقوف',
   full_scope: 'كل الإدارات', no_scope: 'بلا نطاق', total: 'المشروع كاملاً', period_n: 'فترة {n}',
-  ts_0: 'لم تُختبر', ts_1: 'نجح مع ملاحظة', ts_2: 'نجح', ts_3: 'فشل',
+  ts_0: 'لم تُختبر', ts_1: 'نجح مع ملاحظة', ts_2: 'نجح', ts_3: 'فشل', ts_4: 'إعادة الاختبار',
   ns_0: 'لم تُحدَّد', ns_1: 'تعمل', ns_2: 'تعمل مع ملاحظات', ns_3: 'لا تعمل',
   rv_0: 'لا توجد حاجة للمراجعة', rv_1: 'موجودة', rv_2: 'غير موجودة', rv_3: 'ملاحظات', rv_4: 'إطلاع', rv_5: 'اعتماد',
   rs_0: 'لا يحتاج تقرير', rs_1: 'موجود', rs_2: 'غير موجود', rs_3: 'مع ملاحظات',
@@ -102,7 +102,7 @@ const en = {
   scope: 'Scope', last_login: 'Last login', email: 'Email',
   yes: 'Yes', no: 'No', on: 'On', off: 'Off', active: 'Active', inactive: 'Disabled',
   full_scope: 'All departments', no_scope: 'No scope', total: 'Whole project', period_n: 'Period {n}',
-  ts_0: 'Not tested', ts_1: 'Passed with note', ts_2: 'Passed', ts_3: 'Failed',
+  ts_0: 'Not tested', ts_1: 'Passed with note', ts_2: 'Passed', ts_3: 'Failed', ts_4: 'Needs re-testing',
   ns_0: 'Not set', ns_1: 'Working', ns_2: 'Working with notes', ns_3: 'Not working',
   rv_0: 'No review needed', rv_1: 'Present', rv_2: 'Missing', rv_3: 'Notes', rv_4: 'Acknowledged', rv_5: 'Approved',
   rs_0: 'Not needed', rs_1: 'Delivered', rs_2: 'Missing', rs_3: 'With notes',

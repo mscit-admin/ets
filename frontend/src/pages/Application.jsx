@@ -120,11 +120,11 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }
   );
 }
 
-// review_status has six states (1.12.17); test / notification have four.
+// test_status has five states (1.12.25), review_status six (1.12.17); notification has four.
 function StatusSelect({ value, prefix, disabled, onChange, label, states = 4 }) {
   const { t } = useI18n();
   return (
-    <select className={'input input-sm select-status s' + value} value={value} disabled={disabled} aria-label={label}
+    <select className={'input input-sm select-status s' + value + ' ' + prefix + value} value={value} disabled={disabled} aria-label={label}
       onChange={e => onChange(parseInt(e.target.value, 10))}>
       {Array.from({ length: states }, (_, i) => <option key={i} value={i}>{t(prefix + i)}</option>)}
     </select>
@@ -338,7 +338,7 @@ export default function Application() {
           </select>
           <select className="input input-sm" value={filter.test} onChange={e => setFilter({ ...filter, test: e.target.value })} aria-label={t('test_status')}>
             <option value="">{t('test_status')}: {t('all')}</option>
-            {[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
+            {[0, 1, 2, 3, 4].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}
             {(conflicts > 0 || filter.test === 'conflict') && <option value="conflict">⚠ {t('pass_conflict')} ({conflicts})</option>}
           </select>
           {conflicts > 0 && (
@@ -422,7 +422,7 @@ export default function Application() {
                   </td>
                   <td>
                     <div className="ts-cell">
-                      <StatusSelect value={f.test_status} prefix="ts_" disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
+                      <StatusSelect value={f.test_status} prefix="ts_" states={5} disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
                       {!f.removed_at && passConflict(f) && (
                         <span className="pass-conflict" role="img" aria-label={t('pass_conflict_hint')} title={t('pass_conflict_hint') + ' — ' + t('pass_conflict_fix')}>
                           <Icon name="alert" size={15} />
@@ -584,7 +584,7 @@ function BulkModal({ app, can, onClose, onDone }) {
         </select>
       </Field>
       {field === 'progress' && <Field label={t('progress') + ' %'}><input className="input" type="number" min={0} max={100} value={value} onChange={e => setValue(e.target.value)} /></Field>}
-      {field === 'test_status' && <Field label={t('test_status')}><select className="input" value={value} onChange={e => { setValue(e.target.value); setPassAsk(false); }}>{[0, 1, 2, 3].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
+      {field === 'test_status' && <Field label={t('test_status')}><select className="input" value={value} onChange={e => { setValue(e.target.value); setPassAsk(false); }}>{[0, 1, 2, 3, 4].map(i => <option key={i} value={i}>{t('ts_' + i)}</option>)}</select></Field>}
       {bulkPass && <Alert kind={passAsk ? 'orange' : 'blue'}>{t(passAsk ? 'bulk_pass_fill_confirm_msg' : 'bulk_pass_fill_msg')}</Alert>}
       {exclude && <>
         <Alert kind="blue">{t('exclude_msg')}</Alert>

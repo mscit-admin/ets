@@ -34,7 +34,7 @@ export async function legacyPassErrors(c, p) {
   for (const r of rows) {
     const v = p.f?.[r.app_id]?.[r.code];
     if (!v || typeof v !== 'object') continue;
-    list.push({ cur: r, changes: { progress: clamp(v.p, 0, 100), test_status: clamp(v.t, 0, 3) | 0 },
+    list.push({ cur: r, changes: { progress: clamp(v.p, 0, 100), test_status: clamp(v.t, 0, 4) | 0 },
       app_id: r.app_id, function_id: r.id, code: r.code, name_ar: r.name_ar, name_en: r.name_en, item_type: r.item_type });
   }
   return passRuleErrors(list);
@@ -59,7 +59,7 @@ export async function applyLegacy(c, p, userId) {
           disabled_by     = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN $10 ELSE disabled_by END,
           disabled_at     = CASE WHEN $5::boolean THEN NULL WHEN enabled THEN now() ELSE disabled_at END
         WHERE app_id=$1 AND code=$2 AND removed_at IS NULL`,
-        [appId, code, clamp(v.w, 0, 1000), clamp(v.p, 0, 100), !!v.on, clamp(v.t, 0, 3) | 0,
+        [appId, code, clamp(v.w, 0, 1000), clamp(v.p, 0, 100), !!v.on, clamp(v.t, 0, 4) | 0,
           typeof v.nt === 'string' ? v.nt.slice(0, 2000) : '', clamp(v.n, 0, 3) | 0, clamp(v.rv, 0, 5) | 0, userId]);
       counts.functions += r.rowCount;
     }

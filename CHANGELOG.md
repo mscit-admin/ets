@@ -30,6 +30,44 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.25] — 2026-10-25 — «إعادة الاختبار» test status & its tester alert
+
+### Added
+- **New test status «إعادة الاختبار» / "Needs re-testing" (`functions.test_status` = 4):** a fifth value for
+  functions / report items alongside Not tested (0), Passed with note (1), Passed (2) and Failed (3). It is a
+  **not-passed, needs-testing** state — it does **not** count as tested or passed (the «نجح» = 100 % rule of
+  1.8.1 / 1.12.21 and `tested_ok` are unaffected, and it is never a pass conflict) — and it **requires a note**
+  like «نجح مع ملاحظة», enforced on both the client (`frontend/src/lib/itemRules.js` `NOTE_REQUIRED`, now a set of
+  values per field) and the server (`backend/src/routes/tracker.js`: the single PATCH and the bulk path). Selectable
+  across the Application table / test-status filter / bulk dialog, shown in the Dashboard and department test-status
+  distributions, the project-status quality panel and the Excel export, in a distinct amber tone (`TEST_COLORS`,
+  `--amber-*`). i18n `ts_4` (AR/EN). Imports / legacy restore accept `0..4` for `test_status`.
+- **New notification T10 `retest`** (category tracking, periodic, warning, **testers only** — perm `tst`, scope
+  app-or-dept, push + digest): alerts when an item sits in «إعادة الاختبار» (`test_status` 4) longer than the new
+  `notify.retest_days` threshold (default 3, range 1–60, editable in Settings → «الإشعارات» → العتبات). Added to
+  the periodic scan (`notify-scan.js`), catalog (`notify-catalog.js`), text (`notify-text.js`, AR/EN), the
+  Notifications page filter (`nt_retest`, AR/EN) and the policy matrix (derived from the catalog). T2 `untested`
+  and T3 `failed_retest` are unchanged.
+
+### Changed
+- **Database:** `functions.test_status` now allows `0..4` (was `0..3`); existing values 0–3 keep their meaning and
+  nothing is renumbered. `notif_status` / `review_status` bounds are untouched.
+
+### Upgrade notes
+- **Migration 025** (`025_retest_status.sql`, forward-only and idempotent like 022 / 023) drops and re-adds the
+  `functions_test_status_check` constraint, widening it from `BETWEEN 0 AND 3` to `BETWEEN 0 AND 4`; `DEFAULT 0` is
+  unchanged and there is no backfill. Runs automatically on deploy (`update.sh` → `db/migrate.js`).
+- A new setting `notify.retest_days` (default 3) drives the T10 `retest` alert; no action needed unless you want to
+  tune it in Settings → «الإشعارات».
+
+### Tests
+- **Backend:** `test_status` five-state coverage in `api.test.js` (state 4 needs a note, out-of-range 5 rejected,
+  4 is not a pass / not a conflict, bulk 4 needs a note) and the T10 `retest` alert in `notifications.test.js`
+  (fires for testers past the threshold, reaches `tst` holders and not others, T2/T3 unaffected, the summary closes
+  once the item leaves state 4).
+
+---
+
 ## [1.12.24] — 2026-10-25 — faster first load & single favicon request
 
 ### Changed
@@ -2509,7 +2547,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/1545ce3...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/b2043e3...HEAD
+[1.12.25]: https://github.com/mscit-admin/ets/compare/1545ce3...b2043e3
 [1.12.24]: https://github.com/mscit-admin/ets/compare/00a0a55...1545ce3
 [1.12.23]: https://github.com/mscit-admin/ets/compare/fe414d0...00a0a55
 [1.12.22]: https://github.com/mscit-admin/ets/compare/5763be8...fe414d0

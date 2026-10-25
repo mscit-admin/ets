@@ -19,7 +19,7 @@ export const messages = MESSAGES as unknown as Record<Lang, Dict>;
 
 // ---- numbers and colours (frontend/src/lib/format.js)
 export type Tone = { stroke: string; text: string; bg: string };
-export type PillColor = 'green' | 'blue' | 'orange' | 'red' | 'purple' | 'cyan' | 'gray';
+export type PillColor = 'green' | 'blue' | 'orange' | 'red' | 'purple' | 'cyan' | 'gray' | 'amber';
 export const pc: (v: unknown) => string = format.pc;
 export const pctColor: (v: number) => PillColor = format.pctColor as (v: number) => PillColor;
 export const pctHue: (v: unknown) => number = format.pctHue;
@@ -114,7 +114,7 @@ export type RenameCheck = { newAr: string; newEn: string; arChanged: boolean; en
 export const ITEM_TYPES = items.ITEM_TYPES as ('function' | 'report')[];
 export const typeOf = items.typeOf as (f: ItemLike) => 'function' | 'report';
 export const SRC_COLOR = items.SRC_COLOR as Record<string, PillColor>;
-export const NOTE_REQUIRED = items.NOTE_REQUIRED as Record<Status, number>;
+export const NOTE_REQUIRED = items.NOTE_REQUIRED as Record<Status, number[]>;
 export const STATUS_PREFIX = items.STATUS_PREFIX as Record<Status, string>;
 export const STATUS_VALUES = items.STATUS_VALUES as (0 | 1 | 2 | 3)[];
 export const NOTE_FIELD_MAX = items.NOTE_FIELD_MAX as number;

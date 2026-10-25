@@ -42,6 +42,9 @@ export const TYPES = {
   excluded:          { code: 'T7', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
   moved_in:          { code: 'T8', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
   app_moved_in:      { code: 'T9', category: 'tracking', kind: 'event', severity: 'info', perms: ['pct', 'tst', 'tog'], scope: 'app', matrix: M('---+++++.'), push: true },
+  // T10 (1.12.25): items left in «إعادة الاختبار» (test_status 4) longer than notify.retest_days — a tester alert
+  // like T2 untested / T3 failed_retest (a NOT-passed, needs-testing state), same recipients and scope.
+  retest:            { code: 'T10', category: 'tracking', kind: 'periodic', severity: 'warning', perms: ['tst'], scope: 'app_or_dept', matrix: M('-+++++++.'), push: true, digest: true },
   // ---- plan and schedule
   dept_behind:       { code: 'P1', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'dept', matrix: M('-++++----'), push: true, digest: true },
   dept_stalled:      { code: 'P2', category: 'plan', kind: 'periodic', severity: 'warning', perms: [], scope: 'dept', matrix: M('-++++----'), push: true, digest: true },
@@ -146,6 +149,7 @@ export const NOTIFY_DEFAULTS = {
   'notify.stuck_days': 14,                 // T1: 0 < progress < 100 and no progress change for N days (critical after 2N)
   'notify.untested_days': 7,               // T2: 100 % and not tested N days after reaching 100 %
   'notify.failed_retest_days': 7,          // T3: failed and not tested again for N days
+  'notify.retest_days': 3,                 // T10: in «إعادة الاختبار» (test_status 4) for N days (1.12.25)
   'notify.not_started_days': 30,           // T5: still at 0 % N days after it was added
   'notify.approval_remind_hours': 48,      // A2: request waiting this long → reminder to the approvers
   'notify.approval_escalate_days': 5,      // A2: … this long → escalation to the project / technical managers
@@ -175,6 +179,7 @@ export const NOTIFY_RULES = {
   'notify.stuck_days': intRule(3, 90),
   'notify.untested_days': intRule(1, 60),
   'notify.failed_retest_days': intRule(1, 60),
+  'notify.retest_days': intRule(1, 60),
   'notify.not_started_days': intRule(7, 180),
   'notify.approval_remind_hours': intRule(4, 168),
   'notify.approval_escalate_days': intRule(1, 30),

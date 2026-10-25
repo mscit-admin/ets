@@ -10,7 +10,7 @@ import { Icon } from './Icon.jsx';
 const CATS = ['approvals', 'tracking', 'plan', 'security', 'system'];
 // [key, min, max, step]
 const THRESHOLDS = [
-  ['notify.stuck_days', 3, 90], ['notify.untested_days', 1, 60], ['notify.failed_retest_days', 1, 60], ['notify.not_started_days', 7, 180],
+  ['notify.stuck_days', 3, 90], ['notify.untested_days', 1, 60], ['notify.failed_retest_days', 1, 60], ['notify.retest_days', 1, 60], ['notify.not_started_days', 7, 180],
   ['notify.approval_remind_hours', 4, 168], ['notify.approval_escalate_days', 1, 30], ['notify.import_overdue_days', 1, 30],
   ['notify.dept_risk_gap', 1, 50], ['notify.dept_delay_gap', 1, 50], ['notify.dept_stalled_points', 0, 10, 0.1], ['notify.close_warning_days', 1, 180],
   ['notify.failed_logins_threshold', 5, 500], ['notify.distributed_login_threshold', 5, 1000], ['notify.distributed_login_window_min', 5, 240],

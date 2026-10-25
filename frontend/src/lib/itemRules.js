@@ -13,15 +13,16 @@ export const SRC_COLOR = { design: 'blue', vendor_list: 'cyan', experience: 'pur
 export const SOURCES = ['design', 'vendor_list', 'experience', 'custom'];
 
 // ---- statuses and their required note
-// "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server).
-export const NOTE_REQUIRED = { test_status: 1, notif_status: 2, review_status: 3 };
+// "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server). A field may have
+// more than one such value — test_status needs a note for both «نجح مع ملاحظة» (1) and «إعادة الاختبار» (4, 1.12.25).
+export const NOTE_REQUIRED = { test_status: [1, 4], notif_status: [2], review_status: [3] };
 export const STATUS_PREFIX = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
 export const STATUS_VALUES = [0, 1, 2, 3];
-export const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, v]) => f[k] === v);
+export const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, vs]) => vs.includes(f[k]));
 export const NOTE_FIELD_MAX = 2000;
 // Which "with notes" status(es) make the note mandatory, e.g. ["حالة الاختبار: نجح مع ملاحظة"].
-export const noteReasons = (t, after) => Object.entries(NOTE_REQUIRED).filter(([k, v]) => after[k] === v)
-  .map(([k, v]) => `${t(k)}: ${t(STATUS_PREFIX[k] + v)}`);
+export const noteReasons = (t, after) => Object.entries(NOTE_REQUIRED).flatMap(([k, vs]) => vs.filter(v => after[k] === v)
+  .map(v => `${t(k)}: ${t(STATUS_PREFIX[k] + v)}`));
 
 // ---- «نجح» = 100 % (1.8.1, auto-filled since 1.12.21)
 // The test status «نجح» (2) means the item is 100 % done. Choosing «نجح» no longer needs 100 % first: selecting it now
