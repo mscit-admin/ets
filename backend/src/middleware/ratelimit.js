@@ -1,8 +1,13 @@
 // Request rate limits (in memory; the API runs as one Node process).
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { config } from '../config.js';
 import { logAuth, maskUsername } from '../services/logs.js';
 import { str } from '../utils/http.js';
+
+// The authenticated user of a request, once sessionMiddleware (middleware/auth.js) has run; null for an anonymous or
+// pre-session request. Used to key the general API limiter by user (shared-office NAT: all staff egress from one IP,
+// so an IP key would put the whole office in one bucket — ETS-SEC-003).
+const apiUserId = req => req.user?.id ?? req.session?.user_id ?? null;
 
 const AUTH_WINDOW = 15 * 60 * 1000;
 const secondsLeft = (req, windowMs) =>
@@ -27,8 +32,11 @@ const authHandler = scope => (req, res) => {
 };
 
 // Every endpoint that checks a password, 2FA code or recovery code (login, 2FA verify / setup / enable /
-// disable, recovery-code regeneration, change password) shares one budget per client IP …
-const perIp = rateLimit({ ...common, windowMs: AUTH_WINDOW, limit: config.security.loginRateLimit, handler: authHandler('ip') });
+// disable, recovery-code regeneration, change password) shares one coarse budget per client IP. This is a
+// SECONDARY guard only, set much higher than the per-account budget (LOGIN_IP_RATE_LIMIT, default 300): a whole
+// office behind one NAT address must not be throttled by it. The real brute-force defence is the per-account
+// lockout (services/lockout.js) + the per-account budget below, both keyed by the account, not the shared IP …
+const perIp = rateLimit({ ...common, windowMs: AUTH_WINDOW, limit: config.security.loginIpRateLimit, handler: authHandler('ip') });
 // … and one per account: the signed-in user, or the name typed at login (username or e-mail address, trimmed and
 // in lower case) whether or not it exists (so the answer reveals nothing). Only failed requests count here, so a
 // user's own successful sign-ins do not. A username and an e-mail address of the same account are two names here;
@@ -40,9 +48,17 @@ const perAccount = rateLimit({
 });
 export const authLimiter = [perIp, perAccount];
 
-// General ceiling on every /api request per client IP (scripted floods, log-table growth).
-export const makeApiLimiter = (limit = config.security.apiRateLimit, windowMs = 60_000) => rateLimit({
-  ...common, windowMs, limit,
+// General ceiling on every /api request (scripted floods, log-table growth). Keyed by the AUTHENTICATED USER when
+// the request carries a session (so one busy user — normal work + polling — has their own generous budget and never
+// shares the office NAT bucket), and by client IP for anonymous / pre-session requests (trust-proxy handling is
+// preserved via the library's ipKeyGenerator helper). The limit follows the key: apiUserRateLimit per user,
+// apiRateLimit per anonymous IP (ETS-SEC-003). MUST be mounted AFTER sessionMiddleware so req.user is resolved.
+export const makeApiLimiter = ({
+  userLimit = config.security.apiUserRateLimit, ipLimit = config.security.apiRateLimit, windowMs = 60_000,
+} = {}) => rateLimit({
+  ...common, windowMs,
+  limit: req => (apiUserId(req) ? userLimit : ipLimit),
+  keyGenerator: req => { const u = apiUserId(req); return u ? 'u:' + u : ipKeyGenerator(req.ip); },
   handler: (req, res) => res.status(429).json({ error: 'too_many_requests', retry_after: secondsLeft(req, windowMs) }),
 });
 export const apiLimiter = makeApiLimiter();

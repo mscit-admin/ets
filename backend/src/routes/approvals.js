@@ -185,17 +185,20 @@ async function facets(user, qs) {
 r.get('/', async (req, res) => res.json(await listRequests(req.user, req.query, { meta: true })));
 r.get('/facets', async (req, res) => res.json(await facets(req.user, req.query)));
 
-r.get('/pending-count', async (req, res) => {
+// The approvals badge counts, reusable by the consolidated GET /api/counts (routes/counts.js, 1.12.30).
+export async function pendingCounts(user) {
   const rows = (await query(`SELECT id, department_id, app_id, requested_by, kind, target_app_id, target_department_id, source_approved_by FROM edit_requests WHERE status='pending'`)).rows;
   const apps = await allApps();
   // returned to me (1.12.28): requests a lead sent back for this user (author or substitute) to act on
-  const returned = (await query(`SELECT count(*)::int AS n FROM edit_requests WHERE status='returned' AND returned_to=$1`, [req.user.id])).rows[0].n;
-  res.json({
-    awaiting_me: rows.filter(x => abilities(req.user, { ...x, status: 'pending' }, apps).approve).length,
-    mine: rows.filter(x => x.requested_by === req.user.id).length,
+  const returned = (await query(`SELECT count(*)::int AS n FROM edit_requests WHERE status='returned' AND returned_to=$1`, [user.id])).rows[0].n;
+  return {
+    awaiting_me: rows.filter(x => abilities(user, { ...x, status: 'pending' }, apps).approve).length,
+    mine: rows.filter(x => x.requested_by === user.id).length,
     returned_to_me: returned,
-  });
-});
+  };
+}
+
+r.get('/pending-count', async (req, res) => res.json(await pendingCounts(req.user)));
 
 // The reject reason is required and, when it RETURNS the request to its author (every kind but a move), uses the
 // same 3–500 rule as a move / rename / exclusion reason. A move reject keeps its older rule (any non-empty text).

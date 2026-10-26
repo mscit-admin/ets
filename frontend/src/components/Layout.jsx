@@ -9,6 +9,7 @@ import { useBranding } from '../lib/branding.jsx';
 import { Loading, useLoad } from './ui.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
 import { usePresenceReporter } from '../lib/presence.js';
+import { useLiveUpdates, useNotifStream } from '../lib/live.js';
 
 function Navbar({ onMenu }) {
   const { t, lang, setLang, nm } = useI18n();
@@ -75,11 +76,16 @@ function Sidebar({ open, onClose }) {
   const { can, user } = useAuth();
   const { data } = useLoad(() => api.get('/tracker/summary'), []);
   const loc = useLocation();
-  // batches waiting for this user's signature; refreshed on every page change
-  const { data: pending } = useLoad(() => api.get('/imports/pending-count'), [loc.pathname]);
-  const { data: edits } = useLoad(() => api.get('/approvals/pending-count'), [loc.pathname]);
-  // unread messages (inbox threads + unread replies for 'msg' users): refreshed on every page change
-  const { data: msgs } = useLoad(() => api.get('/messages/unread-count'), [loc.pathname]);
+  // All three sidebar badges in ONE request (1.12.30): imports waiting for this user's signature, edit requests
+  // awaiting approval, and unread messages / pending alerts. Loaded on each page change and refreshed live from the
+  // SSE stream below — replacing three separate per-navigation polls. The refresh carries X-ETS-Live so it never
+  // extends the session (1.12.2 idle-timeout convention).
+  const { data: counts, refresh: refreshCounts } = useLoad(o => api.get('/counts', o), [loc.pathname]);
+  const pending = counts?.imports, edits = counts?.approvals, msgs = counts?.messages;
+  // Live: approvals / imports changes arrive as tracker/live events, new messages & alerts as notif_changed. Both
+  // just re-fetch the consolidated counts. `refreshCounts` is a stable callback, so this never re-subscribes.
+  useLiveUpdates(refreshCounts);
+  useNotifStream(refreshCounts, refreshCounts);
   useEffect(() => { onClose(); }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const link = (to, icon, label, end) => (

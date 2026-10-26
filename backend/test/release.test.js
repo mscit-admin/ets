@@ -183,7 +183,7 @@ before(async () => {
   Object.assign(process.env, {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR: new URL('../logs-test', import.meta.url).pathname, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
-    LOGIN_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
+    LOGIN_RATE_LIMIT: '1000', LOGIN_IP_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', API_USER_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
     ETS_RELEASE_SIGN_KEY: keyFile, ETS_RELEASE_SIGNERS_DIR: trust, ETS_RELEASE_PROMOTE_LIMIT: '8',
   });
   ({ pool } = await import('../src/db/pool.js'));

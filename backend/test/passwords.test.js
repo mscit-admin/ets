@@ -85,7 +85,8 @@ test('session cookie: __Host- prefix when Secure; production refuses insecure co
 
 test('general /api limiter answers 429 too_many_requests with retry_after', async () => {
   const app = express();
-  app.use('/api', makeApiLimiter(3, 60_000));
+  // anonymous requests (no session middleware here) are keyed by IP and bounded by ipLimit (1.12.30 options object)
+  app.use('/api', makeApiLimiter({ ipLimit: 3, userLimit: 3, windowMs: 60_000 }));
   app.get('/api/x', (req, res) => res.json({ ok: true }));
   const srv = app.listen(0);
   try {

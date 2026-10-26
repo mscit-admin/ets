@@ -17,7 +17,7 @@ before(async () => {
   Object.assign(process.env, {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
-    MAX_FAILED_LOGINS: '50', LOGIN_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
+    MAX_FAILED_LOGINS: '50', LOGIN_RATE_LIMIT: '1000', LOGIN_IP_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', API_USER_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none',
   });
   ({ pool } = await import('../src/db/pool.js'));
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');

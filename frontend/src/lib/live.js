@@ -116,8 +116,14 @@ export function useLiveUpdates(onChange, { filter, enabled = true } = {}) {
 }
 
 /**
- * The bell: onCount({ unread, top_severity }) on every "notif_changed" event; onResync() when events may have been
- * missed (reconnection, tab visible again, polling) so the bell asks the API for the count.
+ * The bell / alert gate: onCount({ unread, top_severity }) on every "notif_changed" event; onResync() when events may
+ * have been missed (reconnection, tab visible again, polling) so the caller re-asks the API.
+ *
+ * The callbacks are kept in refs and the subscription is created ONCE (deps are [enabled] only, never the callback
+ * identities). Passing fresh inline callbacks on every render — e.g. useNotifStream(() => check(), () => check()) —
+ * therefore does NOT re-subscribe and does NOT re-fire onResync, so it cannot drive a re-render / re-subscribe loop
+ * (1.12.30: this guarantee is what keeps the blocking AlertGate modal from flickering). Callers still only re-render
+ * from the state THEY set in the callbacks, so an idempotent state update there stops the chain completely.
  */
 export function useNotifStream(onCount, onResync, { enabled = true } = {}) {
   const c = useRef(onCount), r = useRef(onResync);

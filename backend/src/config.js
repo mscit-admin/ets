@@ -59,8 +59,17 @@ export const config = {
     maxFailedLogins: int('MAX_FAILED_LOGINS', 5),
     lockMinutes: int('LOCK_MINUTES', 15),
     lockoutResetMinutes: int('LOCKOUT_RESET_MINUTES', 60),
-    loginRateLimit: int('LOGIN_RATE_LIMIT', 30),   // password/2FA checks per IP (and failures per account) per 15 minutes
-    apiRateLimit: int('API_RATE_LIMIT', 600),      // any /api request per IP per minute
+    loginRateLimit: int('LOGIN_RATE_LIMIT', 30),   // failures per ACCOUNT per 15 minutes (the per-account login budget)
+    // Coarse secondary per-IP budget for the password/2FA checking endpoints, per 15 minutes. It is DELIBERATELY much
+    // higher than loginRateLimit: a whole office behind one NAT address (10.63.x) shares it, so it must not throttle
+    // many people's normal sign-ins. The real brute-force defence is the per-ACCOUNT lockout (services/lockout.js) and
+    // the per-account login budget above, both keyed by the account — not by the shared office IP (ETS-SEC-003).
+    loginIpRateLimit: int('LOGIN_IP_RATE_LIMIT', 300),
+    apiRateLimit: int('API_RATE_LIMIT', 600),      // any /api request from an ANONYMOUS client, per IP per minute
+    // Authenticated users are keyed per USER, not per IP (so a shared-office NAT address no longer shares one bucket).
+    // Generous: one busy user doing normal work plus the Messages/Alerts/Notifications polling never reaches it, while
+    // a runaway client/user is still bounded. Per user per minute.
+    apiUserRateLimit: int('API_USER_RATE_LIMIT', 1200),
     // bcrypt cost, kept within 10–14 (lower values only for the automated tests); invalid → 12.
     bcryptRounds: (n => (Number.isInteger(n) ? Math.min(14, Math.max(env('NODE_ENV', '') === 'test' ? 4 : 10, n)) : 12))(int('BCRYPT_ROUNDS', 12)),
     trustProxy: env('TRUST_PROXY', 'loopback'),

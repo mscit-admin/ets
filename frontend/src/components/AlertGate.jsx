@@ -10,11 +10,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { api, path } from '../lib/api.js';
-import { useNotifStream } from '../lib/live.js';
+import { useNotifStream, useLiveStatus } from '../lib/live.js';
 import { Icon } from './Icon.jsx';
 import { Modal, toast } from './ui.jsx';
 
-const POLL_MS = 45000;
+// Backup poll — a FALLBACK only, used while the live stream is NOT connected (1.12.30). When the stream is live the
+// gate is driven entirely by the notification SSE events, so there is no independent timer (previously it polled
+// every 45 s unconditionally, adding to the request volume of a shared-office deployment). 90 s while not live; the
+// live.js fallback (30 s resync poll) also feeds the gate through onResync when the stream is down.
+const POLL_MS = 90000;
 
 export default function AlertGate() {
   const { t, errText, fmtDate } = useI18n();
@@ -24,20 +28,28 @@ export default function AlertGate() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const seq = useRef(0);
+  const shownId = useRef(null);   // thread_id of the alert currently on screen (null = none)
+  const live = useLiveStatus();
 
   // Ask the server for the next pending alert. Ignores stale answers. A network error while nothing is shown leaves
   // the app unblocked (we only block on a positive answer); while an alert IS shown it is surfaced as a retry.
+  //
+  // IDEMPOTENT state (1.12.30): when the pending alert has not changed (same thread_id, or still none) NOTHING is set,
+  // so repeated checks — a fresh notif_changed event on every click, the resync poll, etc. — do not replace the alert
+  // object or re-render the blocking modal. This is what stops the modal flashing on/off (render churn): the modal is
+  // rebuilt only when the actual alert changes, not on every re-check.
   const check = useCallback(async () => {
     const my = ++seq.current;
     try {
       const d = await api.get('/messages/pending-alert');
       if (my !== seq.current) return;
       setErr(null);
-      setAlert(prev => {
-        const next = d.alert || null;
-        if (!next || !prev || prev.thread_id !== next.thread_id) { setStatus(''); setNote(''); }
-        return next;
-      });
+      const next = d.alert || null;
+      const nextId = next ? next.thread_id : null;
+      if (nextId === shownId.current) return;   // unchanged → no state update, no re-render
+      shownId.current = nextId;
+      setStatus(''); setNote('');
+      setAlert(next);
     } catch (e) {
       if (my !== seq.current) return;
       setErr(e);     // if an alert is already shown this becomes a retry; otherwise harmless
@@ -45,13 +57,15 @@ export default function AlertGate() {
   }, []);
 
   useEffect(() => { check(); }, [check]);
-  // live: any notification change may be a new alert → re-check. Both the per-event count and the resync callback.
-  useNotifStream(() => check(), () => check());
-  // backup poll in case a live signal was missed
+  // Live: any notification change may be a new alert → re-check. `check` is a stable useCallback, so these never
+  // re-subscribe the stream (see useNotifStream) and, being idempotent, never loop.
+  useNotifStream(check, check);
+  // Backup poll — only while the live stream is NOT connected; when it is live the SSE events above drive the gate.
   useEffect(() => {
+    if (live === 'live') return undefined;
     const id = setInterval(() => { check(); }, POLL_MS);
     return () => clearInterval(id);
-  }, [check]);
+  }, [check, live]);
 
   if (!alert) return null;
 
