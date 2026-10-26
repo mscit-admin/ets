@@ -30,6 +30,27 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.32] — 2026-10-26 — Fix Messages thread flicker; admin unlock script / إصلاح وميض شاشة الرسائل
+
+### Fixed
+
+- **Frontend** — Opening a conversation on the Messages screen (`pages/Messages.jsx`) flickered endlessly:
+  `Thread.load()` calls `onChanged` after every fetch, and `onChanged` (`bump`) was a fresh function on each render,
+  so the bump re-rendered the page → new `onChanged` → `Thread`'s `load` `useCallback` changed identity → its
+  `useEffect` blanked the data (showing `<Loading/>`) and re-fetched → which called `onChanged` again → an infinite
+  reload loop. `bump` is now memoised with `useCallback`, so `load` stays stable and the thread loads once per
+  open / reply.
+
+### Added
+
+- **Deployment** — `deploy/scripts/unlock-accounts.sh`: an operator helper that first lists the accounts currently
+  paused by failed-login lockout (read-only; condition matches `services/lockout.js`: `locked_until > now()`), then
+  clears `failed_attempts` / `locked_until` / `last_failed_at` **only after an explicit `yes`**. Runs on all locked
+  accounts or on named users/e-mails. Note: a direct-SQL unlock is **not** written to the audit log and does **not**
+  raise the S14/S15 notifications — use the Users-screen «فكّ القفل» button for the fully-audited path.
+
+---
+
 ## [1.12.31] — 2026-10-26 — Unlock notifications and a clearer lock state / تنبيهات فكّ القفل وحالة قفل أوضح
 
 When an administrator lifts the sign-in pause on an account that had been paused for repeated failed logins, the
@@ -2783,7 +2804,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/37e941f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/69aaa9d...HEAD
+[1.12.32]: https://github.com/mscit-admin/ets/compare/37e941f...69aaa9d
 [1.12.31]: https://github.com/mscit-admin/ets/compare/6daea16...37e941f
 [1.12.30]: https://github.com/mscit-admin/ets/compare/ccaae0f...6daea16
 [1.12.29]: https://github.com/mscit-admin/ets/compare/a0f3a18...ccaae0f

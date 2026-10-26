@@ -404,7 +404,10 @@ export default function Messages() {
   const openThread = params.get('thread');
   const setThread = id => setParams(prev => { const n = new URLSearchParams(prev); id ? n.set('thread', id) : n.delete('thread'); return n; }, { replace: true });
   const [rev, setRev] = useState(0);
-  const bump = () => setRev(r => r + 1);
+  // Stable identity: Thread's load() calls onChanged on every fetch, which setRev-bumps us and re-renders. If bump
+  // were a fresh function each render, that new onChanged would change Thread's load → its effect would blank the
+  // data (Loading) and re-fetch → calling onChanged again → an endless reload loop (the thread view "flicker").
+  const bump = useCallback(() => setRev(r => r + 1), []);
 
   if (openThread) {
     return (
