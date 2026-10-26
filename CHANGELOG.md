@@ -30,6 +30,27 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.32] — 2026-10-26 — Fix Messages thread flicker; admin unlock script / إصلاح وميض شاشة الرسائل
+
+### Fixed
+
+- **Frontend** — Opening a conversation on the Messages screen (`pages/Messages.jsx`) flickered endlessly:
+  `Thread.load()` calls `onChanged` after every fetch, and `onChanged` (`bump`) was a fresh function on each render,
+  so the bump re-rendered the page → new `onChanged` → `Thread`'s `load` `useCallback` changed identity → its
+  `useEffect` blanked the data (showing `<Loading/>`) and re-fetched → which called `onChanged` again → an infinite
+  reload loop. `bump` is now memoised with `useCallback`, so `load` stays stable and the thread loads once per
+  open / reply.
+
+### Added
+
+- **Deployment** — `deploy/scripts/unlock-accounts.sh`: an operator helper that first lists the accounts currently
+  paused by failed-login lockout (read-only; condition matches `services/lockout.js`: `locked_until > now()`), then
+  clears `failed_attempts` / `locked_until` / `last_failed_at` **only after an explicit `yes`**. Runs on all locked
+  accounts or on named users/e-mails. Note: a direct-SQL unlock is **not** written to the audit log and does **not**
+  raise the S14/S15 notifications — use the Users-screen «فكّ القفل» button for the fully-audited path.
+
+---
+
 ## [1.12.31] — 2026-10-26 — Unlock notifications and a clearer lock state / تنبيهات فكّ القفل وحالة قفل أوضح
 
 When an administrator lifts the sign-in pause on an account that had been paused for repeated failed logins, the
