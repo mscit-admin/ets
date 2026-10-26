@@ -142,7 +142,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .stack-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--gray-200); }
 .stack-bar .seg.green { background: #30a66d; } .stack-bar .seg.orange { background: #f0883a; }
 .stack-bar .seg.red { background: #e24c4c; } .stack-bar .seg.gray { background: var(--gray-300); }
-.stack-bar .seg.amber { background: #e8a73c; }
+.stack-bar .seg.amber { background: #e8a73c; } .stack-bar .seg.purple { background: #7d57c9; }
 .legend { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; }
 .legend li { display: flex; justify-content: space-between; align-items: center; }
 .mini-tests { display: inline-flex; gap: 4px; }

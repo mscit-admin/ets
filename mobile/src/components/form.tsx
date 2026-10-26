@@ -2,7 +2,7 @@
 //   Label           a field's label, «*» when required
 //   TextArea        multi-line input with a hint, a live error and a «n/500» counter (reasons, notes)
 //   Choice          radio rows (one choice, with an optional hint per option) — the web's <select> / radio groups
-//   StatusChoice    the four test / notification / review statuses as coloured chips
+//   StatusChoice    the test / notification / review statuses as coloured chips (count chips, default 4)
 //   NumStepper      a number with − / + buttons (web: NumCell): committed when typing ends (blur / done) or shortly
 //                   after the last tap; a value from the server never replaces what the user is typing
 //   SwitchRow       a labelled switch;  Check  a checkbox
@@ -83,15 +83,15 @@ export function Choice<T extends string | number>({ label, options, value, onCha
   );
 }
 
-export function StatusChoice({ label, value, prefix, colorsOf, onChange, disabled, t }: {
+export function StatusChoice({ label, value, prefix, colorsOf, onChange, disabled, t, count = 4 }: {
   label: string; value: number; prefix: string; colorsOf: PillName[]; onChange: (v: number) => void; disabled?: boolean;
-  t: (k: string) => string;
+  t: (k: string) => string; count?: number;
 }) {
   return (
     <View style={st.field} accessibilityRole="radiogroup" accessibilityLabel={label}>
       <Label>{label}</Label>
       <View style={st.chips}>
-        {[0, 1, 2, 3].map(i => {
+        {Array.from({ length: count }, (_, i) => i).map(i => {
           const on = i === value;
           const p = pills[colorsOf[i] ?? 'gray'];
           return (

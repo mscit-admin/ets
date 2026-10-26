@@ -14,8 +14,9 @@ export const SOURCES = ['design', 'vendor_list', 'experience', 'custom'];
 
 // ---- statuses and their required note
 // "… with notes" statuses: choosing one makes the note mandatory (also enforced by the server). A field may have
-// more than one such value — test_status needs a note for both «نجح مع ملاحظة» (1) and «إعادة الاختبار» (4, 1.12.25).
-export const NOTE_REQUIRED = { test_status: [1, 4], notif_status: [2], review_status: [3] };
+// more than one such value — test_status needs a note for «نجح مع ملاحظة» (1), «إعادة الاختبار» (4, 1.12.25) and
+// «غير متاح للاختبار» (5).
+export const NOTE_REQUIRED = { test_status: [1, 4, 5], notif_status: [2], review_status: [3] };
 export const STATUS_PREFIX = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_' };
 export const STATUS_VALUES = [0, 1, 2, 3];
 export const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k, vs]) => vs.includes(f[k]));

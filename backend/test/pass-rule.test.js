@@ -316,3 +316,48 @@ test('items passed below 100 % before 1.8.1: kept, listed by the conflict filter
   assert.equal((await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 2 })).status, 200);
   assert.equal(+(await fnRow(fs[4].id)).progress, 40);
 });
+
+test('«غير متاح للاختبار» (5): a mandatory note, no progress rule, not «نجح»; states 1 / 4 still need a note, 3 does not; DB accepts 5, rejects 6', { skip }, async () => {
+  const [f, g, h, k] = await reset();                       // progress 80, test 0, no note
+  const lead = await as('lead_hr');
+  const p = (x, body) => lead.patch('/tracker/functions/' + x.id, body);
+
+  // state 5 with an empty note → 400 note_required (fields names test_status); nothing is written
+  let r = await p(f, { test_status: 5 });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.error, 'note_required');
+  assert.ok(r.data.fields.includes('test_status'));
+  assert.equal((await fnRow(f.id)).test_status, 0);
+
+  // state 5 WITH a note → 200; the progress is left as it is (no «نجح» auto-fill) and it is not «نجح» (2)
+  r = await p(f, { test_status: 5, note: 'vendor environment down' });
+  assert.equal(r.status, 200);
+  assert.deepEqual([+r.data.function.progress, r.data.function.test_status], [80, 5]);
+  assert.notEqual(r.data.function.test_status, 2);
+  // no progress rule: the progress of a state-5 item may go below 100
+  assert.equal((await p(f, { progress: 40 })).status, 200);
+  assert.equal(+(await fnRow(f.id)).progress, 40);
+
+  // regression: «نجح مع ملاحظة» (1) and «إعادة الاختبار» (4) still require a note; «فشل» (3) does not
+  assert.equal((await p(g, { test_status: 1 })).data.error, 'note_required');
+  assert.equal((await p(g, { test_status: 4 })).data.error, 'note_required');
+  assert.equal((await p(g, { test_status: 4, note: 'retest after the fix' })).status, 200);
+  assert.equal((await p(h, { test_status: 3 })).status, 200);
+  assert.equal((await fnRow(h.id)).test_status, 3);
+
+  // the CHECK accepts 5 and rejects 6 on a direct write
+  await pool.query('UPDATE functions SET test_status=5 WHERE id=$1', [k.id]);
+  assert.equal((await fnRow(k.id)).test_status, 5);
+  await assert.rejects(pool.query('UPDATE functions SET test_status=6 WHERE id=$1', [k.id]), /functions_test_status_check/);
+
+  // bulk set 5 on an application with empty-note enabled items → note_required; with notes it succeeds and keeps progress
+  await reset();
+  r = await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 5 });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.error, 'note_required');
+  await pool.query(`UPDATE functions SET note='n' WHERE app_id='ess'`);
+  r = await lead.post('/tracker/applications/ess/bulk', { field: 'test_status', value: 5 });
+  assert.equal(r.status, 200);
+  assert.equal((await one(`SELECT count(*)::int AS n FROM functions WHERE app_id='ess' AND test_status=5`)).n, 7);
+  assert.equal((await one(`SELECT min(progress)::int AS m, max(progress)::int AS x FROM functions WHERE app_id='ess' AND enabled`)).m, 80);
+});

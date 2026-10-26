@@ -42,7 +42,10 @@ permission, not `pct`) can mark «نجح» — the progress coercion rides on th
 or with `progress: 100`, or even with a `progress` below 100 (then «نجح» wins and the progress is coerced to 100), is
 always accepted; `pass_requires_100` is no longer returned for a direct/bulk «نجح». The clients confirm the auto-fill
 first (a dialog for a single item, a confirmation step in the bulk modal). «نجح مع ملاحظة» (`test_status: 1`) has no
-progress rule. The progress of a passed item still **cannot be lowered** below 100 while it stays «نجح»
+progress rule. The test states that **require a note** are `1` «نجح مع ملاحظة», `4` «إعادة الاختبار» (1.12.25) and
+`5` «غير متاح للاختبار» (1.12.x, migration 029): setting one with an empty note returns 400 `note_required` (field
+`test_status`). Neither `4` nor `5` is «نجح», so they carry no progress rule and the «نجح» = 100 % rule is unaffected
+(`test_status` now accepts `0..5`). The progress of a passed item still **cannot be lowered** below 100 while it stays «نجح»
 (`progress_below_100_while_passed`) — move the status away from «نجح» first. An item already passed below 100 % before
 1.8.1 is left as it is (a bulk «نجح» does not touch its progress), keeps every other edit, and is fixed by either
 field. Report items (`item_type: "report"`) follow the same behavior. **Imports keep the 1.8.1 rule** (a row setting
