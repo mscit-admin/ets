@@ -30,6 +30,34 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.31] — 2026-10-26 — Unlock notifications and a clearer lock state / تنبيهات فكّ القفل وحالة قفل أوضح
+
+When an administrator lifts the sign-in pause on an account that had been paused for repeated failed logins, the
+system now says so — to the administrators and to the affected user — and the Users screen makes the locked state
+plain instead of leaving it to be inferred from raw counters.
+
+### Added
+
+- **Backend** — Two new event notifications, raised from `POST /users/:id/unlock` **only when the account was
+  actually paused** at that moment (a no-op unlock of an already-open account stays silent):
+  `account_unlocked` (**S14**, category security, admin-only, scope `admin`, severity info, in-app only) — the
+  counterpart of **S1** `account_locked`; the body names the account and the administrator, the title does not
+  (`ETS-SEC-047`). And `account_reactivated` (**S15**, category security, scope `self`, every role eligible,
+  severity info, phone allowed) — a directed FYI to the unlocked user that their account is active again.
+  Emitters `accountUnlocked` / `accountReactivated` in `services/notify-events.js`; AR/EN text in parity.
+- **Frontend** — Users screen: the «مقفل / Locked» state is a clear red badge naming the failed-attempt count and
+  the time the pause lifts, with the «فكّ القفل / Unlock» action beside it in the list row as well as on the user
+  page; a successful unlock shows a «تم إلغاء إيقاف الحساب» toast. The two new codes are added to the
+  Notifications type filter.
+
+### Tests
+
+- **Backend** — `notifications.test.js` covers: a real unlock fires S14 (administrators) + S15 (the user only,
+  scope self), writes the `account_unlocked_by_admin` auth event and the `unlock` audit row and clears the lock; a
+  no-op unlock sends nothing; a non-admin is refused (403).
+
+---
+
 ## [1.12.30] — 2026-10-26 — Per-user API rate limiting for shared-office IPs / حدّ الطلبات لكل مستخدم
 
 Fixes a production problem for deployments where a whole organisation egresses from **one** office address (NAT,
