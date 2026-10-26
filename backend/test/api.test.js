@@ -219,7 +219,7 @@ test('review_status: six states (1.12.17) — 4/5 persist, 6 rejected, only 2 co
   await p({ review_status: 0 });                               // leave it as found
 });
 
-test('test_status: five states (1.12.25) — «إعادة الاختبار» (4) needs a note, 5 rejected, 4 is not passed', { skip }, async () => {
+test('test_status: six states (1.12.x) — «إعادة الاختبار» (4) and «غير متاح للاختبار» (5) need a note, 6 rejected, neither is passed', { skip }, async () => {
   const c = client(); await c.login('root');
   const f = (await pool.query(`SELECT id FROM functions WHERE app_id='att' AND code='D2'`)).rows[0];
   await pool.query(`UPDATE functions SET progress=50, test_status=0, note='' WHERE id=$1`, [f.id]);
@@ -237,16 +237,27 @@ test('test_status: five states (1.12.25) — «إعادة الاختبار» (4)
   const after = await tsOf();
   assert.equal(after.test_status, 4);
   assert.equal(Number(after.progress), 50);
-  // out of range (5) is rejected and nothing changes
-  const bad = await p({ test_status: 5 });
+  // «غير متاح للاختبار» (5, migration 029) requires a note too; clear the note first (state 0 needs none)
+  await p({ test_status: 0, note: '' });
+  const noNote5 = await p({ test_status: 5 });
+  assert.equal(noNote5.status, 400);
+  assert.equal(noNote5.data.error, 'note_required');
+  assert.deepEqual(noNote5.data.fields, ['test_status']);
+  assert.equal((await tsOf()).test_status, 0);
+  assert.equal((await p({ test_status: 5, note: 'not available for testing' })).status, 200);
+  const after5 = await tsOf();
+  assert.equal(after5.test_status, 5);
+  assert.equal(Number(after5.progress), 50);
+  // out of range (6) is rejected and nothing changes
+  const bad = await p({ test_status: 6 });
   assert.equal(bad.status, 400);
   assert.equal(bad.data.error, 'invalid_value');
-  assert.equal((await tsOf()).test_status, 4);
-  // 4 at 50 % is NOT a pass conflict (that rule counts only «نجح» = 2 below 100 %) and does not satisfy any pass rule
+  assert.equal((await tsOf()).test_status, 5);
+  // 5 at 50 % is NOT a pass conflict (that rule counts only «نجح» = 2 below 100 %) and does not satisfy any pass rule
   const isConflict = (await pool.query(`SELECT (test_status=2 AND progress<100) AS c FROM functions WHERE id=$1`, [f.id])).rows[0].c;
   assert.equal(isConflict, false);
-  // bulk test_status=4 also needs a note on every affected item
-  assert.equal((await c.post('/tracker/applications/att/bulk', { field: 'test_status', value: 4 })).data.error, 'note_required');
+  // bulk test_status=5 also needs a note on every affected item
+  assert.equal((await c.post('/tracker/applications/att/bulk', { field: 'test_status', value: 5 })).data.error, 'note_required');
   await p({ test_status: 0, note: '' });                       // leave it as found
 });
 

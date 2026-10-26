@@ -444,7 +444,7 @@ export function BulkDialog({ app, can, picked, onClose, onDone }: {
       ) : null}
       {field === 'test_status' ? (
         <Choice label={t('test_status')} value={value} onChange={setValue}
-          options={[0, 1, 2, 3].map(i => ({ value: i, label: t('ts_' + i) }))} />
+          options={[0, 1, 2, 3, 4, 5].map(i => ({ value: i, label: t('ts_' + i) }))} />
       ) : null}
       {exclude ? (
         <>
