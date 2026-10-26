@@ -50,6 +50,19 @@ function TfaBadge({ u }) {
   return u.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>;
 }
 
+// An account is paused (progressive lockout) while locked_until is still in the future (services/lockout.js).
+export const isLocked = u => !!u.locked_until && new Date(u.locked_until) > new Date();
+
+// A clear red badge for a paused account, saying WHY (failed attempts) and until when. Used in the users list and
+// on the user detail page; the «until HH:MM» is the local time the pause lifts on its own.
+function LockBadge({ u }) {
+  const { t, lang } = useI18n();
+  if (!isLocked(u)) return null;
+  const until = new Date(u.locked_until).toLocaleTimeString(lang === 'ar' ? 'ar-LY-u-nu-latn' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+  const reason = u.failed_attempts ? t('locked_attempts', { n: u.failed_attempts }) : t('locked');
+  return <Indicator color="red" title={t('locked_until_time', { time: until })}>{reason} · {t('locked_until_time', { time: until })}</Indicator>;
+}
+
 // Deleted users (soft-deleted). Promoted from an inner sub-tab to a top tab in 1.12.7; behaviour is unchanged —
 // same `/users?deleted=1` fetch, same restore action and blocked-restore reasons. No bulk selection here (deleted
 // rows only offer per-row restore), unlike the active list.
@@ -128,6 +141,10 @@ function UsersManage() {
     } catch (e) { toast(errText(e), 'red'); }
   };
   const selected = data.users.filter(u => sel.has(u.id));
+  const unlock = async u => {
+    try { await api.post(path`/users/${u.id}/unlock`); toast(t('unlock_done')); reload(); }
+    catch (e) { toast(errText(e), 'red'); }
+  };
 
   return (
     <div>
@@ -181,7 +198,12 @@ function UsersManage() {
                     <td>{nm(u, 'role_name')}</td>
                     <td>
                       {u.is_active ? <Indicator color="green">{t('active')}</Indicator> : <Indicator color="gray">{t('inactive')}</Indicator>}
-                      {u.locked_until && new Date(u.locked_until) > new Date() && <> <Indicator color="red">{t('locked')}</Indicator></>}
+                      {isLocked(u) && (
+                        <div className="row gap wrap mt-s">
+                          <LockBadge u={u} />
+                          <button type="button" className="btn btn-default btn-xs" onClick={() => unlock(u)}>{t('unlock')}</button>
+                        </div>
+                      )}
                     </td>
                     <td><TfaBadge u={u} /></td>
                     <td className="hide-mobile">{u.role_full_scope ? t('full_scope') : u.scope_count || <Indicator color="red">{t('no_scope')}</Indicator>}</td>
@@ -278,6 +300,9 @@ function UserFormInner({ id }) {
     if (confirm && !window.confirm(t('are_you_sure'))) return;
     try { await api.post(path`/users/${id}/${what}`); toast(t('saved')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
+  const unlockUser = async () => {
+    try { await api.post(path`/users/${id}/unlock`); toast(t('unlock_done')); usr.reload(); } catch (e) { toast(errText(e), 'red'); }
+  };
 
   return (
     <div>
@@ -286,7 +311,7 @@ function UserFormInner({ id }) {
         {!isNew && <>
           {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>}
           {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => action('reset-2fa')}>{t('reset_2fa')}</button>}
-          {u.locked_until && new Date(u.locked_until) > new Date() && <button className="btn btn-default btn-sm" onClick={() => action('unlock', false)}>{t('unlock')}</button>}
+          {isLocked(u) && <button className="btn btn-default btn-sm" onClick={unlockUser}>{t('unlock')}</button>}
           {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}
           <span title={self ? t('del_self_tip') : undefined}>
             <button className="btn btn-danger btn-sm" disabled={self} onClick={() => setDeleting(true)}><Icon name="trash" size={14} /> {t('delete_user')}</button>
@@ -297,6 +322,14 @@ function UserFormInner({ id }) {
       {err && <Alert>{errText(err)}</Alert>}
 
       <Card title={t('details')}>
+        {!isNew && isLocked(u) && (
+          <Alert kind="red">
+            <div className="row gap wrap" style={{ alignItems: 'center' }}>
+              <LockBadge u={u} />
+              <button className="btn btn-default btn-sm" onClick={unlockUser}>{t('unlock')}</button>
+            </div>
+          </Alert>
+        )}
         <div className="form-grid">
           <Field label={t('full_name')}><input className="input" value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></Field>
           <Field label={t('username')}><input className="input" dir="ltr" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} /></Field>

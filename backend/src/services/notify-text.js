@@ -141,6 +141,17 @@ const T = {
   account_locked: (l, p, n) => ({
     title: l === 'ar' ? 'حساب أُوقف دخوله مؤقتاً بعد محاولات فاشلة' : 'An account was paused after failed sign-ins',
     body: l === 'ar' ? `الحساب: ${p.username || '—'}${n > 1 ? ` · ${n} مرات` : ''}` : `Account: ${p.username || '—'}${n > 1 ? ` · ${n} times` : ''}` }),
+  // S14: to administrators. The account name stays out of the title (security rule) and goes in the body.
+  account_unlocked: (l, p) => ({
+    title: l === 'ar' ? 'أُلغي إيقاف حساب أُوقف لمحاولات دخول فاشلة' : 'An account paused for failed sign-ins was unlocked',
+    body: l === 'ar' ? `تم إلغاء إيقاف الحساب ${p.username || '—'} (أُوقف لمحاولات دخول فاشلة) من قبل ${p.by || '—'}`
+      : `Account ${p.username || '—'} (paused for failed sign-ins) was unlocked by ${p.by || '—'}` }),
+  // S15: the directed FYI to the unlocked user (their own account). The whole sentence is the title (the body is
+  // dropped on the phone for security types), no other person's name or IP, so it is safe as a title.
+  account_reactivated: l => ({
+    title: l === 'ar' ? 'أُعيد تفعيل حسابك بعد إيقافه لمحاولات دخول فاشلة. يمكنك الدخول الآن.'
+      : 'Your account has been re-enabled after it was paused for failed sign-ins. You can sign in now.',
+    body: null }),
   failed_logins: (l, p, n) => ({
     title: l === 'ar' ? 'محاولات دخول فاشلة كثيرة' : 'Many failed sign-ins',
     body: l === 'ar' ? `${ar(n, 'attempt')} خلال ${p.minutes || 15} دقيقة${p.ip ? ` من ${p.ip}` : ' (كل العناوين)'}` : `${en(n, 'attempt')} in ${p.minutes || 15} minutes${p.ip ? ` from ${p.ip}` : ' (all addresses)'}` }),

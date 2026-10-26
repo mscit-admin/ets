@@ -67,6 +67,13 @@ export const TYPES = {
   alert_response:    { code: 'M4', category: 'messages', kind: 'event', severity: 'info', perms: [], scope: 'self', matrix: M('+++++++++'), push: true },
   // ---- security and system: the admin role only (ETS-SEC-047), never granted to another role by any setting
   account_locked:    { code: 'S1', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
+  // S14 (1.12.29): an administrator lifted a lockout on an account that was paused for failed sign-ins → administrators.
+  // The counterpart of S1 (same audience, in-app only); fired only when the account was actually locked at the time.
+  account_unlocked:  { code: 'S14', category: 'security', kind: 'event', severity: 'info', admin: true, scope: 'admin', matrix: M('+........'), push: false },
+  // S15 (1.12.29): the DIRECTED FYI to the unlocked user that their account is usable again (scope 'self', every role
+  // eligible and on since any role can be the unlocked account). push true so the phone pings; its body is stripped on
+  // the phone like every security type, so the whole sentence is in the title.
+  account_reactivated: { code: 'S15', category: 'security', kind: 'event', severity: 'info', scope: 'self', matrix: M('+++++++++'), push: true },
   failed_logins:     { code: 'S2', category: 'security', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   // S13 (1.12.23): a DISTRIBUTED login-probing pattern — the TOTAL «معرّف غير موجود» (login_unknown_user) across ALL
   // source IPs in a window exceeds a threshold, even when no single IP trips the per-IP S2. Complements S2, admin only.

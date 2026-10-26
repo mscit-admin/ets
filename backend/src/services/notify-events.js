@@ -164,6 +164,22 @@ export const accountLocked = safe('account_locked', async u => {
     link: '/logs?tab=auth', params: { username: u.username } })));
 });
 
+// ---- S14 / S15: an administrator lifted a lockout on an account that was paused for failed sign-ins
+// (routes/users.js /:id/unlock). S14 → administrators (the counterpart of S1 account_locked); S15 → the unlocked
+// user, a directed FYI that they can sign in again. The caller fires these ONLY when the account was actually
+// locked at the time of the unlock (a no-op unlock of an already-open account sends nothing). `by`: admin username.
+export const accountUnlocked = safe('account_unlocked', async (u, by) => {
+  const list = await admins();
+  await deliver('account_unlocked', list.map(user => ({ user, dedupeKey: `account_unlocked:user=${u.id}:${Date.now()}`,
+    link: '/logs?tab=auth', params: { username: u.username, by: by || null } })));
+});
+export const accountReactivated = safe('account_reactivated', async u => {
+  const [user] = await activeUsers([u.id]);     // an active account only (not deactivated / forced-password)
+  if (!user) return;
+  await deliver('account_reactivated', [{ user, dedupeKey: `account_reactivated:user=${u.id}:${Date.now()}`,
+    link: '/', params: {} }]);
+});
+
 // ---- S7: a log retention setting was lowered (routes/settings.js)
 export const retentionReduced = safe('retention_reduced', async ({ key, from, to, by }) => {
   const list = await admins();

@@ -561,6 +561,46 @@ test('S1 account paused → administrators; S7 retention lowered → administrat
   await root.put('/settings', { 'logs.retention_days': 365 });
 });
 
+test('S14/S15 admin unlocks a locked account → administrators + the unlocked user; no-op unlock is silent; non-admin 403', { skip }, async () => {
+  await clean();
+  const root = await as('root');
+  // obs_hr is genuinely paused (progressive lockout): a lock in the future and some failed attempts
+  await pool.query(`UPDATE users SET failed_attempts=5, locked_until=now()+interval '5 minutes', last_failed_at=now() WHERE id=$1`, [ids.obs_hr]);
+
+  // a non-admin may not unlock (the /users router is 'usr' + admin only)
+  const mem = await as('mem_hr');
+  assert.equal((await mem.post(`/users/${ids.obs_hr}/unlock`)).status, 403, 'non-admin cannot unlock');
+
+  assert.equal((await root.post(`/users/${ids.obs_hr}/unlock`)).status, 200);
+
+  // the lock is cleared
+  const u = (await pool.query('SELECT failed_attempts, locked_until, last_failed_at FROM users WHERE id=$1', [ids.obs_hr])).rows[0];
+  assert.deepEqual([u.failed_attempts, u.locked_until, u.last_failed_at], [0, null, null], 'lock cleared');
+
+  // S14 → administrators only (root here); the account name and the admin are in the params
+  const s14 = await open('root', 'account_unlocked');
+  assert.equal(s14.length, 1); assert.equal(s14[0].params.username, 'obs_hr'); assert.equal(s14[0].params.by, 'root');
+  assert.equal((await open('obs_hr', 'account_unlocked')).length, 0, 'the unlocked user is not an admin: no S14');
+
+  // S15 → the unlocked user only (scope self): root (another user) never receives it
+  const s15 = await open('obs_hr', 'account_reactivated');
+  assert.equal(s15.length, 1, 'the unlocked user gets the FYI');
+  assert.equal((await open('root', 'account_reactivated')).length, 0, 'scope self: no other user receives S15');
+
+  // the auth event and the audit row are written
+  const ev = (await pool.query(`SELECT event FROM auth_log WHERE username='obs_hr' AND event='account_unlocked_by_admin'`)).rows;
+  assert.equal(ev.length, 1, 'account_unlocked_by_admin auth event');
+  const au = (await pool.query(`SELECT 1 FROM audit_log WHERE entity='user' AND entity_id=$1 AND action='unlock'`, [String(ids.obs_hr)])).rows;
+  assert.equal(au.length, 1, 'unlock audit row');
+
+  // a no-op unlock of an already-open account notifies nobody (and the earlier rows are not duplicated)
+  await clean();
+  assert.equal((await root.post(`/users/${ids.obs_hr}/unlock`)).status, 200);
+  assert.equal((await rows('root', 'account_unlocked')).length, 0, 'no-op unlock: no S14');
+  assert.equal((await rows('obs_hr', 'account_reactivated')).length, 0, 'no-op unlock: no S15');
+  await clean();
+});
+
 test('hourly cap: new alerts above notify.rate_cap_per_hour become one «many alerts» row; mandatory ones are never held back', { skip }, async () => {
   await clean();
   await setSetting('notify.rate_cap_per_hour', 5);

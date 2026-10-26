@@ -71,6 +71,15 @@ catches **distributed account enumeration** spread thin over many IPs (a few att
 per-IP check); its alert names the total count and the number of distinct IPs. Both are admin-only and in-app only
 (ETS-SEC-047), critical, and fire at most once per window. Thresholds are editable in Settings → «الإشعارات» → العتبات.
 
+**Account unlocked by an administrator (1.12.29).** When an administrator lifts the sign-in pause on an account
+(`POST /users/:id/unlock`), the action always writes the audit row (`unlock`) and the auth event
+(`account_unlocked_by_admin`, `detail.by` = the admin's username). In addition, **only when the account was actually
+paused at the time** (a no-op unlock of an already-open account is silent), two event notifications are raised: **S14
+`account_unlocked`** to administrators (the counterpart of S1 `account_locked` — admin-only, in-app only, info; the
+body names the account and the administrator, the title carries neither per ETS-SEC-047), and **S15
+`account_reactivated`** — a directed FYI to the unlocked user themselves (scope `self`, every role eligible, info,
+phone allowed) telling them they can sign in again.
+
 ## 2. Audit trail (`audit_log`)
 
 Every change made through the API is recorded **in the same transaction as the change itself** (or, for an
