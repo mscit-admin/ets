@@ -169,7 +169,7 @@ password appears in any log.
 |---|---|---|
 | Reset password | Sets a new password, clears a sign-in pause, signs out all sessions, forces a change at next login (optional) | `password_reset_by_admin` |
 | Unlink authenticator | Removes the user's 2FA app and recovery codes and signs the user out. If 2FA is required, they enrol again at next login | `mfa_reset_by_admin` |
-| Unlock | Shown while sign-in to the account is paused («مقفل / Locked»): clears the failure count and the pause | `account_unlocked_by_admin` |
+| Unlock | Shown while sign-in to the account is paused («مقفل / Locked»): clears the failure count and the pause. The *Locked* badge now says **why** (how many failed attempts, and until when the pause lifts on its own) and the **Unlock** button sits beside it both in the users list and on the user page | `account_unlocked_by_admin` |
 | End sessions | Signs the user out everywhere | `sessions_revoked_by_admin` |
 | Active (untick) | Disables the account and ends its sessions. Users are never deleted, so their history stays | audit `update user` |
 
@@ -190,6 +190,11 @@ Safety rules enforced by the server:
 shows the same «incorrect username or password» message — so a user may report that their correct password does
 not work: check the *Locked* badge and *Logs → Login & security* (`account_locked`, `login_while_locked`), then
 let them wait or press **Unlock**. Too many attempts from one PC show «Too many attempts — wait N seconds».
+
+When you press **Unlock** on an account that was genuinely paused (1.12.29), two notifications go out: the other
+administrators get an **account unlocked** alert (the counterpart of the **account paused** alert, naming the account
+and who unlocked it), and the user whose account was unlocked gets a short message — on their phone too — telling them
+their account is active again and they can sign in. Clearing an account that was not actually paused notifies no one.
 
 > **Upgrading to 1.0.0 — check the scope of existing users.** Before 1.0.0 a user of a scoped role (Department
 > Manager, Team Lead, Team Member, Application Editor, Tester, Observer) with no department/application ticked

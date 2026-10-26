@@ -11,7 +11,8 @@ import { userImportJson } from '../middleware/body.js';
 import { HttpError, bad, notFound, str, idParam, isId, isDate } from '../utils/http.js';
 import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../utils/importMatch.js';
 import { revokeDevices } from '../services/devices.js';
-import { requestsSettled } from '../services/notify-events.js';
+import { requestsSettled, accountUnlocked, accountReactivated } from '../services/notify-events.js';
+import { isDelayed } from '../services/lockout.js';
 import { publishNotif } from '../services/live.js';
 import { TYPES, isLockedCell } from '../services/notify-catalog.js';
 
@@ -481,11 +482,18 @@ r.post('/:id/reset-2fa', async (req, res) => {
 r.post('/:id/unlock', async (req, res) => {
   const id = idParam(req.params.id);
   const u = await loadUser(id);
+  // Was the account actually paused (locked_until in the future) at the moment of the unlock? Only then is it a
+  // real unlock worth notifying about; clearing an already-open account is a no-op that notifies no one.
+  const wasLocked = isDelayed(u);
   await tx(async c => {
     await c.query('UPDATE users SET failed_attempts=0, locked_until=NULL, last_failed_at=NULL WHERE id=$1', [id]);
     await logAudit(req, { db: c, action: 'unlock', entity: 'user', entityId: id, summary: u.username });
     await logAuth(req, { db: c, userId: id, username: u.username, event: 'account_unlocked_by_admin', success: true, detail: { by: req.user.username } });
   });
+  if (wasLocked) {
+    await accountUnlocked(u, req.user.username);   // S14 → administrators
+    await accountReactivated(u);                   // S15 → the unlocked user (directed FYI)
+  }
   res.json({ ok: true });
 });
 
