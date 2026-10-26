@@ -30,6 +30,38 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.33] — 2026-10-26 — New test status «غير متاح للاختبار» / حالة اختبار: غير متاح للاختبار
+
+A new test state for functions / report items, appended without renumbering any existing value.
+
+### Added
+
+- **Database** — `test_status` gains state **5** «غير متاح للاختبار» / "Not available for testing" (migration
+  `029_untestable_status.sql` widens the `functions_test_status_check` constraint from `0..4` to `0..5`;
+  forward-only, idempotent, no backfill). It is a **not-passed** state that **requires a note** (like states 1
+  and 4); it is not «نجح», so the «نجح» = 100 % rule is unaffected, and it is not state 0, so it is excluded from
+  the «untested» alert. No new notification or progress rule is added for it.
+- **Backend** — `routes/tracker.js`: `test_status` validator widened to `0..5` and `NOTE_REQUIRED.test_status`
+  is now `[1, 4, 5]` (the existing mandatory-note behaviour for states 1 and 4 is unchanged). `services/calc.js`
+  tally arrays widened to six slots (a state-5 item would otherwise land on an undefined slot and corrupt the
+  dashboard test-status distribution). `services/imports.js` and `services/legacy.js` accept `0..5`.
+- **Frontend** — The test-status dropdowns (row editor, filter, bulk) and `StatusSelect` now offer state 5;
+  AR/EN label `ts_5`; a distinct colour (purple) for the badge and the dashboard distribution segment.
+- **Mobile** — The item editor and bulk dialog offer state 5 (the shared note rule propagates automatically);
+  state-5 colour token added.
+
+### Tests
+
+- **Backend** — `pass-rule.test.js` / `api.test.js`: state 5 with an empty note → `note_required`; with a note →
+  saved, progress unchanged, not treated as «نجح»; the DB check accepts 5 and rejects 6; states 1 and 4 still
+  require a note (regression); bulk set of state 5 enforces the note on every affected item.
+
+### Upgrade notes
+
+- Run `update.sh` to apply migration **029** (it only widens a CHECK constraint; no data change, instant).
+
+---
+
 ## [1.12.32] — 2026-10-26 — Fix Messages thread flicker; admin unlock script / إصلاح وميض شاشة الرسائل
 
 ### Fixed
