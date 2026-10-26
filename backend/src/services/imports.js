@@ -7,7 +7,7 @@ import { passConflict, passRuleErrors } from './passRule.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 const int03 = v => clamp(v, 0, 3) | 0;
-const int04 = v => clamp(v, 0, 4) | 0;        // test_status has five states (1.12.25, migration 025)
+const int04 = v => clamp(v, 0, 5) | 0;        // test_status has six states (1.12.x, migration 029)
 const int05 = v => clamp(v, 0, 5) | 0;        // review_status has six states (1.12.17, migration 023)
 const text = v => (typeof v === 'string' ? v.slice(0, 2000) : '');
 

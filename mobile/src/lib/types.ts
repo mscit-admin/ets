@@ -36,7 +36,7 @@ export type MovedFrom = {
 };
 export type Item = {
   id: number; app_id: string; code: string; source: string; name_ar: string; name_en?: string | null; reference?: string | null;
-  vendor_status: number; weight: number; progress: number; enabled: boolean; test_status: 0 | 1 | 2 | 3;
+  vendor_status: number; weight: number; progress: number; enabled: boolean; test_status: 0 | 1 | 2 | 3 | 4 | 5;
   notif_status: number; review_status: number; note: string; item_type?: 'function' | 'report';
   removed_at?: string | null; removed_reason?: string | null; removed_by_name?: string | null;
   disabled_reason?: string | null; disabled_note?: string | null; disabled_by_name?: string | null; disabled_at?: string | null;
