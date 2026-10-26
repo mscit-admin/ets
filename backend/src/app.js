@@ -25,6 +25,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import backupRoutes from './routes/backups.js';
 import releaseRoutes from './routes/release.js';
 import messageRoutes from './routes/messages.js';
+import countRoutes from './routes/counts.js';
 import { pairRouter, mobileRouter } from './routes/mobile.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
@@ -42,18 +43,21 @@ export function createApp() {
     },
   }));
   app.get('/api/health', health);
-  app.use('/api', apiLimiter);   // general per-IP request ceiling (ETS-SEC-003)
 
   // The Android app (1.9.0, routes/mobile.js): pairing without a session, and /api/m/* with a device token
   // (Authorization: Bearer) only. Mounted before the web API: no cookie is read there, and the web API never
-  // accepts a device token (it reads only the session cookie).
-  app.use('/api/devices/pair', pairRouter);
-  app.use('/api/m', mobileRouter);
+  // accepts a device token (it reads only the session cookie). These paths resolve no session, so the general
+  // ceiling keys them by IP (ETS-SEC-003); pairing additionally has its own tight per-IP limit (PAIR_RATE_LIMIT).
+  app.use('/api/devices/pair', apiLimiter, pairRouter);
+  app.use('/api/m', apiLimiter, mobileRouter);
 
   const api = express.Router();
   api.use(jsonBody);       // 100 kB; file uploads are parsed inside their routes after auth (middleware/body.js)
   api.use(cookieParser());
   api.use(sessionMiddleware);
+  // General request ceiling, AFTER sessionMiddleware so req.user is known: per authenticated user, else per IP
+  // (ETS-SEC-003). A shared-office NAT address no longer puts the whole office in one bucket.
+  api.use(apiLimiter);
   api.use(accessLog);
   api.use(csrfGuard);
   api.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -75,6 +79,7 @@ export function createApp() {
   api.use('/backups', backupRoutes);               // Settings → «النسخ الاحتياطي»: configuration, jobs, restore (1.12.0)
   api.use('/release', releaseRoutes);              // Settings → «الترقية والنشر»: promotion intent (Phase 1, 1.12.18)
   api.use('/messages', messageRoutes);             // in-app messaging: compose, inbox, sent, threads, replies (1.12.26)
+  api.use('/counts', countRoutes);                 // consolidated sidebar badge counts (1.12.30)
   api.use(notFoundHandler);
   app.use('/api', api);
 

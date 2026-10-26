@@ -240,20 +240,23 @@ export async function listBatches(user, qs = {}, { limit = 300 } = {}) {
 
 r.get('/', async (req, res) => res.json({ batches: await listBatches(req.user, req.query), can_import: hasPerm(req.user, 'imp') }));
 
-// Batches waiting for this user's signature (sidebar badge, dashboard notice).
-r.get('/pending-count', async (req, res) => {
+// Batches waiting for this user's signature (sidebar badge, dashboard notice). Exported for the consolidated
+// GET /api/counts (routes/counts.js, 1.12.30).
+export async function pendingCounts(user) {
   const rows = (await query(`SELECT * FROM import_batches WHERE status='pending'`)).rows;
   const meta = await loadImportMeta();
   const appsOf = await batchApps({ query }, rows.map(b => b.id));
   let mine = 0, visible = 0;
   for (const b of rows) {
-    if (!sees(req.user, b, meta, appsOf.get(b.id)).any) continue;
+    if (!sees(user, b, meta, appsOf.get(b.id)).any) continue;
     visible++;
-    const a = importAbilities(req.user, b, meta, appsOf.get(b.id));
+    const a = importAbilities(user, b, meta, appsOf.get(b.id));
     if (a.approve_lead || a.approve_final) mine++;
   }
-  res.json({ awaiting_me: mine, pending: visible });
-});
+  return { awaiting_me: mine, pending: visible };
+}
+
+r.get('/pending-count', async (req, res) => res.json(await pendingCounts(req.user)));
 
 // One batch and the changes the user may see: the batch screen and its Excel export.
 export async function batchDetail(user, rawId) {

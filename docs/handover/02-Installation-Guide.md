@@ -185,7 +185,10 @@ The wizard writes this file. Edit it by hand only if needed, then run `sudo syst
 | `SESSION_TTL_HOURS` (12), `SESSION_IDLE_MINUTES` (60) | Session length and idle timeout (minutes without genuine user activity — input in the page, not background requests; keep it at 5 or more) |
 | `COOKIE_SECURE` | `true` (always written by the installer): the session cookie is `__Host-ets_sid` and works only over HTTPS. `false` is refused with `NODE_ENV=production` unless `ALLOW_INSECURE_COOKIES=true` (lab only, never on a real server) |
 | `MAX_FAILED_LOGINS` (5), `LOCK_MINUTES` (15), `LOCKOUT_RESET_MINUTES` (60) | Failures before sign-in to an account pauses, longest pause, quiet time after which the failure count restarts |
-| `LOGIN_RATE_LIMIT` (30), `API_RATE_LIMIT` (600) | Password / 2FA checks per IP per 15 min (and failures per account); any API request per IP per minute |
+| `LOGIN_RATE_LIMIT` (30) | Failed password / 2FA checks **per account** per 15 min (the per-account login budget) |
+| `LOGIN_IP_RATE_LIMIT` (300) | Coarse **secondary** per-IP budget for the same password / 2FA endpoints per 15 min. Set well above `LOGIN_RATE_LIMIT`; raise it for a shared office / NAT (§9). The brute-force defence is the per-account lockout, not this |
+| `API_RATE_LIMIT` (600) | Any API request from an **anonymous** client, per IP per minute |
+| `API_USER_RATE_LIMIT` (1200) | Any API request from a **signed-in user**, per *user* per minute (not per IP — so a shared office IP no longer shares one bucket; §9) |
 | `BCRYPT_ROUNDS` (12) | Password hashing cost, 10–14 |
 | `TRUST_PROXY` (`loopback`) | Which proxy may set the client IP (`X-Forwarded-For`): nginx on the same server. Safe values: `loopback` (default), a hop count, or the proxy's IP/subnet (or a comma list). **Never `true`** (trust every header) — the service now refuses to start with it; see §9 for a load balancer |
 | `LOG_DIR`, `LOG_LEVEL`, `ACCESS_LOG_DB` | Logging |
@@ -224,8 +227,11 @@ ls -l /var/log/ets/ /var/backups/ets/
 ## 9. Behind a load balancer, reverse proxy or NAT (client IP addresses)
 
 ETS sees the client's IP address through nginx on the same server (`TRUST_PROXY=loopback`; nginx passes
-`$remote_addr` in `X-Real-IP` / `X-Forwarded-For`). The IP is used for the login rate limits (nginx 10 / min,
-API `LOGIN_RATE_LIMIT` per 15 min, `API_RATE_LIMIT` per min) and in the logs.
+`$remote_addr` in `X-Real-IP` / `X-Forwarded-For`). The IP is used in the logs and for the *IP-keyed* limits: the
+nginx login zone (10 / min), the coarse per-IP login budget (`LOGIN_IP_RATE_LIMIT` per 15 min) and the general
+ceiling for **anonymous** requests (`API_RATE_LIMIT` per min). Signed-in API traffic is **not** keyed by IP: since
+1.12.30 it is keyed per *user* (`API_USER_RATE_LIMIT` per min), so a shared office address no longer shares one
+API bucket. The per-account sign-in defence (lockout + `LOGIN_RATE_LIMIT`) is keyed by the account, never the IP.
 
 - **If a load balancer or reverse proxy sits in front of nginx**, every request seems to come from the
   balancer: all users share **one** rate-limit bucket (a few wrong passwords from anyone can slow everyone's
@@ -245,10 +251,24 @@ API `LOGIN_RATE_LIMIT` per 15 min, `API_RATE_LIMIT` per min) and in the logs.
   **not** change `TRUST_PROXY` to `true` in `ets.env`: either would let a client choose the IP address it
   appears to have (and so escape the rate limits and falsify the logs). Check: sign in from two PCs and look
   at *Logs → Login & security* — each shows its own IP.
-- **If many users reach ETS through one NAT / web proxy** (all requests really come from one address), no
-  setting can tell them apart. The per-account limit and the sign-in pause still protect each account; if the
-  shared limits are reached in normal use (`rate_limited` events from that one IP, users told to wait), raise
-  `LOGIN_RATE_LIMIT` / `API_RATE_LIMIT` in `ets.env` moderately and restart the service.
+- **If many users reach ETS through one NAT / web proxy / office firewall** (all requests really come from one
+  address — e.g. a `10.63.x` office egress), nothing can tell the people apart by IP, so the *IP-keyed* limits are
+  shared by the whole office. Since 1.12.30 this no longer hurts normal use: the general API ceiling for signed-in
+  traffic is keyed per **user** (`API_USER_RATE_LIMIT`, default 1200 / min), so one busy user and the app's
+  background polling can never throttle the office; only an anonymous flood is bounded per IP (`API_RATE_LIMIT`).
+  The login endpoints keep a coarse per-IP budget (`LOGIN_IP_RATE_LIMIT`, default 300 / 15 min) that sits *above*
+  the per-account budget — the real brute-force defence is the per-account lockout + `LOGIN_RATE_LIMIT`, both keyed
+  by the account (see [06-Security.md](06-Security.md)). For a shared office, in `ets.env`:
+  - raise `LOGIN_IP_RATE_LIMIT` to comfortably cover everyone's sign-ins in a 15-minute burst (each sign-in is a
+    password plus, with 2FA, a code — roughly two checks). For ~100–150 staff behind one IP, `1000`–`2000` is
+    safe; it only ever stops a single address hammering the login, which the per-account lockout already catches.
+  - leave `API_USER_RATE_LIMIT` at its default unless a legitimate power user is told to wait (`rate_limited`
+    events for that one user); it is per user, not per office.
+  - **also raise the nginx login zone** — by default nginx limits the sign-in endpoints to 10 requests / minute
+    *per IP*, which would throttle a shared office before ETS even sees the request. Edit the `limit_req_zone` /
+    `limit_req` for the login location in the ETS nginx site (or add a `conf.d` override) and `sudo nginx -t &&
+    sudo systemctl reload nginx`.
+  - restart the service after editing `ets.env`: `sudo systemctl restart ets-backend`.
 - The API's counters are kept in memory and start again when the service restarts (for example after an
   update); the per-account sign-in pause is stored in the database and survives restarts.
 - **Safe `TRUST_PROXY` values** are `loopback` (default — nginx on this server), a hop count, or the proxy's exact

@@ -13,7 +13,7 @@ const PW = 'Kestrel-2026x';
 const LOG_DIR = new URL('../logs-test', import.meta.url).pathname;
 const ENV = {
   DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
-  LOG_DIR, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4', MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '5', API_RATE_LIMIT: '100000',
+  LOG_DIR, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4', MAX_FAILED_LOGINS: '3', LOGIN_RATE_LIMIT: '5', LOGIN_IP_RATE_LIMIT: '5', API_RATE_LIMIT: '100000', API_USER_RATE_LIMIT: '100000',
   ETS_ENV_FILE: 'none',
 };
 

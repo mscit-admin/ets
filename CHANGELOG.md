@@ -30,6 +30,57 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.30] — 2026-10-26 — Per-user API rate limiting for shared-office IPs / حدّ الطلبات لكل مستخدم
+
+Fixes a production problem for deployments where a whole organisation egresses from **one** office address (NAT,
+`10.63.x`): because the general request limit was keyed by IP, the entire office shared a single bucket and users
+kept getting `429 «طلبات كثيرة جداً»` — on login and during normal use (the new Messages / Alerts / Notifications
+polling made it worse). The per-account lockout stays the brute-force defence; the per-IP limits that were hurting a
+shared-IP office are relaxed and the signed-in traffic is now counted per user, not per office.
+
+### Changed
+
+- **Backend** — The general `/api` rate limit (`middleware/ratelimit.js`) is now keyed by the **authenticated user**
+  (`API_USER_RATE_LIMIT`, default 1200 / min) with a per-IP fallback for **anonymous** requests (`API_RATE_LIMIT`,
+  600 / min). The limiter is mounted in `app.js` **after** `sessionMiddleware`, so `req.user` is resolved and one
+  busy user (plus the app's background polling) never throttles a colleague on the same office IP (ETS-SEC-003).
+- **Backend** — The per-IP **login** budget is relaxed: the password / 2FA endpoints keep a coarse *secondary*
+  per-IP budget `LOGIN_IP_RATE_LIMIT` (default 300 / 15 min) set well **above** the per-account budget
+  `LOGIN_RATE_LIMIT` (30), so a shared office is not blocked on sign-in. The per-account lockout
+  (`services/lockout.js`) and per-account budget are unchanged and remain the real brute-force defence (keyed by the
+  account, never the shared IP); the per-IP budget only stops a single address hammering the login. The S2 / S13
+  security notifications and the `rate_limited` audit still fire.
+- **Frontend** — Reduced client request volume: the three sidebar badge polls (imports / approvals / messages, which
+  fired on every navigation) are consolidated into one `GET /api/counts` and now also refresh **from the SSE stream**
+  (`notif_changed` / live events) instead of only on navigation. The mandatory-alert gate's backup poll
+  (`components/AlertGate.jsx`) is now a **fallback only** — it runs solely while the live stream is disconnected and
+  its interval is raised 45 s → 90 s. All automatic refreshes carry `X-ETS-Live`, so they never extend the session
+  (1.12.2).
+
+### Added
+
+- **Backend** — `GET /api/counts` (`routes/counts.js`): the consolidated imports / approvals / messages badge counts
+  for the signed-in user. The individual `/*/pending-count` and `/messages/unread-count` endpoints remain.
+- **Backend** — config knobs `API_USER_RATE_LIMIT` (1200) and `LOGIN_IP_RATE_LIMIT` (300).
+
+### Fixed
+
+- **Frontend** — notification / alert gate **flicker (render loop)**: opening a notification from the bell and then
+  opening the message / alert made the blocking AlertGate modal flash on/off. `AlertGate` now updates its alert state
+  **idempotently** (it keeps the current alert object and does not re-render when the pending alert is unchanged) and
+  passes stable callbacks to `useNotifStream`, which is documented and verified to subscribe **once** and never
+  re-subscribe or re-fire on inline-callback identity — so a fresh `notif_changed` event (e.g. from marking a thread
+  read) can no longer drive a re-render / re-check loop.
+
+### Upgrade notes
+
+- No database migration. Optional new `ets.env` knobs: `API_USER_RATE_LIMIT` (default 1200), `LOGIN_IP_RATE_LIMIT`
+  (default 300). **For a shared office / NAT**, raise `LOGIN_IP_RATE_LIMIT` (e.g. 1000–2000) **and** the nginx login
+  zone (default 10 / min / IP), then restart `ets-backend` — see `docs/handover/02-Installation-Guide.md` §9 and
+  `06-Security.md`.
+
+---
+
 ## [1.12.29] — 2026-10-25 — Alert messages & tree views / التنبيهات الإلزامية والعرض الشجري
 
 Extends the in-app messaging of 1.12.26 with a new **alert** message kind («تنبيه»): a message that pops up as a
@@ -2704,7 +2755,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/ccaae0f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/6daea16...HEAD
+[1.12.30]: https://github.com/mscit-admin/ets/compare/ccaae0f...6daea16
 [1.12.29]: https://github.com/mscit-admin/ets/compare/a0f3a18...ccaae0f
 [1.12.28]: https://github.com/mscit-admin/ets/compare/c35905a...a0f3a18
 [1.12.27]: https://github.com/mscit-admin/ets/compare/134bf9b...c35905a
