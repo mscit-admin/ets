@@ -19,7 +19,7 @@ const SETTING_LABEL = {
 const notifyLabel = k => (k.startsWith('notify.') ? 'ns_' + k.slice(7) : null);
 // Reports that can be exported to Excel (backend routes/export.js); the audit entity of an export is the report key.
 const EXPORT_REPORTS = new Set(['summary', 'project_status', 'department', 'functions', 'weights', 'reports', 'schedule', 'approvals',
-  'imports', 'import_detail', 'users']);
+  'imports', 'import_detail', 'users', 'function_changes']);
 const NAME_FIELDS = new Set(['name_ar', 'name_en']);      // a rename (1.9.1)
 const MAX_INLINE = 3;      // change lines shown under the sentence in the list; the rest are in the details
 

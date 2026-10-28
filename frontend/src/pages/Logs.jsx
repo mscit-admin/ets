@@ -104,6 +104,35 @@ function columns(type, t, fmtDate, describe) {
   }
 }
 
+// Export of every change made to function / report items, filterable by one department and / or one application.
+// The server unions the three change channels, limits the rows to the reader's scope and audits the export.
+function FunctionChangesExport() {
+  const { t, nm } = useI18n();
+  const [sel, setSel] = useState({ dept: '', app: '' });
+  const { data } = useLoad(() => api.get('/tracker/weights'), []);
+  const depts = data?.departments || [];
+  const apps = (data?.applications || []).filter(a => !sel.dept || a.department_id === sel.dept);
+  return (
+    <Card>
+      <h3 className="card-title">{t('fc_export_title')}</h3>
+      <p className="muted small">{t('fc_export_hint')}</p>
+      <div className="filter-bar">
+        <select className="input input-sm" value={sel.dept} aria-label={t('department')}
+          onChange={e => setSel({ dept: e.target.value, app: '' })}>
+          <option value="">{t('department')}: {t('all')}</option>
+          {depts.map(d => <option key={d.id} value={d.id}>{nm(d)}</option>)}
+        </select>
+        <select className="input input-sm" value={sel.app} aria-label={t('application')}
+          onChange={e => setSel({ ...sel, app: e.target.value })}>
+          <option value="">{t('application')}: {t('all')}</option>
+          {apps.map(a => <option key={a.id} value={a.id}>{nm(a)}</option>)}
+        </select>
+        <ExportButton report="function_changes" params={{ dept: sel.dept, app: sel.app }} />
+      </div>
+    </Card>
+  );
+}
+
 export default function Logs() {
   const { t, fmtDate, lang } = useI18n();
   const describe = useMemo(() => makeAudit({ t, lang }), [t, lang]);
@@ -141,6 +170,7 @@ export default function Logs() {
         {can('exp') && <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>}
         <ExportButton report="log" params={{ type, ...applied }} />
       </PageHeader>
+      {can('exp') && <FunctionChangesExport />}
       {integrity && !integrity.busy && (integrity.error ? <ErrorBox error={integrity.error} /> : (
         <Card>
           <Indicator color={integrity.ok ? 'green' : 'red'}>{integrity.ok ? t('integrity_ok') : t('integrity_broken')}</Indicator>

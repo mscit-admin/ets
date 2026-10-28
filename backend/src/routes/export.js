@@ -10,12 +10,12 @@
 //   - strings are never written as formulas and are neutralised like the CSV exports (ETS-SEC-059).
 import { Router } from 'express';
 import { query } from '../db/pool.js';
-import { requireAuth, requirePerm, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requirePerm, requireAdmin, canSeeApp } from '../middleware/auth.js';
 import { logAudit } from '../services/logs.js';
 import { buildWorkbook, contentDisposition, XLSX_TYPE } from '../services/xlsx.js';
 import { labels } from '../services/export-labels.js';
 import { passConflict } from '../services/passRule.js';
-import { notFound, own, str } from '../utils/http.js';
+import { notFound, own, str, isDate } from '../utils/http.js';
 import { summaryData, projectStatusData, departmentData, applicationData, weightsData, reportsData, scheduleData, addPeriods }
   from './tracker.js';
 import { listRequests, RQ_FILTERS } from './approvals.js';
@@ -32,8 +32,9 @@ const yesNo = (t, v) => (v ? t('yes') : t('no'));
 const q1 = (qs, k, n = 200) => (typeof qs[k] === 'string' && qs[k] !== '' ? str(qs[k], n) : undefined);
 const pick = (qs, keys) => Object.fromEntries(keys.map(k => [k, q1(qs, k)]).filter(([, v]) => v !== undefined));
 
-// A changed value (edit request item / import change) as the screens show it.
-function fmtValue(L, kind, field, v) {
+// A changed value (edit request item / import change) as the screens show it. Exported so the consolidated
+// function-changes report renders before / after with the very same formatter as the Approvals / Import exports.
+export function fmtValue(L, kind, field, v) {
   const { t } = L;
   if (v === null || v === undefined || v === '') return '';
   if (field === 'create') return [v.name_ar, `${t('weight')} ${v.weight}`, `${t('progress')} ${v.progress}%`, v.enabled ? t('yes') : t('no'),
@@ -76,6 +77,122 @@ async function approvalFilterView(L, f) {
       : (k === 'requester' || k === 'decided_by') && /^[0-9]{1,10}$/.test(v) ? await name('SELECT full_name FROM users WHERE id=$1', +v) : v;
   }
   return out;
+}
+
+// ---- consolidated function / report item changes (function_changes) ----
+// A change to an item reaches the database through exactly one of three channels that never overlap, so the union
+// below double-counts nothing (docs/handover/07-Logging-and-Audit.md): a direct edit (audit_log, entity='function'),
+// an approved edit request (edit_request_items, applied), or an applied import (import_changes, applied).
+const CHG_SOURCE = { direct: 'chg_src_direct', approval: 'chg_src_approval', import: 'chg_src_import' };
+// Meta kept on the audit row's new_value but shown as a note on the relevant field, not as its own change row.
+const CHG_META = new Set(['rename_reason', 'disabled_reason', 'duplicate_of', 'disabled_note']);
+
+// The applications the reader may see, narrowed by the optional department / application filters. Mirrors the
+// audit-log export's scope (routes/logs.js): a scoped user never sees another department's items. Unknown filter
+// values are ignored (an in-scope but unknown id simply matches nothing). Returns { apps: [{id, department_id}], f }.
+async function changeScope(req, qs) {
+  const f = pick(qs, ['dept', 'app', 'from', 'to']);
+  if (f.from !== undefined && !isDate(f.from)) delete f.from;
+  if (f.to !== undefined && !isDate(f.to)) delete f.to;
+  const all = (await query('SELECT id, department_id FROM applications')).rows;
+  const depts = new Set(all.map(a => a.department_id));
+  const byId = new Map(all.map(a => [a.id, a]));
+  if (f.dept !== undefined && !depts.has(f.dept)) delete f.dept;       // ignore an unknown department
+  if (f.app !== undefined && !byId.has(f.app)) delete f.app;           // ignore an unknown application
+  let apps = req.user.fullScope ? all : all.filter(a => canSeeApp(req.user, a));
+  if (f.dept) apps = apps.filter(a => a.department_id === f.dept);
+  if (f.app) apps = apps.filter(a => a.id === f.app);                  // narrows within the department
+  return { apps, f };
+}
+
+// The three change sources as one list of field-change rows, newest first. `L` fixes the language of item names and
+// values; `appIds` is the in-scope set from changeScope; `dates` carries the optional from / to.
+async function functionChangeRows(L, appIds, dates) {
+  const { t } = L;
+  const nameCol = L.lang === 'en' ? 'COALESCE(f.name_en, f.name_ar)' : 'f.name_ar';
+  const p = [appIds];
+  const when = col => {                                                // optional date window on the change time
+    let s = '';
+    if (dates.from) { p.push(dates.from); s += ` AND ${col} >= $${p.length}::date`; }
+    if (dates.to) { p.push(dates.to); s += ` AND ${col} < ($${p.length}::date + 1)`; }
+    return s;
+  };
+  const CAP = EXPORT_CAP;
+  // 1) direct edits — audit_log, entity='function'. An item moved out of a scoped application after the row stays
+  //    readable there up to the move, with the application / code it had then (function_moves), exactly like the log.
+  const audit = (await query(`SELECT l.id, l.ts, l.username, l.action, l.old_value, l.new_value,
+      COALESCE(mv.from_code, f.code) AS code, ${nameCol} AS fn_name_ar,
+      a.name_ar AS app_name_ar, a.name_en AS app_name_en, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en
+    FROM audit_log l
+    LEFT JOIN functions f ON f.id::text = l.entity_id
+    LEFT JOIN LATERAL (SELECT m.from_app_id, m.from_code FROM function_moves m
+      WHERE f.id IS NOT NULL AND m.function_id=f.id AND m.moved_at > l.ts ORDER BY m.moved_at, m.id LIMIT 1) mv ON true
+    LEFT JOIN applications a ON a.id = COALESCE(mv.from_app_id, f.app_id)
+    LEFT JOIN departments d ON d.id = a.department_id
+    WHERE l.entity='function' AND l.action IN ('update','create','remove','restore')
+      AND ((l.entity_id ~ '^[0-9]+$' AND l.entity_id::int IN (SELECT id FROM functions WHERE app_id = ANY($1)))
+        OR EXISTS (SELECT 1 FROM function_moves m
+          WHERE m.function_id = CASE WHEN l.entity_id ~ '^[0-9]{1,9}$' THEN l.entity_id::int END
+            AND m.from_app_id = ANY($1) AND m.moved_at >= l.ts))${when('l.ts')}
+    ORDER BY l.ts DESC, l.id DESC LIMIT ${CAP}`, p)).rows;
+  const direct = audit.flatMap(x => {
+    const base = { when: x.ts, source: t(CHG_SOURCE.direct), dept_name_ar: x.dept_name_ar, dept_name_en: x.dept_name_en,
+      app_name_ar: x.app_name_ar, app_name_en: x.app_name_en, by: x.username || '', requested_by: '', ref: 'A' + x.id };
+    const row = (field, before, after) => ({ ...base, item: itemLabel(L, { kind: 'function', field, code: x.code, fn_name_ar: x.fn_name_ar }),
+      field: fieldLabel(t, field), before, after });
+    if (x.action === 'create') return [row('create', '', fmtValue(L, 'function', 'create', x.new_value))];
+    if (x.action === 'remove') return [row('removed', fmtValue(L, 'function', 'removed', { removed: false }),
+      fmtValue(L, 'function', 'removed', { removed: true, reason: x.new_value?.reason }))];
+    if (x.action === 'restore') return [row('removed', fmtValue(L, 'function', 'removed', { removed: true }),
+      fmtValue(L, 'function', 'removed', { removed: false }))];
+    const nv = x.new_value || {}, ov = x.old_value || {};             // update: one row per real field of new_value
+    return Object.keys(nv).filter(k => !CHG_META.has(k)).map(k => {
+      let after = fmtValue(L, 'function', k, nv[k]);
+      if (k === 'enabled' && nv[k] === false) after += ' — ' + reasonText(L, { disabled_reason: nv.disabled_reason, duplicate_of: nv.duplicate_of, disabled_note: nv.disabled_note });
+      if ((k === 'name_ar' || k === 'name_en') && nv.rename_reason) after += ' — ' + t('rename_reason') + ': ' + nv.rename_reason;
+      return row(k, fmtValue(L, 'function', k, ov[k]), after);
+    });
+  });
+  // 2) approved edit requests — one row per applied item (the direct edits above never duplicate them).
+  const appr = (await query(`SELECT i.id, i.kind, i.field, i.old_value, i.new_value, i.meta, i.app_id,
+      r.id AS request_id, r.decided_at, f.code, ${nameCol} AS fn_name_ar,
+      a.name_ar AS app_name_ar, a.name_en AS app_name_en, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en,
+      db.full_name AS decided_by_name, db.username AS decided_by_username,
+      rb.full_name AS requested_by_name, rb.username AS requested_by_username
+    FROM edit_request_items i JOIN edit_requests r ON r.id = i.request_id
+    LEFT JOIN functions f ON f.id = i.function_id
+    LEFT JOIN applications a ON a.id = i.app_id LEFT JOIN departments d ON d.id = a.department_id
+    LEFT JOIN users db ON db.id = r.decided_by LEFT JOIN users rb ON rb.id = r.requested_by
+    WHERE i.applied = true AND i.kind IN ('function','report') AND i.app_id = ANY($1)${when('r.decided_at')}
+    ORDER BY r.decided_at DESC, i.id DESC LIMIT ${CAP}`, p)).rows;
+  const approval = appr.map(i => {
+    let after = fmtValue(L, i.kind, i.field, i.new_value);
+    if (i.field === 'enabled' && i.new_value === false) after += ' — ' + reasonText(L, i.meta || {}, i.app_id);
+    if (i.meta?.rename_reason) after += ' — ' + t('rename_reason') + ': ' + i.meta.rename_reason;
+    if (i.field === 'move') after += ' — ' + t('move_share') + ': ' + (i.meta?.weight_share ?? 0) + (i.meta?.reason ? ' — ' + t('move_reason') + ': ' + i.meta.reason : '');
+    return { when: i.decided_at, source: t(CHG_SOURCE.approval), dept_name_ar: i.dept_name_ar, dept_name_en: i.dept_name_en,
+      app_name_ar: i.app_name_ar, app_name_en: i.app_name_en, item: itemLabel(L, i), field: fieldLabel(t, i.field),
+      before: fmtValue(L, i.kind, i.field, i.old_value), after,
+      by: i.decided_by_name || i.decided_by_username || '', requested_by: i.requested_by_name || i.requested_by_username || '', ref: 'R' + i.request_id };
+  });
+  // 3) applied imports — one row per applied change (import_changes carries its own code column).
+  const imp = (await query(`SELECT c.id, c.kind, c.field, c.old_value, c.new_value, COALESCE(f.code, c.code) AS code, c.app_id,
+      b.id AS batch_id, b.applied_at, ${nameCol} AS fn_name_ar,
+      a.name_ar AS app_name_ar, a.name_en AS app_name_en, d.name_ar AS dept_name_ar, d.name_en AS dept_name_en,
+      ub.full_name AS uploaded_by_name, ub.username AS uploaded_by_username
+    FROM import_changes c JOIN import_batches b ON b.id = c.batch_id
+    LEFT JOIN functions f ON f.id = c.function_id
+    LEFT JOIN applications a ON a.id = c.app_id LEFT JOIN departments d ON d.id = a.department_id
+    LEFT JOIN users ub ON ub.id = b.uploaded_by
+    WHERE c.applied = true AND c.kind IN ('function','report') AND c.app_id = ANY($1)${when('b.applied_at')}
+    ORDER BY b.applied_at DESC, c.id DESC LIMIT ${CAP}`, p)).rows;
+  const imports = imp.map(c => ({ when: c.applied_at, source: t(CHG_SOURCE.import), dept_name_ar: c.dept_name_ar, dept_name_en: c.dept_name_en,
+    app_name_ar: c.app_name_ar, app_name_en: c.app_name_en, item: itemLabel(L, c), field: fieldLabel(t, c.field),
+    before: fmtValue(L, c.kind, c.field, c.old_value), after: fmtValue(L, c.kind, c.field, c.new_value),
+    by: c.uploaded_by_name || c.uploaded_by_username || '', requested_by: '', ref: 'I' + c.batch_id }));
+  return [...direct, ...approval, ...imports]
+    .map(x => ({ ...x, department: L.nm(x, 'dept_name'), application: L.nm(x, 'app_name') }))
+    .sort((a, b) => (b.when?.getTime?.() || 0) - (a.when?.getTime?.() || 0));
 }
 
 // Each report: build(req, L) → { rows, columns, filters?, id?, target?, name? }.
@@ -273,6 +390,24 @@ const REPORTS = {
       const columns = [['app', 'application'], ['item', 'item'], ['field', 'field'], ['before', 'before'], ['after', 'after']];
       if (applied) columns.push(['applied', 'applied_col']);
       return { rows, columns, id: d.batch.id, name: `#${d.batch.id}`, target: { id: d.batch.id, filename: d.batch.filename } };
+    },
+  },
+
+  // All changes made to function / report items, across every department and application, filterable by one
+  // department and / or one application. The union of the three change channels (direct edit, approved edit request,
+  // applied import), one row per field-change, within the reader's scope (ETS-SEC-007, mirroring the audit log).
+  function_changes: {
+    async build(req, L) {
+      const { apps, f } = await changeScope(req, req.query);
+      const rows = await functionChangeRows(L, apps.map(a => a.id), f);
+      // a single-department / single-application filter names the file
+      let name;
+      if (f.app) { const a = (await query('SELECT name_ar, name_en FROM applications WHERE id=$1', [f.app])).rows[0]; name = a && L.nm(a); }
+      else if (f.dept) { const d = (await query('SELECT name_ar, name_en FROM departments WHERE id=$1', [f.dept])).rows[0]; name = d && L.nm(d); }
+      return { rows, filters: f, name, id: f.app || f.dept || null, context: f.app ? { app_id: f.app } : null,
+        columns: [['when', 'chg_when', 'datetime'], ['source', 'chg_source'], ['department', 'department'], ['application', 'application'],
+          ['item', 'item'], ['field', 'field'], ['before', 'before'], ['after', 'after'], ['by', 'chg_by'], ['requested_by', 'requested_by'],
+          ['ref', 'chg_ref']] };
     },
   },
 
