@@ -30,6 +30,30 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.34] — 2026-10-28 — Consolidated function-changes Excel export / تصدير موحّد لتعديلات الوظائف
+
+### Added
+
+- **Backend** — A new Excel export `function_changes` (`GET /api/export/function_changes.xlsx`, permission `exp`) that
+  consolidates **every change made to function / report items** across all departments and applications, one row per
+  field-change. It unions the three non-overlapping change channels — direct edits (`audit_log`, `entity='function'`),
+  approved edit requests (`edit_request_items`, applied) and applied imports (`import_changes`, applied) — so nothing
+  is double-counted. Columns: when · source (direct / approval / import) · department · application · item · field ·
+  before · after · by · requested-by · ref. Optional filters `dept`, `app` (and `from`/`to` dates). Reuses the same
+  `fmtValue` formatter as the Approvals / Import exports, writes the strict export audit row (ETS-SEC-049) and
+  neutralises strings (ETS-SEC-059).
+- **Frontend** — On the Logs screen, a «تصدير تعديلات الوظائف» / "Export function changes" card with Department and
+  Application selectors (the application list follows the chosen department), feeding the standard Export button.
+
+### Security
+
+- The export is strictly scope-limited exactly like the audit-log export (`routes/logs.js`): a reader scoped to some
+  departments sees only their applications' changes (plus items moved out of a scoped application up to the move, via
+  `function_moves`); a full-scope user sees all. Covered by a test asserting a department-scoped lead cannot see
+  another department's changes while an administrator can (ETS-SEC-007).
+
+---
+
 ## [1.12.33] — 2026-10-26 — New test status «غير متاح للاختبار» / حالة اختبار: غير متاح للاختبار
 
 A new test state for functions / report items, appended without renumbering any existing value.
