@@ -444,13 +444,13 @@ WHERE recipient_id = $1 AND kind = 'alert' AND response_status IS NULL ORDER BY 
 
 ## 4. Code values
 
-| Column | 0 | 1 | 2 | 3 | 4 | 5 |
-|---|---|---|---|---|---|---|
-| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress | — | — |
-| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | Needs re-testing | Not available for testing |
-| `functions.notif_status` | Not set | Working | Working with notes | Not working | — | — |
-| `functions.review_status` | No review needed | Present | Missing | Notes | Acknowledged | Approved |
-| `app_reports.status` | Not needed | Delivered | Missing | With notes | — | — |
+| Column | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| `functions.vendor_status` (vendor's claim) | — | Operational | Works with a note | In progress | — | — | — | — |
+| `functions.test_status` (project team) | Not tested | Passed with note | Passed | Failed | Needs re-testing | Not available for testing | Not presented | Not trained |
+| `functions.notif_status` | Not set | Working | Working with notes | Not working | — | — | — | — |
+| `functions.review_status` | No review needed | Present | Missing | Notes | Acknowledged | Approved | — | — |
+| `app_reports.status` | Not needed | Delivered | Missing | With notes | — | — | — | — |
 
 `functions.review_status` has **six** states since 1.12.17 (migration 023 widened the `CHECK` from `0..3` to
 `0..5`; the existing four kept their values, states 0 and 3 were relabelled — Arabic «لا توجد حاجة للمراجعة» and
@@ -458,15 +458,16 @@ WHERE recipient_id = $1 AND kind = 'alert' AND response_status IS NULL ORDER BY 
 reviews: like Present (1) and Notes (3) they are **not** counted as «المراجعة غير موجودة» / review-missing — only
 state 2 (Missing) is. Choosing state 3 (Notes) still makes the item's note mandatory.
 
-`functions.test_status` has **six** states since 1.12.x (migration 025 widened the `CHECK` from `0..3` to `0..4`,
-migration 029 from `0..4` to `0..5`; the existing values are kept, nothing renumbered). State 4 (إعادة الاختبار /
-Needs re-testing) is a **not-passed, needs-testing** state: like Not tested (0) it does **not** count as tested or
-passed (so the «نجح» = 100 % rule and `tested_ok` are unaffected, and it is not a pass conflict), it **requires a
-note** like Passed with note (1), and it drives the new tester alert **T10 `retest`** when an item stays in it
-longer than `notify.retest_days`. State 5 (غير متاح للاختبار / Not available for testing, migration 029) is also a
-**not-passed** state that **requires a note** (like states 1 and 4); it is not state 0, so it is excluded from the
-«untested» alert, it is not «نجح» (the «نجح» = 100 % rule is unaffected), and it drives **no** alert or progress rule
-of its own.
+`functions.test_status` has **eight** states since 1.12.x (migration 025 widened the `CHECK` from `0..3` to `0..4`,
+migration 029 from `0..4` to `0..5`, migration 030 from `0..5` to `0..7`; the existing values are kept, nothing
+renumbered). State 4 (إعادة الاختبار / Needs re-testing) is a **not-passed, needs-testing** state: like Not tested (0)
+it does **not** count as tested or passed (so the «نجح» = 100 % rule and `tested_ok` are unaffected, and it is not a
+pass conflict), it **requires a note** like Passed with note (1), and it drives the new tester alert **T10 `retest`**
+when an item stays in it longer than `notify.retest_days`. States 5 (غير متاح للاختبار / Not available for testing,
+migration 029), 6 (لم يتم عرضها / Not presented, migration 030) and 7 (لم يتم التدريب / Not trained, migration 030) are
+also **not-passed** states that each **require a note** (like states 1 and 4); none is state 0, so they are excluded
+from the «untested» alert, none is «نجح» (the «نجح» = 100 % rule is unaffected), and none drives an alert or progress
+rule of its own.
 
 `functions.source`: `design` (approved detailed design), `vendor_list` (vendor's function list),
 `experience` (gap added from experience, disabled by default), `custom` (added in ETS; codes `C0…`).

@@ -4,8 +4,8 @@ export const pc = v => (Math.round((+v || 0) * 10) / 10).toFixed(1);
 export const pctColor = v => (v >= 90 ? 'green' : v >= 60 ? 'blue' : v >= 30 ? 'orange' : v > 0 ? 'red' : 'gray');
 
 // 0 not tested, 1 passed with note, 2 passed, 3 failed, 4 needs re-testing (amber attention tone, 1.12.25),
-// 5 not available for testing (purple, 1.12.x)
-export const TEST_COLORS = ['gray', 'orange', 'green', 'red', 'amber', 'purple'];
+// 5 not available for testing (purple, migration 029), 6 not presented (blue), 7 not trained (cyan, migration 030)
+export const TEST_COLORS = ['gray', 'orange', 'green', 'red', 'amber', 'purple', 'blue', 'cyan'];
 export const VENDOR_COLORS = ['gray', 'green', 'orange', 'blue'];
 export const REPORT_COLORS = ['gray', 'green', 'red', 'orange'];
 

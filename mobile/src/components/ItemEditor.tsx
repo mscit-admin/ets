@@ -71,7 +71,7 @@ export function ItemEditor({ f, appId, can, pending, onClose, onPatch, onStatus,
 
       <Section title={t('test_status')}>
         {e.test ? (
-          <StatusChoice label={t('test_status')} value={f.test_status} prefix="ts_" count={6} colorsOf={colorsOf} t={t} onChange={v => onStatus(f, 'test_status', v)} />
+          <StatusChoice label={t('test_status')} value={f.test_status} prefix="ts_" count={8} colorsOf={colorsOf} t={t} onChange={v => onStatus(f, 'test_status', v)} />
         ) : <Pill color={colorsOf[f.test_status] ?? 'gray'}>{t('ts_' + f.test_status)}</Pill>}
         {passConflict(f) ? <Alert kind="orange" icon="alert">{t('pass_conflict_hint')} — {t('pass_conflict_fix')}</Alert> : null}
         {e.notif ? (
