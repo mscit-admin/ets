@@ -1,6 +1,6 @@
 {
   "name": "ets-backend",
-  "version": "1.12.36",
+  "version": "1.12.37",
   "private": true,
   "description": "ETS — ERP Tracking System: REST API (Node.js + Express + PostgreSQL)",
   "type": "module",
