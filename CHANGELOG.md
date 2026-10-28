@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.36] — 2026-10-28 — Export all applications' functions by department / تصدير وظائف كل التطبيقات
+
+### Added
+
+- **Backend** — A new Excel export `functions_all` (`GET /api/export/functions_all.xlsx`, permission `exp`) that
+  produces the **same per-function detail as the single-application `functions` export**, but for **every
+  application under a department** (`?dept=`), or one application (`?app=`), or **all applications in the reader's
+  scope** across every department (no filter). A **department** and **application** column is prepended so rows from
+  different applications stay distinguishable; the same per-function filters (`q, source, test, show_off,
+  show_removed, reason, item_type`) narrow it. The single-application and aggregated exports now share one
+  row/column builder (`functionDetailRows`), so their columns never diverge.
+- **Frontend** — An «تصدير وظائف كل التطبيقات» / "Export all applications' functions" button on the **Department**
+  screen (that department's applications) and on the **Dashboard** (all departments / applications in scope).
+
+### Security
+
+- `functions_all` is scope-limited exactly like `function_changes`: the application set is built from the reader's
+  in-scope applications (`canSeeApp`) and `applicationData` re-enforces per-app scope, so a department-scoped reader
+  can never obtain another department's functions (ETS-SEC-007). Covered by a test.
+
+---
+
 ## [1.12.35] — 2026-10-28 — Two more test statuses «لم يتم عرضها» / «لم يتم التدريب»
 
 ### Added
@@ -2887,7 +2909,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/b90c468...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/4eca15a...HEAD
+[1.12.36]: https://github.com/mscit-admin/ets/compare/b90c468...4eca15a
 [1.12.35]: https://github.com/mscit-admin/ets/compare/39125e3...b90c468
 [1.12.34]: https://github.com/mscit-admin/ets/compare/dbbaaf6...39125e3
 [1.12.33]: https://github.com/mscit-admin/ets/compare/69aaa9d...dbbaaf6

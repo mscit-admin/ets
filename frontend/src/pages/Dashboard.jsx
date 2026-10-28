@@ -41,6 +41,7 @@ export default function Dashboard() {
     <div>
       <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home">
         <ExportButton report="summary" />
+        <ExportButton report="functions_all" label={t('export_functions_all')} />
       </PageHeader>
 
       {pending?.pending > 0 && (
