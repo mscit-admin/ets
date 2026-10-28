@@ -267,3 +267,10 @@ Arabic opens correctly in Excel. Each export is itself recorded in the audit tra
 Since 1.3.0 every export also needs the `exp` permission, and *Logs → Export to Excel* gives the same rows as an
 `.xlsx` file (`GET /api/export/log.xlsx?type=…`). The Excel exports of the other screens are recorded the same way
 (`action = export`, `entity` = the report key); see *06-Security.md → 4a. Export policy*.
+
+The Logs screen also offers a consolidated **item-changes** export (`GET /api/export/function_changes.xlsx`,
+filters `dept`, `app`, `from`, `to`): every change made to function / report items across all departments and
+applications, one row per field-change. It is the union of the three channels through which a change reaches the
+database — a direct edit (`audit_log`, `entity='function'`), an approved edit request (`edit_request_items`,
+`applied`) and an applied import (`import_changes`, `applied`) — which never overlap, so nothing is double-counted.
+It obeys the same scope as the audit-trail export: a reader sees only their applications' changes.
