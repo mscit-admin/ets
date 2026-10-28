@@ -30,6 +30,33 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.35] — 2026-10-28 — Two more test statuses «لم يتم عرضها» / «لم يتم التدريب»
+
+### Added
+
+- **Database** — `test_status` gains states **6** «لم يتم عرضها» / "Not presented" and **7** «لم يتم التدريب» /
+  "Not trained" (migration `030_more_test_statuses.sql` widens `functions_test_status_check` from `0..5` to `0..7`;
+  forward-only, idempotent, no backfill). Both are **not-passed** states that **require a note** (like states 1, 4,
+  5); «نجح» = 100 % is unaffected and neither is counted as «untested» (state 0). A status with the same meaning as
+  an existing one was intentionally not added — «لم يتم اختبارها» is the existing state 0 «لم تُختبر».
+- **Backend** — `routes/tracker.js` validator widened to `0..7`, `NOTE_REQUIRED.test_status = [1, 4, 5, 6, 7]`.
+  `services/calc.js` tally arrays widened to eight slots. `imports.js` / `legacy.js` accept `0..7`.
+- **Frontend** — The test-status dropdowns (row/filter/bulk) and `StatusSelect` offer states 6 and 7; AR/EN labels
+  `ts_6` / `ts_7`; distinct colours (blue, cyan) for the badge and the distribution segment.
+- **Mobile** — Item editor and bulk dialog offer states 6 and 7; colour tokens added.
+
+### Fixed
+
+- **Backend** — The Excel exports label all test states: `export-labels.js` was missing `ts_5`/`ts_6`/`ts_7`, so the
+  new function-changes export rendered those states as raw keys. Added the labels (AR+EN) and listed states 5/6/7 in
+  the project-status distribution.
+
+### Upgrade notes
+
+- Run `update.sh` to apply migration **030** (widens a CHECK constraint only — instant, no data change).
+
+---
+
 ## [1.12.34] — 2026-10-28 — Consolidated function-changes Excel export / تصدير موحّد لتعديلات الوظائف
 
 ### Added
