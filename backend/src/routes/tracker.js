@@ -142,14 +142,15 @@ const FIELD_PERM = {
 };
 const FIELD_OK = {
   progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
-  test_status: v => intIn(v, 0, 5), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
+  test_status: v => intIn(v, 0, 7), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
   note: v => typeof v === 'string' && v.length <= 2000,
   item_type: v => ITEM_TYPES.includes(v),
 };
 
 // Statuses that mean "… with notes": choosing one makes the note mandatory. A field may have more than one such
-// value — test_status needs a note for «نجح مع ملاحظة» (1), «إعادة الاختبار» (4, 1.12.25) and «غير متاح للاختبار» (5).
-const NOTE_REQUIRED = { test_status: [1, 4, 5], notif_status: [2], review_status: [3] };
+// value — test_status needs a note for «نجح مع ملاحظة» (1), «إعادة الاختبار» (4, 1.12.25), «غير متاح للاختبار» (5),
+// «لم يتم عرضها» (6) and «لم يتم التدريب» (7, migration 030).
+const NOTE_REQUIRED = { test_status: [1, 4, 5, 6, 7], notif_status: [2], review_status: [3] };
 const notedValue = (k, v) => (NOTE_REQUIRED[k] || []).includes(v);
 const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k]) => notedValue(k, f[k]));
 

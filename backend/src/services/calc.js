@@ -36,8 +36,8 @@ export function effectiveProgress(f, nw) {
 export function appCalc(functions, nw) {
   let sw = 0, nD = 0, nX = 0, onX = 0;
   // one slot per test_status: 0 not tested, 1 passed with note, 2 passed, 3 failed, 4 needs re-testing (1.12.25),
-  // 5 not available for testing (1.12.x, migration 029)
-  const tests = [0, 0, 0, 0, 0, 0];
+  // 5 not available for testing (migration 029), 6 not presented, 7 not trained (migration 030)
+  const tests = [0, 0, 0, 0, 0, 0, 0, 0];
   // per type: weight and weighted progress of the enabled items, enabled items, items counted in "count"
   const part = { function: { weight: 0, sum: 0, on: 0, count: 0 }, report: { weight: 0, sum: 0, on: 0, count: 0 } };
   for (const f of functions) {
@@ -108,7 +108,8 @@ export function summarize({ departments, applications, functions, reports, setti
 
   let sw = 0, sp = 0, fw = 0, sf = 0;
   for (const d of depts) { sw += d.weight; sp += d.weight * d.pct; if (d._fnW > 0) { fw += d.weight; sf += d.weight * d.fnPct; } }
-  const tests = [0, 0, 0, 0, 0, 0];
+  // eight slots, one per test_status (0..7); see appCalc (5 migration 029, 6/7 migration 030)
+  const tests = [0, 0, 0, 0, 0, 0, 0, 0];
   apps.forEach(a => a.tests.forEach((v, i) => { tests[i] += v; }));
   return { total: { weight: sw, pct: sw > 0 ? sp / sw : 0, fnPct: fw > 0 ? sf / fw : 0, tests }, departments: depts.map(({ _fnW: _drop, ...d }) => d), applications: apps };
 }

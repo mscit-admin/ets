@@ -33,7 +33,7 @@ export type PillName = keyof typeof pills;
 // Progress bar fills (.progress-bar.<colour>), chosen by pctColor()
 export const bars = { green: '#30a66d', blue: colors.primaryBlue, orange: '#f0883a', red: '#e24c4c', gray: colors.gray400 } as const;
 // Segments of the test status bar (.stack-bar .seg.<colour>)
-export const stackSeg = { green: '#30a66d', orange: '#f0883a', red: '#e24c4c', gray: colors.gray300, blue: '#2a78d6', amber: '#e8a73c', purple: '#7d57c9' } as const;
+export const stackSeg = { green: '#30a66d', orange: '#f0883a', red: '#e24c4c', gray: colors.gray300, blue: '#2a78d6', amber: '#e8a73c', purple: '#7d57c9', cyan: '#16a3b8' } as const;
 
 export const radius = { sm: 6, md: 8, lg: 12, pill: 999 } as const;          // --radius 8px, --radius-lg 12px
 export const space = { xxs: 2, xs: 4, s: 6, m: 8, l: 12, xl: 16, xxl: 24 } as const;
