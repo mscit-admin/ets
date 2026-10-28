@@ -30,6 +30,16 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.37] — 2026-10-28 — Project-status screen shows the new test states / حالة المشروع: عرض الحالات الجديدة
+
+### Changed
+
+- **Frontend** — The Project-status screen's «مؤشرات الجودة» / quality-flags card now lists the test states added
+  recently — **5** «غير متاح للاختبار», **6** «لم يتم عرضها», **7** «لم يتم التدريب» — alongside the existing
+  ones (the backend already returns all eight `tests` counts; the screen was only showing 0–4). No backend change.
+
+---
+
 ## [1.12.36] — 2026-10-28 — Export all applications' functions by department / تصدير وظائف كل التطبيقات
 
 ### Added
