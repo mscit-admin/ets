@@ -5,7 +5,11 @@ const ar = {
   r_summary: 'لوحة المتابعة', r_project_status: 'حالة المشروع', r_department: 'الإدارة', r_functions: 'وظائف التطبيق',
   r_weights: 'توزيع الأوزان', r_reports: 'التقارير', r_schedule: 'منحنى الإنجاز التراكمي', r_approvals: 'طلبات التعديل',
   r_imports: 'دفعات الاستيراد', r_import_detail: 'تفاصيل دفعة استيراد', r_users: 'المستخدمون', r_log: 'سجل',
+  r_function_changes: 'تعديلات بنود الوظائف',
   exported_by: 'صدّره', filters: 'عوامل التصفية', all: 'الكل',
+  // consolidated function / report item changes
+  chg_when: 'وقت التعديل', chg_source: 'مصدر التعديل', chg_by: 'نفّذه', chg_ref: 'المرجع',
+  chg_src_direct: 'تعديل مباشر', chg_src_approval: 'طلب تعديل معتمد', chg_src_import: 'استيراد مطبّق',
   // columns
   department: 'الإدارة', application: 'التطبيق', applications: 'عدد التطبيقات', functions: 'عدد الوظائف', weight: 'الوزن',
   share: 'الحصة', progress: 'الإنجاز', fn_progress: 'إنجاز الوظائف', code: 'الرمز', name_ar: 'الاسم (عربي)',
@@ -76,7 +80,10 @@ const en = {
   r_summary: 'Dashboard', r_project_status: 'Project status', r_department: 'Department', r_functions: 'Application functions',
   r_weights: 'Weight distribution', r_reports: 'Reports', r_schedule: 'Cumulative progress curve', r_approvals: 'Edit requests',
   r_imports: 'Import batches', r_import_detail: 'Import batch details', r_users: 'Users', r_log: 'Log',
+  r_function_changes: 'Item changes',
   exported_by: 'Exported by', filters: 'Filters', all: 'All',
+  chg_when: 'Changed at', chg_source: 'Change source', chg_by: 'Changed by', chg_ref: 'Reference',
+  chg_src_direct: 'Direct edit', chg_src_approval: 'Approved edit request', chg_src_import: 'Applied import',
   department: 'Department', application: 'Application', applications: 'Applications', functions: 'Functions', weight: 'Weight',
   share: 'Share', progress: 'Progress', fn_progress: 'Functions progress', code: 'Code', name_ar: 'Name (Arabic)',
   name_en: 'Name (English)', source: 'Source', reference: 'Reference', enabled: 'Counted', test_status: 'Test status',
