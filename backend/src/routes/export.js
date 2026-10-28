@@ -195,6 +195,54 @@ async function functionChangeRows(L, appIds, dates) {
     .sort((a, b) => (b.when?.getTime?.() || 0) - (a.when?.getTime?.() || 0));
 }
 
+// The per-function filters the functions screen (and its export) accepts (q, source, test, show_off, show_removed,
+// reason, item_type = function | report; test = 0…3, or 'conflict': «نجح» below 100 %, 1.8.1). Shared by the
+// single-application functions export and the aggregated functions_all export so both narrow the same way.
+const FUNCTION_FILTERS = ['q', 'source', 'test', 'show_off', 'show_removed', 'reason', 'item_type'];
+
+// One application's per-function rows and the columns for them, from an applicationData result `d` and the
+// per-function `filters`. The single-application `functions` export and the aggregated `functions_all` export share
+// this so their rows and column order never diverge; functions_all only prepends a department / application column.
+function functionDetailRows(d, L, filters = {}) {
+  const { t } = L;
+  const f = filters;
+  const on = k => f[k] === '1' || f[k] === 'true';
+  const q = (f.q || '').toLowerCase();
+  const shown = d.functions.filter(x =>
+    (x.removed_at ? on('show_removed') : (on('show_off') || x.enabled || x.source !== 'experience')) &&
+    (!f.source || x.source === f.source) &&
+    (f.test === undefined || (f.test === 'conflict' ? passConflict(x) : x.test_status === +f.test)) &&
+    (f.reason === undefined || (!x.enabled && !x.removed_at && (x.disabled_reason || 'none') === f.reason)) &&
+    (f.item_type === undefined || x.item_type === f.item_type) &&
+    (!q || (x.name_ar + ' ' + (x.reference || '') + ' ' + (x.note || '')).toLowerCase().includes(q)));
+  // share of an item in its part of the application %: functions among function items, reports among the reports
+  // (with the reports track as weight 1) — as on the screen
+  const tw = d.application.calc?.typeWeight || {};
+  const partW = x => (x.item_type === 'report' ? d.application.calc?.reportWeight || 0 : tw.function || 0);
+  const a0 = d.application;
+  const rows = shown.map(x => ({ code: x.code, name_ar: x.name_ar, name_en: x.name_en, source: t('src_' + x.source), reference: x.reference,
+    enabled: yesNo(t, x.enabled), weight: +x.weight, share: x.enabled && partW(x) > 0 && !x.removed_at ? pctOf(+x.weight, partW(x)) : null,
+    progress: +x.progress, test: t('ts_' + (x.test_status | 0)), notif: t('ns_' + (x.notif_status | 0)), review: t('rv_' + (x.review_status | 0)),
+    vendor: x.vendor_status > 0 ? t('vs_' + x.vendor_status) : '', note: x.note, by: x.updated_by_name, at: x.updated_at,
+    removed: x.removed_at ? yesNo(t, true) : '', reason: x.removed_reason,
+    // why it is excluded (migration 013); excluded before 1.5.0 → "no reason recorded"
+    dreason: !x.enabled && !x.removed_at ? (x.disabled_reason ? t('dr_' + x.disabled_reason) : t('dr_none')) : '',
+    dups: !x.enabled && !x.removed_at ? dupCodes(x.duplicate_of, a0.id, L.lang) : '',
+    dnote: !x.enabled && !x.removed_at ? x.disabled_note || '' : '', type: t('it_' + (x.item_type || 'function')),
+    // moved here from another application (1.10.0): «application / old code» (the name only within the reader's scope)
+    moved: x.moved_from ? `${L.nm(x.moved_from, 'from_app_name') || x.moved_from.from_app_id}/${x.moved_from.from_code}` : '' }));
+  const columns = [['code', 'code'], ['name_ar', 'name_ar'], ['name_en', 'name_en'], ['source', 'source'], ['reference', 'reference'],
+    ['enabled', 'enabled'], ['weight', 'weight', 'number'], ['share', 'share', 'pct'], ['progress', 'progress', 'pct'],
+    ['test', 'test_status'], ['notif', 'notif_status'], ['review', 'review_status'], ['vendor', 'vendor_status'], ['note', 'note'],
+    ['by', 'updated_by'], ['at', 'updated_at', 'datetime'],
+    // after the existing columns, so their positions stay as before 1.5.0
+    ['dreason', 'disabled_reason'], ['dups', 'duplicate_of'], ['dnote', 'disabled_note'],
+    ['type', 'item_type'],                                          // 1.8.0
+    ['moved', 'moved_from']];                                       // 1.10.0
+  if (on('show_removed')) columns.push(['removed', 'removed'], ['reason', 'removed_reason']);
+  return { rows, columns };
+}
+
 // Each report: build(req, L) → { rows, columns, filters?, id?, target?, name? }.
 // columns: [key, header label key, type?] — types: text (default), int, number, pct (0–100), date, datetime.
 const REPORTS = {
@@ -252,47 +300,59 @@ const REPORTS = {
   // item_type = function | report; test = 0…3, or 'conflict': «نجح» below 100 %, 1.8.1).
   functions: {
     async build(req, L) {
-      const { t } = L;
       const id = q1(req.query, 'id', 40);
       if (!id) throw notFound();
       const d = await applicationData(req.user, id);
-      const f = pick(req.query, ['q', 'source', 'test', 'show_off', 'show_removed', 'reason', 'item_type']);
-      const on = k => f[k] === '1' || f[k] === 'true';
-      const q = (f.q || '').toLowerCase();
-      const shown = d.functions.filter(x =>
-        (x.removed_at ? on('show_removed') : (on('show_off') || x.enabled || x.source !== 'experience')) &&
-        (!f.source || x.source === f.source) &&
-        (f.test === undefined || (f.test === 'conflict' ? passConflict(x) : x.test_status === +f.test)) &&
-        (f.reason === undefined || (!x.enabled && !x.removed_at && (x.disabled_reason || 'none') === f.reason)) &&
-        (f.item_type === undefined || x.item_type === f.item_type) &&
-        (!q || (x.name_ar + ' ' + (x.reference || '') + ' ' + (x.note || '')).toLowerCase().includes(q)));
-      // share of an item in its part of the application %: functions among function items, reports among the reports
-      // (with the reports track as weight 1) — as on the screen
-      const tw = d.application.calc?.typeWeight || {};
-      const partW = x => (x.item_type === 'report' ? d.application.calc?.reportWeight || 0 : tw.function || 0);
-      const a0 = d.application;
-      const rows = shown.map(x => ({ code: x.code, name_ar: x.name_ar, name_en: x.name_en, source: t('src_' + x.source), reference: x.reference,
-        enabled: yesNo(t, x.enabled), weight: +x.weight, share: x.enabled && partW(x) > 0 && !x.removed_at ? pctOf(+x.weight, partW(x)) : null,
-        progress: +x.progress, test: t('ts_' + (x.test_status | 0)), notif: t('ns_' + (x.notif_status | 0)), review: t('rv_' + (x.review_status | 0)),
-        vendor: x.vendor_status > 0 ? t('vs_' + x.vendor_status) : '', note: x.note, by: x.updated_by_name, at: x.updated_at,
-        removed: x.removed_at ? yesNo(t, true) : '', reason: x.removed_reason,
-        // why it is excluded (migration 013); excluded before 1.5.0 → "no reason recorded"
-        dreason: !x.enabled && !x.removed_at ? (x.disabled_reason ? t('dr_' + x.disabled_reason) : t('dr_none')) : '',
-        dups: !x.enabled && !x.removed_at ? dupCodes(x.duplicate_of, a0.id, L.lang) : '',
-        dnote: !x.enabled && !x.removed_at ? x.disabled_note || '' : '', type: t('it_' + (x.item_type || 'function')),
-        // moved here from another application (1.10.0): «application / old code» (the name only within the reader's scope)
-        moved: x.moved_from ? `${L.nm(x.moved_from, 'from_app_name') || x.moved_from.from_app_id}/${x.moved_from.from_code}` : '' }));
-      const columns = [['code', 'code'], ['name_ar', 'name_ar'], ['name_en', 'name_en'], ['source', 'source'], ['reference', 'reference'],
-        ['enabled', 'enabled'], ['weight', 'weight', 'number'], ['share', 'share', 'pct'], ['progress', 'progress', 'pct'],
-        ['test', 'test_status'], ['notif', 'notif_status'], ['review', 'review_status'], ['vendor', 'vendor_status'], ['note', 'note'],
-        ['by', 'updated_by'], ['at', 'updated_at', 'datetime'],
-        // after the existing columns, so their positions stay as before 1.5.0
-        ['dreason', 'disabled_reason'], ['dups', 'duplicate_of'], ['dnote', 'disabled_note'],
-        ['type', 'item_type'],                                          // 1.8.0
-        ['moved', 'moved_from']];                                       // 1.10.0
-      if (on('show_removed')) columns.push(['removed', 'removed'], ['reason', 'removed_reason']);
+      const f = pick(req.query, FUNCTION_FILTERS);
+      const { rows, columns } = functionDetailRows(d, L, f);
       const a = d.application;
       return { rows, columns, filters: f, id: a.id, name: L.nm(a), target: { id: a.id, name_ar: a.name_ar, name_en: a.name_en }, context: { app_id: a.id } };
+    },
+  },
+
+  // The per-function detail of EVERY application under a department (?dept=…), or of one application (?app=…), or of
+  // ALL applications in the reader's scope across every department (no filter). The columns are exactly those of the
+  // single-application functions export, with a department / application column prepended so rows from different apps
+  // stay distinguishable; the same per-function filters narrow it. Scope-limited like function_changes: a scoped
+  // reader never gets another department's functions (ETS-SEC-007); applicationData enforces per-app scope again.
+  functions_all: {
+    async build(req, L) {
+      const f = pick(req.query, ['dept', 'app', ...FUNCTION_FILTERS]);
+      // the application set, scope-limited; validate/ignore an unknown dept / app (an in-scope but unknown id matches
+      // nothing). Ordered by department, then the application's own order, so rows come out grouped and predictable.
+      const all = (await query('SELECT id, department_id FROM applications ORDER BY department_id, sort, id')).rows;
+      const depts = new Set(all.map(a => a.department_id));
+      const byId = new Map(all.map(a => [a.id, a]));
+      if (f.dept !== undefined && !depts.has(f.dept)) delete f.dept;
+      if (f.app !== undefined && !byId.has(f.app)) delete f.app;
+      let apps = req.user.fullScope ? all : all.filter(a => canSeeApp(req.user, a));
+      if (f.app) apps = apps.filter(a => a.id === f.app);               // one application
+      else if (f.dept) apps = apps.filter(a => a.department_id === f.dept); // the department's applications
+      // the per-function filters only — dept / app are resolved above
+      const ff = Object.fromEntries(Object.entries(f).filter(([k]) => FUNCTION_FILTERS.includes(k)));
+      // department / application names come from the application's own data (scope already enforced)
+      const base = [['department', 'department'], ['application', 'application']];
+      let columns = null;
+      const rows = [];
+      for (const app of apps) {
+        if (rows.length >= EXPORT_CAP) break;                           // the router caps anyway; stop building early
+        const d = await applicationData(req.user, app.id);
+        const r = functionDetailRows(d, L, ff);
+        if (!columns) columns = [...base, ...r.columns];                // first application fixes the column set
+        const dept = L.nm(d.department), application = L.nm(d.application);
+        for (const row of r.rows) {
+          rows.push({ department: dept, application, ...row });
+          if (rows.length >= EXPORT_CAP) break;
+        }
+      }
+      // show_removed widens the columns of the single-app export; keep them consistent even when the first application
+      // yielded no rows by building the column list from a show_removed-aware empty call
+      if (!columns) columns = [...base, ...functionDetailRows({ application: { calc: {} }, functions: [] }, L, ff).columns];
+      // name the file after the department (or the application), like function_changes
+      let name;
+      if (f.app) { const a = byId.get(f.app); name = a && L.nm((await query('SELECT name_ar, name_en FROM applications WHERE id=$1', [f.app])).rows[0]); }
+      else if (f.dept) { const d = (await query('SELECT name_ar, name_en FROM departments WHERE id=$1', [f.dept])).rows[0]; name = d && L.nm(d); }
+      return { rows, columns, filters: f, name, id: f.app || f.dept || null };
     },
   },
 
