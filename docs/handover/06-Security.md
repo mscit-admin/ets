@@ -191,6 +191,7 @@ Every file that leaves the system through the screens follows one policy, enforc
 | Project status (`project_status`) | Project status | `exp` | reader's scope (project line = their departments) | internal | `project_status` / — |
 | Department (`department`) | Department page | `exp` | department must be visible (else 403 `out_of_scope`) | internal | `department` / department id |
 | Application functions (`functions`) | Application page | `exp` | application in scope (else 403); filters `q, source, test, show_off, show_removed` | internal | `functions` / application id |
+| All applications' functions (`functions_all`) | Department page / Dashboard | `exp` | the per-function detail of every application under a department (`dept`), one application (`app`), or all applications in the reader's scope (no filter); each application re-checked for scope so a scoped user never gets another department's functions; same per-function filters as `functions` | internal | `functions_all` / department or application id when filtered |
 | Weights (`weights`) | Weight distribution | `exp` | applications in scope | internal | `weights` / — |
 | Reports (`reports`) | Reports | `exp` | applications in scope; filter `dept` | internal | `reports` / — |
 | Schedule table (`schedule`) | Progress curve | `exp` | the project-wide table the screen shows to every reader | internal | `schedule` / — |
