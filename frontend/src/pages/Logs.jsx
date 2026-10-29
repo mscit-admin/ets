@@ -34,9 +34,9 @@ function AuditText({ d, t }) {
   return (
     <div className="au-text">
       <div>{d.text}</div>
-      {shown.map((l, i) => <ChangeLine key={i} l={l} t={t} />)}
+      {shown.map(l => <ChangeLine key={(l.field || l.item || '') + '|' + l.label} l={l} t={t} />)}
       {all.length > shown.length && <div className="muted small">{t('au_more_items', { n: all.length - shown.length })}</div>}
-      {d.notes.map((n, i) => <div key={'n' + i} className="muted small">{n}</div>)}
+      {d.notes.map(n => <div key={n} className="muted small">{n}</div>)}
     </div>
   );
 }
@@ -45,7 +45,7 @@ function AuditDetail({ r, d, t, fmtDate }) {
   return (
     <div className="au-detail">
       <p className="au-sentence">{d.text}</p>
-      {d.notes.map((n, i) => <p key={i} className="muted">{n}</p>)}
+      {d.notes.map(n => <p key={n} className="muted">{n}</p>)}
       <dl className="au-meta">
         <dt>{t('by_user')}</dt><dd>{d.who} {r.username && r.full_name && <span className="muted small" dir="ltr">({r.username})</span>}</dd>
         <dt>{t('time')}</dt><dd>{fmtDate(r.ts)}</dd>
@@ -57,7 +57,7 @@ function AuditDetail({ r, d, t, fmtDate }) {
           <h4>{t('changes_made')}</h4>
           <table className="table au-table">
             <thead><tr><th>{t('field')}</th><th>{t('old_value')}</th><th>{t('new_value')}</th></tr></thead>
-            <tbody>{d.lines.map((l, i) => <tr key={i}><td>{l.label}</td><td className="au-old">{l.from || '—'}</td><td className="au-new">{l.to}</td></tr>)}</tbody>
+            <tbody>{d.lines.map(l => <tr key={l.field || l.label}><td>{l.label}</td><td className="au-old">{l.from || '—'}</td><td className="au-new">{l.to}</td></tr>)}</tbody>
           </table>
         </>
       )}
@@ -69,7 +69,7 @@ function AuditDetail({ r, d, t, fmtDate }) {
               <thead><tr><th>{t('item')}</th><th>{t('field')}</th><th>{t('old_value')}</th><th>{t('new_value')}</th>
                 {d.items.some(x => x.applied !== undefined) && <th>{t('applied_q')}</th>}</tr></thead>
               <tbody>{d.items.map((l, i) => (
-                <tr key={i}><td>{l.item}</td><td>{l.label}</td><td className="au-old">{l.from || '—'}</td><td className="au-new">{l.to || '—'}</td>
+                <tr key={(l.item || '') + '|' + l.label + '|' + i}><td>{l.item}</td><td>{l.label}</td><td className="au-old">{l.from || '—'}</td><td className="au-new">{l.to || '—'}</td>
                   {d.items.some(x => x.applied !== undefined) && <td>{l.applied === undefined || l.applied === null ? '—' : l.applied ? t('yes') : t('no')}</td>}</tr>
               ))}</tbody>
             </table>
