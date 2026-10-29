@@ -6,7 +6,7 @@ import { isAppApprover, applyRequest, requestContext, requesterBlocked, computeR
 import { logAudit } from '../services/logs.js';
 import { publishChange, publishApps } from '../services/live.js';
 import { requestDecided, requestsSettled, itemsMovedIn, applicationMovedIn, requestReturned, requestCreated } from '../services/notify-events.js';
-import { approveMove, currentShare } from '../services/move.js';
+import { approveMove, currentShares } from '../services/move.js';
 import { approveAppMove, isDeptApprover } from '../services/app-move.js';
 import { PASS_RULE_CODES } from '../services/passRule.js';
 import { HttpError, bad, notFound, str, idParam, isId, isDate } from '../utils/http.js';
@@ -147,11 +147,12 @@ export async function listRequests(user, qs = {}, { limit = 300, meta = false } 
   // «awaiting my approval»: the requests this user may approve now
   if (qs.awaiting === '1') list = list.filter(x => abilities(user, x, apps).approve);
   const its = await items(list.map(x => x.id));
-  for (const x of list) {
-    x.can = abilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id);
-    // a pending move: the weight share as it would be now (applied at approval) next to the one when it was requested
-    if (isMove(x) && x.status === 'pending') x.move_now = await currentShare({ query }, x.app_id, x.items.map(i => i.function_id).filter(Boolean));
-  }
+  for (const x of list) { x.can = abilities(user, x, apps); x.items = its.filter(i => i.request_id === x.id); }
+  // a pending move: the weight share as it would be now (applied at approval) next to the one when it was requested.
+  // Computed for every listed move in one batch (currentShares) rather than a set of queries per move.
+  const pendingMoves = list.filter(x => isMove(x) && x.status === 'pending');
+  const shares = await currentShares({ query }, pendingMoves.map(x => ({ srcId: x.app_id, ids: x.items.map(i => i.function_id).filter(Boolean) })));
+  pendingMoves.forEach((x, i) => { x.move_now = shares[i]; });
   return meta ? { requests: list, truncated: rows.length >= (limit | 0) } : list;
 }
 
@@ -266,11 +267,11 @@ async function decide(req, res, action) {
   if (out.rq.target_app_id) await requestsSettled(out.rq.target_app_id);
   // after COMMIT: applied changes, or the end of an "awaiting approval" badge — a move: both applications
   if (isMoveApp(out.rq)) {
-    await publishChange({ dept_id: out.rq.department_id });                                   // the source department's total
-    await publishChange({ dept_id: out.rq.target_department_id, app_id: out.rq.app_id });     // the destination, with the moved application
+    publishChange({ dept_id: out.rq.department_id });                                   // the source department's total
+    publishChange({ dept_id: out.rq.target_department_id, app_id: out.rq.app_id });     // the destination, with the moved application
     if (out.applied) await applicationMovedIn(out.rq.app_id, out.rq.department_id, out.rq.target_department_id, [out.rq.requested_by, req.user.id]);    // T9
   } else if (isMove(out.rq)) {
-    await publishApps([appOf(out.rq, apps), targetOf(out.rq, apps)]);
+    publishApps([appOf(out.rq, apps), targetOf(out.rq, apps)]);
     if (out.applied) await itemsMovedIn(out.rq.app_id, out.rq.target_app_id, out.applied_changes, [out.rq.requested_by, req.user.id]);    // T8
   } else {
     const app = apps.find(a => a.id === out.app_id);
@@ -363,12 +364,12 @@ r.post('/approve-all', async (req, res) => {
     });
     if (refused) { blocked++; continue; }
     if (isMoveApp(rq)) {                                               // committed: both departments
-      await publishChange({ dept_id: rq.department_id });
-      await publishChange({ dept_id: rq.target_department_id, app_id: rq.app_id });
+      publishChange({ dept_id: rq.department_id });
+      publishChange({ dept_id: rq.target_department_id, app_id: rq.app_id });
       const m = moved.find(x => x.rq === rq);
       if (m) await applicationMovedIn(rq.app_id, rq.department_id, rq.target_department_id, [rq.requested_by, req.user.id]);
     } else if (isMove(rq)) {                                           // committed: both applications
-      await publishApps([appOf(rq, apps), targetOf(rq, apps)]);
+      publishApps([appOf(rq, apps), targetOf(rq, apps)]);
       const m = moved.find(x => x.rq === rq);
       if (m) await itemsMovedIn(rq.app_id, rq.target_app_id, m.n, [rq.requested_by, req.user.id]);
     } else publishChange({ dept_id: rq.department_id, app_id: rq.app_id });   // this request's transaction has committed
