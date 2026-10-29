@@ -93,7 +93,7 @@ export default function Login() {
   const { t, errText } = useI18n();
   const { me, refresh, logout } = useAuth();
   const { info } = useBranding();
-  // maintenance mode (1.12.31): the login screen shows the message prominently; the form stays (administrators may
+  // maintenance mode (1.12.38): the login screen shows the message prominently; the form stays (administrators may
   // still sign in — a non-admin simply gets the maintenance error on submit). message '' → the localised default.
   const maint = info?.maintenance;
   const [stage, setStage] = useState(me?.authenticated ? me.stage : 'password');

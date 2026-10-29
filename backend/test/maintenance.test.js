@@ -1,4 +1,4 @@
-// Maintenance mode (1.12.31) — against a dedicated, disposable PostgreSQL database:
+// Maintenance mode (1.12.38) — against a dedicated, disposable PostgreSQL database:
 //   TEST_DATABASE_URL=postgres://ets:pw@127.0.0.1/ets_maint npm test
 // Covers: the admin-only toggle (enable/disable, since/by, audit rows maintenance_on/maintenance_off), the login gate
 // (a would-be-successful non-admin login is refused with 503 maintenance_mode carrying the message, while an admin

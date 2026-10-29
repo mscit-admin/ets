@@ -1,4 +1,4 @@
-// Maintenance gate (1.12.31): while maintenance mode is on, non-admin API requests are short-circuited with a 503
+// Maintenance gate (1.12.38): while maintenance mode is on, non-admin API requests are short-circuited with a 503
 // `maintenance_mode` so maintenance is real — an already-signed-in non-admin can no longer read or change anything.
 // ADMIN-EXEMPT: an administrator is never blocked, so they can do the maintenance. A small allow-list stays open for
 // everyone so the feature works: /auth (the login screen state, sign-out, 2FA, /me), /maintenance (the public state),

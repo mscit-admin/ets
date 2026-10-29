@@ -698,7 +698,7 @@ export const messages = {
     set_tab_release: 'الترقية والنشر',
     set_tab_advanced: 'متقدّم',
     set_tab_maintenance: 'الصيانة',
-    // maintenance mode (1.12.31)
+    // maintenance mode (1.12.38)
     maintenance_title: 'وضع الصيانة',
     maintenance_warning: 'عند التفعيل يتوقف دخول جميع المستخدمين عدا المديرين، وتُرفض طلبات غير المديرين، ويصل تنبيه إلزامي للمستخدمين النشطين. المديرون لا يُمنعون أبداً حتى يتمكنوا من إجراء الصيانة.',
     maintenance_enable: 'تفعيل وضع الصيانة',
@@ -2599,7 +2599,7 @@ export const messages = {
     set_tab_release: 'Release & deploy',
     set_tab_advanced: 'Advanced',
     set_tab_maintenance: 'Maintenance',
-    // maintenance mode (1.12.31)
+    // maintenance mode (1.12.38)
     maintenance_title: 'Maintenance mode',
     maintenance_warning: 'When enabled, sign-in is disabled for everyone except administrators, non-admin requests are refused, and a mandatory alert is sent to active users. Administrators are never locked out, so they can carry out the maintenance.',
     maintenance_enable: 'Enable maintenance mode',

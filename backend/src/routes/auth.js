@@ -22,7 +22,7 @@ r.get('/public-info', async (req, res) => {
   const s = await allSettings();
   res.json({ org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], default_language: s['app.default_language'],
     branding: await brandingVersions(), logo_height: s['app.logo_height'], login_logo_height: s['app.login_logo_height'],
-    // maintenance mode (1.12.31): the login screen shows the banner before anyone signs in. Only { enabled, message }.
+    // maintenance mode (1.12.38): the login screen shows the banner before anyone signs in. Only { enabled, message }.
     maintenance: await publicMaintenanceState() });
 });
 
@@ -116,7 +116,7 @@ r.post('/login', authLimiter, async (req, res) => {
       await logAuth(req, { userId: u.id, username: u.username, event: 'login_inactive_user', success: false, detail: via });
       throw new HttpError(401, 'invalid_credentials');
     }
-    // Maintenance mode (1.12.31): while on, only administrators may sign in — so they can perform the maintenance. A
+    // Maintenance mode (1.12.38): while on, only administrators may sign in — so they can perform the maintenance. A
     // non-admin whose credentials are otherwise correct is refused HERE (a would-be-successful login), with a 503
     // carrying the maintenance message. This reveals nothing beyond the existing behaviour: a wrong password / unknown
     // user / paused account still gets the generic 401 above, never this 503. Administrators fall through and sign in.
@@ -306,7 +306,7 @@ r.get('/me', async (req, res) => {
     user: { ...req.user, recovery_codes_left: codes.n, recovery_codes_outdated: codes.old > 0 },
     mfa_mode: s['mfa.mode'],
     session,
-    // maintenance mode (1.12.31): { enabled, message } only — the in-app banner (Layout). Admins see it too, as a note.
+    // maintenance mode (1.12.38): { enabled, message } only — the in-app banner (Layout). Admins see it too, as a note.
     maintenance: await publicMaintenanceState(),
     ...org,
   });

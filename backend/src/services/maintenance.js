@@ -1,4 +1,4 @@
-// Maintenance mode (1.12.31): an administrator can disable sign-in for everyone but administrators while the system
+// Maintenance mode (1.12.38): an administrator can disable sign-in for everyone but administrators while the system
 // is being updated / maintained. State is kept in the EXISTING settings mechanism (no schema change / migration):
 //   maintenance.enabled  boolean   — on/off
 //   maintenance.message  text      — the message shown on the login screen and sent as the maintenance alert; when

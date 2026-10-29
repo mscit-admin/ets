@@ -190,7 +190,7 @@ export default function Settings() {
   );
 }
 
-// Settings → «الصيانة» (admin only, 1.12.31): the maintenance-mode toggle + message. Enabling disables sign-in for
+// Settings → «الصيانة» (admin only, 1.12.38): the maintenance-mode toggle + message. Enabling disables sign-in for
 // every non-admin user and sends them a mandatory alert; administrators are never locked out and keep working. Its
 // own fetch/save against /api/maintenance (NOT the generic settings save), since the API is admin-only.
 function MaintenanceSection() {

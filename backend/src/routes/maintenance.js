@@ -1,4 +1,4 @@
-// /api/maintenance — maintenance mode (1.12.31). See services/maintenance.js for the model.
+// /api/maintenance — maintenance mode (1.12.38). See services/maintenance.js for the model.
 //   GET  /public   PUBLIC (no session): { enabled, message } — the login screen's banner. Leaks nothing else.
 //   GET  /         admin only: the full state { enabled, message, since, by } for the Settings screen.
 //   PUT  /         admin only: enable/disable + set the message. On ENABLE (a real off→on transition) fires a

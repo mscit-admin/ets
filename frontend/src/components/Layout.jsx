@@ -177,7 +177,7 @@ function Sidebar({ open, onClose }) {
   );
 }
 
-// Maintenance mode (1.12.31): a persistent banner while maintenance is on. For an administrator (never blocked) it is
+// Maintenance mode (1.12.38): a persistent banner while maintenance is on. For an administrator (never blocked) it is
 // a reminder that maintenance is active; for anyone else it explains why the rest of the app is unavailable.
 function MaintenanceBanner() {
   const { t } = useI18n();
