@@ -30,6 +30,38 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.40] — 2026-10-29 — Close / lock a finished function / إقفال الوظيفة
+
+### Added
+
+- **Database** — `functions` gains `closed_at` / `closed_by` (migration `033_close_function.sql`); a function is
+  closed iff `closed_at IS NOT NULL`. New append-only table `function_reopenings` records each reopen with the
+  reason and the attached document stored as bytes (`doc_name/doc_mime/doc_size/doc_data`), like branding images.
+- **Backend** — Closing is the final-endorsement action: a holder of **`apv_final`** («الاعتماد النهائي») closes a
+  finished function. `POST /functions/:id/close` (apv_final + scope). A closed function is **locked from editing**
+  (PATCH, rename, bulk, remove, move all refuse with `closed_locked`; app-wide bulk skips closed rows). **It counts
+  as 100 % and is NOT excluded from the calculation** (`effectiveProgress` returns 100 for a closed row; it stays in
+  every denominator — closing ≠ excluding). Reopening requires **both** an attached official document (PDF/image,
+  byte-sniffed, ≤3 MB) **and** a written reason: `POST /functions/:id/reopen` (apv_final + scope), with a
+  scope-gated inline document serve route. Every close/reopen is audited.
+- **Frontend** — On the Application screen, `apv_final` holders get a **Close** button on open items and, on a
+  closed item, a **Reopen** dialog that requires a document + reason. A closed item shows a «مقفلة / Closed» badge,
+  reads 100 %, and all its inputs are read-only; the last reopening's document link + reason are shown.
+
+### Security
+
+- Close/reopen/document routes require `apv_final` and enforce scope (`getApp`). The uploaded document's type is
+  verified by byte-sniffing (not the declared type) and served with `nosniff` + `Content-Security-Policy: default-src
+  'none'` + `no-store`. Covered by `backend/test/close-function.test.js` (6 tests): non-`apv_final` refused (403);
+  closed item is 100 % and still counted; editing a closed item refused; reopen needs both document and reason; a
+  successful reopen clears the state and re-allows edits; scope enforced.
+
+### Upgrade notes
+
+- Run `update.sh` to apply migration **033** (adds the two columns + `function_reopenings`).
+
+---
+
 ## [1.12.39] — 2026-10-29 — Append-only notes history per item / سجلّ الملاحظات لكل وظيفة
 
 ### Added
@@ -2980,7 +3012,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/55bcba2...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/6cbd8da...HEAD
+[1.12.40]: https://github.com/mscit-admin/ets/compare/55bcba2...6cbd8da
 [1.12.39]: https://github.com/mscit-admin/ets/compare/9a5fab7...55bcba2
 [1.12.38]: https://github.com/mscit-admin/ets/compare/05f4896...9a5fab7
 [1.12.37]: https://github.com/mscit-admin/ets/compare/4eca15a...05f4896

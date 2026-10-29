@@ -262,6 +262,23 @@ approve its members' edits — give someone the Team Lead role with that departm
   never comes back through the catalog seed, a JSON import or a team file. Restore re-includes it.
 - Every addition, removal, restore and include/exclude is in the audit log (`create`, `remove`, `restore`, `update`).
 
+## 1d-close. Closing (locking) and reopening a function (migration 033) — permission `apv_final`
+
+The final-endorsement action. A holder of **`apv_final`** («الاعتماد النهائي (مدير المشروع / الفني)» — grantable to
+others through the per-user permission overrides, section 1) sees a **«إغلاق» (Close)** button on each open, counted
+function. Closing marks it finished:
+
+- The function is **locked from editing** — every tracked field (progress, test / notification / review status, weight,
+  include/exclude, note, type, rename, remove, move) is refused with `closed_locked` until it is reopened. Only closing
+  and reopening change a closed item's state.
+- A closed function is **NOT excluded** from the percentage: it stays counted and is treated as **100 % complete** in
+  the weighted progress — the opposite of an excluded item (which leaves the calculation). Closing ≠ excluding.
+- **Reopening** (also `apv_final`) requires **both** an attached official document (a real file — PDF or image, ≤ 3 MB)
+  **and** a written reason (≥ 3 characters). The document is stored in the database (and so is backed up), served
+  inline through a scope-enforced download route, and shown with the reason under the item. Who reopened it and when is
+  kept in an append-only `function_reopenings` row.
+- The close (`close`) and each reopen (`reopen`) are in the audit log on the function.
+
 ## 1e. Moving items to another application (1.10.0) — permission `mov`
 
 An item (function or report) can be moved to another application, also of another department: the «نقل» button

@@ -162,6 +162,8 @@ export default function Application() {
   const [movingApp, setMovingApp] = useState(false); // moving the whole application to another department (1.12.16)
   const [history, setHistory] = useState(null);    // the item whose move history is open
   const [passFill, setPassFill] = useState(null);  // confirm «نجح» auto-fill to 100 % (1.12.21): { f }
+  const [closing, setClosing] = useState(null);    // confirm closing / locking a finished function (migration 033): the item
+  const [reopening, setReopening] = useState(null); // reopen dialog (document + reason) for a closed item
 
   useEffect(() => {
     if (!data) return;
@@ -376,23 +378,25 @@ export default function Application() {
             </thead>
             <tbody>
               {shown.length === 0 && <tr><td colSpan={8} className="empty">{t('fn_no_matches')}</td></tr>}
-              {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => (
+              {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => {
+                const locked = !!f.closed_at;            // closed = locked from editing (migration 033)
+                return (
                 <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')
-                  + (typeOf(f) === 'report' ? ' row-report' : '')}>
+                  + (typeOf(f) === 'report' ? ' row-report' : '') + (locked ? ' row-closed' : '')}>
                   <td className="w-check">
-                    <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at} aria-label={t('enabled')}
-                      title={f.enabled ? t('exclude_hint') : t('include_hint')}
+                    <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at || locked} aria-label={t('enabled')}
+                      title={locked ? t('closed_locked_hint') : f.enabled ? t('exclude_hint') : t('include_hint')}
                       onChange={e => setConfirm({ f, mode: 'toggle', enabled: e.target.checked })} />
                   </td>
                   <td className="fn-name">
                     <div className="fn-title">
-                      <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at} onChange={v => patch(f, { item_type: v })} />
+                      <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at && !locked} onChange={v => patch(f, { item_type: v })} />
                       <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
-                      {can.ren && !f.removed_at && (
+                      {can.ren && !f.removed_at && !locked && (
                         <button type="button" className="btn-icon btn-rename" onClick={() => setRenaming(f)}
                           aria-label={t('rn_button')} title={t('rn_button')}><Icon name="edit" size={15} /></button>
                       )}
-                      {can.mov && !f.removed_at && (
+                      {can.mov && !f.removed_at && !locked && (
                         <button type="button" className="btn-icon btn-move" onClick={() => setMoving(f)}
                           aria-label={t('mv_button') + ' — ' + f.code} title={t('mv_button')}><Icon name="move" size={15} /></button>
                       )}
@@ -413,19 +417,36 @@ export default function Application() {
                       {!f.enabled && !f.removed_at && <DisabledReason f={f} appId={a.id} />}
                       {f.removed_at && <Indicator color="red" title={f.removed_reason}>{t('removed_by_on', { name: f.removed_by_name || '—', date: fmtDate(f.removed_at) })}</Indicator>}
                       {f.removed_at && <span className="muted">{t('reason')}: {f.removed_reason}</span>}
-                      {can.tog && !f.removed_at && <button className="btn-link small red-text" onClick={() => setConfirm({ f, mode: 'remove' })}>{t('fn_remove')}</button>}
+                      {locked && (
+                        <Indicator color="cyan" title={t('closed_by_on', { name: f.closed_by_name || '—', date: fmtDate(f.closed_at) })}>
+                          <Icon name="lock" size={12} /> {t('closed_badge')}
+                        </Indicator>
+                      )}
+                      {f.last_reopening && (
+                        <span className="muted small" title={t('reopened_by_on', { name: f.last_reopening.reopened_by_name || '—', date: fmtDate(f.last_reopening.reopened_at) })}>
+                          {t('reopen_last')}: <a href={path`/api/tracker/functions/${f.id}/reopenings/${f.last_reopening.id}/document`} target="_blank" rel="noopener noreferrer">
+                            <Icon name="download" size={12} /> {t('reopen_view_doc')}</a> — {f.last_reopening.reason}
+                        </span>
+                      )}
+                      {can.tog && !f.removed_at && !locked && <button className="btn-link small red-text" onClick={() => setConfirm({ f, mode: 'remove' })}>{t('fn_remove')}</button>}
                       {can.tog && f.removed_at && <button className="btn-link small" onClick={() => setConfirm({ f, mode: 'restore' })}>{t('fn_restore')}</button>}
+                      {can.cls && !f.removed_at && !locked && f.enabled && (
+                        <button className="btn-link small" onClick={() => setClosing(f)} title={t('close_hint')}><Icon name="lock" size={12} /> {t('close_button')}</button>
+                      )}
+                      {can.cls && locked && (
+                        <button className="btn-link small" onClick={() => setReopening(f)}><Icon name="restore" size={12} /> {t('reopen_button')}</button>
+                      )}
                     </div>
                   </td>
-                  <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
+                  <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled || locked} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
                   <td className="num-col">
-                    <NumCell value={f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled} label={t('progress')} onCommit={v => patch(f, { progress: v })}
+                    <NumCell value={locked ? 100 : f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled || locked} label={t('progress')} onCommit={v => patch(f, { progress: v })}
                       check={v => { const p = progressPassProblem(f, v); return p ? t(p.key, p.vars) : null; }} />
-                    <div className="mini-progress"><i style={{ width: f.progress + '%' }} /></div>
+                    <div className="mini-progress"><i style={{ width: (locked ? 100 : f.progress) + '%' }} /></div>
                   </td>
                   <td>
                     <div className="ts-cell">
-                      <StatusSelect value={f.test_status} prefix="ts_" states={8} disabled={!can.tst || !f.enabled} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
+                      <StatusSelect value={f.test_status} prefix="ts_" states={8} disabled={!can.tst || !f.enabled || locked} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
                       {!f.removed_at && passConflict(f) && (
                         <span className="pass-conflict" role="img" aria-label={t('pass_conflict_hint')} title={t('pass_conflict_hint') + ' — ' + t('pass_conflict_fix')}>
                           <Icon name="alert" size={15} />
@@ -433,8 +454,8 @@ export default function Application() {
                       )}
                     </div>
                   </td>
-                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
-                  <td><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
+                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled || locked} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
+                  <td><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled || locked} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
                   <td className="w-check">
                     <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNotesFor(f)}
                       title={f.note || (needsNote(f) ? t('note_required_hint') : t('notes_history_title'))} aria-label={t('notes_history_title')}>
@@ -442,7 +463,8 @@ export default function Application() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -450,7 +472,7 @@ export default function Application() {
       </Card>
       </div>
 
-      {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={can.tst || !!noteFor.pending}
+      {noteFor && <NoteModal f={noteFor.f} pending={noteFor.pending} canEdit={(can.tst && !noteFor.f.closed_at) || !!noteFor.pending}
         onClose={() => setNoteFor(null)} onSave={async note => { await patch(noteFor.f, { ...(noteFor.pending || {}), note }); setNoteFor(null); }} />}
       {notesFor && <NotesHistoryModal f={notesFor} can={can} userId={user?.id} fmtDate={fmtDate}
         onClose={() => setNotesFor(null)} onChanged={reload} />}
@@ -462,6 +484,8 @@ export default function Application() {
       {history && <MoveHistory f={history} onClose={() => setHistory(null)} />}
       {passFill && <PassFillModal f={passFill.f} onClose={() => setPassFill(null)}
         onConfirm={async () => { const f = passFill.f; setPassFill(null); await patch(f, { test_status: PASS }, { progress: 100 }); }} />}
+      {closing && <CloseModal f={closing} onClose={() => setClosing(null)} onDone={() => { setClosing(null); reload(); }} />}
+      {reopening && <ReopenModal f={reopening} onClose={() => setReopening(null)} onDone={() => { setReopening(null); reload(); }} />}
       {confirm && <ConfirmModal app={a} {...confirm} onClose={() => setConfirm(null)}
         onDone={async () => {
           // including again needs no reason: saved like the other cells; an exclusion is saved by the dialog itself
@@ -618,6 +642,77 @@ function PassFillModal({ f, onClose, onConfirm }) {
         <button className="btn btn-primary" onClick={run} disabled={busy}>{t('pass_fill_confirm')}</button></>}>
       <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
       <Alert kind="blue">{t('pass_fill_msg', { progress: pctText(f.progress) })}</Alert>
+    </Modal>
+  );
+}
+
+// Close / lock a finished function (migration 033): a holder of 'apv_final' marks it as done. It becomes read-only and
+// counts as 100 % in the calculation while staying counted — it is NOT excluded.
+function CloseModal({ f, onClose, onDone }) {
+  const { t, errText } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try { await api.post(path`/tracker/functions/${f.id}/close`); toast(t('close_done'), 'green'); onDone(); }
+    catch (e) { setErr(e); setBusy(false); }
+  };
+  return (
+    <Modal title={t('close_title')} onClose={onClose}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn btn-primary" onClick={run} disabled={busy}><Icon name="lock" size={14} /> {t('confirm_close')}</button></>}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
+      <Alert kind="blue">{t('close_msg')}</Alert>
+    </Modal>
+  );
+}
+
+// Reopen a closed function (migration 033): requires BOTH an attached official document (PDF or image) AND a written
+// reason. The document is read as a data: URL in the browser (like a branding upload) and sent in the JSON body.
+const REOPEN_DOC_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,.pdf';
+const REOPEN_DOC_MAX = 3 * 1024 * 1024;
+const REOPEN_REASON_MIN = 3;
+function ReopenModal({ f, onClose, onDone }) {
+  const { t, errText } = useI18n();
+  const [file, setFile] = useState(null);
+  const [reason, setReason] = useState('');
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const tooBig = file && file.size > REOPEN_DOC_MAX;
+  const reasonShort = reason.replace(/\s/gu, '').length < REOPEN_REASON_MIN;
+  const run = async () => {
+    setTried(true);
+    if (!file || tooBig || reasonShort) return;
+    setBusy(true); setErr(null);
+    try {
+      const document = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      await api.post(path`/tracker/functions/${f.id}/reopen`, { document, reason: reason.trim() });
+      toast(t('reopen_done'), 'green'); onDone();
+    } catch (e) { setErr(e); setBusy(false); }
+  };
+  return (
+    <Modal title={t('reopen_title')} onClose={onClose} wide
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn btn-primary" onClick={run} disabled={busy || !file || tooBig || reasonShort}><Icon name="restore" size={14} /> {t('confirm_reopen')}</button></>}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <p lang="ar" dir="rtl"><span className="code">{f.code}</span> {f.name_ar}</p>
+      <Alert kind="orange">{t('reopen_msg')}</Alert>
+      <Field label={t('reopen_doc_label') + ' *'}>
+        <label className="btn btn-default">
+          <Icon name="upload" size={14} /> {file ? file.name : t('reopen_doc_pick')}
+          <input type="file" accept={REOPEN_DOC_ACCEPT} hidden onChange={e => { setFile(e.target.files[0] || null); e.target.value = ''; }} />
+        </label>
+        <span className="field-hint">{t('reopen_doc_hint')}</span>
+        {tooBig && <span className="field-hint red-text">{t('err_reopen_doc_too_large', { max_kb: Math.round(REOPEN_DOC_MAX / 1024) })}</span>}
+        {tried && !file && <span className="field-hint red-text">{t('reopen_doc_missing')}</span>}
+      </Field>
+      <Field label={t('reopen_reason_label') + ' *'}>
+        <textarea className={'input' + (tried && reasonShort ? ' input-required' : '')} rows={3} maxLength={500} value={reason}
+          onChange={e => setReason(e.target.value)} placeholder={t('reopen_reason_placeholder')} />
+        {tried && reasonShort && <span className="field-hint red-text">{t('reopen_reason_short', { min: REOPEN_REASON_MIN })}</span>}
+      </Field>
     </Modal>
   );
 }

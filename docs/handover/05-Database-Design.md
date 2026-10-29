@@ -55,7 +55,7 @@ auth_log, audit_log, access_log, error_log, system_log  ──*───1 users 
 |---|---|---|
 | `departments` | 4 departments | `id` (hr, fin, com, inf), names AR/EN, `color`, `emblem`, `is_base` (no reports track) |
 | `applications` | 30 applications | `id` (per, pay, acc…), `department_id`, names, `default_weight`, `weight`, `note_ar`, `addendum`, `scope_cut`, `extra_module` |
-| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import), `disabled_reason` (`duplicate`, `out_of_scope`, `not_required`, `other`, or `import` set by an import; NULL = excluded before 1.5.0), `disabled_note` (≤ 500; required by the API for every reason a user chooses since 1.5.1, ≥ 3 characters — older rows and `import` keep theirs), `disabled_by/at` — why an excluded function (`enabled=false`) does not count, cleared when it is included again (migration 013), `item_type` (`function` default / `report`: which part of the application % the item counts in — migration 016, see 3d) |
+| `functions` | 513+ functions | `app_id`, `code` (unique per app; added ones `C<n>`), `source`, `name_ar`, `reference`, `vendor_status`, `weight`, `progress`, `enabled`, `test_status`, `notif_status`, `review_status`, `note`, `updated_by/at`, `created_by/at`, `removed_at/by`, `removed_reason` (migration 006: a removed function is kept, `enabled=false`, and excluded from every calculation, list, export and import), `disabled_reason` (`duplicate`, `out_of_scope`, `not_required`, `other`, or `import` set by an import; NULL = excluded before 1.5.0), `disabled_note` (≤ 500; required by the API for every reason a user chooses since 1.5.1, ≥ 3 characters — older rows and `import` keep theirs), `disabled_by/at` — why an excluded function (`enabled=false`) does not count, cleared when it is included again (migration 013), `item_type` (`function` default / `report`: which part of the application % the item counts in — migration 016, see 3d), `closed_at/by` (migration 033: a closed function is **locked** from editing and counts as **100 %** while still being counted — closing ≠ excluding, see 3m) |
 | `function_duplicates` | For a function excluded as a duplicate: the functions it duplicates (any application) | `function_id`, `duplicate_of_id` (PK on both; FKs to `functions` ON DELETE CASCADE — functions are only soft-removed; `CHECK function_id <> duplicate_of_id`; index on `duplicate_of_id`) — migration 013 |
 | `app_reports` | Reports track per application (non-base departments; counted with the application's report items, weight 1 — 3d) | `progress`, `status`, `note` |
 | `schedule` | Project schedule (one row, `id = 1`) | `start_date`, `end_date` (planned close, migration 005; when set, `periods` is derived from start → close), `periods`, `unit` (month/fortnight), `plan numeric[]`, `actual numeric[]` |
@@ -485,6 +485,42 @@ as `entity='function'` (so it flows into the function-changes export like any no
 SELECT body FROM function_notes
 WHERE function_id = $1 AND deleted_at IS NULL AND decision IS DISTINCT FROM 'rejected'
 ORDER BY created_at DESC, id DESC LIMIT 1;
+```
+
+### 3n. Migration 033 — close / lock & reopen a function
+
+The final-endorsement action on a finished function. A user holding **`apv_final`** («الاعتماد النهائي (مدير المشروع /
+الفني)») closes a function that needs nothing further; it becomes **locked from editing** until it is reopened, and
+reopening requires an **attached official document** (a real file: PDF or image) **and a written reason**. Forward-only
+and idempotent.
+
+- **`functions`** gains `closed_at timestamptz` and `closed_by integer` (FK → `users`, `ON DELETE SET NULL`). A function
+  is **closed iff `closed_at IS NOT NULL`**. The close itself is captured by these two columns plus an `audit_log` row
+  (action `close`).
+- **`function_reopenings`** — append-only reopen audit, one row per reopen (`function_id` → `functions`, CASCADE):
+  `id bigserial`, `reopened_by` (FK → `users`, SET NULL), `reopened_at` (default `now()`), `reason text NOT NULL`, and
+  the stored document `doc_name` / `doc_mime` / `doc_size int` / `doc_data bytea`. The document is stored **as bytes in
+  the database**, exactly like the branding images (migration 003), so it is backed up with everything else. Index
+  `function_reopenings_function_idx (function_id, reopened_at DESC)`.
+
+**Calculation — the key behaviour (`services/calc.js`):** a closed function is **NOT excluded** from the percentage. It
+stays counted and is treated as **100 % complete** in the weighted progress: `effectiveProgress` returns `100` for a
+closed row, and `appCalc` still adds its weight to the part and to the denominator like any enabled item. This is the
+**opposite** of an excluded / removed item (which leaves the calculation): **closing ≠ excluding**. `CALC_FUNCTIONS_SQL`
+selects `closed_at` so every calculation sees it.
+
+**Edit guard:** while closed, the function PATCH, rename, the bulk endpoints, remove and move all refuse with
+`closed_locked`; the app-wide bulk set simply skips closed rows (`closed_at IS NULL`). Only closing and reopening change
+a closed item's state.
+
+```sql
+-- functions closed (locked, counting as 100 %) and when / by whom
+SELECT f.app_id, f.code, f.closed_at, u.full_name AS closed_by
+FROM functions f LEFT JOIN users u ON u.id = f.closed_by WHERE f.closed_at IS NOT NULL ORDER BY f.closed_at DESC;
+
+-- the latest reopening of each function (its order + reason)
+SELECT DISTINCT ON (function_id) function_id, reason, doc_name, reopened_at
+FROM function_reopenings ORDER BY function_id, reopened_at DESC;
 ```
 
 ## 4. Code values
