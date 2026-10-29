@@ -3012,7 +3012,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/55bcba2...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/6cbd8da...HEAD
+[1.12.40]: https://github.com/mscit-admin/ets/compare/55bcba2...6cbd8da
 [1.12.39]: https://github.com/mscit-admin/ets/compare/9a5fab7...55bcba2
 [1.12.38]: https://github.com/mscit-admin/ets/compare/05f4896...9a5fab7
 [1.12.37]: https://github.com/mscit-admin/ets/compare/4eca15a...05f4896
