@@ -18,7 +18,10 @@ if (process.env.ETS_ENV_FILE && process.env.ETS_ENV_FILE !== 'none') {
 if (process.env.ETS_ENV_FILE !== 'none') dotenv.config({ path: envFile, quiet: true });
 
 const env = (k, d) => (process.env[k] === undefined || process.env[k] === '' ? d : process.env[k]);
-const int = (k, d) => parseInt(env(k, d), 10);
+// A non-numeric value (a typo such as PORT=abc or PGPOOL_MAX=x in /etc/ets/ets.env) parses to NaN, which would
+// otherwise propagate silently into pg.Pool({max:NaN}), app.listen(NaN) and the rate-limit/TTL numbers. Fall back
+// to the documented default on NaN so a typo yields the default rather than an obscure downstream failure (BE-5).
+const int = (k, d) => { const n = parseInt(env(k, d), 10); return Number.isNaN(n) ? d : n; };
 
 export const config = {
   env: env('NODE_ENV', 'development'),
