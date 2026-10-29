@@ -9,6 +9,16 @@ import { isAppApprover } from './edits.js';
 
 // A note is "active" (it counts as the item's current note) while it is neither hidden by an approved deletion nor
 // rejected by the team lead. The current active note is the most recent active one (newest created_at, then id).
+//
+// INVARIANT (functions.note, review A2 / DB-1): functions.note always equals the body of this current active note,
+// or '' when the item has none. This is an APP-ENFORCED invariant with NO DB backing — no trigger or constraint
+// guarantees it; it holds only because this module is the single writer that re-syncs functions.note on every change
+// that can move the active note (addNote / syncFunctionNote below, and recordNoteHistory on the edit paths). Any
+// future write path that mutates a note/decision/deletion without routing through here would leave functions.note
+// stale. The invariant is covered by backend/test/active-note-sync.test.js, which drives the real routes across the
+// lifecycle and re-checks it after every mutation against an independent SQL oracle. The DB-level hardening (a
+// trigger that recomputes functions.note from function_notes — DB-2/DB-1) is a known, deferred follow-up; until it
+// lands, keep every note mutation going through this module and rely on that test to catch drift.
 const ACTIVE = `deleted_at IS NULL AND decision IS DISTINCT FROM 'rejected'`;
 
 // The team lead of an item's application decides a note (approve / reject) and approves its deletion: the same

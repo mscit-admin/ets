@@ -109,14 +109,17 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
 input[type=range] { accent-color: var(--primary); width: 100%; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 18px; }
 .select-status { width: 118px; padding-inline-end: 4px; font-size: 12.5px; }
-.select-status.s2 { background: var(--green-bg); color: var(--green-text); }
-.select-status.s3 { background: var(--red-bg); color: var(--red-text); }
-.select-status.s1 { background: var(--orange-bg); color: var(--orange-text); }
-.select-status.s4 { background: var(--blue-bg); color: var(--blue-text); }      /* review: إطلاع / Acknowledged (1.12.17) */
-.select-status.s5 { background: var(--purple-bg); color: var(--purple-text); }  /* review: اعتماد / Approved (1.12.17) */
-.select-status.ts_4 { background: var(--amber-bg); color: var(--amber-text); }  /* test: إعادة الاختبار / Needs re-testing (1.12.25) — overrides the shared s4 (blue) */
-.select-status.s6 { background: var(--blue-bg); color: var(--blue-text); }      /* test: لم يتم عرضها / Not presented (migration 030) */
-.select-status.s7 { background: var(--cyan-bg); color: var(--cyan-text); }      /* test: لم يتم التدريب / Not trained (migration 030) */
+/* Colour-named classes so each status field maps its value → meaning → colour (lib/format.js TEST/NOTIF/REVIEW_COLORS),
+   instead of a shared ordinal class that clashed across the three fields (UX-2). Reuses the --<colour>-bg/-text vars,
+   like .mini-tests. */
+.select-status.green { background: var(--green-bg); color: var(--green-text); }
+.select-status.orange { background: var(--orange-bg); color: var(--orange-text); }
+.select-status.red { background: var(--red-bg); color: var(--red-text); }
+.select-status.amber { background: var(--amber-bg); color: var(--amber-text); }   /* test: إعادة الاختبار / Needs re-testing */
+.select-status.purple { background: var(--purple-bg); color: var(--purple-text); } /* test: غير متاح / Not available */
+.select-status.blue { background: var(--blue-bg); color: var(--blue-text); }       /* test: لم يتم عرضها; review: إطلاع / Acknowledged */
+.select-status.cyan { background: var(--cyan-bg); color: var(--cyan-text); }        /* test: لم يتم التدريب / Not trained */
+.select-status.gray { background: var(--gray-bg); color: var(--gray-text); }        /* unset: not tested / not set / no review needed */
 
 /* ---------- indicator pills ---------- */
 .indicator-pill {

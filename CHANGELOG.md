@@ -30,6 +30,40 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.44] — 2026-10-29 — Code-review batch 2: status colour semantics, confirms, N+1, parity guards / إصلاحات المراجعة — الدفعة ٢
+
+The second (medium-priority) batch from the full code & security review.
+
+### Fixed
+
+- **Frontend (UX-2)** — Status swatch colours are now driven by each field's **meaning**, not a shared raw-ordinal
+  class. `lib/format.js` gains `NOTIF_COLORS` and `REVIEW_COLORS` (test colours unchanged, incl. 5/6/7); `StatusSelect`
+  and `app.css` colour by the field's map. This fixes mis-coloured states — notif «تعمل» now green / «تعمل مع ملاحظات»
+  orange (was inverted), review «غير موجودة» now red (was green). Mobile aligned to the same maps (UX-5).
+- **Frontend (UX-4)** — A single approve now uses the same rich confirmation modal as «اعتماد الكل» (removed the bare
+  `window.confirm`); the Settings tabs gained full ARIA tab semantics (`role=tablist/tab/tabpanel`, `aria-selected`,
+  `aria-controls`, RTL-aware arrow/Home/End navigation).
+
+### Changed
+
+- **Backend (BE-3)** — Reduced N+1 query patterns: `applyMove` reads `nextCode`/`max(sort)` once and advances in JS
+  (~40% fewer round-trips on a bulk move; output provably identical under the `FOR UPDATE` lock); the Approvals list
+  computes all pending-move shares in 3 queries via a new `currentShares` (was 3×N). Live-hint `publishChange` calls
+  are now consistently fire-and-forget (notification emitters stay awaited). Audit/transaction/order behaviour
+  unchanged.
+- **Backend (BE-4)** — De-duplicated helpers shared by `move.js`/`app-move.js` into `services/move-util.js`; removed a
+  duplicate calendar-date validator in favour of `utils/http.js` `isDate`.
+
+### Tests
+
+- **FE-1** — `backend/test/rule-parity.test.js`: fails if the client (`lib/itemRules.js`) and server
+  (`routes/tracker.js` / `passRule.js`) `NOTE_REQUIRED`/`PASS` constants ever diverge (drift guard).
+- **DB-1** — `backend/test/active-note-sync.test.js`: proves `functions.note` always equals the current active note
+  across the full note lifecycle, checked by an independent SQL oracle. The invariant is now documented in
+  `services/notes.js` and `05-Database-Design.md` as app-enforced (DB-level hardening deferred).
+
+---
+
 ## [1.12.43] — 2026-10-29 — Code-review batch 1: dependency DoS fix, accessibility, indexes / إصلاحات المراجعة — الدفعة ١
 
 Applied the first, high-value batch of fixes from the full code & security review (architecture + OWASP). No behaviour
@@ -3074,7 +3108,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/48f9997...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/64b18c6...HEAD
+[1.12.44]: https://github.com/mscit-admin/ets/compare/48f9997...64b18c6
 [1.12.43]: https://github.com/mscit-admin/ets/compare/e9c3950...48f9997
 [1.12.42]: https://github.com/mscit-admin/ets/compare/0eb29ef...e9c3950
 [1.12.41]: https://github.com/mscit-admin/ets/compare/6cbd8da...0eb29ef

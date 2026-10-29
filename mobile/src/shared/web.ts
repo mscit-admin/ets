@@ -25,6 +25,8 @@ export const pctColor: (v: number) => PillColor = format.pctColor as (v: number)
 export const pctHue: (v: unknown) => number = format.pctHue;
 export const pctTone: (v: unknown) => Tone = format.pctTone as (v: unknown) => Tone;
 export const TEST_COLORS = format.TEST_COLORS as PillColor[];
+export const NOTIF_COLORS = format.NOTIF_COLORS as PillColor[];
+export const REVIEW_COLORS = format.REVIEW_COLORS as PillColor[];
 export const VENDOR_COLORS = format.VENDOR_COLORS as PillColor[];
 
 // ---- ERP module wheel (frontend/src/lib/erpModules.js, frontend/src/lib/wheelGeometry.js)

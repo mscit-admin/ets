@@ -17,6 +17,7 @@ import { loadUser, userRef, originIp } from './audit.js';
 import { logAudit } from './logs.js';
 import { nextCode } from './functions.js';
 import { NOTE_MIN, NOTE_MAX } from './disable.js';
+import { cents, weightMode, userName, names } from './move-util.js';
 import { HttpError, bad } from '../utils/http.js';
 
 export const MOVE_MAX = 200;                       // items in one bulk move
@@ -39,8 +40,6 @@ export async function moveNeedsApproval(user, src, dst) {
   if (hasPerm(user, 'cfg') || hasPerm(user, 'apv_final')) return false;     // administrators, project / technical managers
   return !(isAppApprover(user, src) && isAppApprover(user, dst));
 }
-
-const cents = v => Math.round((+v || 0) * 100);
 
 /**
  * The application weight that goes with the items (pure; srcFunctions: the source application's rows as
@@ -108,10 +107,6 @@ export async function checkMovable(c, fns, { exceptRequest = null } = {}) {
   }
 }
 
-const weightMode = async c => (await c.query(`SELECT value FROM settings WHERE key='calc.weight_mode'`)).rows[0]?.value === 'auto' ? 'auto' : 'fixed';
-const userName = async (c, id) => (id ? (await c.query('SELECT full_name, username FROM users WHERE id=$1', [id])).rows[0] : null);
-const names = (x, p) => ({ [p + '_name_ar']: x.name_ar, [p + '_name_en']: x.name_en });
-
 /**
  * Moves the items (ids, all in application srcId) to dstId inside the caller's transaction c. The two applications
  * are locked FOR UPDATE in id order (no deadlock between two moves in opposite directions), then the items; every
@@ -142,10 +137,17 @@ export async function applyMove(c, req, { srcId, dstId, ids, reason, userId = re
     ...names(dst, 'to_app'), ...names({ name_ar: dst.dept_name_ar, name_en: dst.dept_name_en }, 'to_dept'),
     weight_mode: tr.mode, ...(requestId ? { request_id: requestId } : {}), ...(fns.length > 1 ? { bulk: true, count: fns.length } : {}) };
 
+  // Codes and sort positions are assigned sequentially in the destination. The destination application is locked
+  // FOR UPDATE, so this transaction is the only writer: the first free code and the current max(sort) are read ONCE
+  // here and advanced by one per item in JS, giving exactly the codes/sorts the former per-item queries produced
+  // (nextCode's function_moves branch keys on from_app_id=dstId, which this move — from_app_id=srcId — never touches).
+  const codeBase = parseInt((await nextCode(c, dstId)).slice(1), 10);
+  const sortBase = (await c.query('SELECT COALESCE(max(sort), 0) AS s FROM functions WHERE app_id=$1', [dstId])).rows[0].s;
+
   const out = [];
-  for (const f of fns) {
-    const code = await nextCode(c, dstId);
-    const sort = (await c.query('SELECT COALESCE(max(sort), 0) + 1 AS s FROM functions WHERE app_id=$1', [dstId])).rows[0].s;
+  for (const [i, f] of fns.entries()) {
+    const code = 'C' + (codeBase + i);
+    const sort = sortBase + 1 + i;
     await c.query('UPDATE functions SET app_id=$2, code=$3, sort=$4, updated_at=now(), updated_by=$5 WHERE id=$1', [f.id, dstId, code, sort, userId]);
     const share = tr.per.get(f.id) || 0;
     await c.query(`INSERT INTO function_moves(function_id, from_app_id, to_app_id, from_code, to_code, from_dept_id, to_dept_id, weight_mode,
@@ -178,12 +180,30 @@ export async function applyMove(c, req, { srcId, dstId, ids, reason, userId = re
 
 // Weight share the items would carry if the move were made now (approval screen: request time vs now).
 export async function currentShare(c, srcId, ids) {
-  const a = (await c.query('SELECT weight FROM applications WHERE id=$1', [srcId])).rows[0];
-  if (!a) return null;
-  const srcFunctions = (await c.query(CALC_FUNCTIONS_SQL + ' AND app_id=$1', [srcId])).rows;
-  const tr = weightTransfer({ mode: await weightMode(c), srcWeight: a.weight, srcFunctions, ids });
-  return { mode: tr.mode, share: tr.share, src_before: tr.src_before, src_after: tr.src_after,
-    still_in_source: ids.every(id => srcFunctions.some(f => f.id === id)) };
+  return (await currentShares(c, [{ srcId, ids }]))[0];
+}
+
+/**
+ * currentShare for a whole list of pending moves at once (the Approvals screen / its export), without one set of
+ * queries per move. moves: [{ srcId, ids }]; returns results in the same order (null for a vanished source
+ * application), each identical to currentShare's. Three queries total instead of three per move: the weight mode,
+ * every source application's weight (id = ANY), and every source application's counted rows (app_id = ANY) grouped
+ * by application in JS. weightTransfer is pure, so each share is then computed in memory.
+ */
+export async function currentShares(c, moves) {
+  if (!moves.length) return [];
+  const srcIds = [...new Set(moves.map(m => m.srcId))];
+  const mode = await weightMode(c);
+  const weights = new Map((await c.query('SELECT id, weight FROM applications WHERE id = ANY($1)', [srcIds])).rows.map(a => [a.id, a.weight]));
+  const byApp = new Map(srcIds.map(id => [id, []]));
+  for (const f of (await c.query(CALC_FUNCTIONS_SQL + ' AND app_id = ANY($1)', [srcIds])).rows) byApp.get(f.app_id)?.push(f);
+  return moves.map(({ srcId, ids }) => {
+    if (!weights.has(srcId)) return null;
+    const srcFunctions = byApp.get(srcId) || [];
+    const tr = weightTransfer({ mode, srcWeight: weights.get(srcId), srcFunctions, ids });
+    return { mode: tr.mode, share: tr.share, src_before: tr.src_before, src_after: tr.src_after,
+      still_in_source: ids.every(id => srcFunctions.some(f => f.id === id)) };
+  });
 }
 
 // The history of moves of these items (application page: badge and details). Names of an application / department

@@ -16,7 +16,7 @@ import { functionsExcluded, itemsMovedIn, applicationMovedIn } from '../services
 import { MOVE_MAX, parseMoveReason, moveNeedsApproval, weightTransfer, destinationWeight, checkMovable, applyMove, movesOf }
   from '../services/move.js';
 import { moveApplication, moveAppNeedsApproval, checkAppMovable, appMovesOf } from '../services/app-move.js';
-import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../utils/http.js';
+import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId, isDate } from '../utils/http.js';
 import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
   duplicatesOf } from '../services/disable.js';
@@ -882,7 +882,7 @@ async function doMove(req, res, src, ids) {
     return res.status(202).json({ pending: true, request_id: rq.id, impact });
   }
   const out = await tx(c => applyMove(c, req, { srcId: src.id, dstId: dst.id, ids: rows.map(f => f.id), reason }));
-  await publishApps([src, dst]);                           // after COMMIT: both applications / departments
+  publishApps([src, dst]);                                 // after COMMIT: both applications / departments
   await itemsMovedIn(src.id, dst.id, out.items.length, [req.user.id]);      // T8
   res.json({ moved: out.items, weight: out.weight, impact });
 }
@@ -975,12 +975,12 @@ r.post('/applications/:id/move-dept', requirePerm('mov'), async (req, res) => {
       items: [{ kind: 'application', app_id: a.id, field: 'move',
         old_value: { department_id: a.department_id }, new_value: { department_id: dst.id, name_ar: dst.name_ar, name_en: dst.name_en },
         meta: { reason } }] }));
-    await publishChange({ dept_id: a.department_id, app_id: a.id });    // "awaiting approval" badge
+    publishChange({ dept_id: a.department_id, app_id: a.id });          // "awaiting approval" badge
     return res.status(202).json({ pending: true, request_id: rq.id, impact });
   }
   const out = await tx(c => moveApplication(c, req, { appId: a.id, dstDeptId: dst.id, reason }));
-  await publishChange({ dept_id: a.department_id });                   // after COMMIT: the source department's total
-  await publishChange({ dept_id: dst.id, app_id: a.id });              // the destination, with the moved application
+  publishChange({ dept_id: a.department_id });                         // after COMMIT: the source department's total
+  publishChange({ dept_id: dst.id, app_id: a.id });                   // the destination, with the moved application
   await applicationMovedIn(a.id, a.department_id, dst.id, [req.user.id]);   // T9
   res.json({ moved: true, weight: out.weight, impact });
 });
@@ -1101,9 +1101,6 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
 });
 
 // ---- schedule (S-curve) and project timeline ----
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
-const validDate = v => ISO.test(v) && !Number.isNaN(new Date(v + 'T00:00:00Z').getTime()) && new Date(v + 'T00:00:00Z').toISOString().startsWith(v);
-
 // Start + k periods (months keep the day of month, clamped to the month's length), as 'YYYY-MM-DD'.
 export function addPeriods(start, unit, k) {
   const d = new Date(start + 'T00:00:00Z');
@@ -1173,7 +1170,7 @@ r.put('/schedule', requirePerm('sch'), async (req, res) => {
   let start_date = DATE(old.start_date);
   if (!old.end_date && 'start_date' in (req.body || {})) {
     start_date = req.body.start_date;
-    if (start_date !== null && !validDate(start_date)) throw bad('invalid_value', { field: 'start_date' });
+    if (start_date !== null && !isDate(start_date)) throw bad('invalid_value', { field: 'start_date' });
   }
   if (!intIn(periods, 1, 60)) throw bad('invalid_value', { field: 'periods' });
   if (!['month', 'fortnight'].includes(unit)) throw bad('invalid_value', { field: 'unit' });
@@ -1188,7 +1185,7 @@ r.put('/schedule', requirePerm('sch'), async (req, res) => {
 r.put('/timeline', requirePerm('cfg'), async (req, res) => {
   if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
   const { start_date = null, end_date = null } = req.body || {};
-  for (const [k, v] of Object.entries({ start_date, end_date })) if (v !== null && !validDate(v)) throw bad('invalid_value', { field: k });
+  for (const [k, v] of Object.entries({ start_date, end_date })) if (v !== null && !isDate(v)) throw bad('invalid_value', { field: k });
   if (end_date && !start_date) throw bad('start_required');
   const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
   const next = fitTimeline({ start_date, end_date, unit: old.unit, periods: old.periods, plan: old.plan, actual: old.actual || [] });
