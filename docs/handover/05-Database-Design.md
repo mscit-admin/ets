@@ -442,6 +442,51 @@ SELECT id, broadcast_id, subject FROM message_threads
 WHERE recipient_id = $1 AND kind = 'alert' AND response_status IS NULL ORDER BY created_at, id;
 ```
 
+### 3m. Migration 031 — notes history (append-only log)
+
+Before this migration each function kept a **single, overwritten** note in `functions.note`: the latest text won and
+the earlier ones were lost. Migration 031 adds an **append-only** log table so every note an item (function / report)
+ever carries is kept with its author, its timestamp and its full lifecycle. Forward-only; the table and its indexes
+are created `IF NOT EXISTS`, and the one-time backfill runs only while the table is still empty (a re-run is a no-op).
+`functions.note` is **kept** (not dropped or renamed) and now means **"the current active note"** — the application
+keeps it in sync with the latest active note, so the existing "a with-notes status requires a note" rule and every
+other reader of `functions.note` keep working unchanged.
+
+- **`function_notes`** (the history) columns:
+  - `id bigserial` PK; `function_id int NOT NULL REFERENCES functions(id) ON DELETE CASCADE` (the item); `body text
+    NOT NULL` (the note text, never empty); `author_id int REFERENCES users(id) ON DELETE SET NULL` (who wrote it —
+    NULL for a backfilled row); `created_at timestamptz NOT NULL DEFAULT now()`.
+  - `done boolean NOT NULL DEFAULT false` — the **author** (the member) marks their own note «منتهية / غير منتهية».
+  - `decision text CHECK (decision IN ('approved','rejected'))` — set by the **team lead** (NULL = pending,
+    `approved` = «معتمدة للعمل», `rejected` = «مرفوضة»); `decided_by int REFERENCES users(id) ON DELETE SET NULL`,
+    `decided_at timestamptz`.
+  - `replaces bigint REFERENCES function_notes(id) ON DELETE SET NULL` — a new note that follows up a **rejected** one
+    (the chain).
+  - soft-delete with team-lead approval (a note is **never hard-deleted**, so the audit trail survives): a member
+    REQUESTS deletion (`delete_requested_by int`, `delete_requested_at timestamptz`); the team lead APPROVES it
+    (`deleted_by int`, `deleted_at timestamptz`) and only then is the note hidden.
+  - Indexes on `function_id` and on `created_at`.
+- A note is **active** (it counts as the item's current note) while `deleted_at IS NULL AND decision IS DISTINCT FROM
+  'rejected'`. `functions.note` is kept equal to the most recent active note (newest `created_at`, then `id`), or `''`
+  when there is none — re-synced whenever the active note may move (a note added, approved, rejected, or a deletion
+  approved).
+- **Backfill:** each existing non-empty `functions.note` becomes one `function_notes` row with `author_id = NULL`
+  (the old column kept no author) and `created_at = functions.updated_at` (the closest available note change time).
+
+Who may act is the same scope / approver model as every other edit (enforced in `routes/tracker.js`, reusing
+`getApp` / `canSeeApp` and the `apv_dept`-with-scope resolution of `services/edits.js`): the **author** toggles
+`done`; the **team lead** (a user with `apv_dept` whose scope covers the item's application — full-scope approvers
+with `apv_final` / `cfg` act as approver too) sets `decision` and approves deletions. A note **addition** is audited
+as `entity='function'` (so it flows into the function-changes export like any note edit); the lifecycle sub-actions
+(done / decision / deletion) are audited as `entity='function_note'`.
+
+```sql
+-- the current active note of an item (what functions.note is kept equal to)
+SELECT body FROM function_notes
+WHERE function_id = $1 AND deleted_at IS NULL AND decision IS DISTINCT FROM 'rejected'
+ORDER BY created_at DESC, id DESC LIMIT 1;
+```
+
 ## 4. Code values
 
 | Column | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |

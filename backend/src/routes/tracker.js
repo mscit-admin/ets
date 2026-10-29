@@ -6,6 +6,7 @@ import { allSettings, invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
+import { addNote, recordNoteHistory, syncFunctionNote, noteHistory, canDecideNote } from '../services/notes.js';
 import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
 import { PASS, passConflict, passRuleError, withPassProgress, itemList } from '../services/passRule.js';
@@ -129,7 +130,8 @@ export async function applicationData(user, id) {
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
-    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep') },
+    // lead: may decide notes (approve / reject) and approve their deletion on this application (services/notes.js)
+    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep'), lead: canDecideNote(u, a) },
   };
 }
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
@@ -223,6 +225,9 @@ r.patch('/functions/:id', async (req, res) => {
       throw new HttpError(409, 'test_status' in changes ? 'pass_requires_100' : 'progress_below_100_while_passed',
         { progress: Number(u.progress), test_status: u.test_status, code: cur.code });
     }
+    // a note written in this edit is also appended to the item's history (migration 031); functions.note has just
+    // been set to the same text, so it stays the current active note (services/notes.js)
+    if ('note' in changes) await recordNoteHistory(c, id, changes.note, req.user.id);
     const oldValue = Object.fromEntries(keys.map(k => [k, cur[k]])), newValue = { ...changes };
     if (disable) {
       await setDisabled(c, [id], disable, req.user.id);
@@ -240,6 +245,138 @@ r.patch('/functions/:id', async (req, res) => {
   publishChange({ dept_id: app.department_id, app_id: cur.app_id });
   if (changes.enabled === false) await functionsExcluded(cur.app_id, 1, [req.user.id]);     // T7
   res.json({ function: updated });
+});
+
+// ============================================================
+// Notes history of an item (migration 031)
+// ============================================================
+// Loads the function and its application, enforcing scope (getApp). Returns { cur, app }.
+async function getFunctionForNotes(user, functionId) {
+  const cur = (await query('SELECT * FROM functions WHERE id=$1', [functionId])).rows[0];
+  if (!cur) throw notFound();
+  const app = await getApp(user, cur.app_id);          // 403 when the item is outside the reader's scope
+  return { cur, app };
+}
+
+// GET /tracker/functions/:id/notes — the full chronological note history of the item. Visible to anyone who can see
+// the function (scope enforced); the management actions (done / decision / deletion) are gated in PATCH below.
+r.get('/functions/:id/notes', async (req, res) => {
+  const id = idParam(req.params.id);
+  const { app } = await getFunctionForNotes(req.user, id);
+  res.json({ notes: await noteHistory({ query }, id), can: { lead: canDecideNote(req.user, app) } });
+});
+
+// POST /tracker/functions/:id/notes — add a note. Same permission as writing a note today: 'tst' (FIELD_PERM.note).
+// The note is appended to the history and becomes the current active note (functions.note is kept in sync). An
+// optional `replaces` is the id of a REJECTED note of the same item this one follows up (the chain, migration 031).
+r.post('/functions/:id/notes', async (req, res) => {
+  const id = idParam(req.params.id);
+  const { cur, app } = await getFunctionForNotes(req.user, id);
+  if (cur.removed_at) throw bad('function_removed');
+  if (!hasPerm(req.user, FIELD_PERM.note)) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM.note, field: 'note' });
+  const body = str(req.body?.body, 2000);
+  if (!body) throw bad('note_required');
+  let replaces = null;
+  if (req.body?.replaces != null) {
+    replaces = idParam(req.body.replaces, 'replaces');
+    const prev = (await query('SELECT id, function_id, decision FROM function_notes WHERE id=$1', [replaces])).rows[0];
+    // the replaced note must belong to this item and be a rejected one (the follow-up only applies to «مرفوضة»)
+    if (!prev || prev.function_id !== id || prev.decision !== 'rejected') throw bad('invalid_value', { field: 'replaces' });
+  }
+  const note = await tx(async c => {
+    const n = await addNote(c, { functionId: id, body, authorId: req.user.id, replaces });
+    await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: id,
+      summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`,
+      oldValue: { note: cur.note || '' }, newValue: { note: body },
+      context: { via: 'note_add', note_id: n.id, ...(replaces ? { replaces } : {}) } });
+    return n;
+  });
+  publishChange({ dept_id: app.department_id, app_id: cur.app_id });
+  res.status(201).json({ note });
+});
+
+// PATCH /tracker/notes/:noteId — one sub-action on a note, each permission-checked:
+//   { done: bool }             the AUTHOR marks their own note «منتهية / غير منتهية»
+//   { decision: 'approved'|'rejected' }  the TEAM LEAD decides (approved = «معتمدة للعمل», rejected = «مرفوضة»)
+//   { request_delete: true }   anyone who can see the item REQUESTS its deletion (not hidden yet)
+//   { approve_delete: true }   the TEAM LEAD approves the deletion (the note is then hidden, never removed)
+// Every change writes an audit row. A note ADDITION (POST above) is a genuine note change and is logged as
+// entity 'function' so it flows into the function-changes export like any note edit; the lifecycle sub-actions
+// here (done / decision / deletion) are logged as entity 'function_note' — part of the audit trail, but not a
+// function-column change, so they stay out of that export. functions.note is re-synced whenever the active note
+// may have moved (a rejection or an approved deletion).
+r.patch('/notes/:noteId', async (req, res) => {
+  const noteId = idParam(req.params.noteId, 'noteId');
+  const n = (await query('SELECT * FROM function_notes WHERE id=$1', [noteId])).rows[0];
+  if (!n) throw notFound();
+  const { cur, app } = await getFunctionForNotes(req.user, n.function_id);        // scope enforced on every action
+  const body = req.body || {};
+  const lead = canDecideNote(req.user, app);
+  const isAuthor = n.author_id === req.user.id;
+  const summary = `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`;
+  const audit = (entity, action, oldValue, newValue, context) =>
+    logAudit(req, { db: context.db, action, entity, entityId: entity === 'function_note' ? noteId : n.function_id, summary, oldValue, newValue,
+      context: { note_id: noteId, function_id: n.function_id, ...context, db: undefined } });
+
+  // ---- author toggles done
+  if ('done' in body) {
+    if (typeof body.done !== 'boolean') throw bad('invalid_value', { field: 'done' });
+    if (!isAuthor) throw new HttpError(403, 'forbidden', { field: 'done' });   // only the author of the note
+    const row = await tx(async c => {
+      const u = (await c.query('UPDATE function_notes SET done=$2 WHERE id=$1 RETURNING *', [noteId, body.done])).rows[0];
+      await audit('function_note', 'update', { done: n.done }, { done: body.done }, { db: c });
+      return u;
+    });
+    publishChange({ app_id: cur.app_id });
+    return res.json({ note: row });
+  }
+
+  // ---- team lead sets the decision (approved / rejected)
+  if ('decision' in body) {
+    if (!['approved', 'rejected'].includes(body.decision)) throw bad('invalid_value', { field: 'decision' });
+    if (!lead) throw new HttpError(403, 'forbidden', { permission: 'apv_dept', field: 'decision' });
+    const row = await tx(async c => {
+      const u = (await c.query('UPDATE function_notes SET decision=$2, decided_by=$3, decided_at=now() WHERE id=$1 RETURNING *',
+        [noteId, body.decision, req.user.id])).rows[0];
+      // a rejected note is no longer active (an approved one may be) — keep functions.note the current active note
+      await syncFunctionNote(c, n.function_id, req.user.id);
+      await audit('function_note', 'update', { decision: n.decision }, { decision: body.decision }, { db: c, via: 'note_decision' });
+      return u;
+    });
+    publishChange({ dept_id: app.department_id, app_id: cur.app_id });
+    return res.json({ note: row });
+  }
+
+  // ---- request deletion (anyone who can see the item)
+  if (body.request_delete === true) {
+    if (n.deleted_at) throw bad('note_deleted');
+    const row = await tx(async c => {
+      const u = (await c.query(
+        `UPDATE function_notes SET delete_requested_by=$2, delete_requested_at=now() WHERE id=$1 RETURNING *`,
+        [noteId, req.user.id])).rows[0];
+      await audit('function_note', 'update', { delete_requested: false }, { delete_requested: true }, { db: c });
+      return u;
+    });
+    publishChange({ app_id: cur.app_id });
+    return res.json({ note: row });
+  }
+
+  // ---- approve deletion (team lead): the note is hidden, never removed
+  if (body.approve_delete === true) {
+    if (!lead) throw new HttpError(403, 'forbidden', { permission: 'apv_dept', field: 'approve_delete' });
+    if (n.deleted_at) throw bad('note_deleted');
+    const row = await tx(async c => {
+      const u = (await c.query('UPDATE function_notes SET deleted_by=$2, deleted_at=now() WHERE id=$1 RETURNING *',
+        [noteId, req.user.id])).rows[0];
+      await syncFunctionNote(c, n.function_id, req.user.id);        // a hidden note is no longer the active note
+      await audit('function_note', 'delete', { note: n.body }, { deleted: true }, { db: c, via: 'note_delete' });
+      return u;
+    });
+    publishChange({ dept_id: app.department_id, app_id: cur.app_id });
+    return res.json({ note: row });
+  }
+
+  throw bad('unknown_field');
 });
 
 // Rename of an item (1.9.1): name_ar and / or name_en with rename_reason, nothing else in the request, so the reason

@@ -30,6 +30,41 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.39] — 2026-10-29 — Append-only notes history per item / سجلّ الملاحظات لكل وظيفة
+
+### Added
+
+- **Database** — `function_notes` (migration `031_function_notes.sql`): an append-only history of every note on a
+  function / report item. Each note keeps its author, time, a `done` flag (the author's منتهية/غير منتهية), a team
+  lead `decision` (`approved` «معتمدة للعمل» / `rejected` «مرفوضة»), a `replaces` link (a new note following up a
+  rejected one), and soft-delete-with-approval fields. Notes are **never hard-deleted**: a member requests deletion
+  and it is only hidden after the team lead approves. `functions.note` is kept as the current active note (newest
+  non-deleted, non-rejected), so the "with-notes status requires a note" rule and every other reader keep working;
+  existing notes are backfilled into the history.
+- **Backend** — `GET /functions/:id/notes` (full chronological history, scope-enforced, returns `can.lead`),
+  `POST /functions/:id/notes` (add a note, needs `tst`; `replaces` must point at a rejected note of the same item),
+  `PATCH /notes/:noteId` (one sub-action each: author toggles `done`; the team lead sets the `decision` or approves
+  a deletion; anyone in scope may request a deletion). Team lead = `apv_dept`+scope, plus full-scope `apv_final`/`cfg`.
+  Note additions are audited as `function` (so they flow into the function-changes export); lifecycle actions as
+  `function_note`.
+- **Frontend** — The item's note opens a tidy chronological **notes timeline** in the popup, each note showing its
+  author, time and a status icon (done / pending, approved / rejected), with a rejected note linked to the one that
+  replaced it. Role-aware controls: the author toggles done; a team lead approves/rejects and approves deletions;
+  anyone in scope can request a deletion; a box appends a new note.
+
+### Tests
+
+- `backend/test/function-notes.test.js` (8 tests): history is append-only (old notes not overwritten); author
+  toggles done; team lead approves/rejects; a non-lead cannot decide (403); deletion requires lead approval (a
+  member's request does not remove the note; after approval it is hidden but still stored); scope enforced; the
+  with-notes rule still holds; `functions.note` stays the latest active note.
+
+### Upgrade notes
+
+- Run `update.sh` to apply migration **031** (creates `function_notes` and backfills existing notes).
+
+---
+
 ## [1.12.38] — 2026-10-29 — Maintenance mode (disable login) / وضع الصيانة
 
 ### Added
@@ -2945,7 +2980,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/9a5fab7...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/55bcba2...HEAD
+[1.12.39]: https://github.com/mscit-admin/ets/compare/9a5fab7...55bcba2
 [1.12.38]: https://github.com/mscit-admin/ets/compare/05f4896...9a5fab7
 [1.12.37]: https://github.com/mscit-admin/ets/compare/4eca15a...05f4896
 [1.12.36]: https://github.com/mscit-admin/ets/compare/b90c468...4eca15a
