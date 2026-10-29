@@ -92,6 +92,10 @@ export function TotpEnroll({ onEnabled, preset }) {
 export default function Login() {
   const { t, errText } = useI18n();
   const { me, refresh, logout } = useAuth();
+  const { info } = useBranding();
+  // maintenance mode (1.12.38): the login screen shows the message prominently; the form stays (administrators may
+  // still sign in — a non-admin simply gets the maintenance error on submit). message '' → the localised default.
+  const maint = info?.maintenance;
   const [stage, setStage] = useState(me?.authenticated ? me.stage : 'password');
   const [form, setForm] = useState({ username: '', password: '' });
   const [code, setCode] = useState('');
@@ -157,6 +161,12 @@ export default function Login() {
 
   return (
     <AuthCard title={t('login_title')} sub={t('login_sub')}>
+      {maint?.enabled && (
+        <Alert kind="orange">
+          <b>{t('maintenance_login_title')}</b>
+          <div style={{ marginTop: 4 }}>{maint.message || t('maintenance_default_message')}</div>
+        </Alert>
+      )}
       <form onSubmit={login}>
         {err && <Alert>{errText(err)}</Alert>}
         {!err && me?.ended && <Alert kind="orange">{t(me.ended === 'idle' ? 'session_ended_idle' : 'err_not_authenticated')}</Alert>}

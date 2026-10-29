@@ -30,6 +30,32 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.38] — 2026-10-29 — Maintenance mode (disable login) / وضع الصيانة
+
+### Added
+
+- **Backend** — Maintenance mode: an **administrator** can disable sign-in for everyone but administrators during an
+  update/maintenance window. State lives in the existing settings mechanism (no migration): `maintenance.enabled`,
+  `maintenance.message`, `maintenance.since`, `maintenance.by`. Admin-only endpoints `GET/PUT /api/maintenance`
+  (`requireAdmin`) plus a public `GET /api/maintenance/public` that returns only `{ enabled, message }`. While on:
+  the login endpoint refuses a would-be-successful **non-admin** sign-in with `503 maintenance_mode` (revealing
+  nothing more than today — a wrong password / unknown user still gets the generic 401), and a request gate
+  (`middleware/maintenance.js`) short-circuits non-admin API calls, with an allow-list (`/auth`, `/maintenance`,
+  `/messages`, `/events`) so the mandatory alert can still reach active users. **Administrators are never blocked**
+  (login or any route), so they can perform the maintenance. On enable, a mandatory **alert** is broadcast to active
+  non-admin users (reusing the existing alert → AlertGate popup).
+- **Frontend** — A maintenance banner on the login screen (the configurable message), an admin-only «الصيانة» tab in
+  Settings (toggle + editable message + on-since/by + confirm), and a persistent in-app banner (red for blocked
+  non-admins, an orange reminder for admins).
+
+### Security
+
+- Admin exemption is the invariant on both gates (`req.user?.role === ADMIN_ROLE`). The public state endpoint leaks
+  only `{ enabled, message }`. Covered by `backend/test/maintenance.test.js` (7 tests): admin-only toggle, non-admin
+  login refused while admin succeeds, public state exposes nothing sensitive, audit row written, alert fired.
+
+---
+
 ## [1.12.37] — 2026-10-28 — Project-status screen shows the new test states / حالة المشروع: عرض الحالات الجديدة
 
 ### Changed
@@ -2919,7 +2945,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/05f4896...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/9a5fab7...HEAD
+[1.12.38]: https://github.com/mscit-admin/ets/compare/05f4896...9a5fab7
 [1.12.37]: https://github.com/mscit-admin/ets/compare/4eca15a...05f4896
 [1.12.36]: https://github.com/mscit-admin/ets/compare/b90c468...4eca15a
 [1.12.35]: https://github.com/mscit-admin/ets/compare/39125e3...b90c468

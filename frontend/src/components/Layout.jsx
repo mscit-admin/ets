@@ -177,12 +177,29 @@ function Sidebar({ open, onClose }) {
   );
 }
 
+// Maintenance mode (1.12.38): a persistent banner while maintenance is on. For an administrator (never blocked) it is
+// a reminder that maintenance is active; for anyone else it explains why the rest of the app is unavailable.
+function MaintenanceBanner() {
+  const { t } = useI18n();
+  const { me, user } = useAuth();
+  const maint = me?.maintenance;
+  if (!maint?.enabled) return null;
+  const isAdmin = user?.role === 'admin';
+  return (
+    <div className={'maintenance-bar' + (isAdmin ? ' admin' : '')} role="status">
+      <Icon name={isAdmin ? 'settings' : 'alert'} size={15} />
+      <span>{isAdmin ? t('maintenance_admin_active') : (maint.message || t('maintenance_default_message'))}</span>
+    </div>
+  );
+}
+
 export default function Layout() {
   const [open, setOpen] = useState(false);
   usePresenceReporter();          // online users (1.11.0): this tab's screen, for the administrators' list
   return (
     <div className="app-shell">
       <Navbar onMenu={() => setOpen(o => !o)} />
+      <MaintenanceBanner />
       <div className="app-body">
         <Sidebar open={open} onClose={() => setOpen(false)} />
         <main className="main"><ErrorBoundary><Suspense fallback={<Loading />}><Outlet /></Suspense></ErrorBoundary></main>

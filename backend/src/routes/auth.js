@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { query, tx } from '../db/pool.js';
-import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial, sessionTiming } from '../middleware/auth.js';
+import { createSession, revokeSession, requireAuth, requireAuthDuringPasswordChange, requirePartial, sessionTiming, ADMIN_ROLE } from '../middleware/auth.js';
+import { maintenanceState, publicMaintenanceState } from '../services/maintenance.js';
 import { authLimiter } from '../middleware/ratelimit.js';
 import { hashPassword, verifyPassword, needsRehash, getDummyHash, checkPolicy, generateRecoveryCodes,
   hashRecoveryCode, recoveryCodeHashes } from '../services/passwords.js';
@@ -20,7 +21,9 @@ const r = Router();
 r.get('/public-info', async (req, res) => {
   const s = await allSettings();
   res.json({ org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], default_language: s['app.default_language'],
-    branding: await brandingVersions(), logo_height: s['app.logo_height'], login_logo_height: s['app.login_logo_height'] });
+    branding: await brandingVersions(), logo_height: s['app.logo_height'], login_logo_height: s['app.login_logo_height'],
+    // maintenance mode (1.12.38): the login screen shows the banner before anyone signs in. Only { enabled, message }.
+    maintenance: await publicMaintenanceState() });
 });
 
 // Decides whether this user must pass 2FA, enrol, or neither.
@@ -112,6 +115,17 @@ r.post('/login', authLimiter, async (req, res) => {
     if (!u.is_active) {
       await logAuth(req, { userId: u.id, username: u.username, event: 'login_inactive_user', success: false, detail: via });
       throw new HttpError(401, 'invalid_credentials');
+    }
+    // Maintenance mode (1.12.38): while on, only administrators may sign in — so they can perform the maintenance. A
+    // non-admin whose credentials are otherwise correct is refused HERE (a would-be-successful login), with a 503
+    // carrying the maintenance message. This reveals nothing beyond the existing behaviour: a wrong password / unknown
+    // user / paused account still gets the generic 401 above, never this 503. Administrators fall through and sign in.
+    if (u.role_id !== ADMIN_ROLE) {
+      const maint = await maintenanceState();
+      if (maint.enabled) {
+        await logAuth(req, { userId: u.id, username: u.username, event: 'login_blocked_maintenance', success: false, detail: via });
+        throw new HttpError(503, 'maintenance_mode', { message: maint.message || null });
+      }
     }
     if (needsRehash(u.password_hash)) await query('UPDATE users SET password_hash=$2 WHERE id=$1', [u.id, await hashPassword(password)]);
 
@@ -292,6 +306,8 @@ r.get('/me', async (req, res) => {
     user: { ...req.user, recovery_codes_left: codes.n, recovery_codes_outdated: codes.old > 0 },
     mfa_mode: s['mfa.mode'],
     session,
+    // maintenance mode (1.12.38): { enabled, message } only — the in-app banner (Layout). Admins see it too, as a note.
+    maintenance: await publicMaintenanceState(),
     ...org,
   });
 });

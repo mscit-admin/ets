@@ -108,6 +108,29 @@ people's work, so:
   user agents are for administrators only (ETS-SEC-047). The customer should tell staff that sign-ins, the screen
   in use and active time are visible to system administrators (internal policy / notice).
 
+## 3b. Maintenance mode / وضع الصيانة (1.12.31)
+
+- A **system administrator** can put the system into maintenance mode (Settings → «الصيانة», or `PUT /api/maintenance`,
+  role `admin` only — 403 for everyone else, even a holder of `cfg`). State is kept in the existing `settings` table
+  (`maintenance.enabled`, `maintenance.message`, `maintenance.since`, `maintenance.by`); **no schema change / migration
+  was needed**. These keys are deliberately absent from the generic Settings editor (`SETTING_RULES`), so only the
+  admin-only `/maintenance` endpoint can change them.
+- While it is on, **only administrators may sign in** — so they can carry out the maintenance. A would-be-successful
+  **non-admin** login is refused `503 maintenance_mode` carrying the configurable message; a wrong password / unknown
+  user / paused account still gets the generic `401 invalid_credentials`, so maintenance mode reveals nothing more
+  about an account than before. Administrators sign in normally.
+- Maintenance is **enforced on every request**, not only at login: a maintenance gate (`middleware/maintenance.js`,
+  after `sessionMiddleware`) short-circuits non-admin API requests with the same `503 maintenance_mode`, so a non-admin
+  who was already signed in is signed out of active use. A small allow-list stays open for everyone — `/auth` (login
+  state, sign-out, `/me`, 2FA), `/maintenance` (the public state), and the mandatory-alert channel `/messages` +
+  `/events` so the maintenance alert can still reach and be answered by active users.
+- **Administrators are never locked out** — every gate (the login check and the request gate) is guarded by an admin
+  exemption (`req.user?.role === 'admin'`), so an administrator can always sign in, reach every route, and turn
+  maintenance off again. This is the one invariant the feature must preserve.
+- Turning it on **audits** `maintenance_on` (off → `maintenance_off`) and fires a **mandatory alert** (reusing the alert
+  broadcast of 1.12.29) to active non-admin users, which pops up through `AlertGate`. The public `GET /maintenance/public`
+  the login screen reads leaks only `{enabled, message}` — never `since` / `by`.
+
 ## 4. Authorisation
 
 - Every API route checks the permission key (`pct`, `wgt`, `tst`, `tog`, `ren`, `mov`, `sch`, `rep`, `exp`, `imp`,
