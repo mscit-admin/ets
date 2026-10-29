@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api, path, qs, notFoundError } from '../lib/api.js';
-import { pc, VENDOR_COLORS } from '../lib/format.js';
+import { pc, VENDOR_COLORS, TEST_COLORS, NOTIF_COLORS, REVIEW_COLORS } from '../lib/format.js';
 import { Icon } from '../components/Icon.jsx';
 import { PctEquation } from '../components/PctEquation.jsx';
 import { Alert, Card, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
@@ -123,10 +123,14 @@ function NumCell({ value, min, max, step = 1, disabled, onCommit, label, check }
 }
 
 // test_status has eight states (1.12.x), review_status six (1.12.17); notification has four.
+// Colour follows the value's MEANING per field (not the raw ordinal, which would clash across fields — UX-2):
+// each field has its own semantic map, applied as a colour-named class (.select-status.<colour>).
+const STATUS_COLORS = { ts_: TEST_COLORS, ns_: NOTIF_COLORS, rv_: REVIEW_COLORS };
 function StatusSelect({ value, prefix, disabled, onChange, label, states = 4 }) {
   const { t } = useI18n();
+  const color = (STATUS_COLORS[prefix] || [])[value] || 'gray';
   return (
-    <select className={'input input-sm select-status s' + value + ' ' + prefix + value} value={value} disabled={disabled} aria-label={label}
+    <select className={'input input-sm select-status ' + color} value={value} disabled={disabled} aria-label={label}
       onChange={e => onChange(parseInt(e.target.value, 10))}>
       {Array.from({ length: states }, (_, i) => <option key={i} value={i}>{t(prefix + i)}</option>)}
     </select>

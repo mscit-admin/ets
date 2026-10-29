@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
@@ -17,7 +17,7 @@ import { ReleaseSection } from '../components/ReleasePromotion.jsx';
 const HASH_TAB = { timeline: 'general', notifications: 'notifications', backups: 'backup' };
 
 export default function Settings() {
-  const { t, errText, fmtDate } = useI18n();
+  const { t, dir, errText, fmtDate } = useI18n();
   const { can, refresh, user } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api.get('/settings'), []);
   const info = useLoad(() => api.get('/system/info'), []);
@@ -48,6 +48,26 @@ export default function Settings() {
     || (hashTab && tabKeys.includes(hashTab) && hashTab)
     || tabKeys[0];
   const selectTab = k => setParams(prev => { const n = new URLSearchParams(prev); n.set('tab', k); return n; }, { replace: true });
+  // ARIA tab semantics (UX-4): ids tie each tab to the panel, and a roving tabindex + arrow keys move between tabs
+  // (automatic activation — selecting a tab only flips a URL param, so it is cheap), matching the Menu / ItemType pattern.
+  const uid = useId();
+  const tabId = k => `${uid}-tab-${k}`;
+  const panelId = `${uid}-panel`;
+  const tablistRef = useRef(null);
+  const onTabKey = e => {
+    const fwd = dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+    const back = dir === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+    const n = tabKeys.length, i = tabKeys.indexOf(tab);
+    let j = i;
+    if (e.key === fwd) j = (i + 1) % n;
+    else if (e.key === back) j = (i - 1 + n) % n;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = n - 1;
+    else return;
+    e.preventDefault();
+    selectTab(tabKeys[j]);
+    tablistRef.current?.querySelectorAll('[role=tab]')[j]?.focus();
+  };
   // #notifications has no self-scrolling owner on this page (unlike #timeline and #backups), so scroll it here
   // once its tab is rendered and the settings have loaded.
   useEffect(() => {
@@ -96,13 +116,15 @@ export default function Settings() {
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
-      <div className="tabs" role="tablist">
+      <div className="tabs" role="tablist" ref={tablistRef} aria-label={t('settings_title')} onKeyDown={onTabKey}>
         {tabKeys.map(k => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} className={'tab' + (tab === k ? ' active' : '')}
+          <button key={k} type="button" role="tab" id={tabId(k)} aria-selected={tab === k} aria-controls={panelId}
+            tabIndex={tab === k ? 0 : -1} className={'tab' + (tab === k ? ' active' : '')}
             onClick={() => selectTab(k)}>{t('set_tab_' + k)}</button>
         ))}
       </div>
 
+      <div role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
       {tab === 'general' && <>
         {tl && sched.data?.can.timeline && <TimelineCard tl={tl} setTl={setTl} unit={sched.data.unit} />}
 
@@ -186,6 +208,7 @@ export default function Settings() {
           </Card>
         )}
       </>}
+      </div>
     </div>
   );
 }
