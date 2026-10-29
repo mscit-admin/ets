@@ -62,6 +62,9 @@ export default function Department() {
                     <span className="orange" title={t('ts_1')}>{a.calc.tests[1]}</span>
                     <span className="red" title={t('ts_3')}>{a.calc.tests[3]}</span>
                     <span className="amber" title={t('ts_4')}>{a.calc.tests[4]}</span>
+                    <span className="purple" title={t('ts_5')}>{a.calc.tests[5]}</span>
+                    <span className="blue" title={t('ts_6')}>{a.calc.tests[6]}</span>
+                    <span className="cyan" title={t('ts_7')}>{a.calc.tests[7]}</span>
                     <span className="gray" title={t('ts_0')}>{a.calc.tests[0]}</span>
                   </span>
                 </td>

@@ -30,6 +30,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.42] — 2026-10-29 — Department mini test-status distribution shows states 5/6/7 / توزيع حالة الاختبار في شاشة الإدارة
+
+### Changed
+
+- **Frontend** — The Department screen's per-application mini test-status distribution (`mini-tests`) now shows the
+  recently-added states **5** «غير متاح للاختبار» (purple), **6** «لم يتم عرضها» (blue) and **7** «لم يتم التدريب»
+  (cyan) alongside the existing ones (it was hardcoded to 0–4). Added the matching `.mini-tests` colour classes. The
+  Dashboard test-status distribution already rendered all eight states dynamically; no change needed there.
+
+---
+
 ## [1.12.41] — 2026-10-29 — Row item actions in a kebab (⋮) menu / قائمة إجراءات الصف
 
 ### Changed
@@ -3026,7 +3037,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/0eb29ef...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/e9c3950...HEAD
+[1.12.42]: https://github.com/mscit-admin/ets/compare/0eb29ef...e9c3950
 [1.12.41]: https://github.com/mscit-admin/ets/compare/6cbd8da...0eb29ef
 [1.12.40]: https://github.com/mscit-admin/ets/compare/55bcba2...6cbd8da
 [1.12.39]: https://github.com/mscit-admin/ets/compare/9a5fab7...55bcba2
