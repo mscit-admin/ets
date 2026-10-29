@@ -1171,3 +1171,26 @@ textarea.mono { width: 100%; resize: vertical; }
 .alert-note-hint { background: #fdf7ec; border: 1px solid #f0dcb4; border-radius: var(--radius-lg); padding: 6px 10px; }
 /* a pending mandatory alert makes the nav badge prominent */
 .side-badge.alert { background: #e24c4c; color: #fff; }
+
+/* Note history popup (migration 031): a chronological thread of an item's notes with status icons and role controls */
+.notes-thread { display: flex; flex-direction: column; gap: 10px; max-height: 52vh; overflow-y: auto; margin-bottom: 12px; }
+.note-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 12px; background: var(--gray-50); }
+.note-card.note-reply { margin-inline-start: 22px; border-inline-start: 3px solid var(--border-strong); }
+.note-card.note-deleted { opacity: .6; }
+.note-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.note-status { display: inline-grid; place-items: center; }
+.note-status .icon.ok { color: var(--green-text); }
+.note-status .icon.muted { color: var(--gray-400); }
+.note-decision { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.note-decision.green { background: var(--green-bg); color: var(--green-text); }
+.note-decision.red { background: var(--red-bg); color: var(--red-text); }
+.note-decision.muted { background: var(--gray-100); color: var(--text-muted); }
+.note-author { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--gray-700); }
+.note-time { margin-inline-start: auto; }
+.note-replaces { margin-bottom: 4px; }
+.note-body { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+.note-del-badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--red-text); }
+.note-del-badge.muted { color: var(--text-muted); }
+.note-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.note-add { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.note-add .btn { align-self: flex-end; }
