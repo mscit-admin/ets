@@ -472,6 +472,17 @@ other reader of `functions.note` keep working unchanged.
   'rejected'`. `functions.note` is kept equal to the most recent active note (newest `created_at`, then `id`), or `''`
   when there is none — re-synced whenever the active note may move (a note added, approved, rejected, or a deletion
   approved).
+- **This is an app-enforced invariant with no DB backing (DB-1).** Nothing in the database — no trigger, no
+  constraint — guarantees that `functions.note` equals the current active note. It holds only because `services/notes.js`
+  is the **single writer** that re-syncs `functions.note` (via `syncFunctionNote` / `recordNoteHistory`) on every
+  change that can move the active note; any write path that forgets to route through it would leave `functions.note`
+  stale, and the "with-notes status requires a note" rule (which reads `functions.note`) would then trust a wrong
+  value. The invariant is **covered by `backend/test/active-note-sync.test.js`**, which drives the real note routes
+  and the edit path across the full lifecycle (add / reject / approve / with-notes status edit / request + approve
+  deletion / rejected-note chain / tie-break) and re-checks, after each mutation, that `functions.note` matches the
+  active note computed by an independent SQL oracle. The **DB-level hardening** — a trigger that recomputes
+  `functions.note` from `function_notes` so the invariant cannot be bypassed — is a **known, deferred follow-up
+  (DB-2 / DB-1)**; until it lands, the single-writer rule plus that test are the guard.
 - **Backfill:** each existing non-empty `functions.note` becomes one `function_notes` row with `author_id = NULL`
   (the old column kept no author) and `created_at = functions.updated_at` (the closest available note change time).
 
