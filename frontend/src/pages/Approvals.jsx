@@ -45,6 +45,7 @@ export default function Approvals() {
     return () => clearTimeout(h);
   });
   const [dlg, setDlg] = useState(null); // {req, mode:'reject'}
+  const [confirm, setConfirm] = useState(null); // { kind: 'approve', rq } | { kind: 'approveAll' } — rich confirm (UX-4)
   const key = JSON.stringify(f);
   const { data, error, loading, reload } = useLoad(() => api.get('/approvals' + qs({ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '', returned: f.returned === '1' ? 1 : '' })), [key]);
   const facets = useLoad(() => api.get('/approvals/facets' + qs({ status: f.status })), [f.status]).data;
@@ -54,17 +55,16 @@ export default function Approvals() {
       const r = await api.post(path`/approvals/${rq.id}/${action}`, body);
       const m = decisionToast(r);
       toast(t(m.key, m.vars));
-      setDlg(null); reload();
+      setDlg(null); setConfirm(null); reload();
     } catch (e) { toast(errText(e), 'red'); }
   };
   // «approve all shown»: only the requests listed now (the filters applied) that this user may approve
   const approvable = (data?.requests || []).filter(rq => rq.can?.approve).map(rq => rq.id);
   const approveAll = async () => {
-    if (!window.confirm(t('approve_shown_confirm', { n: approvable.length }))) return;
     try {
       const r = await api.post('/approvals/approve-all', { ids: approvable });
       for (const m of approveAllToasts(r)) toast(t(m.key, m.vars), m.kind === 'red' ? 'red' : undefined);
-      reload();
+      setConfirm(null); reload();
     }
     catch (e) { toast(errText(e), 'red'); }
   };
@@ -85,7 +85,7 @@ export default function Approvals() {
     <div>
       <PageHeader title={t('approvals_title')} sub={t('approvals_sub')} icon="check">
         <ExportButton report="approvals" params={{ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '' }} />
-        {approvable.length > 0 && <button className="btn btn-primary btn-sm" onClick={approveAll}>
+        {approvable.length > 0 && <button className="btn btn-primary btn-sm" onClick={() => setConfirm({ kind: 'approveAll' })}>
           {filtered ? t('approve_shown_n', { n: approvable.length }) : t('approve_all')}</button>}
       </PageHeader>
       <Card className="rq-filters">
@@ -129,7 +129,7 @@ export default function Approvals() {
           actions={<>
             <span className="muted small">{rq.requested_by_name} · {fmtDate(rq.requested_at)}</span>
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
-            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'approve')}>{t(approveLabelKey(rq.can))}</button>}
+            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => setConfirm({ kind: 'approve', rq })}>{t(approveLabelKey(rq.can))}</button>}
             {rq.can.reject && <button className="btn btn-default btn-xs" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
             {rq.can.resubmit && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'resubmit')}>{t('resubmit')}</button>}
             {rq.can.withdraw && <button className="btn btn-default btn-xs" onClick={() => act(rq, 'withdraw')}>{t('withdraw')}</button>}
@@ -176,7 +176,28 @@ export default function Approvals() {
         </Card>
       ))}
       {dlg && <RejectModal onClose={() => setDlg(null)} onSubmit={reason => act(dlg.rq, 'reject', { reason })} />}
+      {confirm && <ApproveConfirm confirm={confirm} n={approvable.length} nm={nm}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => (confirm.kind === 'approveAll' ? approveAll() : act(confirm.rq, 'approve'))} />}
     </div>
+  );
+}
+
+// Confirm an approval — a single request or «approve all shown» — through the app's rich Modal, so both carry the
+// same affordance (UX-4: before, a single approve had no confirmation while «approve all» used window.confirm).
+function ApproveConfirm({ confirm, n, nm, onClose, onConfirm }) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const all = confirm.kind === 'approveAll';
+  const rq = confirm.rq;
+  const run = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  return (
+    <Modal title={all ? t('approve_all') : t(approveLabelKey(rq.can))} onClose={onClose}
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+        <button className="btn btn-primary" onClick={run} disabled={busy}><Icon name="check" size={14} /> {t('confirm')}</button></>}>
+      {!all && <p className="muted small">{nm(rq, 'app_name')}{rq.dept_name ? <> · {nm(rq, 'dept_name')}</> : null}</p>}
+      <Alert kind="blue">{all ? t('approve_shown_confirm', { n }) : t('approve_confirm')}</Alert>
+    </Modal>
   );
 }
 

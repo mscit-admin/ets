@@ -8,7 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { editability } from '@/lib/edit';
 import { passConflict } from '@/lib/items';
 import type { Can, Item } from '@/lib/types';
-import { TEST_COLORS, pc, pendingDetails, progressPassProblem, type PendingValue, type PillColor } from '@/shared/web';
+import { TEST_COLORS, NOTIF_COLORS, REVIEW_COLORS, pc, pendingDetails, progressPassProblem, type PendingValue, type PillColor } from '@/shared/web';
 import { colors, fontSize, pills, radius, space } from '@/theme';
 import { DisabledBadge, MovedBadge, TypeChip } from './ItemCard';
 import { TypeChoice } from './ItemDialogs';
@@ -28,7 +28,10 @@ export function ItemEditor({ f, appId, can, pending, onClose, onPatch, onStatus,
   const { t, nm, lang, fmtDate } = useI18n();
   const e = editability(can, f);
   const ph = { t, nm, lang, pc, appId };
+  // Each status field maps its value → meaning → colour (shared with the web — UX-2/UX-5), not one shared map.
   const colorsOf = TEST_COLORS as PillColor[];
+  const notifColors = NOTIF_COLORS as PillColor[];
+  const reviewColors = REVIEW_COLORS as PillColor[];
   return (
     <Sheet title={`${f.code} · ${t(f.item_type === 'report' ? 'it_report' : 'it_function')}`} sub={f.name_ar} onClose={onClose} full testID="item-editor">
       <View style={st.badges}>
@@ -75,10 +78,10 @@ export function ItemEditor({ f, appId, can, pending, onClose, onPatch, onStatus,
         ) : <Pill color={colorsOf[f.test_status] ?? 'gray'}>{t('ts_' + f.test_status)}</Pill>}
         {passConflict(f) ? <Alert kind="orange" icon="alert">{t('pass_conflict_hint')} — {t('pass_conflict_fix')}</Alert> : null}
         {e.notif ? (
-          <StatusChoice label={t('notif_status')} value={f.notif_status} prefix="ns_" colorsOf={colorsOf} t={t} onChange={v => onStatus(f, 'notif_status', v)} />
+          <StatusChoice label={t('notif_status')} value={f.notif_status} prefix="ns_" colorsOf={notifColors} t={t} onChange={v => onStatus(f, 'notif_status', v)} />
         ) : <Txt size={fontSize.s} color={colors.textMuted}>{t('notif_status')}: {t('ns_' + f.notif_status)}</Txt>}
         {e.review ? (
-          <StatusChoice label={t('review_status')} value={f.review_status} prefix="rv_" colorsOf={colorsOf} t={t} onChange={v => onStatus(f, 'review_status', v)} />
+          <StatusChoice label={t('review_status')} value={f.review_status} prefix="rv_" colorsOf={reviewColors} t={t} onChange={v => onStatus(f, 'review_status', v)} />
         ) : <Txt size={fontSize.s} color={colors.textMuted}>{t('review_status')}: {t('rv_' + f.review_status)}</Txt>}
       </Section>
 

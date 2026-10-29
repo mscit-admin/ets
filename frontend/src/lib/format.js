@@ -6,6 +6,14 @@ export const pctColor = v => (v >= 90 ? 'green' : v >= 60 ? 'blue' : v >= 30 ? '
 // 0 not tested, 1 passed with note, 2 passed, 3 failed, 4 needs re-testing (amber attention tone, 1.12.25),
 // 5 not available for testing (purple, migration 029), 6 not presented (blue), 7 not trained (cyan, migration 030)
 export const TEST_COLORS = ['gray', 'orange', 'green', 'red', 'amber', 'purple', 'blue', 'cyan'];
+// Each status field means something different, so colour must follow the value's MEANING, not its ordinal
+// (shared across fields it would contradict itself — see UX-2). green = good/done, orange = attention / with notes,
+// red = bad, blue = informational, gray = unset. Derived from the i18n labels (ns_0..ns_3, rv_0..rv_5).
+// notification (ns_): 0 not set (gray), 1 working (green), 2 working with notes (orange), 3 not working (red)
+export const NOTIF_COLORS = ['gray', 'green', 'orange', 'red'];
+// review (rv_): 0 no review needed (gray), 1 present (green), 2 missing (red — drives the "missing" KPI),
+// 3 notes (orange), 4 acknowledged (blue), 5 approved (green/done)
+export const REVIEW_COLORS = ['gray', 'green', 'red', 'orange', 'blue', 'green'];
 export const VENDOR_COLORS = ['gray', 'green', 'orange', 'blue'];
 export const REPORT_COLORS = ['gray', 'green', 'red', 'orange'];
 
