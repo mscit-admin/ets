@@ -30,6 +30,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.41] — 2026-10-29 — Row item actions in a kebab (⋮) menu / قائمة إجراءات الصف
+
+### Changed
+
+- **Frontend** — On the Application screen, each item row's actions — **Rename**, **Close / Reopen**, **Remove /
+  Restore**, **Move item** — are consolidated into a single **⋮ (three-dots) menu** at the row's trailing edge (far
+  left in Arabic, far right in English — it flips with the writing direction). Each action keeps its exact
+  visibility/permission condition; the ⋮ button appears only when at least one action is available. The
+  include/exclude checkbox, item-type chip, note / notes-history icon, status cells and the state badges
+  («مقفلة», last-reopening) are unchanged. New reusable `components/Menu.jsx` (portal-based, outside-click/Esc to
+  close, keyboard-navigable, `aria-haspopup`/`role=menu`).
+
+---
+
 ## [1.12.40] — 2026-10-29 — Close / lock a finished function / إقفال الوظيفة
 
 ### Added
