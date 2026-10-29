@@ -14,6 +14,7 @@ import { DisableReasonForm, DisabledReason } from '../components/DisableReason.j
 import { ItemTypeChip, ItemTypeLegend, TypeBadge } from '../components/ItemType.jsx';
 import { RenameDialog } from '../components/RenameDialog.jsx';
 import { MoveDialog, MoveFields, AppMoveDialog } from '../components/MoveDialog.jsx';
+import { Menu } from '../components/Menu.jsx';
 import {
   DISABLE_REASONS, ITEM_TYPES, MOVE_MAX, SOURCES, SRC_COLOR, blockedItemKey, blockedItems,
   PASS, countDelta, emptyMove, emptyReason, moveReady, needsNote, noteProblem, noteReasons, passAutoFill, passConflict, pctDelta, pctText, pendingByFunction,
@@ -374,12 +375,21 @@ export default function Application() {
                 <th>{t('notif_status')}</th>
                 <th>{t('review_status')}</th>
                 <th className="w-check">{t('note')}</th>
+                <th className="w-check" aria-label={t('row_actions')} title={t('row_actions')} />
               </tr>
             </thead>
             <tbody>
-              {shown.length === 0 && <tr><td colSpan={8} className="empty">{t('fn_no_matches')}</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={9} className="empty">{t('fn_no_matches')}</td></tr>}
               {shown.slice((cur - 1) * pageSize, cur * pageSize).map(f => {
                 const locked = !!f.closed_at;            // closed = locked from editing (migration 033)
+                // the row's actions, consolidated into the ⋮ menu — each keeps its own visibility condition
+                const rowActions = [];
+                if (can.ren && !f.removed_at && !locked) rowActions.push({ key: 'rename', icon: 'edit', label: t('rn_button'), onClick: () => setRenaming(f) });
+                if (can.cls && !f.removed_at && !locked && f.enabled) rowActions.push({ key: 'close', icon: 'lock', label: t('close_button'), onClick: () => setClosing(f) });
+                if (can.cls && locked) rowActions.push({ key: 'reopen', icon: 'restore', label: t('reopen_button'), onClick: () => setReopening(f) });
+                if (can.tog && !f.removed_at && !locked) rowActions.push({ key: 'remove', label: t('fn_remove'), onClick: () => setConfirm({ f, mode: 'remove' }), danger: true });
+                if (can.tog && f.removed_at) rowActions.push({ key: 'restore', label: t('fn_restore'), onClick: () => setConfirm({ f, mode: 'restore' }) });
+                if (can.mov && !f.removed_at && !locked) rowActions.push({ key: 'move', icon: 'move', label: t('mv_button'), onClick: () => setMoving(f) });
                 return (
                 <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')
                   + (typeOf(f) === 'report' ? ' row-report' : '') + (locked ? ' row-closed' : '')}>
@@ -392,14 +402,6 @@ export default function Application() {
                     <div className="fn-title">
                       <ItemTypeChip type={typeOf(f)} code={f.code} editable={can.tog && !f.removed_at && !locked} onChange={v => patch(f, { item_type: v })} />
                       <div className="fn-title-text" lang="ar" dir="rtl">{f.name_ar}</div>
-                      {can.ren && !f.removed_at && !locked && (
-                        <button type="button" className="btn-icon btn-rename" onClick={() => setRenaming(f)}
-                          aria-label={t('rn_button')} title={t('rn_button')}><Icon name="edit" size={15} /></button>
-                      )}
-                      {can.mov && !f.removed_at && !locked && (
-                        <button type="button" className="btn-icon btn-move" onClick={() => setMoving(f)}
-                          aria-label={t('mv_button') + ' — ' + f.code} title={t('mv_button')}><Icon name="move" size={15} /></button>
-                      )}
                     </div>
                     <div className="fn-meta">
                       <span className="code">{f.code}</span>
@@ -428,14 +430,6 @@ export default function Application() {
                             <Icon name="download" size={12} /> {t('reopen_view_doc')}</a> — {f.last_reopening.reason}
                         </span>
                       )}
-                      {can.tog && !f.removed_at && !locked && <button className="btn-link small red-text" onClick={() => setConfirm({ f, mode: 'remove' })}>{t('fn_remove')}</button>}
-                      {can.tog && f.removed_at && <button className="btn-link small" onClick={() => setConfirm({ f, mode: 'restore' })}>{t('fn_restore')}</button>}
-                      {can.cls && !f.removed_at && !locked && f.enabled && (
-                        <button className="btn-link small" onClick={() => setClosing(f)} title={t('close_hint')}><Icon name="lock" size={12} /> {t('close_button')}</button>
-                      )}
-                      {can.cls && locked && (
-                        <button className="btn-link small" onClick={() => setReopening(f)}><Icon name="restore" size={12} /> {t('reopen_button')}</button>
-                      )}
                     </div>
                   </td>
                   <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled || locked} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
@@ -461,6 +455,9 @@ export default function Application() {
                       title={f.note || (needsNote(f) ? t('note_required_hint') : t('notes_history_title'))} aria-label={t('notes_history_title')}>
                       <Icon name="note" size={16} />
                     </button>
+                  </td>
+                  <td className="w-check fn-actions-cell">
+                    <Menu label={t('row_actions')} items={rowActions} />
                   </td>
                 </tr>
                 );

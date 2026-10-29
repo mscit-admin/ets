@@ -30,6 +30,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.41] — 2026-10-29 — Row item actions in a kebab (⋮) menu / قائمة إجراءات الصف
+
+### Changed
+
+- **Frontend** — On the Application screen, each item row's actions — **Rename**, **Close / Reopen**, **Remove /
+  Restore**, **Move item** — are consolidated into a single **⋮ (three-dots) menu** at the row's trailing edge (far
+  left in Arabic, far right in English — it flips with the writing direction). Each action keeps its exact
+  visibility/permission condition; the ⋮ button appears only when at least one action is available. The
+  include/exclude checkbox, item-type chip, note / notes-history icon, status cells and the state badges
+  («مقفلة», last-reopening) are unchanged. New reusable `components/Menu.jsx` (portal-based, outside-click/Esc to
+  close, keyboard-navigable, `aria-haspopup`/`role=menu`).
+
+---
+
 ## [1.12.40] — 2026-10-29 — Close / lock a finished function / إقفال الوظيفة
 
 ### Added
@@ -3012,7 +3026,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/6cbd8da...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/0eb29ef...HEAD
+[1.12.41]: https://github.com/mscit-admin/ets/compare/6cbd8da...0eb29ef
 [1.12.40]: https://github.com/mscit-admin/ets/compare/55bcba2...6cbd8da
 [1.12.39]: https://github.com/mscit-admin/ets/compare/9a5fab7...55bcba2
 [1.12.38]: https://github.com/mscit-admin/ets/compare/05f4896...9a5fab7

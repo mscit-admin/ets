@@ -62,6 +62,8 @@ const UI = {
   trash: "<path d=\"M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6\"/>",
   restore: "<path d=\"M4.5 12a7.5 7.5 0 1 0 2.2-5.3\"/><path d=\"M4.5 4v4h4\"/>",
   menu: "<path d=\"M4 7h16M4 12h16M4 17h16\"/>",
+  // kebab / three-dots row-actions trigger
+  dots: "<path d=\"M12 5h.01M12 12h.01M12 19h.01\"/>",
   pulse: "<path d=\"M3 12h4l3-7 4 14 3-7h4\"/>",
   alert: "<path d=\"M12 4 2.8 19.5h18.4z\"/><path d=\"M12 10v4.5M12 17h.01\"/>",
   info: "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5.5M12 7.8h.01\"/>",
