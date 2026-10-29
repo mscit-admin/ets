@@ -155,6 +155,9 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .mini-tests .red { background: var(--red-bg); color: var(--red-text); }
 .mini-tests .gray { background: var(--gray-bg); color: var(--gray-text); }
 .mini-tests .amber { background: var(--amber-bg); color: var(--amber-text); }
+.mini-tests .purple { background: var(--purple-bg); color: var(--purple-text); }
+.mini-tests .blue { background: var(--blue-bg); color: var(--blue-text); }
+.mini-tests .cyan { background: var(--cyan-bg); color: var(--cyan-text); }
 
 /* ---------- app shell ---------- */
 .navbar { position: sticky; top: 0; z-index: 30; height: var(--navbar-h); background: #fff; border-bottom: 1px solid var(--border); }

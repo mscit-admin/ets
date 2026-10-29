@@ -30,6 +30,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.42] — 2026-10-29 — Department mini test-status distribution shows states 5/6/7 / توزيع حالة الاختبار في شاشة الإدارة
+
+### Changed
+
+- **Frontend** — The Department screen's per-application mini test-status distribution (`mini-tests`) now shows the
+  recently-added states **5** «غير متاح للاختبار» (purple), **6** «لم يتم عرضها» (blue) and **7** «لم يتم التدريب»
+  (cyan) alongside the existing ones (it was hardcoded to 0–4). Added the matching `.mini-tests` colour classes. The
+  Dashboard test-status distribution already rendered all eight states dynamically; no change needed there.
+
+---
+
 ## [1.12.41] — 2026-10-29 — Row item actions in a kebab (⋮) menu / قائمة إجراءات الصف
 
 ### Changed
