@@ -5,6 +5,7 @@ import { logAudit } from './logs.js';
 import { namedItems, logAppliedChanges, loadUser, userRef, originIp } from './audit.js';
 import { createFunction, removeFunction, restoreFunction } from './functions.js';
 import { setDisabled, clearDisabled, currentReasons, hadReason } from './disable.js';
+import { recordNoteHistory } from './notes.js';
 import { passConflict } from './passRule.js';
 import { HttpError } from '../utils/http.js';
 import { onCommit } from '../db/pool.js';
@@ -171,6 +172,9 @@ export async function applyRequest(c, rq, req) {
       const before = toggle && it.new_value === true ? (await currentReasons(c, [it.function_id])).get(it.function_id) : null;
       if (it.kind === 'function') await c.query(`UPDATE functions SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE id=$1`, [it.function_id, it.new_value, userId]);
       else await c.query(`UPDATE app_reports SET ${it.field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1`, [it.app_id, it.new_value, userId]);
+      // an approved note edit is appended to the item's history in the requester's name (migration 031); the
+      // function's note column has just been set to the same text, so it stays the current active note
+      if (it.kind === 'function' && it.field === 'note') await recordNoteHistory(c, it.function_id, it.new_value, userId);
       applied++;
       done.push(it);
       if (rename && it.meta?.rename_reason && !done.some(x => x.function_id === it.function_id && x.field === 'rename_reason')) {
