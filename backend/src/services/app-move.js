@@ -21,6 +21,7 @@ import { getSetting } from './settings.js';
 import { hasPerm, coversDept } from '../middleware/auth.js';
 import { requestContext } from './edits.js';
 import { checkMovable } from './move.js';
+import { cents, weightMode, userName, names as nm } from './move-util.js';
 import { loadUser, userRef, originIp } from './audit.js';
 import { logAudit } from './logs.js';
 import { NOTE_MIN, NOTE_MAX } from './disable.js';
@@ -39,10 +40,6 @@ export async function moveAppNeedsApproval(user, srcDeptId, dstDeptId) {
   return !(isDeptApprover(user, srcDeptId) && isDeptApprover(user, dstDeptId));
 }
 
-const weightMode = async c => (await c.query(`SELECT value FROM settings WHERE key='calc.weight_mode'`)).rows[0]?.value === 'auto' ? 'auto' : 'fixed';
-const userName = async (c, id) => (id ? (await c.query('SELECT full_name, username FROM users WHERE id=$1', [id])).rows[0] : null);
-const cents = v => Math.round((+v || 0) * 100);
-
 /**
  * The application cannot be moved now (409): a pending edit / move / import request on the application itself (as a
  * source or a destination), or on any of its items. exceptRequest: the move_application request being approved does
@@ -57,7 +54,6 @@ export async function checkAppMovable(c, appId, { exceptRequest = null } = {}) {
 }
 
 const deptTotal = async (c, deptId) => +(await c.query('SELECT COALESCE(sum(weight), 0) AS w FROM applications WHERE department_id=$1', [deptId])).rows[0].w;
-const nm = (x, p) => ({ [p + '_name_ar']: x.name_ar, [p + '_name_en']: x.name_en });
 
 /**
  * Moves the application appId to department dstDeptId inside the caller's transaction c. The two departments are

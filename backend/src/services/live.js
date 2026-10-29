@@ -33,6 +33,10 @@ export const CHANNEL = 'ets_live';
 const ID = /^[a-z0-9_-]{1,40}$/i;
 
 // ---- publishing (call AFTER the transaction has committed) ----
+// Convention (BE-3): these live hints are fire-and-forget — do NOT `await` publishChange / publishApps. The change is
+// already durable; a hint only asks open streams to reload, and notify() swallows its own failure (logging it, then
+// dispatching in-process), so a hint can never reject or fail the request it follows. Ordered side effects that must
+// complete — the notify-events emitters (requestDecided, itemsMovedIn, …) — are the ones that get `await`ed.
 function notify(msg) {
   return query('SELECT pg_notify($1, $2)', [CHANNEL, JSON.stringify(msg)]).catch(e => {
     logger.warn({ err: e.message }, 'live: pg_notify failed, delivering in this process only');
