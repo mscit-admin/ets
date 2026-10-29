@@ -182,7 +182,18 @@ username with `@`; on `PATCH` only a changed address is checked). `email` is sto
 | Method | Path | Description |
 |---|---|---|
 | GET | `/` | Editable settings |
-| PUT | `/` | `{"mfa.mode": "required", "logs.retention_days": 365, "logs.audit_retention_days": 365, ...}` (validated; audit retention ≥ 365) |
+| PUT | `/` | `{"mfa.mode": "required", "logs.retention_days": 365, "logs.audit_retention_days": 365, ...}` (validated; audit retention ≥ 365). The maintenance-mode keys are **not** editable here — they live in the same `settings` table but are toggled only through `/maintenance` (admin only) |
+
+## Maintenance mode — `/maintenance` (1.12.31)
+While maintenance mode is on, **only administrators may sign in** (so they can carry out the maintenance) and every non-admin API request is refused `503 maintenance_mode` — except the always-open allow-list `/auth`, `/maintenance`, `/messages` (so the mandatory alert popup can load and be answered) and `/events` (the SSE stream feeding it). Administrators are **never** blocked by any of these gates. State lives in the existing `settings` table (keys `maintenance.enabled` / `.message` / `.since` / `.by`); **no migration was added**. Enabling fires a mandatory **alert** (reusing the alert broadcast of 1.12.29) to active non-admin users, which pops up through `AlertGate`.
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/public` | public (no session) | `{enabled, message}` only — the login screen's banner. Leaks nothing else (no `since`/`by`) |
+| GET | `/` | role `admin` (403 otherwise) | Full state `{enabled, message, since, by}` for the Settings screen |
+| PUT | `/` | role `admin` (403 otherwise) | `{enabled: boolean, message?: string (≤1000)}`. Returns the fresh full state. On a real off→on transition: sets `since`/`by`, audits `maintenance_on`, and sends the maintenance alert to active non-admin users; disabling clears `since`/`by` and audits `maintenance_off`. `400 invalid_value` when `enabled` is not a boolean (or `message` not a string) |
+
+The **login** endpoint (`/auth/login`) returns `503 maintenance_mode` with `{message}` for a would-be-successful **non-admin** sign-in while maintenance is on; a wrong password / unknown user still gets the generic `401 invalid_credentials` (no extra account disclosure). Administrators sign in normally. `/auth/public-info` and `/auth/me` both carry `maintenance: {enabled, message}`.
 
 ## Logs — `/logs` (permission `log`)
 | Method | Path | Description |

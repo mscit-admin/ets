@@ -37,7 +37,7 @@ export default function Settings() {
   // (the API refuses everyone else); every other tab is available to anyone who can open Settings (perm "cfg").
   const tabKeys = useMemo(() => {
     const keys = ['general', 'security', 'notifications'];
-    if (user?.role === 'admin') keys.push('backup', 'release');
+    if (user?.role === 'admin') keys.push('backup', 'release', 'maintenance');
     keys.push('advanced');
     return keys;
   }, [user?.role]);
@@ -160,6 +160,7 @@ export default function Settings() {
       {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
       {tab === 'backup' && user?.role === 'admin' && <BackupSection />}
       {tab === 'release' && user?.role === 'admin' && <ReleaseSection />}
+      {tab === 'maintenance' && user?.role === 'admin' && <MaintenanceSection />}
 
       {tab === 'advanced' && <>
         <Card title={t('sec_data')}>
@@ -186,6 +187,51 @@ export default function Settings() {
         )}
       </>}
     </div>
+  );
+}
+
+// Settings → «الصيانة» (admin only, 1.12.31): the maintenance-mode toggle + message. Enabling disables sign-in for
+// every non-admin user and sends them a mandatory alert; administrators are never locked out and keep working. Its
+// own fetch/save against /api/maintenance (NOT the generic settings save), since the API is admin-only.
+function MaintenanceSection() {
+  const { t, errText, fmtDate } = useI18n();
+  const { refresh } = useAuth();
+  const { data, loading, error, reload } = useLoad(() => api.get('/maintenance'), []);
+  const [enabled, setEnabled] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { if (data) { setEnabled(!!data.enabled); setMessage(data.message || ''); } }, [data]);
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorBox error={error} />;
+  const save = async () => {
+    if (enabled && !data.enabled && !window.confirm(t('maintenance_confirm_on'))) return;
+    setBusy(true); setErr(null);
+    try {
+      await api.put('/maintenance', { enabled, message: message.trim() });
+      toast(t('saved')); reload(); refresh();
+    } catch (e) { setErr(e); toast(errText(e), 'red'); }
+    setBusy(false);
+  };
+  return (
+    <Card title={t('maintenance_title')}>
+      {err && <Alert>{errText(err)}</Alert>}
+      <Alert kind="orange">{t('maintenance_warning')}</Alert>
+      <label className="check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> {t('maintenance_enable')}</label>
+      <div className="field-hint mt-s">{t('maintenance_enable_hint')}</div>
+      <Field label={t('maintenance_message')} className="mt" hint={t('maintenance_message_hint')}>
+        <textarea className="input" rows={3} maxLength={1000} value={message} placeholder={t('maintenance_default_message')}
+          onChange={e => setMessage(e.target.value)} />
+      </Field>
+      {data?.enabled && (
+        <div className="kv mt">
+          <div><span>{t('maintenance_state')}</span><span className="indicator-pill orange">{t('maintenance_on')}</span></div>
+          {data.since && <div><span>{t('maintenance_since')}</span><span>{fmtDate(data.since)}</span></div>}
+          {data.by && <div><span>{t('maintenance_by')}</span><span dir="ltr">{data.by}</span></div>}
+        </div>
+      )}
+      <div className="row mt"><button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button></div>
+    </Card>
   );
 }
 

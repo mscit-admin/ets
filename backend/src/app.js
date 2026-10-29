@@ -26,6 +26,8 @@ import backupRoutes from './routes/backups.js';
 import releaseRoutes from './routes/release.js';
 import messageRoutes from './routes/messages.js';
 import countRoutes from './routes/counts.js';
+import maintenanceRoutes from './routes/maintenance.js';
+import { maintenanceGate } from './middleware/maintenance.js';
 import { pairRouter, mobileRouter } from './routes/mobile.js';
 import { apiLimiter } from './middleware/ratelimit.js';
 
@@ -61,6 +63,9 @@ export function createApp() {
   api.use(accessLog);
   api.use(csrfGuard);
   api.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  // Maintenance mode (1.12.31): while on, non-admin API requests are refused with a 503 maintenance_mode; admins and a
+  // small allow-list (/auth, /maintenance, /messages, /events) stay open. See middleware/maintenance.js.
+  api.use(maintenanceGate);
   api.use('/auth', authRoutes);
   api.use('/tracker', trackerRoutes);
   api.use('/users', userRoutes);
@@ -80,6 +85,7 @@ export function createApp() {
   api.use('/release', releaseRoutes);              // Settings → «الترقية والنشر»: promotion intent (Phase 1, 1.12.18)
   api.use('/messages', messageRoutes);             // in-app messaging: compose, inbox, sent, threads, replies (1.12.26)
   api.use('/counts', countRoutes);                 // consolidated sidebar badge counts (1.12.30)
+  api.use('/maintenance', maintenanceRoutes);      // Settings → «الصيانة»: maintenance mode state + toggle (1.12.31)
   api.use(notFoundHandler);
   app.use('/api', api);
 
