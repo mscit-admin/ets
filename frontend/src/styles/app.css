@@ -873,6 +873,9 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 /* a report row: a teal line on its start edge */
 .fn-table tr.row-report > td:first-child { box-shadow: inset 3px 0 0 var(--it-rep-strong); }
 [dir=rtl] .fn-table tr.row-report > td:first-child { box-shadow: inset -3px 0 0 var(--it-rep-strong); }
+/* a closed (locked) function row: a cyan line on its start edge (migration 033) */
+.fn-table tr.row-closed > td:first-child { box-shadow: inset 3px 0 0 var(--cyan-text); }
+[dir=rtl] .fn-table tr.row-closed > td:first-child { box-shadow: inset -3px 0 0 var(--cyan-text); }
 .it-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: -4px 0 12px; font-size: 12px; color: var(--text-muted); }
 .it-legend-title { font-weight: 600; color: var(--gray-700); }
 .it-legend-item { display: inline-flex; align-items: center; gap: 6px; }
