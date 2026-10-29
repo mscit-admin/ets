@@ -1001,6 +1001,16 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 /* moving items to another application (1.10.0) */
 .fn-title .btn-move { flex: none; width: 26px; height: 26px; margin-top: -1px; opacity: .7; }
 .fn-title .btn-move:hover, .fn-title .btn-move:focus-visible { opacity: 1; }
+
+/* per-row actions consolidated into a ⋮ kebab menu (at the row's far inline edge, flips with direction) */
+.fn-actions-cell { text-align: center; }
+.row-menu-btn { opacity: .7; }
+.row-menu-btn:hover, .row-menu-btn:focus-visible, .row-menu-btn[aria-expanded="true"] { opacity: 1; }
+.row-menu-list { min-width: 200px; }
+.row-menu-item { font-family: inherit; font-size: 13px; color: var(--text); }
+.row-menu-item .icon, .row-menu-noicon { flex: none; width: 15px; color: var(--gray-600); }
+.row-menu-item.danger, .row-menu-item.danger .icon { color: var(--red-text); }
+.row-menu-item.danger:hover { background: var(--red-bg); }
 .moved-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid transparent;
   background: var(--purple-bg); color: var(--purple-text); font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .moved-chip:hover { border-color: var(--purple-text); }
