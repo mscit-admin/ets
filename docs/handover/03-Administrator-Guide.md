@@ -394,6 +394,28 @@ background. Images are stored in the database and included in backups. SVG files
 Branding images are public (the login screen shows them), so on upload the system removes their metadata
 (camera, GPS position, author, comments) and anything after the end of the image; the picture itself is unchanged.
 
+### Maintenance mode (Settings → «الصيانة») — System Administrators only, 1.12.31
+
+Use this before an update or any work that should keep ordinary users out while you keep working.
+
+1. Open **Settings → «الصيانة»** (the tab is visible only to system administrators).
+2. Optionally edit the **maintenance message** — it is shown on the login screen and sent as the alert text. Leave it
+   empty to use the built-in default. The message is a single text shown to everyone (there is no per-language field);
+   write it in the language your users expect, or keep the default.
+3. Tick **«تفعيل وضع الصيانة»** and **Save** (you will be asked to confirm). From that moment:
+   - **Non-administrators can no longer sign in** — they see the maintenance message on the login screen, and a sign-in
+     attempt is refused with it.
+   - **Non-administrators already signed in are stopped** — the rest of the app stops working for them (they see a red
+     maintenance banner) and they receive a **mandatory alert popup** telling them maintenance has started.
+   - **You and any other administrator keep full access** — administrators are never locked out, which is the whole
+     point: you perform the maintenance while signed in. Administrators see an orange reminder banner that maintenance
+     is on.
+4. When the work is done, untick the box and **Save**. Everyone can sign in and work again immediately.
+
+The tab shows, while on, **when** it was turned on and **by whom**. Turning it on and off is recorded in the change
+history (audit log) as `maintenance_on` / `maintenance_off`. If you ever lose the UI, an administrator can toggle it
+with `PUT /api/maintenance {"enabled": false}`.
+
 ## 3a. Notifications (Settings → «الإشعارات») and phones — 1.9.0
 
 Alerts reach users through the **bell** in the top bar, the **«التنبيهات»** history page and, for those who pair

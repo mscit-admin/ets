@@ -63,6 +63,12 @@ export const DEFAULT_SETTINGS = {
   'approval.edits_need_lead': true,    // data-entry edits wait for the department team lead
   'app.logo_height': 28,               // logo height in the top bar (px)
   'app.login_logo_height': 64,         // logo height on the login screen (px)
+  // maintenance mode (1.12.31): admin-only, toggled via /api/maintenance (NOT the generic settings editor), so these
+  // keys are intentionally absent from SETTING_RULES. See services/maintenance.js / routes/maintenance.js.
+  'maintenance.enabled': false,        // while true only administrators may sign in; non-admin API requests are refused
+  'maintenance.message': '',           // '' → clients use their own localised default (login banner / alert)
+  'maintenance.since': null,           // when it was last turned on (ISO timestamptz), or null
+  'maintenance.by': null,              // the username of the administrator who turned it on, or null
   // notifications (1.9.0): thresholds, schedule, rate cap, retention, policy matrix — services/notify-catalog.js
   ...NOTIFY_DEFAULTS,
 };

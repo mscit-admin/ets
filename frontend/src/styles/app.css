@@ -357,6 +357,11 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .alert.orange { background: var(--orange-bg); color: #8a3f0b; }
 .alert.blue { background: var(--blue-bg); color: #0a4f96; }
 .alert.gray { background: var(--gray-bg); color: var(--gray-700); }
+
+/* maintenance mode (1.12.31): a persistent top banner. Red for blocked (non-admin) users, orange reminder for admins. */
+.maintenance-bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 16px;
+  font-size: 13px; font-weight: 600; background: var(--red-bg); color: var(--red-text); text-align: center; }
+.maintenance-bar.admin { background: var(--orange-bg); color: #8a3f0b; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(23, 23, 23, .35); z-index: 100; display: grid; place-items: start center; padding: 8vh 16px; overflow-y: auto; }
 .modal { width: 100%; max-width: 480px; background: #fff; border-radius: var(--radius-lg); box-shadow: 0 12px 40px rgba(0, 0, 0, .2); }
 .modal.wide { max-width: 760px; }
