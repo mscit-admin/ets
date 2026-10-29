@@ -62,19 +62,41 @@ export function NumberCard({ label, value, sub, color }) {
 
 // blocking: a mandatory modal that cannot be dismissed — no X, no backdrop click, no Escape (the force-alert gate).
 // onClose is then optional and never called by the chrome.
+const MODAL_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 export function Modal({ title, onClose, children, footer, wide, blocking = false }) {
   const { t } = useI18n();
   const ref = useRef(null);
+  // Escape to close (unless blocking) and a Tab focus trap that keeps keyboard focus inside the dialog.
+  // onClose/blocking can change identity between renders, so this lives apart from the mount-only focus logic.
   useEffect(() => {
-    const k = e => { if (e.key === 'Escape' && !blocking) onClose?.(); };
+    const k = e => {
+      if (e.key === 'Escape') { if (!blocking) onClose?.(); return; }
+      if (e.key !== 'Tab') return;
+      const dialog = ref.current;
+      if (!dialog) return;
+      const items = [...dialog.querySelectorAll(MODAL_FOCUSABLE)]
+        .filter(el => el === document.activeElement || el.offsetWidth > 0 || el.offsetHeight > 0);
+      if (!items.length) { e.preventDefault(); dialog.focus(); return; }
+      const first = items[0], last = items[items.length - 1], active = document.activeElement;
+      const out = e.shiftKey ? (active === first || !dialog.contains(active)) : (active === last || !dialog.contains(active));
+      if (out) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    };
     document.addEventListener('keydown', k);
-    (ref.current?.querySelector('.modal-body textarea, .modal-body input, .modal-body select') || ref.current?.querySelector('button'))?.focus();
     return () => document.removeEventListener('keydown', k);
   }, [onClose, blocking]);
+  // On open: remember what had focus and move focus into the dialog; on close: restore focus to the opener.
+  // Mount-only, so a re-render (e.g. a fresh inline onClose) neither re-grabs focus nor drops the restore target.
+  useEffect(() => {
+    const opener = document.activeElement;
+    const dialog = ref.current;
+    (dialog?.querySelector('.modal-body textarea, .modal-body input, .modal-body select') || dialog?.querySelector('button'))?.focus();
+    return () => { if (opener instanceof HTMLElement && document.contains(opener)) opener.focus(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className={'modal-backdrop' + (blocking ? ' blocking' : '')}
       onMouseDown={blocking ? undefined : e => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={'modal' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
         <div className="modal-head">
           <h3>{title}</h3>
           {!blocking && <button className="btn-icon" onClick={onClose} aria-label={t('close')}><Icon name="x" /></button>}
@@ -130,7 +152,15 @@ export function ToastHost() {
       setTimeout(() => setItems(x => x.filter(i => i.id !== id)), 3200);
     };
   }, []);
-  return <div className="toasts">{items.map(i => <div key={i.id} className={'toast ' + i.kind}>{i.msg}</div>)}</div>;
+  // Live region so screen readers announce save/error feedback: the container is polite (green/blue/info),
+  // while red error toasts carry role="alert" (assertive) so a failure interrupts. Each toast announces atomically.
+  return (
+    <div className="toasts" role="status" aria-live="polite">
+      {items.map(i => (
+        <div key={i.id} className={'toast ' + i.kind} aria-atomic="true" role={i.kind === 'red' ? 'alert' : undefined}>{i.msg}</div>
+      ))}
+    </div>
+  );
 }
 
 // Data loader hook: const { data, error, loading, reload, refresh } = useLoad(o => api.get(url, o), [deps])

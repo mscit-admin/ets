@@ -1,6 +1,6 @@
 {
   "name": "ets-frontend",
-  "version": "1.12.42",
+  "version": "1.12.43",
   "private": true,
   "description": "ETS — ERP Tracking System: web UI (React + Vite), Arabic/English, Cairo font",
   "type": "module",

@@ -465,7 +465,9 @@ other reader of `functions.note` keep working unchanged.
   - soft-delete with team-lead approval (a note is **never hard-deleted**, so the audit trail survives): a member
     REQUESTS deletion (`delete_requested_by int`, `delete_requested_at timestamptz`); the team lead APPROVES it
     (`deleted_by int`, `deleted_at timestamptz`) and only then is the note hidden.
-  - Indexes on `function_id` and on `created_at`.
+  - Indexes on `function_id`, plus the composite `function_notes_fn_recent (function_id, created_at, id)` added by
+    migration 034 for the per-item newest-first read; the standalone `created_at`-only index 031 first created was
+    dropped by 034 (it served no query — see 3o).
 - A note is **active** (it counts as the item's current note) while `deleted_at IS NULL AND decision IS DISTINCT FROM
   'rejected'`. `functions.note` is kept equal to the most recent active note (newest `created_at`, then `id`), or `''`
   when there is none — re-synced whenever the active note may move (a note added, approved, rejected, or a deletion
@@ -522,6 +524,26 @@ FROM functions f LEFT JOIN users u ON u.id = f.closed_by WHERE f.closed_at IS NO
 SELECT DISTINCT ON (function_id) function_id, reason, doc_name, reopened_at
 FROM function_reopenings ORDER BY function_id, reopened_at DESC;
 ```
+
+### 3o. Migration 034 — review index tidy-up
+
+From the database-design review. Forward-only and idempotent (`CREATE INDEX IF NOT EXISTS` / `DROP INDEX IF EXISTS`).
+
+- **`function_notes` (DB-4).** The table's only reads are per-item, newest-first (`services/notes.js`:
+  `WHERE function_id = $1 … ORDER BY created_at DESC, id DESC`, and the history `ORDER BY created_at, id`). Migration 034
+  adds the composite `function_notes_fn_recent (function_id, created_at, id)` — leading with `function_id` and carrying
+  the ORDER BY columns so the lookup is an index range scan with no extra sort (Postgres reads the plain-ASC index
+  backwards for the `DESC` queries) — and **drops** the standalone `function_notes_created_at_idx` (migration 031),
+  which backed no query and was pure write overhead. (`function_notes_function_id_idx` is left in place: it is covered
+  by the new composite, but dropping it was outside this item's scope and keeping it is harmless.)
+- **Audit-log scoped read (DB-3): deferred, no index added.** The scoped audit read
+  (`routes/logs.js`) filters `entity='function' AND entity_id ~ '^[0-9]+$' AND entity_id::int IN (…)`, so the `::int`
+  cast is non-sargable against `audit_log(entity, entity_id)`. The review's candidate fix was a partial expression
+  index `((entity_id)::int) WHERE entity='function' AND entity_id ~ '^[0-9]+$'`. Migration 034 **does not** add it:
+  the `~ '^[0-9]+$'` predicate does not bound the numeric length, so an all-digit value wider than int4 would still
+  match the predicate yet overflow on `::int` and fail the index build on arbitrary data; and the `expr IN (SELECT …)`
+  semi-join is not guaranteed to use such an expression index. The migration documents the deferral in its comment and
+  leaves the query logic unchanged (correctness over forcing a fix).
 
 ## 4. Code values
 

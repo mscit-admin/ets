@@ -202,8 +202,13 @@ export default function Application() {
   // open its page of the table, scroll to it and highlight it for a moment.
   const [focusId, setFocusId] = useState(null);
   const hashId = /^#fn-(\d+)$/.exec(location.hash)?.[1];
+  // Latest table state, read through a ref inside the hash-focus effect: the effect runs only when the link
+  // changes (not on every reload), so it must look at current fns/shown/pageSize, never a stale render snapshot.
+  const hashState = useRef();
+  hashState.current = { fns, shown, pageSize, hasData: !!data };
   useEffect(() => {
-    if (!hashId || !data) return;
+    const { fns, shown, pageSize, hasData } = hashState.current;
+    if (!hashId || !hasData) return;
     const id = +hashId, f = fns.find(x => x.id === id);
     if (!f) return;
     let list = shown;
@@ -320,8 +325,8 @@ export default function Application() {
         <Alert kind="blue">
           <b>{t('lifecycle_pending')}</b>
           <ul className="plain-list">
-            {pendingLife.map((p, i) => (
-              <li key={i}>{p.field === 'create' ? `＋ ${t('fn_add')}: ${p.new_value?.name_ar}` : p.new_value?.removed
+            {pendingLife.map(p => (
+              <li key={`${p.request_id}:${p.function_id ?? ''}:${p.field}`}>{p.field === 'create' ? `＋ ${t('fn_add')}: ${p.new_value?.name_ar}` : p.new_value?.removed
                 ? `－ ${t('fn_remove')}: ${fns.find(f => f.id === p.function_id)?.name_ar || ''} (${p.new_value.reason})`
                 : `↺ ${t('fn_restore')}: ${fns.find(f => f.id === p.function_id)?.name_ar || ''}`} — <span className="muted">{p.requested_by_name}</span></li>
             ))}

@@ -30,6 +30,43 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.43] — 2026-10-29 — Code-review batch 1: dependency DoS fix, accessibility, indexes / إصلاحات المراجعة — الدفعة ١
+
+Applied the first, high-value batch of fixes from the full code & security review (architecture + OWASP). No behaviour
+change beyond the fixes below.
+
+### Security
+
+- **Dependencies (A06)** — `npm audit fix` resolved two transitive DoS advisories under express@5.3.0:
+  **body-parser** 2.3.0 → 2.4.0 (GHSA-27r3-jxmh-p828, High) and **qs** 6.16.0 → 6.17.1 (Moderate). `npm audit`
+  now reports 0 vulnerabilities; express stays 5.3.0 (non-breaking, lockfile-only).
+
+### Fixed
+
+- **Frontend (accessibility)** — Toasts now live in an `aria-live` region (`role="status"` polite; error toasts
+  `role="alert"`) so screen-reader/keyboard users hear save/error feedback. Modals (`components/ui.jsx`) now **trap
+  focus** (Tab/Shift+Tab cycle inside the dialog) and **restore focus** to the opener on close; the blocking
+  AlertGate still cannot be dismissed but now traps focus correctly.
+- **Frontend** — Stable React keys for the Logs change/diff/notes lists and the Application pending-edits list
+  (were array-index); the Application hash-focus effect now reads current state via a ref (removes a stale-closure
+  smell; behaviour unchanged).
+- **Backend** — `config.js` `int()` env helper now falls back to the default on a non-numeric value instead of
+  silently yielding `NaN` into pool size / listen port / TTLs.
+
+### Performance
+
+- **Database** — Migration `034_review_indexes.sql`: added the composite `function_notes (function_id, created_at,
+  id)` index the note history/active-note queries use, and dropped the redundant standalone `created_at` index.
+  (The audit-log scope-read index (DB-3) was evaluated and intentionally deferred — a safe, planner-used expression
+  index could not be guaranteed on arbitrary data; documented in the migration.)
+
+### Upgrade notes
+
+- Run `update.sh` to apply migration **034** (index tidy-up only — no data change). Run `npm ci` on the backend so
+  the patched lockfile takes effect.
+
+---
+
 ## [1.12.42] — 2026-10-29 — Department mini test-status distribution shows states 5/6/7 / توزيع حالة الاختبار في شاشة الإدارة
 
 ### Changed
@@ -3037,7 +3074,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/e9c3950...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/48f9997...HEAD
+[1.12.43]: https://github.com/mscit-admin/ets/compare/e9c3950...48f9997
 [1.12.42]: https://github.com/mscit-admin/ets/compare/0eb29ef...e9c3950
 [1.12.41]: https://github.com/mscit-admin/ets/compare/6cbd8da...0eb29ef
 [1.12.40]: https://github.com/mscit-admin/ets/compare/55bcba2...6cbd8da
