@@ -20,6 +20,7 @@ import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId } from '../u
 import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
 import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
   duplicatesOf } from '../services/disable.js';
+import { parseReopenReason, parseReopenDoc } from '../services/reopen.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -103,12 +104,19 @@ export async function applicationData(user, id) {
   const a = await getApp(user, id);
   const v = await loadVisible(user);
   const [fns, rep, dept] = await Promise.all([
-    query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name, db.full_name AS disabled_by_name FROM functions f
+    query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name, db.full_name AS disabled_by_name,
+        cb.full_name AS closed_by_name FROM functions f
       LEFT JOIN users u ON u.id=f.updated_by LEFT JOIN users rb ON rb.id=f.removed_by LEFT JOIN users db ON db.id=f.disabled_by
+      LEFT JOIN users cb ON cb.id=f.closed_by
       WHERE f.app_id=$1 ORDER BY f.sort, f.id`, [a.id]),
     query('SELECT * FROM app_reports WHERE app_id=$1', [a.id]),
     query('SELECT * FROM departments WHERE id=$1', [a.department_id]),
   ]);
+  // the most recent reopening of each function (its attached document + reason), shown under a reopened item
+  const reopenings = new Map((await query(`SELECT DISTINCT ON (function_id) function_id, id, reason, reopened_at, doc_name,
+      (SELECT full_name FROM users WHERE id=reopened_by) AS reopened_by_name
+    FROM function_reopenings WHERE function_id = ANY($1) ORDER BY function_id, reopened_at DESC`,
+  [fns.rows.map(f => f.id)])).rows.map(x => [x.function_id, x]));
   const u = user;
   // the functions each excluded duplicate points at (names only within the reader's scope)
   const dups = await duplicatesOf(query, user, fns.rows.filter(f => !f.enabled).map(f => f.id));
@@ -125,13 +133,15 @@ export async function applicationData(user, id) {
       ...(appMoves.length ? { moves: appMoves, moved_from: appMovedFrom } : {}) },
     department: dept.rows[0],
     functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [],
-      ...(moves.has(f.id) ? { moves: moves.get(f.id), moved_from: movedFrom(f) } : {}) })),
+      ...(moves.has(f.id) ? { moves: moves.get(f.id), moved_from: movedFrom(f) } : {}),
+      ...(reopenings.has(f.id) ? { last_reopening: reopenings.get(f.id) } : {}) })),
     report: rep.rows[0] || null,
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
     settings: calcSettings(v.settings),
-    // lead: may decide notes (approve / reject) and approve their deletion on this application (services/notes.js)
-    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep'), lead: canDecideNote(u, a) },
+    // lead: may decide notes (approve / reject) and approve their deletion (services/notes.js); cls: may close / reopen a function (apv_final)
+    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep'),
+      lead: canDecideNote(u, a), cls: hasPerm(u, 'apv_final') },
   };
 }
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
@@ -162,6 +172,10 @@ r.patch('/functions/:id', async (req, res) => {
   if (!cur) throw notFound();
   await getApp(req.user, cur.app_id);
   const body = { ...(req.body || {}) };
+  // A closed function is locked (migration 033): no field edit and no rename until it is reopened. Only closing /
+  // reopening change its state. This guard mirrors the function_removed one and sits ahead of the rename dispatch so
+  // both a field edit and a rename are refused.
+  if (cur.closed_at) throw bad('closed_locked');
   // the names (Arabic / English) change only with a reason, in a request of their own (1.9.1)
   if (RENAME_KEYS.some(k => Object.hasOwn(body, k))) return renameFunction(req, res, cur, body);
   if (cur.removed_at) throw bad('function_removed');
@@ -434,12 +448,13 @@ r.post('/applications/:id/bulk', async (req, res) => {
   // A bulk «نجح» also brings every newly-passed item (not yet «نجح») up to 100 % in the same operation (1.12.21).
   const setPass = field === 'test_status' && Number(value) === PASS;
   if (await needsLeadApproval(req.user, a)) {
-    const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id`, [a.id])).rows
+    // closed (locked) items are left untouched by a bulk set (migration 033): closed_at IS NULL everywhere
+    const rows = (await query(`SELECT id, ${field} AS v FROM functions WHERE app_id=$1 AND enabled AND closed_at IS NULL ORDER BY sort, id`, [a.id])).rows
       .filter(x => Number(x.v) !== Number(value));
     // progress bumps travel with the request so the approved result is «نجح» @ 100 %: only items becoming «نجح»
     // (test_status <> PASS) and below 100 — an item already «نجح» is left untouched.
     const bumps = setPass
-      ? (await query(`SELECT id, progress FROM functions WHERE app_id=$1 AND enabled AND test_status <> $2 AND progress < 100 ORDER BY sort, id`, [a.id, PASS])).rows
+      ? (await query(`SELECT id, progress FROM functions WHERE app_id=$1 AND enabled AND closed_at IS NULL AND test_status <> $2 AND progress < 100 ORDER BY sort, id`, [a.id, PASS])).rows
       : [];
     const items = [
       ...rows.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field, old_value: x.v, new_value: value })),
@@ -452,14 +467,15 @@ r.post('/applications/:id/bulk', async (req, res) => {
     return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: rows.length });
   }
   const n = await tx(async c => {
-    const before = (await c.query(`SELECT id, code, name_ar, name_en, progress, ${field} AS v FROM functions WHERE app_id=$1 AND enabled ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
+    const before = (await c.query(`SELECT id, code, name_ar, name_en, progress, ${field} AS v FROM functions WHERE app_id=$1 AND enabled AND closed_at IS NULL ORDER BY sort, id FOR UPDATE`, [a.id])).rows;
     await bulkPassCheck(c, a.id, field, value);              // again on the locked rows
     // For «نجح», also set progress = 100 — but only on rows that were not already «نجح» (test_status <> value), so an
     // item already passed below 100 % keeps its progress. The CASE reads the pre-update test_status (same statement).
+    // closed (locked) items are never written by a bulk set (migration 033).
     const sql = setPass
       ? `UPDATE functions SET test_status=$2, progress = CASE WHEN test_status <> $2 THEN 100 ELSE progress END,
-         updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`
-      : `UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled RETURNING id`;
+         updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled AND closed_at IS NULL RETURNING id`
+      : `UPDATE functions SET ${field}=$2, updated_at=now(), updated_by=$3 WHERE app_id=$1 AND enabled AND closed_at IS NULL RETURNING id`;
     const q = await c.query(sql, [a.id, value, req.user.id]);
     const changed = before.filter(x => Number(x.v) !== Number(value));
     const items = changed.slice(0, 500).map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, code: x.code, name_ar: x.name_ar, name_en: x.name_en,
@@ -483,7 +499,7 @@ r.post('/applications/:id/bulk', async (req, res) => {
 async function bulkPassCheck(c, appId, field, value) {
   if (!(field === 'progress' && value < 100)) return;
   const rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
-    WHERE app_id=$1 AND enabled AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
+    WHERE app_id=$1 AND enabled AND closed_at IS NULL AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
   if (!rows.length) return;
   const items = rows.map(x => ({ function_id: x.id, app_id: appId, code: x.code, name_ar: x.name_ar, name_en: x.name_en, item_type: x.item_type,
     progress: Number(value), current_progress: Number(x.progress), test_status: x.test_status, error: 'progress_below_100_while_passed' }));
@@ -502,9 +518,11 @@ async function bulkEnabled(req, res, a) {
   if (typeof value !== 'boolean') throw bad('invalid_value', { field: 'value' });
   if (!Array.isArray(raw) || !raw.length || raw.length > 500 || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids' });
   const ids = [...new Set(raw)];
-  const rows = (await query('SELECT id, code, name_ar, enabled, removed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
+  const rows = (await query('SELECT id, code, name_ar, enabled, removed_at, closed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
   // only functions of this application that are not removed (ETS-SEC-058)
   if (rows.length !== ids.length || rows.some(x => x.removed_at)) throw bad('invalid_value', { field: 'function_ids' });
+  // a closed (locked) item keeps its include / exclude state until it is reopened (migration 033)
+  if (rows.some(x => x.closed_at)) throw bad('closed_locked');
   let disable = null;
   if (!value) {
     disable = parseDisableReason(req.body);
@@ -549,9 +567,11 @@ async function bulkItemType(req, res, a) {
   if (!FIELD_OK.item_type(value)) throw bad('invalid_value', { field: 'value' });
   if (!Array.isArray(raw) || !raw.length || raw.length > 500 || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids' });
   const ids = [...new Set(raw)];
-  const rows = (await query('SELECT id, code, name_ar, item_type, removed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
+  const rows = (await query('SELECT id, code, name_ar, item_type, removed_at, closed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
   // only items of this application that are not removed (ETS-SEC-058)
   if (rows.length !== ids.length || rows.some(x => x.removed_at)) throw bad('invalid_value', { field: 'function_ids' });
+  // a closed (locked) item keeps its type until it is reopened (migration 033)
+  if (rows.some(x => x.closed_at)) throw bad('closed_locked');
   const targets = rows.filter(x => x.item_type !== value);
   if (!targets.length) return res.json({ updated: 0 });
   if (await needsLeadApproval(req.user, a)) {
@@ -680,6 +700,7 @@ async function loadFn(req, { removed }) {
 
 r.post('/functions/:id/remove', requirePerm('tog'), async (req, res) => {
   const { cur, a } = await loadFn(req, { removed: false });
+  if (cur.closed_at) throw bad('closed_locked');          // a closed (locked) item is reopened before it can be removed
   const reason = str(req.body?.reason, 1000);
   if (!reason) throw bad('reason_required');
   const impact = await impactOf(req.user, a.id, { drop: [cur.id] });
@@ -703,6 +724,65 @@ r.post('/functions/:id/restore', requirePerm('tog'), async (req, res) => {
       await logAudit(req, { db: c, action: 'restore', entity: 'function', entityId: cur.id, summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}` });
       return f;
     } });
+});
+
+// ---- close / lock & reopen a function (migration 033) ----
+// Closing is the final-endorsement action: a holder of 'apv_final' («الاعتماد النهائي») marks a finished function as
+// done. It becomes locked (no edit until reopened) and counts as 100 % in the calculation while staying counted
+// (services/calc.js). Reopening needs an attached official document AND a written reason. Both routes enforce scope
+// (getApp in loadFn) and the 'apv_final' permission.
+r.post('/functions/:id/close', requirePerm('apv_final'), async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: false });
+  if (cur.closed_at) throw bad('already_closed');
+  const updated = await tx(async c => {
+    const u = (await c.query(`UPDATE functions SET closed_at=now(), closed_by=$2, updated_at=now(), updated_by=$2
+      WHERE id=$1 AND closed_at IS NULL AND removed_at IS NULL RETURNING *`, [cur.id, req.user.id])).rows[0];
+    if (!u) throw new HttpError(409, 'already_closed');
+    await logAudit(req, { db: c, action: 'close', entity: 'function', entityId: cur.id,
+      summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`, oldValue: { closed: false }, newValue: { closed: true } });
+    return u;
+  });
+  publishChange({ dept_id: a.department_id, app_id: cur.app_id });     // the item now reads as 100 %
+  res.json({ function: updated });
+});
+
+// Reopen: MULTIPART-style upload is not used in this codebase; like a branding image the document travels as a data:
+// URL in the JSON body (body: { document: "data:application/pdf;base64,…", reason }). largeJson parses it after the
+// permission check. Both the document and the reason are mandatory.
+r.post('/functions/:id/reopen', requirePerm('apv_final'), largeJson, async (req, res) => {
+  const { cur, a } = await loadFn(req, { removed: false });
+  if (!cur.closed_at) throw bad('not_closed');
+  const reason = parseReopenReason(req.body?.reason);
+  const doc = parseReopenDoc(req.body?.document);
+  const updated = await tx(async c => {
+    const u = (await c.query(`UPDATE functions SET closed_at=NULL, closed_by=NULL, updated_at=now(), updated_by=$2
+      WHERE id=$1 AND closed_at IS NOT NULL RETURNING *`, [cur.id, req.user.id])).rows[0];
+    if (!u) throw new HttpError(409, 'not_closed');
+    const ro = (await c.query(`INSERT INTO function_reopenings(function_id, reopened_by, reason, doc_name, doc_mime, doc_size, doc_data)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [cur.id, req.user.id, reason, doc.name, doc.mime, doc.size, doc.data])).rows[0];
+    await logAudit(req, { db: c, action: 'reopen', entity: 'function', entityId: cur.id,
+      summary: `${cur.app_id}/${cur.code} ${cur.name_ar.slice(0, 80)}`, oldValue: { closed: true },
+      newValue: { closed: false, reason, reopening_id: ro.id, doc_name: doc.name, doc_mime: doc.mime, doc_size: doc.size } });
+    return u;
+  });
+  publishChange({ dept_id: a.department_id, app_id: cur.app_id });
+  res.json({ function: updated });
+});
+
+// Serve a stored reopen document (scope-enforced, like branding serves its image). Shown inline; never sniffed by the
+// browser (nosniff) and framed by a strict CSP so a stored file can do nothing but be viewed / downloaded.
+r.get('/functions/:id/reopenings/:roId/document', async (req, res) => {
+  const id = idParam(req.params.id);
+  const f = (await query('SELECT app_id FROM functions WHERE id=$1', [id])).rows[0];
+  if (!f) throw notFound();
+  await getApp(req.user, f.app_id);                        // scope
+  const roId = idParam(req.params.roId, 'reopening_id');
+  const ro = (await query('SELECT doc_name, doc_mime, doc_size, doc_data FROM function_reopenings WHERE id=$1 AND function_id=$2', [roId, id])).rows[0];
+  if (!ro) throw notFound();
+  res.set({ 'Content-Type': ro.doc_mime, 'Content-Disposition': `inline; filename="${ro.doc_name}"`,
+    'Content-Length': String(ro.doc_size), 'Cache-Control': 'private, max-age=0, no-store',
+    'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" });
+  res.send(ro.doc_data);
 });
 
 // ---- moving items to another application (1.10.0, services/move.js) ----
@@ -768,9 +848,11 @@ async function movePlan(req, src, ids, { needReason }) {
   if (!canSeeApp(req.user, dst)) throw new HttpError(403, 'out_of_scope', { application: toId });
   if (dst.id === src.id) throw bad('move_same_app');
   const reason = needReason ? parseMoveReason(req.body?.reason) : null;
-  const rows = (await query('SELECT id, app_id, code, name_ar, name_en, enabled, weight, removed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id',
+  const rows = (await query('SELECT id, app_id, code, name_ar, name_en, enabled, weight, removed_at, closed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id',
     [src.id, ids])).rows;
   if (rows.length !== ids.length) throw bad('invalid_value', { field: 'function_ids' });      // only items of this application
+  // a closed (locked) item stays put until it is reopened (migration 033)
+  if (rows.some(x => x.closed_at)) throw new HttpError(409, 'closed_locked', { items: rows.filter(x => x.closed_at).map(x => ({ function_id: x.id, code: x.code })) });
   await checkMovable({ query }, rows);
   return { dst, rows, reason };
 }

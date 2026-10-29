@@ -19,8 +19,9 @@
 // All inputs are plain rows so the same code runs for any user scope.
 
 // Function rows every calculation reads (tracker screens, snapshots, import impact) — one list of columns.
+// closed_at (migration 033) is read so effectiveProgress can count a closed item as 100 % (see below).
 export const CALC_FUNCTIONS_SQL = `SELECT id, app_id, code, source, item_type, weight, progress, enabled, test_status, notif_status,
-  review_status, (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`;
+  review_status, closed_at, (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`;
 
 export const ITEM_TYPES = ['function', 'report'];
 export const isReport = f => f.item_type === 'report';
@@ -28,6 +29,11 @@ export const isReport = f => f.item_type === 'report';
 const NOTIF_SCORE = [null, 100, 50, 0];
 
 export function effectiveProgress(f, nw) {
+  // A closed (locked) function is finished (migration 033): it counts as 100 % in the weighted progress, and — unlike
+  // an excluded / removed item — it is NOT taken out of the calculation. appCalc still adds its weight to the part's
+  // weight and to the denominator (it is an ordinary enabled item), so a closed enabled item contributes its full
+  // weight as done. Closing ≠ excluding.
+  if (f.closed_at) return 100;
   const n = f.notif_status | 0;
   if (!n || !nw) return +f.progress;
   return +f.progress * (1 - nw) + NOTIF_SCORE[n] * nw;

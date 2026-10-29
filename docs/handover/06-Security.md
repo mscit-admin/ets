@@ -274,10 +274,11 @@ carries only `{unread, top_severity}`; alerts are not audit data. **Flood contro
 | Transport | HTTPS (TLS 1.2/1.3) by nginx, HSTS, HTTP → HTTPS redirect |
 | CSV injection | Exported cells that could start a formula (`= + - @ \|`, their full-width forms, also after leading spaces/invisible characters, or starting with tab/CR/LF) are prefixed with `'`. Open exports with formulas disabled when in doubt |
 | Caching of data | `Cache-Control: no-store` on all API responses |
-| Large payloads | Request bodies must be JSON (`415` otherwise), at most 100 kB and 32 levels deep; nginx allows 128 kB. Only the file uploads (`POST /api/imports`, `/api/imports/preview`, `/api/tracker/import`, `PUT /api/branding/:key`) take up to 5 MB (nginx 6 MB), read only after login, CSRF and permission checks |
+| Large payloads | Request bodies must be JSON (`415` otherwise), at most 100 kB and 32 levels deep; nginx allows 128 kB. Only the file uploads (`POST /api/imports`, `/api/imports/preview`, `/api/tracker/import`, `PUT /api/branding/:key`, `POST /api/tracker/functions/:id/reopen`) take up to 5 MB (nginx 6 MB), read only after login, CSRF and permission checks |
 | Input validation | Ids, dates, pages and lists are checked before they reach the database (`400 invalid_id` / `invalid_value` / `invalid_date`); allow-lists never match inherited names such as `toString` or `__proto__` |
 | Visual spoofing | Bidirectional control characters (U+202A–202E, U+2066–2069, U+200E/200F) are removed from all text sent to the API (passwords excepted) |
 | Branding images | Metadata (EXIF/GPS, XMP, comments, PNG text chunks) and any bytes after the end of the image are removed on upload; the pixels are not changed |
+| Reopen documents (migration 033) | The official document attached to reopen a closed function (`apv_final` only) is validated by **sniffing its first bytes** — the declared type is never trusted — and accepted only as PDF or a raster image (PNG / JPG / WEBP), up to 3 MB; it is stored in the database and served **inline with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'` and `Cache-Control: no-store`**, through a scope-enforced route (only users who can see the function's application) |
 
 ## 6. Server hardening
 

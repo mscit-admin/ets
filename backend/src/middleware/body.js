@@ -17,6 +17,7 @@ const LARGE_ROUTES = [
   ['POST', /^\/imports(\/preview)?\/?$/],
   ['POST', /^\/tracker\/import\/?$/],
   ['PUT', /^\/branding\/[^/]+\/?$/],
+  ['POST', /^\/tracker\/functions\/\d+\/reopen\/?$/],   // reopen order (PDF / image) in the JSON body (migration 033)
   ['POST', /^\/users\/import(\/preview)?\/?$/i],
   ['POST', /^\/backups\/upload\/?$/],          // raw encrypted backup file, streamed to disk inside the route (1.12.0)
 ];
