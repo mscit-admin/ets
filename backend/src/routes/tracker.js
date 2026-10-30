@@ -1,170 +1,46 @@
 import { Router } from 'express';
 import { query, tx } from '../db/pool.js';
-import { requireAuth, requirePerm, hasPerm, canSeeApp, canSeeDept, coversDept } from '../middleware/auth.js';
-import { summarize, sCurve, CALC_FUNCTIONS_SQL, ITEM_TYPES, itemCounts, reportsOverview } from '../services/calc.js';
-import { allSettings, invalidateSettings } from '../services/settings.js';
+import { requireAuth, requirePerm, hasPerm, canSeeApp, coversDept } from '../middleware/auth.js';
+import { CALC_FUNCTIONS_SQL } from '../services/calc.js';
+import { invalidateSettings } from '../services/settings.js';
 import { logAudit, logSystem } from '../services/logs.js';
 import { applyLegacy, buildLegacy, parseLegacy } from '../services/legacy.js';
 import { needsLeadApproval, createRequest } from '../services/edits.js';
 import { addNote, recordNoteHistory, syncFunctionNote, noteHistory, canDecideNote } from '../services/notes.js';
-import { recentSnapshots } from '../services/snapshots.js';
 import { createFunction, newFunctionData, removeFunction, restoreFunction } from '../services/functions.js';
-import { PASS, passConflict, passRuleError, withPassProgress, itemList } from '../services/passRule.js';
+import { PASS, passConflict, passRuleError, withPassProgress } from '../services/passRule.js';
 import { largeJson } from '../middleware/body.js';
 import { publishChange, publishApps } from '../services/live.js';
 import { functionsExcluded, itemsMovedIn, applicationMovedIn } from '../services/notify-events.js';
-import { MOVE_MAX, parseMoveReason, moveNeedsApproval, weightTransfer, destinationWeight, checkMovable, applyMove, movesOf }
+import { MOVE_MAX, parseMoveReason, moveNeedsApproval, weightTransfer, checkMovable, applyMove }
   from '../services/move.js';
-import { moveApplication, moveAppNeedsApproval, checkAppMovable, appMovesOf } from '../services/app-move.js';
+import { moveApplication, moveAppNeedsApproval, checkAppMovable } from '../services/app-move.js';
 import { HttpError, bad, notFound, str, intIn, numIn, idParam, isId, isDate } from '../utils/http.js';
 import { RENAME_KEYS, parseRename, parseRenameReason, duplicateName } from '../services/rename.js';
-import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason, refs,
-  duplicatesOf } from '../services/disable.js';
+import { REASON_KEYS, parseDisableReason, checkDuplicates, setDisabled, clearDisabled, currentReasons, reasonValues, hadReason }
+  from '../services/disable.js';
 import { parseReopenReason, parseReopenDoc } from '../services/reopen.js';
+import { FIELD_PERM, FIELD_OK, NOTE_REQUIRED, notedValue, needsNote } from '../services/field-rules.js';
+import { bulkEnabled, bulkItemType, bulkPassCheck, reasonMeta } from '../services/bulk.js';
+import { impactOf, moveImpact, appMoveImpact } from '../services/impact.js';
+import { DATE, fitTimeline, saveSchedule } from '../services/schedule.js';
+import { getApp, summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData }
+  from '../services/tracker-data.js';
+
+// The data-assembly functions and the schedule maths moved to services/ (BE-1) but are still read through this route
+// module by the Excel exports (routes/export.js); re-export them here under the same names and path.
+export { summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData }
+  from '../services/tracker-data.js';
+export { addPeriods } from '../services/schedule.js';
 
 const r = Router();
 r.use(requireAuth);
 
-const DATE = d => (d ? new Date(d).toISOString().slice(0, 10) : null);
-
-// Everything the user may see, plus the computed percentages.
-async function loadVisible(user) {
-  const [d, a, f, rep, settings] = await Promise.all([
-    query('SELECT * FROM departments ORDER BY sort'),
-    query('SELECT * FROM applications ORDER BY sort'),
-    query(CALC_FUNCTIONS_SQL),
-    query('SELECT * FROM app_reports'),
-    allSettings(),
-  ]);
-  const apps = a.rows.filter(x => canSeeApp(user, x));
-  const appIds = new Set(apps.map(x => x.id));
-  const departments = d.rows.filter(x => canSeeDept(user, x.id, apps));
-  const functions = f.rows.filter(x => appIds.has(x.app_id));
-  const reports = rep.rows.filter(x => appIds.has(x.app_id));
-  const calc = summarize({ departments, applications: apps, functions, reports, settings });
-  return { departments, apps, functions, reports, settings, calc };
-}
-
-async function getApp(user, id) {
-  const a = (await query('SELECT * FROM applications WHERE id=$1', [id])).rows[0];
-  if (!a) throw notFound();
-  if (!canSeeApp(user, a)) throw new HttpError(403, 'out_of_scope', { application: id });
-  return a;
-}
-
-// Pending (not yet approved) edits of an application, for the "awaiting approval" badges.
-async function pendingFor(appId) {
-  return (await query(`SELECT i.kind, i.function_id, i.field, i.new_value, i.meta, r.id AS request_id, r.requested_at,
-      u.full_name AS requested_by_name
-    FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
-    WHERE r.status='pending' AND i.app_id=$1 ORDER BY r.requested_at`, [appId])).rows;
-}
-
-const calcSettings = s => ({ weight_mode: s['calc.weight_mode'], notif_share: s['calc.notif_share'], reports_share: s['calc.reports_share'] });
-
-// The data behind each screen, as functions of the reader: the screen's route and its Excel export
-// (routes/export.js) use the same ones, so an export never shows more than the screen (export policy).
-export async function summaryData(user) {
-  const v = await loadVisible(user);
-  const n = itemCounts(v.functions);
-  return {
-    total: v.calc.total,
-    departments: v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) })),
-    applications: v.apps.map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
-    // functions / done: function items only; report_items: the items marked as reports (1.8.0); notes: every item
-    counts: {
-      functions: n.functions,
-      done: n.done,
-      report_items: n.report_items,
-      notes: n.notes,
-      experienceOff: v.functions.filter(f => !f.enabled && f.source === 'experience').length,
-    },
-    settings: calcSettings(v.settings),
-  };
-}
 r.get('/summary', async (req, res) => res.json(await summaryData(req.user)));
 
-export async function departmentData(user, id) {
-  const v = await loadVisible(user);
-  const d = v.departments.find(x => x.id === id);
-  if (!d) {
-    const exists = typeof id === 'string' && (await query('SELECT 1 FROM departments WHERE id=$1', [id])).rowCount;
-    throw exists ? new HttpError(403, 'out_of_scope', { department: id }) : notFound();
-  }
-  return {
-    department: { ...d, ...v.calc.departments.find(x => x.id === d.id) },
-    applications: v.apps.filter(a => a.department_id === d.id).map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
-    settings: calcSettings(v.settings),
-  };
-}
 r.get('/departments/:id', async (req, res) => res.json(await departmentData(req.user, req.params.id)));
 
-export async function applicationData(user, id) {
-  if (typeof id !== 'string') throw notFound();
-  const a = await getApp(user, id);
-  const v = await loadVisible(user);
-  const [fns, rep, dept] = await Promise.all([
-    query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name, db.full_name AS disabled_by_name,
-        cb.full_name AS closed_by_name FROM functions f
-      LEFT JOIN users u ON u.id=f.updated_by LEFT JOIN users rb ON rb.id=f.removed_by LEFT JOIN users db ON db.id=f.disabled_by
-      LEFT JOIN users cb ON cb.id=f.closed_by
-      WHERE f.app_id=$1 ORDER BY f.sort, f.id`, [a.id]),
-    query('SELECT * FROM app_reports WHERE app_id=$1', [a.id]),
-    query('SELECT * FROM departments WHERE id=$1', [a.department_id]),
-  ]);
-  // the most recent reopening of each function (its attached document + reason), shown under a reopened item
-  const reopenings = new Map((await query(`SELECT DISTINCT ON (function_id) function_id, id, reason, reopened_at, doc_name,
-      (SELECT full_name FROM users WHERE id=reopened_by) AS reopened_by_name
-    FROM function_reopenings WHERE function_id = ANY($1) ORDER BY function_id, reopened_at DESC`,
-  [fns.rows.map(f => f.id)])).rows.map(x => [x.function_id, x]));
-  const u = user;
-  // the functions each excluded duplicate points at (names only within the reader's scope)
-  const dups = await duplicatesOf(query, user, fns.rows.filter(f => !f.enabled).map(f => f.id));
-  // items moved here from another application (1.10.0): their moves, oldest first; moved_from = the move that brought
-  // the item here (the badge «منقول من …»)
-  const moves = await movesOf({ query }, user, fns.rows.map(f => f.id));
-  const movedFrom = f => [...(moves.get(f.id) || [])].reverse().find(m => m.to_app_id === a.id) || null;
-  // the application itself moved here from another department (1.12.16): its moves, oldest first; app_moved_from = the
-  // most recent one that brought it into its current department (the header badge «منقول من …»)
-  const appMoves = (await appMovesOf({ query }, user, [a.id])).get(a.id) || [];
-  const appMovedFrom = [...appMoves].reverse().find(m => m.to_department_id === a.department_id) || null;
-  return {
-    application: { ...a, calc: v.calc.applications.find(x => x.id === a.id),
-      ...(appMoves.length ? { moves: appMoves, moved_from: appMovedFrom } : {}) },
-    department: dept.rows[0],
-    functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [],
-      ...(moves.has(f.id) ? { moves: moves.get(f.id), moved_from: movedFrom(f) } : {}),
-      ...(reopenings.has(f.id) ? { last_reopening: reopenings.get(f.id) } : {}) })),
-    report: rep.rows[0] || null,
-    pending: await pendingFor(a.id),
-    needs_approval: await needsLeadApproval(u, a),
-    settings: calcSettings(v.settings),
-    // lead: may decide notes (approve / reject) and approve their deletion (services/notes.js); cls: may close / reopen a function (apv_final)
-    can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep'),
-      lead: canDecideNote(u, a), cls: hasPerm(u, 'apv_final') },
-  };
-}
 r.get('/applications/:id', async (req, res) => res.json(await applicationData(req.user, req.params.id)));
-
-// Field → permission needed to change it.
-const FIELD_PERM = {
-  progress: 'pct', notif_status: 'pct', weight: 'wgt', enabled: 'tog',
-  test_status: 'tst', review_status: 'tst', note: 'tst',
-  item_type: 'tog',          // function / report (1.8.0): whoever adds and removes items sets their type
-};
-const FIELD_OK = {
-  progress: v => numIn(v, 0, 100), weight: v => numIn(v, 0, 1000), enabled: v => typeof v === 'boolean',
-  test_status: v => intIn(v, 0, 7), notif_status: v => intIn(v, 0, 3), review_status: v => intIn(v, 0, 5),
-  note: v => typeof v === 'string' && v.length <= 2000,
-  item_type: v => ITEM_TYPES.includes(v),
-};
-
-// Statuses that mean "… with notes": choosing one makes the note mandatory. A field may have more than one such
-// value — test_status needs a note for «نجح مع ملاحظة» (1), «إعادة الاختبار» (4, 1.12.25), «غير متاح للاختبار» (5),
-// «لم يتم عرضها» (6) and «لم يتم التدريب» (7, migration 030).
-const NOTE_REQUIRED = { test_status: [1, 4, 5, 6, 7], notif_status: [2], review_status: [3] };
-const notedValue = (k, v) => (NOTE_REQUIRED[k] || []).includes(v);
-const needsNote = f => Object.entries(NOTE_REQUIRED).some(([k]) => notedValue(k, f[k]));
 
 r.patch('/functions/:id', async (req, res) => {
   const id = idParam(req.params.id);
@@ -493,108 +369,6 @@ r.post('/applications/:id/bulk', async (req, res) => {
   res.json({ updated: n });
 });
 
-// «نجح» = 100 % for a bulk set (1.8.1 / auto-filled 1.12.21): a bulk «نجح» now succeeds and brings every newly-passed
-// item up to 100 % (handled in the UPDATE below), so it is no longer refused. Only a bulk progress below 100 is still
-// refused (400) when it would lower the progress of a passed item, with the list of those items.
-async function bulkPassCheck(c, appId, field, value) {
-  if (!(field === 'progress' && value < 100)) return;
-  const rows = (await c.query(`SELECT id, code, name_ar, name_en, item_type, progress, test_status FROM functions
-    WHERE app_id=$1 AND enabled AND closed_at IS NULL AND test_status = $2 AND progress <> $3 ORDER BY sort, id`, [appId, PASS, value])).rows;
-  if (!rows.length) return;
-  const items = rows.map(x => ({ function_id: x.id, app_id: appId, code: x.code, name_ar: x.name_ar, name_en: x.name_en, item_type: x.item_type,
-    progress: Number(value), current_progress: Number(x.progress), test_status: x.test_status, error: 'progress_below_100_while_passed' }));
-  throw bad('progress_below_100_while_passed', { bulk: true, count: items.length, items: items.slice(0, 200), list: itemList(items.map(x => ({ code: x.code }))) });
-}
-
-// Reason of an exclusion as carried by a pending request item (edit_request_items.meta), applied on approval.
-const reasonMeta = d => ({ disabled_reason: d.reason, disabled_note: d.note, duplicate_of: refs(d.duplicates || []) });
-
-// Exclude (or include) the chosen functions of an application in one go: { field: 'enabled', value, function_ids,
-// and for an exclusion disabled_reason / disabled_note / duplicate_of } — the same reason for every function.
-// One audit row per function, so each one's history shows its reason.
-async function bulkEnabled(req, res, a) {
-  if (!hasPerm(req.user, 'tog')) throw new HttpError(403, 'forbidden', { permission: 'tog' });
-  const { value, function_ids: raw } = req.body;
-  if (typeof value !== 'boolean') throw bad('invalid_value', { field: 'value' });
-  if (!Array.isArray(raw) || !raw.length || raw.length > 500 || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids' });
-  const ids = [...new Set(raw)];
-  const rows = (await query('SELECT id, code, name_ar, enabled, removed_at, closed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
-  // only functions of this application that are not removed (ETS-SEC-058)
-  if (rows.length !== ids.length || rows.some(x => x.removed_at)) throw bad('invalid_value', { field: 'function_ids' });
-  // a closed (locked) item keeps its include / exclude state until it is reopened (migration 033)
-  if (rows.some(x => x.closed_at)) throw bad('closed_locked');
-  let disable = null;
-  if (!value) {
-    disable = parseDisableReason(req.body);
-    disable.duplicates = await checkDuplicates({ query }, req.user, disable.duplicate_of, ids);
-  }
-  const targets = rows.filter(x => x.enabled !== value);
-  if (!targets.length) return res.json({ updated: 0 });
-  if (await needsLeadApproval(req.user, a)) {
-    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
-      summary: `enabled = ${value} (${targets.length})`,
-      items: targets.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field: 'enabled', old_value: !value, new_value: value,
-        ...(disable ? { meta: reasonMeta(disable) } : {}) })) }));
-    publishChange({ dept_id: a.department_id, app_id: a.id });
-    return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: targets.length });
-  }
-  const n = await tx(async c => {
-    const changed = (await c.query(`UPDATE functions SET enabled=$2, updated_at=now(), updated_by=$3
-      WHERE id = ANY($1) AND removed_at IS NULL AND enabled <> $2 RETURNING id`, [targets.map(x => x.id), value, req.user.id])).rows.map(x => x.id);
-    const was = value ? await currentReasons(c, changed) : new Map();
-    if (disable) await setDisabled(c, changed, disable, req.user.id);
-    else await clearDisabled(c, changed);
-    for (const x of targets.filter(t => changed.includes(t.id))) {
-      const prev = was.get(x.id);
-      await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: x.id, summary: `${a.id}/${x.code} ${x.name_ar.slice(0, 80)}`,
-        oldValue: { enabled: !value, ...(hadReason(prev) ? prev : {}) },
-        newValue: { enabled: value, ...(disable ? reasonValues(disable) : {}) },
-        context: { bulk: true, app_id: a.id, count: changed.length } });
-    }
-    return changed.length;
-  });
-  publishChange({ dept_id: a.department_id, app_id: a.id });
-  if (!value) await functionsExcluded(a.id, n, [req.user.id]);                             // T7
-  res.json({ updated: n });
-}
-
-// Set the type (function / report, 1.8.0) of the chosen items of an application: { field: 'item_type', value, function_ids }.
-// Excluded items may be chosen too (their type matters once they count again); removed ones may not. One audit row per
-// item, like the other changes of a single item, so each one's history reads «… changed the type of D7 from … to …».
-async function bulkItemType(req, res, a) {
-  if (!hasPerm(req.user, FIELD_PERM.item_type)) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM.item_type });
-  const { value, function_ids: raw } = req.body;
-  if (!FIELD_OK.item_type(value)) throw bad('invalid_value', { field: 'value' });
-  if (!Array.isArray(raw) || !raw.length || raw.length > 500 || !raw.every(isId)) throw bad('invalid_value', { field: 'function_ids' });
-  const ids = [...new Set(raw)];
-  const rows = (await query('SELECT id, code, name_ar, item_type, removed_at, closed_at FROM functions WHERE app_id=$1 AND id = ANY($2) ORDER BY sort, id', [a.id, ids])).rows;
-  // only items of this application that are not removed (ETS-SEC-058)
-  if (rows.length !== ids.length || rows.some(x => x.removed_at)) throw bad('invalid_value', { field: 'function_ids' });
-  // a closed (locked) item keeps its type until it is reopened (migration 033)
-  if (rows.some(x => x.closed_at)) throw bad('closed_locked');
-  const targets = rows.filter(x => x.item_type !== value);
-  if (!targets.length) return res.json({ updated: 0 });
-  if (await needsLeadApproval(req.user, a)) {
-    const rq = await tx(c => createRequest(c, req, { deptId: a.department_id, appId: a.id, kind: 'bulk',
-      summary: `item_type = ${value} (${targets.length})`,
-      items: targets.map(x => ({ kind: 'function', app_id: a.id, function_id: x.id, field: 'item_type', old_value: x.item_type, new_value: value })) }));
-    publishChange({ dept_id: a.department_id, app_id: a.id });
-    return res.status(202).json({ pending: true, request_id: rq.id, updated: 0, requested: targets.length });
-  }
-  const n = await tx(async c => {
-    const changed = (await c.query(`UPDATE functions SET item_type=$2, updated_at=now(), updated_by=$3
-      WHERE id = ANY($1) AND removed_at IS NULL AND item_type <> $2 RETURNING id`, [targets.map(x => x.id), value, req.user.id])).rows.map(x => x.id);
-    for (const x of targets.filter(t => changed.includes(t.id))) {
-      await logAudit(req, { db: c, action: 'update', entity: 'function', entityId: x.id, summary: `${a.id}/${x.code} ${x.name_ar.slice(0, 80)}`,
-        oldValue: { item_type: x.item_type }, newValue: { item_type: value }, context: { bulk: true, app_id: a.id, count: changed.length } });
-    }
-    return changed.length;
-  });
-  // live updates: after COMMIT (services/live.js)
-  publishChange({ dept_id: a.department_id, app_id: a.id });
-  res.json({ updated: n });
-}
-
 // Functions a duplicate can point at: in the user's scope, counted (not excluded, not removed), other than the
 // ones being excluded. Default: the given application; all=1 searches every application in scope.
 r.get('/function-options', async (req, res) => {
@@ -620,29 +394,6 @@ r.get('/function-options', async (req, res) => {
 });
 
 // ---- add / remove / restore functions (migration 006) ----
-// Before → after % of the application, its department and the project (user's scope) for a proposed change:
-// { add: {weight, progress, enabled} } or { set: [{function_id, enabled}] }.
-async function impactOf(user, appId, { add = null, set = [], drop = [] }) {
-  const v = await loadVisible(user);
-  const app = v.apps.find(x => x.id === appId);
-  const byId = new Map(set.map(x => [x.function_id, x]));
-  const functions = v.functions.filter(f => !drop.includes(f.id)).map(f => (byId.has(f.id) ? { ...f, enabled: byId.get(f.id).enabled } : f));
-  for (const x of set) if (!v.functions.some(f => f.id === x.function_id) && x.enabled) {
-    const f = (await query('SELECT * FROM functions WHERE id=$1', [x.function_id])).rows[0];      // restoring a removed one
-    if (f) functions.push({ ...f, enabled: true, has_note: !!f.note });   // SELECT * carries item_type
-  }
-  if (add) functions.push({ id: -1, app_id: appId, source: 'custom', item_type: add.item_type || 'function', weight: add.weight,
-    progress: add.progress, enabled: add.enabled, test_status: 0, notif_status: 0, review_status: 0 });
-  const after = summarize({ departments: v.departments, applications: v.apps, functions, reports: v.reports, settings: v.settings });
-  const pick = (c) => ({ app: c.applications.find(x => x.id === appId), dept: c.departments.find(x => x.id === app.department_id), total: c.total });
-  const b = pick(v.calc), a = pick(after);
-  const row = (x, y, k = 'pct') => ({ before: x?.[k] ?? 0, after: y?.[k] ?? 0 });
-  const included = list => list.filter(f => f.app_id === appId && f.enabled).length;
-  return { app: row(b.app, a.app), dept: row(b.dept, a.dept), total: row(b.total, a.total),
-    count: row(b.app, a.app, 'count'), included: { before: included(v.functions), after: included(functions) },
-    app_weight: row(b.app, a.app, 'fnWeight') };
-}
-
 // Data-entry users (not approvers of the department) send additions / removals / restores to the team lead.
 async function lifecycle(req, res, { a, kind, summary, item, direct, impact }) {
   if (await needsLeadApproval(req.user, a)) {
@@ -805,39 +556,6 @@ r.get('/move-targets', requirePerm('mov'), async (req, res) => {
       .filter(x => x.applications.length) });
 });
 
-// Before → after of the source and destination applications, their department(s) and the project (reader's scope),
-// with the application weight that goes with the items (same calculation as the move itself, services/move.js).
-async function moveImpact(user, src, dst, ids) {
-  const v = await loadVisible(user);
-  const mode = v.settings['calc.weight_mode'] === 'auto' ? 'auto' : 'fixed';
-  const srcApp = v.apps.find(x => x.id === src.id), dstApp = v.apps.find(x => x.id === dst.id);
-  const tr = weightTransfer({ mode, srcWeight: srcApp.weight, srcFunctions: v.functions.filter(f => f.app_id === src.id), ids });
-  let dstAfter = +dstApp.weight, overflow = false;
-  try { if (tr.share > 0) dstAfter = destinationWeight(dstApp.weight, tr.share); } catch { overflow = true; }
-  const set = new Set(ids);
-  const functions = v.functions.map(f => (set.has(f.id) ? { ...f, app_id: dst.id } : f));
-  const applications = v.apps.map(a => (a.id === src.id ? { ...a, weight: tr.src_after } : a.id === dst.id ? { ...a, weight: dstAfter } : a));
-  const after = summarize({ departments: v.departments, applications, functions, reports: v.reports, settings: v.settings });
-  const pair = (b, x, k) => ({ before: b?.[k] ?? 0, after: x?.[k] ?? 0 });
-  const appRow = (a, role) => {
-    const b = v.calc.applications.find(x => x.id === a.id), x = after.applications.find(y => y.id === a.id);
-    return { id: a.id, role, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en,
-      pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight'), count: pair(b, x, 'count') };
-  };
-  const deptRow = id => {
-    const d = v.departments.find(x => x.id === id);
-    const b = v.calc.departments.find(x => x.id === id), x = after.departments.find(y => y.id === id);
-    return { id, name_ar: d.name_ar, name_en: d.name_en, is_base: d.is_base, pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight') };
-  };
-  const moved = v.functions.filter(f => set.has(f.id));
-  return { mode, items: ids.length, counted: moved.filter(f => f.enabled).length,
-    weight: { share: tr.share, moved_weight: tr.moved_weight, src_items_weight: tr.denominator, overflow,
-      src: { before: +srcApp.weight, after: tr.src_after }, dst: { before: +dstApp.weight, after: dstAfter } },
-    apps: [appRow(srcApp, 'source'), appRow(dstApp, 'destination')],
-    departments: [...new Set([src.department_id, dst.department_id])].map(deptRow),
-    total: pair(v.calc.total, after.total, 'pct') };
-}
-
 // The common checks of a move (single or bulk) → { src, dst, rows }: 'mov' (route), both applications in scope,
 // a different destination, items of the source application, not removed, no pending request / import about them.
 async function movePlan(req, src, ids, { needReason }) {
@@ -938,24 +656,6 @@ async function appMovePlan(req, app, { needReason }) {
   return { dst, reason };
 }
 
-// Before → after of the two departments and the project (reader's scope) of moving the application to dstDept.
-async function appMoveImpact(user, app, dst) {
-  const v = await loadVisible(user);
-  const mode = v.settings['calc.weight_mode'] === 'auto' ? 'auto' : 'fixed';
-  const applications = v.apps.map(a => (a.id === app.id ? { ...a, department_id: dst.id } : a));
-  const after = summarize({ departments: v.departments, applications, functions: v.functions, reports: v.reports, settings: v.settings });
-  const pair = (b, x, k) => ({ before: b?.[k] ?? 0, after: x?.[k] ?? 0 });
-  const deptRow = (id, role) => {
-    const d = v.departments.find(x => x.id === id) || (id === dst.id ? dst : null);
-    const b = v.calc.departments.find(x => x.id === id), x = after.departments.find(y => y.id === id);
-    return { id, role, name_ar: d?.name_ar, name_en: d?.name_en, is_base: d?.is_base, pct: pair(b, x, 'pct'), weight: pair(b, x, 'weight') };
-  };
-  const appCalcRow = v.calc.applications.find(x => x.id === app.id);
-  return { mode, app_weight: mode === 'auto' ? (appCalcRow?.weight ?? 0) : +app.weight,
-    departments: [deptRow(app.department_id, 'source'), deptRow(dst.id, 'destination')],
-    total: pair(v.calc.total, after.total, 'pct') };
-}
-
 r.post('/applications/:id/move-dept/preview', requirePerm('mov'), async (req, res) => {
   const a = await getApp(req.user, req.params.id);
   const { dst } = await appMovePlan(req, a, { needReason: false });
@@ -986,15 +686,6 @@ r.post('/applications/:id/move-dept', requirePerm('mov'), async (req, res) => {
 });
 
 // ---- weights & calculation parameters ----
-export async function weightsData(user) {
-  const v = await loadVisible(user);
-  return {
-    departments: v.departments,
-    applications: v.apps.map(a => ({ id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en,
-      weight: a.weight, default_weight: a.default_weight, fnWeight: v.calc.applications.find(x => x.id === a.id).fnWeight })),
-    settings: calcSettings(v.settings),
-  };
-}
 r.get('/weights', async (req, res) => res.json(await weightsData(req.user)));
 
 r.put('/weights', requirePerm('wgt'), async (req, res) => {
@@ -1047,27 +738,6 @@ r.post('/weights/reset', requirePerm('wgt'), async (req, res) => {
 });
 
 // ---- reports track ----
-export async function reportsData(user) {
-  const v = await loadVisible(user);
-  const reports = await query(`SELECT r.*, u.full_name AS updated_by_name FROM app_reports r LEFT JOIN users u ON u.id=r.updated_by`);
-  const byApp = new Map(reports.rows.map(x => [x.app_id, x]));
-  const base = new Set(v.departments.filter(d => d.is_base).map(d => d.id));
-  const pend = (await query(`SELECT i.app_id, i.field, i.new_value, u.full_name AS requested_by_name
-    FROM edit_request_items i JOIN edit_requests r ON r.id=i.request_id LEFT JOIN users u ON u.id=r.requested_by
-    WHERE r.status='pending' AND i.kind='report'`)).rows;
-  return {
-    departments: v.departments.filter(d => !d.is_base),
-    applications: v.apps.filter(a => !base.has(a.department_id)).map(a => {
-      const c = v.calc.applications.find(x => x.id === a.id);
-      // reportPct: the application's reports % — its report items (1.8.0) with this track — as used in its progress
-      return { id: a.id, department_id: a.department_id, name_ar: a.name_ar, name_en: a.name_en, icon: a.icon,
-        weight: c.weight, report: byApp.get(a.id) || null, report_pct: c.reportPct, report_items: c.reportItems,
-        pending: pend.filter(p => p.app_id === a.id) };
-    }),
-    settings: calcSettings(v.settings),
-    can: { rep: hasPerm(user, 'rep') },
-  };
-}
 r.get('/reports', async (req, res) => res.json(await reportsData(req.user)));
 
 r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
@@ -1101,65 +771,7 @@ r.patch('/reports/:appId', requirePerm('rep'), async (req, res) => {
 });
 
 // ---- schedule (S-curve) and project timeline ----
-// Start + k periods (months keep the day of month, clamped to the month's length), as 'YYYY-MM-DD'.
-export function addPeriods(start, unit, k) {
-  const d = new Date(start + 'T00:00:00Z');
-  if (unit === 'month') {
-    const day = d.getUTCDate();
-    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + k);
-    d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
-  } else d.setUTCDate(d.getUTCDate() + 14 * k);
-  return d.toISOString().slice(0, 10);
-}
-// Number of periods from start to close: the smallest k whose period end reaches the close date.
-function periodsBetween(start, end, unit) {
-  let k = 1;
-  while (addPeriods(start, unit, k) < end && k <= 61) k++;
-  return k;
-}
-
-function scheduleJson(s) {
-  const n = s.periods;
-  return {
-    start_date: DATE(s.start_date), end_date: DATE(s.end_date), periods: n, unit: s.unit,
-    plan: Array.isArray(s.plan) && s.plan.length === n ? s.plan : sCurve(n),
-    plan_is_default: !(Array.isArray(s.plan) && s.plan.length === n),
-    actual: Array.from({ length: n }, (_, i) => (s.actual && s.actual[i] != null ? s.actual[i] : null)),
-  };
-}
-
-export async function scheduleData(user) {
-  const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  const v = await loadVisible(user);
-  return { ...scheduleJson(s), current_pct: v.calc.total.pct,
-    can: { sch: hasPerm(user, 'sch') && !!user.fullScope, timeline: hasPerm(user, 'cfg') && !!user.fullScope } };
-}
 r.get('/schedule', async (req, res) => res.json(await scheduleData(req.user)));
-
-// Periods follow the close date when one is set; arrays are cut to fit, the plan returns to the S-curve
-// when the number of periods changes.
-function fitTimeline({ start_date, end_date, unit, periods, plan, actual }) {
-  if (start_date && end_date) {
-    if (end_date <= start_date) throw bad('end_before_start');
-    periods = periodsBetween(start_date, end_date, unit);
-    if (periods > 60) throw bad('timeline_too_long', { max: 60 });
-  }
-  if (!(Array.isArray(plan) && plan.length === periods)) plan = null;
-  actual = Array.isArray(actual) ? actual.slice(0, periods) : [];
-  return { start_date: start_date || null, end_date: (start_date && end_date) || null, unit, periods, plan, actual };
-}
-
-async function saveSchedule(req, next) {
-  const old = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  await tx(async c => {
-    await c.query(`UPDATE schedule SET start_date=$1, end_date=$2, periods=$3, unit=$4, plan=$5, actual=$6, updated_at=now(), updated_by=$7 WHERE id=1`,
-      [next.start_date, next.end_date, next.periods, next.unit, next.plan, next.actual, req.user.id]);
-    await logAudit(req, { db: c, action: 'update', entity: 'schedule', entityId: 1,
-      oldValue: { start_date: DATE(old.start_date), end_date: DATE(old.end_date), periods: old.periods, unit: old.unit, plan: old.plan, actual: old.actual },
-      newValue: next });
-  });
-  publishChange();          // schedule / timeline: dashboard curve, project status
-}
 
 r.put('/schedule', requirePerm('sch'), async (req, res) => {
   // a single project-wide schedule → full-scope users only, like the other project-wide parameters (ETS-SEC-024)
@@ -1193,59 +805,6 @@ r.put('/timeline', requirePerm('cfg'), async (req, res) => {
   res.json({ ok: true, ...next });
 });
 
-// Everything the project status page needs, for the user's scope.
-export async function projectStatusData(user) {
-  const s = (await query('SELECT * FROM schedule WHERE id=1')).rows[0];
-  const v = await loadVisible(user);
-  const on = v.functions.filter(f => f.enabled);
-  const n = itemCounts(v.functions);
-  const [snaps, edits, imports] = await Promise.all([
-    recentSnapshots(),
-    query(`SELECT app_id, count(*)::int AS n FROM edit_requests WHERE status='pending' GROUP BY 1`),
-    // per batch: the applications it changes (a scoped reader counts a batch when one of them is theirs)
-    query(`SELECT coalesce(array_agg(DISTINCT ch.app_id) FILTER (WHERE ch.app_id IS NOT NULL), '{}') AS apps, 1 AS n
-      FROM import_batches b LEFT JOIN import_changes ch ON ch.batch_id=b.id WHERE b.status='pending' GROUP BY b.id`),
-  ]);
-  // Scoped users: the project line of a snapshot is the weighted average of the departments they can see.
-  const depts = v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) }));
-  const tw = depts.reduce((a, d) => a + d.weight, 0);
-  const trend = snaps.map(x => {
-    if (user.fullScope) return { day: x.day, pct: x.pct };
-    const p = tw ? depts.reduce((a, d) => a + d.weight * (+x.departments?.[d.id] || 0), 0) / tw : 0;
-    return { day: x.day, pct: Math.round(p * 100) / 100 };
-  });
-  const deptTrend = Object.fromEntries(depts.map(d => [d.id, snaps.map(x => ({ day: x.day, pct: +x.departments?.[d.id] || 0 }))]));
-  // pending work: full scope counts everything; a scoped reader only requests / batches of applications in scope (V2-N3)
-  const visibleApps = new Set(v.apps.map(a => a.id));
-  const mine = id => visibleApps.has(id);
-  const pend = (rows, ok) => rows.filter(x => user.fullScope || ok(x)).reduce((a, x) => a + x.n, 0);
-  const tracks = v.reports.filter(x => !v.departments.find(d => d.id === v.apps.find(a => a.id === x.app_id)?.department_id)?.is_base);
-  return {
-    schedule: scheduleJson(s),
-    today: new Date().toISOString().slice(0, 10),
-    total: v.calc.total,
-    departments: depts.map(d => ({ id: d.id, name_ar: d.name_ar, name_en: d.name_en, color: d.color, emblem: d.emblem,
-      pct: d.pct, weight: d.weight, apps: d.apps })),
-    // functions / done / in_progress / not_started: function items; notes, tests and the flags: every counted item;
-    // reports*: the report items and the reports tracks pooled as in an application's reports % (1.8.0)
-    counts: {
-      functions: n.functions,
-      done: n.done,
-      in_progress: n.in_progress,
-      not_started: n.not_started,
-      notes: n.notes,
-      tests: v.calc.total.tests,
-      notif_bad: on.filter(f => (f.notif_status | 0) === 3).length,
-      review_missing: on.filter(f => (f.review_status | 0) === 2).length,
-      ...reportsOverview(v.functions, tracks, +v.settings['calc.notif_share'] || 0),
-    },
-    pending: { edits: pend(edits.rows, x => mine(x.app_id)), imports: pend(imports.rows, x => x.apps.some(mine)) },
-    trend, dept_trend: deptTrend,
-    // department status thresholds (Settings → Notifications), used by the status page and the plan alerts alike
-    health_gaps: { riskGap: +v.settings['notify.dept_risk_gap'] || 5, delayGap: +v.settings['notify.dept_delay_gap'] || 15 },
-    can: { timeline: hasPerm(user, 'cfg') && !!user.fullScope, sch: hasPerm(user, 'sch') && !!user.fullScope },
-  };
-}
 r.get('/project-status', async (req, res) => res.json(await projectStatusData(req.user)));
 
 // ---- search ----

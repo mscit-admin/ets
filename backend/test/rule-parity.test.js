@@ -1,5 +1,5 @@
 // Client / server rule-parity guard (review A3 / FE-1). The "… with notes" rule set and the «نجح» (PASS) value are
-// hand-duplicated across packages: the server declares NOTE_REQUIRED in routes/tracker.js and PASS in
+// hand-duplicated across packages: the server declares NOTE_REQUIRED in services/field-rules.js and PASS in
 // services/passRule.js, while the client declares both in frontend/src/lib/itemRules.js (shared with the mobile app
 // through mobile/src/shared/web.ts). There is no compiler / module link between the two copies, so a change on one
 // side can silently diverge from the other — the UI would then validate one way and the API reject another. This
@@ -7,13 +7,14 @@
 //
 // It reads the constants from BOTH sides, not a hard-coded expectation: the client file is a pure, import-free ESM
 // module, so it is imported directly when the runner can resolve it, with a text-parse fallback; the server's
-// NOTE_REQUIRED is module-local (not exported) and is parsed from the route file's text, while PASS is imported from
-// passRule.js. The test is deterministic and needs no database — it does not import the Express app or open a pool.
+// NOTE_REQUIRED is parsed from the field-rules module's text (BE-1 moved it there from routes/tracker.js), while PASS
+// is imported from passRule.js. The test is deterministic and needs no database — it does not import the Express app
+// or open a pool.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const TRACKER = new URL('../src/routes/tracker.js', import.meta.url);
+const SERVER_RULES = new URL('../src/services/field-rules.js', import.meta.url);
 const CLIENT_RULES = new URL('../../frontend/src/lib/itemRules.js', import.meta.url);
 
 // Extract the balanced { … } object literal assigned to `name` in source text, returning its JS value. The literals
@@ -41,10 +42,10 @@ function numberLiteral(text, name) {
   return Number(m[1]);
 }
 
-// The server side. NOTE_REQUIRED is module-local in tracker.js (not exported), so it is parsed from the file text;
-// PASS is a real export of passRule.js.
-const trackerSrc = readFileSync(TRACKER, 'utf8');
-const serverNoteRequired = objectLiteral(trackerSrc, 'NOTE_REQUIRED');
+// The server side. NOTE_REQUIRED lives in services/field-rules.js; it is parsed from the file text (the literal
+// shape is what the client duplicates); PASS is a real export of passRule.js.
+const serverRulesSrc = readFileSync(SERVER_RULES, 'utf8');
+const serverNoteRequired = objectLiteral(serverRulesSrc, 'NOTE_REQUIRED');
 const { PASS: serverPass } = await import('../src/services/passRule.js');
 
 // The client side. Prefer a direct import of the pure ESM module; fall back to parsing the file text if the runner
@@ -63,7 +64,7 @@ try {
   clientVia = 'text-parse';
 }
 
-test('NOTE_REQUIRED is identical on the server (routes/tracker.js) and the client (lib/itemRules.js)', () => {
+test('NOTE_REQUIRED is identical on the server (services/field-rules.js) and the client (lib/itemRules.js)', () => {
   // Sanity: both sides parsed to the expected shape (non-empty map of status field -> array of codes), so an empty
   // or malformed parse can never make the equality pass vacuously.
   for (const [label, m] of [['server', serverNoteRequired], ['client', clientNoteRequired]]) {
@@ -76,7 +77,7 @@ test('NOTE_REQUIRED is identical on the server (routes/tracker.js) and the clien
     'server NOTE_REQUIRED is missing one of the expected status fields');
   // The guard itself: the full map (every status field and its array of codes) must match exactly.
   assert.deepEqual(serverNoteRequired, clientNoteRequired,
-    `NOTE_REQUIRED diverged between server (routes/tracker.js) and client (lib/itemRules.js) [client via ${clientVia}]`);
+    `NOTE_REQUIRED diverged between server (services/field-rules.js) and client (lib/itemRules.js) [client via ${clientVia}]`);
 });
 
 test('PASS is identical on the server (services/passRule.js) and the client (lib/itemRules.js)', () => {
