@@ -29,7 +29,7 @@ import { activeUsers, appMap, deliver, resolveExcept, restrictions, wanted } fro
 import { effectivePolicy, TYPES } from './notify-catalog.js';
 import { revokeDevices } from './devices.js';
 import { backupSummary, VERIFY_MAX_AGE_DAYS } from './backup-status.js';
-import { projectStatusData } from '../routes/tracker.js';
+import { projectStatusData } from './tracker-data.js';
 import { importAbilities, loadImportMeta, batchApps } from '../routes/imports.js';
 
 export const LOCK_KEY = 'ets_notify_scan';

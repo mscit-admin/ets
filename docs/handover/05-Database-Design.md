@@ -526,6 +526,34 @@ selects `closed_at` so every calculation sees it.
 `closed_locked`; the app-wide bulk set simply skips closed rows (`closed_at IS NULL`). Only closing and reopening change
 a closed item's state.
 
+**Closed-lock is app-enforced only — the DB-level lock (DB-2) is DEFERRED, not implemented.** Like the `functions.note`
+invariant (DB-1 above), the closed-lock lives entirely in route code. The review (DB-2) proposed a `BEFORE UPDATE`
+trigger on `functions` that would RAISE whenever a *tracked* column (progress, weight, enabled, the statuses, note,
+item_type, sort, the names, the `disabled_*` / `removed_*` columns, `app_id`, `code`) changed on a row with
+`closed_at IS NOT NULL` — allowing only the close (`NULL → now()`) and reopen (`now() → NULL`) transitions and bare
+`updated_at` / `updated_by` touches. **It was evaluated and deliberately NOT added**, because an audit of every
+`UPDATE functions` site found legitimate write paths that reach the database with a closed row and change a tracked
+column *without* first checking `closed_at`, so a hard trigger would turn them into transaction aborts:
+
+- **Legacy import (`services/legacy.js`)** — re-applies a whole payload with `UPDATE … WHERE app_id = $1 AND code = $2
+  AND removed_at IS NULL` (no `closed_at`). It is built from all non-removed rows, closed ones included, so re-importing
+  a dataset whose closed items differ would try to change their tracked columns. No app guard stands in front of it.
+- **Import batch apply / undo (`services/imports.js`)** and **approved-edit apply (`services/edits.js`)** — select the
+  row by id with only `removed_at IS NULL`. A function closed *after* a batch or an edit request was prepared but
+  *before* it is applied would be written on apply (the route guards only at request-creation time).
+- **Note routes (`routes/tracker.js` POST `/functions/:id/notes`, PATCH `/notes/:noteId` → `services/notes.js`
+  `syncFunctionNote`)** — check `removed_at` but NOT `closed_at`, so adding / deciding / deleting a note on a closed
+  function syncs `functions.note` (a tracked column) today. This is a secondary route-guard gap and the clearest single
+  reason the trigger is unsafe.
+
+The invariant is instead regression-tested at the route layer in **`backend/test/closed-lock-guard.test.js`**, which
+drives every user-facing edit path (direct PATCH of each field, disable, rename, remove, single + bulk move, bulk
+`enabled` / `item_type`, the app-wide bulk value-set) against a closed function and asserts the `closed_locked` refusal
+(or the silent skip for the bulk value-set), and also pins the close → reopen → re-close transitions and the known
+note-route gap. Revisit DB-2 only after the note routes gain a `closed_at` guard and the import / edit-apply paths
+either skip or explicitly reject closed rows; a trigger added before that would break legacy import and the
+apply-after-close window.
+
 ```sql
 -- functions closed (locked, counting as 100 %) and when / by whom
 SELECT f.app_id, f.code, f.closed_at, u.full_name AS closed_by
