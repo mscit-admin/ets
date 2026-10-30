@@ -219,6 +219,7 @@ before(async () => {
     DATABASE_URL: url, APP_SECRET: 'test-secret-'.padEnd(48, 'x'), NODE_ENV: 'test', COOKIE_SECURE: 'false',
     LOG_DIR: new URL('../logs-test', import.meta.url).pathname, LOG_LEVEL: 'warn', BCRYPT_ROUNDS: '4',
     LOGIN_RATE_LIMIT: '1000', LOGIN_IP_RATE_LIMIT: '1000', API_RATE_LIMIT: '100000', API_USER_RATE_LIMIT: '100000', ETS_ENV_FILE: 'none', ETS_BACKUP_JOB_LIMIT: '10', ETS_RESTORE_LIMIT: '1000',
+    ETS_KEY_EXPORT_LIMIT: '8',
   });
   ({ pool } = await import('../src/db/pool.js'));
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
@@ -264,7 +265,13 @@ function client() {
     return { status: res.status, cd: res.headers.get('content-disposition'), ct: res.headers.get('content-type'),
       cl: res.headers.get('content-length'), body: await res.text() };
   };
-  return { get: p => call('GET', p), getRaw, post: (p, b = {}, h) => call('POST', p, b, h), put: (p, b) => call('PUT', p, b),
+  // a raw POST (JSON body) that exposes the response headers and the body as text — for the key-export download stream
+  const postRaw = async (p, body = {}) => {
+    const res = await fetch(base + p, { method: 'POST', headers: { 'x-requested-with': 'ets', 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
+    return { status: res.status, cd: res.headers.get('content-disposition'), ct: res.headers.get('content-type'),
+      cl: res.headers.get('content-length'), cc: res.headers.get('cache-control'), keyId: res.headers.get('x-key-id'), body: await res.text() };
+  };
+  return { get: p => call('GET', p), getRaw, postRaw, post: (p, b = {}, h) => call('POST', p, b, h), put: (p, b) => call('PUT', p, b),
     login: (u, pw = 'Passw0rd-123') => call('POST', '/auth/login', { username: u, password: pw }) };
 }
 const as = async u => { const c = client(); assert.equal((await c.login(u)).status, 200, 'login ' + u); return c; };
@@ -606,6 +613,142 @@ test('notifications: S6 (interval-aware), S9 per destination, S10 failed / missi
   assert.equal((await root.put('/settings', { 'notify.offsite_max_age_hours': 6 })).status, 200);
   assert.equal((await root.put('/settings', { 'notify.policy': { backup_offsite: { roles: { admin: false } } } })).status, 400);   // mandatory
 });
+
+// A tiny in-process stand-in for the root agent: it picks up queued export_key jobs and runs the REAL agent handler
+// (reads ck from the sealed inbox, reads the test backup.key, returns only ciphertext). No root is needed — this
+// exercises the agent handler and the API's in-memory decrypt end to end. The one thing it does not cover is the
+// systemd / root file-permission context of the live agent (that is in test/backup-agent.test.js, ETS_AGENT_E2E=1).
+function pumpExportKey(agent, P) {
+  let running = false;
+  const iv = setInterval(async () => {
+    if (running) return; running = true;
+    try {
+      const job = (await pool.query(`SELECT * FROM backup_jobs WHERE kind='export_key' AND status='queued' ORDER BY id LIMIT 1`)).rows[0];
+      if (job) { await pool.query(`UPDATE backup_jobs SET status='running' WHERE id=$1`, [job.id]); await agent.runJob(job, P); }
+    } catch { /* ignore */ } finally { running = false; }
+  }, 50);
+  return () => clearInterval(iv);
+}
+
+test('key export: admin only, re-auth, audit (key_id only, never the key), alert the other admins, ck not in the DB', { skip }, async () => {
+  const agent = await import('../src/backup/agent.js');
+  const { agentPaths, openWith, sealWith } = await import('../src/backup/agent-util.js');
+  const P = agentPaths();
+  // the in-memory decrypt given a known ck / blob (the exact primitives the agent and API exchange, both directions)
+  const demo = sealSecret('the-secret');                                   // ck + AES-GCM(blob)
+  assert.equal(openWith(demo.blob, demo.ck).toString('utf8'), 'the-secret');
+  assert.equal(openWith(sealWith(demo.ck, Buffer.from('raw-bytes-\n')), demo.ck).toString('utf8'), 'raw-bytes-\n');
+
+  const KEY = 'REVEAL-backup-key-' + 'Q7'.repeat(20);
+  fs.mkdirSync(path.dirname(P.backupKey), { recursive: true });
+  fs.writeFileSync(P.backupKey, KEY + '\n', { mode: 0o600 });
+  const kid = C.keyId(KEY);
+  fs.writeFileSync(P.backupKey + '.id', kid + '\n', { mode: 0o600 });
+  await pool.query(`DELETE FROM backup_jobs`); await pool.query(`DELETE FROM notifications`);
+
+  // admin only, authenticated
+  assert.equal((await client().post('/backups/key/export', { ...PW })).status, 401);               // signed out
+  assert.equal((await (await as('pm1')).post('/backups/key/export', { ...PW })).status, 403);        // cfg override, not an admin
+  const root = await as('root');
+  // fresh re-auth is mandatory: wrong / missing password is refused and NOTHING is queued
+  assert.equal((await root.post('/backups/key/export', {})).data.error, 'wrong_password');
+  assert.equal((await root.post('/backups/key/export', { password: 'wrong-password-1' })).data.error, 'wrong_password');
+  assert.equal((await pool.query(`SELECT count(*)::int AS n FROM backup_jobs WHERE kind='export_key'`)).rows[0].n, 0, 'no job queued without re-auth');
+
+  // reveal on screen — the API decrypts the agent's ciphertext with the ck it held in memory
+  let stop = pumpExportKey(agent, P);
+  const rev = await root.post('/backups/key/export', { mode: 'reveal', ...PW });
+  stop();
+  assert.equal(rev.status, 200, JSON.stringify(rev.data));
+  assert.equal(rev.data.key, KEY + '\n', 'the key is returned, decrypted in the API');
+  assert.equal(rev.data.key_id, kid);
+
+  // download — octet-stream attachment named backup.key, no-store, the key id in a header, the exact bytes
+  stop = pumpExportKey(agent, P);
+  const dl = await root.postRaw('/backups/key/export', { mode: 'download', ...PW });
+  stop();
+  assert.equal(dl.status, 200, dl.body);
+  assert.equal(dl.body, KEY + '\n');
+  assert.equal(dl.ct, 'application/octet-stream');
+  assert.match(dl.cd, /attachment; filename="backup\.key"/);
+  assert.equal(dl.cc, 'no-store');
+  assert.equal(dl.keyId, kid);
+
+  // the plaintext key NEVER reaches the job result, the DB, or a log — only the ciphertext blob (useless without ck,
+  // which is never stored). The token is wiped from the row; ck was never in it.
+  const jobs = (await pool.query(`SELECT params, result, log FROM backup_jobs WHERE kind='export_key'`)).rows;
+  assert.ok(jobs.length >= 2);
+  for (const j of jobs) {
+    assert.ok(j.result?.blob && j.result?.key_id === kid, 'result holds only the ciphertext blob + key_id');
+    assert.ok(!JSON.stringify(j.result).includes(KEY), 'the plaintext key is not in the job result');
+    assert.equal(j.params.token, null, 'the channel token is wiped from the row');
+    assert.equal(j.params.ck ?? null, null, 'ck is never written to the row');
+    assert.equal(j.log ?? null, null, 'no log is written for an export_key job');
+  }
+  const everything = JSON.stringify([
+    (await pool.query('SELECT * FROM backup_jobs')).rows, (await pool.query('SELECT * FROM audit_log')).rows,
+    (await pool.query('SELECT * FROM system_log')).rows, (await pool.query('SELECT * FROM notifications')).rows,
+  ]);
+  assert.ok(!everything.includes(KEY), 'the backup key is nowhere in the database');
+  for (const f of fs.readdirSync(new URL('../logs-test', import.meta.url))) {
+    assert.ok(!fs.readFileSync(new URL('../logs-test/' + f, import.meta.url), 'utf8').includes(KEY), 'the backup key is not in the file log ' + f);
+  }
+  assert.deepEqual(fs.readdirSync(P.inbox).filter(f => f.endsWith('.sec')), [], 'the one-time ck file is gone');
+
+  // audit: the key_id ONLY (both reveal and download)
+  const au = (await pool.query(`SELECT action, entity, entity_id, new_value FROM audit_log WHERE action='backup_key_export' ORDER BY chain_seq`)).rows;
+  assert.equal(au.length, 2);
+  assert.ok(au.every(a => a.entity === 'backup_config' && a.entity_id === kid));
+  assert.deepEqual(au.map(a => a.new_value.mode).sort(), ['download', 'reveal']);
+  assert.ok(au.every(a => a.new_value.key_id === kid && !('key' in a.new_value)));
+
+  // the OTHER administrators are alerted (S16); the actor and non-admins are not; the key_id is carried, never the key
+  const notes = (await pool.query(`SELECT user_id, type, params FROM notifications WHERE type='backup_key_exported'`)).rows;
+  assert.deepEqual([...new Set(notes.map(n => n.user_id))].sort(), [ids.root2, ids.twofa].sort(), 'the other admins only');
+  assert.ok(!notes.some(n => n.user_id === ids.root), 'the actor is not alerted');
+  assert.ok(notes.every(n => n.params.key_id === kid && !('key' in n.params)));
+  const title = (await (await as('root2')).get('/notifications?lang=ar')).data.items.find(i => i.type === 'backup_key_exported');
+  assert.match(title.title, /مفتاح تشفير النسخ/);
+
+  await pool.query(`DELETE FROM backup_jobs`); await pool.query(`DELETE FROM notifications`);
+});
+
+test('key export: a low per-user rate limit (ETS_KEY_EXPORT_LIMIT)', { skip }, async () => {
+  const agent = await import('../src/backup/agent.js');
+  const { agentPaths } = await import('../src/backup/agent-util.js');
+  const P = agentPaths();
+  fs.mkdirSync(path.dirname(P.backupKey), { recursive: true });
+  fs.writeFileSync(P.backupKey, 'RATE-' + 'A3'.repeat(24) + '\n', { mode: 0o600 });
+  await pool.query(`DELETE FROM backup_jobs`);
+  // valid re-auth every time (wrong passwords would trip the account lockout, not the request limiter): the limiter
+  // caps the number of requests per user over the window. ETS_KEY_EXPORT_LIMIT=8 in this suite → the 9th is refused.
+  const u = await as('root2');     // a fresh key-export bucket (root2 made no export calls before)
+  const stop = pumpExportKey(agent, P);
+  let last, n = 0;
+  for (let i = 0; i < 12 && last?.status !== 429; i++) { last = await u.post('/backups/key/export', { mode: 'reveal', ...PW }); if (last.status === 200) n++; }
+  stop();
+  assert.equal(last.status, 429);
+  assert.equal(last.data.error, 'too_many_requests');
+  assert.equal(n, 8, 'the limit is honoured (ETS_KEY_EXPORT_LIMIT=8)');
+  await pool.query(`DELETE FROM backup_jobs`); await pool.query(`DELETE FROM notifications`);
+  fs.rmSync(P.backupKey, { force: true });
+});
+
+test('agent: export_key reports no_key when there is no backup key on the server', { skip }, async () => {
+  const agent = await import('../src/backup/agent.js');
+  const { agentPaths } = await import('../src/backup/agent-util.js');
+  const P = agentPaths();
+  fs.rmSync(P.backupKey, { force: true });
+  await pool.query(`DELETE FROM backup_jobs`);
+  const root = await as('root');
+  const stop = pumpExportKey(agent, P);
+  const r = await root.post('/backups/key/export', { mode: 'reveal', ...PW });
+  stop();
+  assert.equal(r.status, 404); assert.equal(r.data.error, 'backup_key_not_found');
+  assert.ok(!JSON.stringify((await pool.query(`SELECT result FROM backup_jobs WHERE kind='export_key'`)).rows).includes(KEY_SENTINEL));
+  await pool.query(`DELETE FROM backup_jobs`);
+});
+const KEY_SENTINEL = 'REVEAL-backup-key-';
 
 test('migration 021: the old 26 h default becomes 2 h, a customised value is kept', { skip }, async () => {
   const sql = fs.readFileSync(new URL('../src/db/migrations/021_backup_center.sql', import.meta.url), 'utf8');

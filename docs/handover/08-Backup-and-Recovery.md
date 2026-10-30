@@ -187,6 +187,40 @@ sudo chmod 0750 /var/backups/ets
 sudo find /var/backups/ets -maxdepth 1 -type f -exec chmod 0640 {} +
 ```
 
+### 5.1 Revealing / downloading the backup key from the web UI
+
+Settings → «النسخ الاحتياطي» → **«إظهار/تنزيل مفتاح التشفير» / "Reveal / download backup key"** (red button) lets an
+administrator obtain the current backup key (the key that decrypts **every** backup) without shell access — either as a
+downloaded `backup.key` file or shown once on screen with a copy button. It is the single most sensitive read in the
+system and is gated accordingly (admin + `cfg`, a fresh re-authentication every time, a low rate limit, an audit row,
+and an alert to the other administrators).
+
+The API runs unprivileged (`ets`) and **cannot** read `/etc/ets/backup.key` (root only); the root agent can. So the key
+is handed back through the existing sealed channel, run in reverse, and **the plaintext key never touches the database
+or any log**:
+
+1. The API generates a **one-time 32-byte key `ck` in memory** and writes `ck` itself into `/var/lib/ets/inbox/<token>.sec`
+   (0600, owner `ets`). The queued `export_key` job row carries **only the token — never `ck`**.
+2. The root agent (`HANDLERS.export_key`) reads and deletes that file, reads `/etc/ets/backup.key`, AES-256-GCM-encrypts
+   the key bytes under `ck`, and returns **only the ciphertext blob + the key id** in `backup_jobs.result`. The plaintext
+   is never put in the result, the log, or anywhere persistent — the stored blob is useless without `ck`.
+3. The API waits for the job, decrypts the blob with the `ck` it still holds in memory, and streams the plaintext key
+   straight to the browser (`Content-Disposition: attachment; filename="backup.key"`, `application/octet-stream`,
+   `Cache-Control: no-store`; or a one-time JSON reveal). It then discards `ck` and the key — neither is retained.
+
+Endpoint: `POST /api/backups/key/export` `{ mode: "download" | "reveal", password, code? }`. Safeguards:
+
+* **Fresh re-authentication** (password + 2FA when enabled) on every call — no valid re-auth, nothing is queued.
+* **Rate limit** — low, per administrator, env-configurable `ETS_KEY_EXPORT_LIMIT` (default 5 / hour).
+* **Audit** — an `audit_log` row, action `backup_key_export`, entity `backup_config`, entity id = **the key id only**
+  (never the key); mode (download / reveal) is recorded.
+* **Alert** — an in-app security notification **S16 «أُظهر مفتاح تشفير النسخ»** to every *other* administrator (who did
+  it, when, which key id — never the key), so a reveal cannot go unnoticed.
+* The UI shows a **prominent red warning** before revealing.
+
+> The downloaded / shown key is the plaintext escrow key. Treat it exactly like the escrow copy (§6): store it in the
+> vault, and never leave it on a workstation. Use the «تعيين عبارة سرية جديدة» flow to rotate it if it is ever exposed.
+
 ## 6. Key escrow — do this now, and check it every year
 
 **Without the backup key no backup can ever be restored**, and a restored database needs the same APP_SECRET for 2FA
@@ -233,6 +267,12 @@ longer needed.
 | S11 «استرجاع من نسخة احتياطية» | a restore started (sent by the API) / finished, rolled back or failed (picked up after the restore) | — |
 
 The checks run every 15 minutes (`notify_scan`, job `backups`). Thresholds: Settings → «الإشعارات».
+
+One more backup security alert is **event-driven, not from the periodic scan** (admin only, in-app, severity warning):
+
+| Alert (administrators, in-app) | Condition |
+|---|---|
+| S16 «أُظهر مفتاح تشفير النسخ» / "Backup encryption key revealed" | an administrator revealed / downloaded the backup key from the web UI (§5.1) — sent to every *other* administrator with who, when and the key id (never the key) |
 
 ## 8. Weekly test restore
 

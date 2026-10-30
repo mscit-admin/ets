@@ -247,6 +247,25 @@ test('restore: database only, then a failure after the data was replaced → aut
   assert.match(fs.readFileSync(sysLog, 'utf8'), /start ets-test/);
 });
 
+test('export_key: root reads /etc/ets/backup.key, returns only ciphertext openable with the API-held ck; no plaintext in the row', { skip }, async () => {
+  // the API side: a one-time 32-byte key ck written into the sealed inbox (ck itself), only the token in the job row
+  const ck = crypto.randomBytes(32).toString('base64url');
+  const token = crypto.randomBytes(24).toString('base64url');
+  fs.writeFileSync(path.join(R, 'state/inbox', token + '.sec'), ck, { mode: 0o600 });
+  const id = await job('export_key', { token });
+  await agent.cycle();
+  const row = await jobRow(id);
+  assert.equal(row.status, 'ok', JSON.stringify(row.result));
+  assert.ok(row.result.blob && row.result.key_id, 'result holds only the ciphertext blob + key id');
+  assert.ok(!JSON.stringify(row.result).includes(e.key), 'the plaintext key is NOT in the result');
+  assert.equal(row.params.token, null, 'the token is wiped from the row');
+  assert.equal(row.params.ck ?? null, null, 'ck is never in the row');
+  assert.equal(row.log ?? null, null, 'no log for an export_key job');
+  // the API decrypts with the ck it held in memory: the recovered bytes are exactly /etc/ets/backup.key
+  assert.equal(util.openWith(row.result.blob, ck).toString('utf8'), e.key + '\n');
+  assert.deepEqual(fs.readdirSync(path.join(R, 'state/inbox')).filter(f => f.endsWith('.sec')), [], 'the one-time ck file is deleted');
+});
+
 test('restore: certificate only — no downtime (nginx reloaded, API not stopped), fingerprint updated; logs into restored-<date>', { skip }, async () => {
   await job('backup_now'); await agent.cycle();
   const conf = latest('config'), logs = latest('logs');

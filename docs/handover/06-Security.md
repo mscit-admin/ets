@@ -320,6 +320,7 @@ carries only `{unread, top_severity}`; alerts are not audit data. **Flood contro
 | SSH key of the SSH destination | `/etc/ets/backup_ssh_key` (ed25519, root 600), `backup_known_hosts` | On the backup server only as `restrict,command="rrsync <dir>"` for a dedicated user (no shell, no forwarding, rsync inside one directory; `rrsync -no-del` for append-only). Host key accepted once (`accept-new`), its fingerprint shown in the UI to be compared |
 | Cloud credentials (S3) | database `backup_config.secrets` (AES-256-GCM, HKDF key from APP_SECRET, AAD `backup:<name>`), rendered by the root agent into `/etc/ets/rclone.conf` (root 600) | Write-only in the API («محفوظ»), never returned or logged; the file is removed when the cloud copy is off. Give the key rights on one bucket / prefix only |
 | A restore key typed in the wizard | HTTPS request → `/var/lib/ets/inbox/<random>.sec` (0600) encrypted with a one-time key held only in the job row → the agent's tmpfs `/run/ets-backup-agent` (root 700) | Read and deleted at once, the one-time key wiped from the row, deleted after the restore or after 15 minutes; never in the database or a log |
+| The backup key revealed / downloaded in the UI | `/etc/ets/backup.key` (root) → the agent encrypts it under a one-time key `ck` and returns **only ciphertext** in `backup_jobs.result` → the API decrypts with `ck` (in API memory only) → the HTTPS response | **Same channel in reverse** (see [08 §5.1](08-Backup-and-Recovery.md)): the one-time `ck` the API generated is written to `/var/lib/ets/inbox/<token>.sec` (0600) and the job row carries only the token — `ck` is never in the database. The plaintext key exists only transiently in the agent and the API process and in the response; **never in the database, a log, or the job result** (the stored blob is useless without `ck`) |
 
 **Rotating `APP_SECRET`** (e.g. after a suspected leak of `ets.env`):
 
@@ -340,7 +341,7 @@ to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the scri
 ## 6b. Backups and restore from the web UI / النسخ الاحتياطي والاسترجاع (1.12.0)
 
 - **Privilege separation.** The API (user `ets`, `NoNewPrivileges`, read-only system) never runs anything as root. It
-  stores the desired backup configuration and queues jobs of seven whitelisted kinds; the root **backup agent**
+  stores the desired backup configuration and queues jobs of eight whitelisted kinds; the root **backup agent**
   (`ets-backup-agent.service`) validates both again with the same strict patterns (users, hosts, paths, remotes,
   endpoints, buckets: whitelisted characters, no `..`, NAS only under `/mnt`, `/media`, `/srv`), writes only a fixed
   list of files, and starts commands with argument arrays (no shell). Someone able to write the database can at
@@ -355,6 +356,13 @@ to read 2FA secrets after a restore (put it in `APP_SECRET_OLD` and run the scri
   too (20 per 10 minutes); one restore at a time (database-level unique open job + `flock`); a confirmation phrase
   (the server name or «استرجاع»); every administrator is notified when a restore starts and ends (S11, in-app and
   phone).
+- **Reveal / download the backup key** (the key that decrypts *every* backup — [08 §5.1](08-Backup-and-Recovery.md)):
+  administrators only, a fresh re-authentication (password + 2FA) every time, a low rate limit
+  (`ETS_KEY_EXPORT_LIMIT`, default 5 / hour). The API cannot read `/etc/ets/backup.key`; it hands the root agent a
+  one-time key `ck` through the sealed inbox (reverse of the restore channel — only the token is in the job row), the
+  agent returns the key encrypted under `ck`, and the API decrypts it in memory and streams it. **The plaintext key
+  never reaches the database, a log, or the job result.** Each reveal writes an audit row (action `backup_key_export`,
+  the key id only — never the key) and alerts every *other* administrator in-app (S16).
 - **Uploads** for a restore: administrators only, artifact names only, size limit (`ETS_UPLOAD_MAX_MB`), streamed
   to `/var/lib/ets/upload/<random>/` (0600, deleted after 24 h); the file stays encrypted until the agent decrypts it
   with the typed key. Archive members are checked before extraction (no absolute paths, no `..`, no links outside

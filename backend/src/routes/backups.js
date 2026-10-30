@@ -33,7 +33,7 @@ import { reauth } from './auth.js';
 import { DEFAULT_CONFIG, LIMITS, FREQUENCIES, S3_PROVIDERS, SECRET_KEYS, validateConfig, validSecret, destinationsChanged,
   passphraseProblem, restoreKeyProblem, parseArtifact, configFor, availability, selectionProblem, restoreWarnings, appSecretFp,
   confirmPhraseOk, RESTORE_ITEMS, cmpVersion, parseKv, keyId, sameConfig, canon } from '../backup/config.js';
-import { agentPaths, sealSecret, readJsonFile } from '../backup/agent-util.js';
+import { agentPaths, sealSecret, openWith, readJsonFile } from '../backup/agent-util.js';
 
 const r = Router();
 r.use(requireAuth, requirePerm('cfg'), requireAdmin);
@@ -49,8 +49,11 @@ const perUser = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeader
   handler: (req, res) => res.status(429).json({ error: 'too_many_requests', retry_after: Math.ceil(windowMs / 1000) }) });
 const jobLimiter = perUser(+(process.env.ETS_BACKUP_JOB_LIMIT || 20), 10 * 60_000);
 const restoreLimiter = perUser(+(process.env.ETS_RESTORE_LIMIT || 10), 15 * 60_000);
-const uploadLimiter = perUser(10, 60 * 60_000);
+const uploadLimiter = perUser(+(process.env.ETS_UPLOAD_LIMIT || 10), 60 * 60_000);
 const downloadLimiter = perUser(+(process.env.ETS_BACKUP_DOWNLOAD_LIMIT || 30), 15 * 60_000);
+// Revealing / downloading the backup key is the single most sensitive read: a low per-user limit over one hour.
+const keyExportLimiter = perUser(+(process.env.ETS_KEY_EXPORT_LIMIT || 5), 60 * 60_000);
+const KEY_EXPORT_TIMEOUT_MS = Math.max(5_000, +(process.env.ETS_KEY_EXPORT_TIMEOUT_MS || 60_000));
 // Downloading an artifact needs a fresh re-authentication (password + 2FA): /download/authorize checks it and hands back
 // a short-lived token bound to this user and this artifact; the GET stream accepts only that token. In memory only (no
 // DB, no secret): the encrypted file leaving the server is exfiltration, so it is re-proved like the other sensitive
@@ -94,6 +97,28 @@ function putSecret(secret) {
   try { fs.writeFileSync(path.join(dir, token + '.sec'), blob, { mode: 0o600, flag: 'wx' }); }
   catch (e) { throw new HttpError(503, 'backup_agent_unavailable', { reason: e.code }); }
   return { token, ck };
+}
+// The REVERSE channel for export_key: the API generates a one-time 32-byte key ck in memory and writes ck ITSELF into
+// <inbox>/<token>.sec (0600, owner ets). The job row carries only the token; ck never touches the database. The agent
+// reads+deletes the file at once, encrypts /etc/ets/backup.key under ck, and returns only ciphertext — openable solely
+// with the ck this process still holds. Mirrors putSecret, but what travels on disk is the key, not the sealed blob.
+function putChannelKey() {
+  const ck = crypto.randomBytes(32).toString('base64url');
+  const token = crypto.randomBytes(24).toString('base64url');
+  try { fs.writeFileSync(path.join(P().inbox, token + '.sec'), ck, { mode: 0o600, flag: 'wx' }); }
+  catch (e) { throw new HttpError(503, 'backup_agent_unavailable', { reason: e.code }); }
+  return { token, ck };
+}
+// Wait for a queued job to reach a terminal state (same polling the UI does, but inline — the one-time ck lives only in
+// this request). → the row, or null on timeout.
+async function waitForJob(id, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const j = (await query('SELECT status, result FROM backup_jobs WHERE id=$1', [id])).rows[0];
+    if (j && ['ok', 'failed', 'cancelled'].includes(j.status)) return j;
+    if (Date.now() >= deadline) return null;
+    await new Promise(r => setTimeout(r, 250));
+  }
 }
 const twoFactor = req => reauth(req, { password: req.body?.password, secondFactor: true, events: ['backup_reauth_bad_password', 'backup_reauth_bad_code'] });
 function current() {
@@ -189,6 +214,53 @@ r.post('/passphrase', restoreLimiter, async (req, res) => {
   });
   wake();
   res.status(202).json({ job: publicJob(job) });
+});
+
+// ---------------------------------------------------------------- reveal / download the backup encryption key
+// The backup key decrypts EVERY backup, so this is the single most sensitive read in the system. Safeguards (all of
+// them, every time): fresh re-authentication (password + 2FA, like downloads/restore), a low per-user rate limit,
+// an audit row with the key_id ONLY, and an in-app alert (S16) to every OTHER administrator. Admin-only is enforced by
+// the router (requireAuth + cfg + admin). The API (unprivileged ets) cannot read /etc/ets/backup.key; the root agent
+// can, so the plaintext never passes through the database or a log: the API hands the agent a one-time key ck through
+// the sealed inbox (ck in memory only), the agent returns the key encrypted under ck, and the API decrypts it here and
+// streams it straight to the browser. ck and the plaintext exist only transiently in this process and the HTTPS body.
+r.post('/key/export', keyExportLimiter, async (req, res) => {
+  const mode = req.body?.mode === 'reveal' ? 'reveal' : 'download';
+  await twoFactor(req);                               // no valid re-auth → thrown here, nothing is queued
+  const { token, ck } = putChannelKey();
+  try {
+    const job = await queue('export_key', { token }, req);     // only the token in the row — never ck
+    wake();
+    const done = await waitForJob(job.id, KEY_EXPORT_TIMEOUT_MS);
+    if (!done) throw new HttpError(504, 'key_export_timeout');
+    if (done.status !== 'ok' || !done.result?.blob) {
+      throw new HttpError(done.result?.error === 'no_key' ? 404 : 502, done.result?.error === 'no_key' ? 'backup_key_not_found' : 'key_export_failed');
+    }
+    const key = openWith(done.result.blob, ck);       // decrypt with the in-memory ck: the plaintext key now exists only here
+    const keyIdNow = done.result.key_id || null;
+    // audit (the key_id ONLY, never the key) and tell the other administrators — before the key leaves the server
+    await logAudit(req, { action: 'backup_key_export', entity: 'backup_config', entityId: keyIdNow,
+      summary: `backup key ${mode === 'reveal' ? 'revealed' : 'downloaded'}`, newValue: { key_id: keyIdNow, mode } });
+    await logSystem('backup_key_export', 'backup encryption key revealed from the web UI', { key_id: keyIdNow, by: req.user.username, mode });
+    const admins = (await activeUsers()).filter(u => u.role === 'admin' && u.id !== req.user.id);
+    await deliver('backup_key_exported', admins.map(user => ({ user, dedupeKey: `backup_key_exported:${job.id}`, link: '/settings#backups',
+      params: { by: req.user.full_name || req.user.username, key_id: keyIdNow, mode } })));
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (mode === 'reveal') {
+      res.json({ key_id: keyIdNow, key: key.toString('utf8') });
+    } else {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', String(key.length));
+      res.setHeader('Content-Disposition', 'attachment; filename="backup.key"');
+      if (keyIdNow) res.setHeader('X-Key-Id', keyIdNow);
+      res.end(key);
+    }
+  } finally {
+    // the agent deletes the ck file the instant it reads it; on timeout / failure make sure it never lingers
+    try { fs.rmSync(path.join(P().inbox, token + '.sec'), { force: true }); } catch { /* already gone */ }
+    // ck and the plaintext key are not retained: they fall out of scope with this request (never logged or stored)
+  }
 });
 
 // ---------------------------------------------------------------- jobs
