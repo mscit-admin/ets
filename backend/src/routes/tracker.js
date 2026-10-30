@@ -150,6 +150,8 @@ async function getFunctionForNotes(user, functionId) {
 
 // GET /tracker/functions/:id/notes — the full chronological note history of the item. Visible to anyone who can see
 // the function (scope enforced); the management actions (done / decision / deletion) are gated in PATCH below.
+// A CLOSED (locked) function is deliberately NOT guarded here: viewing a closed item's note history is always
+// allowed (migration 033 locks edits, not reads). Only the note MUTATIONS below carry the closed_locked guard.
 r.get('/functions/:id/notes', async (req, res) => {
   const id = idParam(req.params.id);
   const { app } = await getFunctionForNotes(req.user, id);
@@ -163,6 +165,9 @@ r.post('/functions/:id/notes', async (req, res) => {
   const id = idParam(req.params.id);
   const { cur, app } = await getFunctionForNotes(req.user, id);
   if (cur.removed_at) throw bad('function_removed');
+  // A closed function is locked (migration 033): adding a note writes functions.note (a tracked column), so it is
+  // refused like any other edit until the item is reopened. Mirrors the field-edit PATCH closed_locked guard.
+  if (cur.closed_at) throw bad('closed_locked');
   if (!hasPerm(req.user, FIELD_PERM.note)) throw new HttpError(403, 'forbidden', { permission: FIELD_PERM.note, field: 'note' });
   const body = str(req.body?.body, 2000);
   if (!body) throw bad('note_required');
@@ -200,6 +205,10 @@ r.patch('/notes/:noteId', async (req, res) => {
   const n = (await query('SELECT * FROM function_notes WHERE id=$1', [noteId])).rows[0];
   if (!n) throw notFound();
   const { cur, app } = await getFunctionForNotes(req.user, n.function_id);        // scope enforced on every action
+  // A closed function is locked (migration 033): every sub-action below (done / decision / request_delete /
+  // approve_delete) mutates function_notes and may re-sync functions.note (a tracked column), so all are refused
+  // until the item is reopened. Reading the history (GET above) stays allowed. Mirrors the field-edit closed_locked.
+  if (cur.closed_at) throw bad('closed_locked');
   const body = req.body || {};
   const lead = canDecideNote(req.user, app);
   const isAuthor = n.author_id === req.user.id;
