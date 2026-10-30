@@ -30,6 +30,35 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.45] — 2026-10-30 — Code-review batch 3a: decomposition + closed-lock guard tests / إعادة الهيكلة واختبارات القفل
+
+Structural refactors from the review — **behaviour-identical** (no feature or API change), plus a safety evaluation.
+
+### Changed
+
+- **Backend (BE-1)** — The `routes/tracker.js` god-file (1,295 lines) is decomposed into cohesive services: the
+  business logic moved to new `services/field-rules.js`, `services/schedule.js`, `services/impact.js`,
+  `services/tracker-data.js` (the screen data-assemblers incl. `loadVisible`, moved verbatim) and `services/bulk.js`;
+  `tracker.js` (854 lines) is now thin route handlers + orchestration. The screen-data exports stay importable from
+  `routes/tracker.js` under the same names (export.js unchanged); `notify-scan.js` now imports `projectStatusData`
+  from `tracker-data.js`, removing the last service→route import cycle. Full suite identical before/after (0 fail).
+  The `NOTE_REQUIRED`/`FIELD_*` tables moved to `field-rules.js` (value byte-identical); the client/server parity
+  test was updated to read them there.
+- **Frontend (FE-2)** — `pages/Application.jsx` (1,024 lines) is decomposed: its ~11 inline modal/table components
+  moved verbatim into `components/application/*` (`Application.jsx` is now 404 lines of orchestration). No visual or
+  behavioural change; code-splitting unaffected.
+
+### Tests
+
+- **DB-2 (deferred)** — A DB-level closed-function edit-lock trigger was evaluated and **deliberately not added**: an
+  audit of every `UPDATE functions` site found legitimate paths (legacy import, import/edit apply, note sync) that
+  reach the DB with a closed row and change a tracked column, so a hard trigger would break them. Instead,
+  `backend/test/closed-lock-guard.test.js` (12 tests) regression-guards the route-level lock across every edit path,
+  and the deferral + revisit criteria are documented in `05-Database-Design.md`. (This evaluation also surfaced a
+  real gap: the note routes don't yet check `closed_at` — tracked as a follow-up.)
+
+---
+
 ## [1.12.44] — 2026-10-29 — Code-review batch 2: status colour semantics, confirms, N+1, parity guards / إصلاحات المراجعة — الدفعة ٢
 
 The second (medium-priority) batch from the full code & security review.
