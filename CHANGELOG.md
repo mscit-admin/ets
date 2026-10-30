@@ -30,6 +30,27 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.46] — 2026-10-30 — Code-review batch 3b: note closed-lock + scoped tracker loads / قفل ملاحظات المقفلة وتحميل مُنطّق
+
+### Fixed
+
+- **Backend** — A closed function is now locked from note changes too: `POST /functions/:id/notes` and
+  `PATCH /notes/:noteId` reject with `closed_locked` when the function is closed (adding/deciding/deleting a note
+  writes the tracked `functions.note`). Reading the note history (`GET /functions/:id/notes`) stays allowed. This
+  closes the route-guard gap surfaced by the DB-2 evaluation; `closed-lock-guard.test.js` now asserts the fix.
+
+### Changed
+
+- **Backend (BE-2)** — `applicationData(id)` and `departmentData(id)` no longer load the whole project on every
+  tracker GET: a new `loadScopedCalc` fetches and rolls up only the application's / department's own rows (reusing
+  `summarize()` verbatim, so no maths is duplicated and results are byte-identical). The project-wide assemblers
+  (summary, project-status, weights, reports, schedule) keep the full load where they genuinely need it. Read
+  latency for the common single-application view no longer scales with total project size. A new
+  `scoped-calc-equiv.test.js` pins the optimized results to the full-load reference in both fixed and auto weight
+  modes.
+
+---
+
 ## [1.12.45] — 2026-10-30 — Code-review batch 3a: decomposition + closed-lock guard tests / إعادة الهيكلة واختبارات القفل
 
 Structural refactors from the review — **behaviour-identical** (no feature or API change), plus a safety evaluation.
@@ -3137,7 +3158,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/8365664...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/1821767...HEAD
+[1.12.46]: https://github.com/mscit-admin/ets/compare/8365664...1821767
 [1.12.45]: https://github.com/mscit-admin/ets/compare/64b18c6...8365664
 [1.12.44]: https://github.com/mscit-admin/ets/compare/48f9997...64b18c6
 [1.12.43]: https://github.com/mscit-admin/ets/compare/e9c3950...48f9997

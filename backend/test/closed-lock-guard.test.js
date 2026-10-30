@@ -89,6 +89,11 @@ test('setup: close the function so it is locked', { skip }, async () => {
   // would be visible if the lock failed to skip it
   assert.equal((await c.patch(`/tracker/functions/${ids.locked}`, { progress: 33 })).status, 200);
   assert.equal((await c.patch(`/tracker/functions/${ids.locked}`, { test_status: 0 })).status, 200);
+  // add a note WHILE THE FUNCTION IS STILL OPEN, so the PATCH /notes/:noteId sub-actions below have a note of a
+  // closed function to drive against (a note can no longer be added once the function is closed — see below).
+  const na = await c.post(`/tracker/functions/${ids.locked}/notes`, { body: 'note added while still open' });
+  assert.equal(na.status, 201, 'note-add succeeds while open');
+  ids.note = na.data.note.id;
   const r = await c.post(`/tracker/functions/${ids.locked}/close`);
   assert.equal(r.status, 200);
   assert.ok(await col(ids.locked, 'closed_at'), 'closed_at set');
@@ -174,18 +179,45 @@ test('bulk value-set over the whole application silently skips the closed row bu
   assert.equal(Number(await col(ids.sib, 'progress')), 100, 'open sibling updated by bulk set');
 });
 
-// The note routes are the honest exception to the route-level lock: POST /functions/:id/notes and
-// PATCH /notes/:noteId check removed_at but NOT closed_at, so they write function_notes / sync functions.note on a
-// closed function. This is (a) a route-guard GAP (the lock does not cover notes) and (b) the single clearest reason
-// the DB-2 trigger is unsafe — a trigger locking the note column would abort note-add / decide / delete on a closed
-// item, which the app currently allows. This test LOCKS IN the current behaviour so the gap is visible and any
-// future fix (adding the closed check to the notes routes) deliberately updates it. See docs/05-Database-Design.md.
-test('KNOWN GAP: adding a note to a closed function is NOT blocked at the route level', { skip }, async () => {
+// The note routes were previously the honest exception to the route-level lock: POST /functions/:id/notes and
+// PATCH /notes/:noteId checked removed_at but NOT closed_at, so they wrote function_notes / synced functions.note
+// (a tracked column) on a closed function. That gap is now CLOSED at the route level (routes/tracker.js): note
+// mutations on a closed function are refused with the same closed_locked error as every other edit path, while
+// READING the history (GET /functions/:id/notes) stays allowed. DB-2 (the database-level trigger) remains deferred
+// (see docs/05-Database-Design.md): other legitimate paths — legacy import, import-batch apply/undo, approved-edit
+// apply — still reach a closed row by design, so a BEFORE UPDATE trigger would wrongly abort them.
+test('adding a note to a closed function is refused (400 closed_locked)', { skip }, async () => {
   const c = await as('pm');
+  const before = await col(ids.locked, 'note');
   const r = await c.post(`/tracker/functions/${ids.locked}/notes`, { body: 'note added while the function is closed' });
-  assert.equal(r.status, 201, 'note-add currently succeeds on a closed function (route guard gap)');
-  // and functions.note was synced from the history despite the lock
-  assert.equal(await col(ids.locked, 'note'), 'note added while the function is closed');
+  assert.equal(r.status, 400, 'note-add refused on a closed function');
+  assert.equal(r.data.error, 'closed_locked');
+  // functions.note is untouched — the note was never written
+  assert.equal(await col(ids.locked, 'note'), before, 'active note unchanged');
+});
+
+test('PATCH /notes/:noteId sub-actions on a closed function are refused (400 closed_locked)', { skip }, async () => {
+  const c = await as('pm');
+  // every lifecycle sub-action — author "done", lead decision, request/approve deletion — is blocked while closed
+  for (const body of [{ done: true }, { decision: 'approved' }, { request_delete: true }, { approve_delete: true }]) {
+    const r = await c.patch(`/tracker/notes/${ids.note}`, body);
+    assert.equal(r.status, 400, `PATCH note ${JSON.stringify(body)} status`);
+    assert.equal(r.data.error, 'closed_locked', `PATCH note ${JSON.stringify(body)} error`);
+  }
+  // the note row is untouched by any of them
+  const note = (await pool.query('SELECT done, decision, delete_requested_at, deleted_at FROM function_notes WHERE id=$1', [ids.note])).rows[0];
+  assert.equal(note.done, false, 'done unchanged');
+  assert.equal(note.decision, null, 'decision unchanged');
+  assert.equal(note.delete_requested_at, null, 'delete not requested');
+  assert.equal(note.deleted_at, null, 'not deleted');
+});
+
+// Reading the note history of a closed function is STILL allowed (the lock is on edits, not reads).
+test('GET /functions/:id/notes still works on a closed function', { skip }, async () => {
+  const c = await as('pm');
+  const r = await c.get(`/tracker/functions/${ids.locked}/notes`);
+  assert.equal(r.status, 200, 'history readable while closed');
+  assert.ok(r.data.notes.some(x => x.id === ids.note), 'the note added while open is in the history');
 });
 
 // Proof the close/reopen transitions themselves are never blocked (the lock only forbids OTHER edits while closed).
