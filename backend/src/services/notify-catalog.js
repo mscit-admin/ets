@@ -89,6 +89,11 @@ export const TYPES = {
   backup_offsite:    { code: 'S9', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   backup_verify:     { code: 'S10', category: 'system', kind: 'periodic', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
   restore_event:     { code: 'S11', category: 'system', kind: 'event', severity: 'critical', admin: true, scope: 'admin', matrix: M('!........'), push: true },
+  // S16 (1.12.x): a system administrator revealed / downloaded the backup encryption key from the web UI (the key that
+  // decrypts EVERY backup). Fired to every OTHER administrator so a reveal cannot go unnoticed. Admin only (ETS-SEC-047),
+  // in-app only (push:false) like the other security events that name a person; the body carries who, the key id (never
+  // the key) stays out of the title. Severity warning — a legitimate but high-consequence action.
+  backup_key_exported: { code: 'S16', category: 'security', kind: 'event', severity: 'warning', admin: true, scope: 'admin', matrix: M('+........'), push: false },
   // release promotion to production (1.12.20): a promotion started / succeeded / failed / rolled back. The deploy is
   // the single most sensitive action in the system (docs/handover/13 §4.3 — S-REL); failed / rolled_back are raised
   // critical per-event (services/release.js releaseStageSeverity), started / succeeded informational.

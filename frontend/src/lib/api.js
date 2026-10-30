@@ -81,6 +81,32 @@ export async function downloadFile(url, fallbackName = 'export') {
   setTimeout(() => URL.revokeObjectURL(href), 4000);
 }
 
+// Like downloadFile, but sends a POST with a JSON body (e.g. a sensitive download that re-authenticates: the password
+// must not travel in the URL). The file name comes from the server's Content-Disposition, the fallback otherwise.
+export async function postDownloadFile(url, body, fallbackName = 'download') {
+  let res;
+  try {
+    res = await fetch('/api' + url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'ets', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    throw new ApiError(0, 'network');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) onUnauthorized(data.error, data);
+    throw new ApiError(res.status, data.error || 'http_' + res.status, data);
+  }
+  const cd = res.headers.get('content-disposition') || '';
+  let name = fallbackName;
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd), plain = /filename="([^"]+)"/i.exec(cd);
+  try { if (star) name = decodeURIComponent(star[1]); else if (plain) name = plain[1]; } catch { if (plain) name = plain[1]; }
+  const href = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 4000);
+  return { key_id: res.headers.get('x-key-id') || null };
+}
+
 // Trigger a browser download of a text payload
 export function downloadText(filename, text, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([text], { type }));
