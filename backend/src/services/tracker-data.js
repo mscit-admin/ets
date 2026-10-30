@@ -3,7 +3,11 @@
 // screen's route and its Excel export (routes/export.js) call the SAME function, so an export never shows more than
 // the screen (export policy).
 //
-// NOTE (BE-2, separate later task): loadVisible's whole-project load is deliberately left verbatim here.
+// NOTE (BE-2): loadVisible loads the whole visible project and is still used by the assemblers whose output spans the
+// project (summary, weights, reports, schedule, project-status). The two single-scope readers — applicationData and
+// departmentData — no longer call it: they run summarize() over just their own scope (loadScopedCalc), which is
+// byte-identical for their outputs because every per-application and per-department figure is local (see the
+// equivalence note on loadScopedCalc).
 import { query } from '../db/pool.js';
 import { summarize, CALC_FUNCTIONS_SQL, itemCounts, reportsOverview } from './calc.js';
 import { allSettings } from './settings.js';
@@ -33,6 +37,26 @@ export async function loadVisible(user) {
   const reports = rep.rows.filter(x => appIds.has(x.app_id));
   const calc = summarize({ departments, applications: apps, functions, reports, settings });
   return { departments, apps, functions, reports, settings, calc };
+}
+
+// BE-2 — scoped roll-up. summarize() computes every application's calc from ONLY its own function/report rows and the
+// settings (appCalc + appBlend in services/calc.js are purely local: the «auto» weight is the application's own sum of
+// enabled item weights, «fixed» is its stored weight), and each department line is just the weighted average of ITS
+// applications. Nothing an application or a department result reads depends on a sibling or on the project total.
+// So feeding summarize() a narrowed scope ({ these departments, these applications, their functions, their reports })
+// yields application/department entries byte-identical to the full-project run — the only field that differs is
+// `total`, which applicationData/departmentData never read. This reuses summarize() verbatim (no duplicated maths),
+// so the two paths cannot drift. The whole-project loadVisible() is kept for the assemblers whose output genuinely
+// spans the project (summary, weights, reports, schedule, project-status).
+async function loadScopedCalc(departments, applications) {
+  const ids = applications.map(a => a.id);
+  const [f, rep, settings] = await Promise.all([
+    ids.length ? query(CALC_FUNCTIONS_SQL + ' AND app_id = ANY($1)', [ids]) : Promise.resolve({ rows: [] }),
+    ids.length ? query('SELECT * FROM app_reports WHERE app_id = ANY($1)', [ids]) : Promise.resolve({ rows: [] }),
+    allSettings(),
+  ]);
+  const calc = summarize({ departments, applications, functions: f.rows, reports: rep.rows, settings });
+  return { calc, settings };
 }
 
 export async function getApp(user, id) {
@@ -73,24 +97,33 @@ export async function summaryData(user) {
   };
 }
 
+// BE-2: one department only. Its output is provably local to the department — the department line is the weighted
+// average of ITS visible applications, and each application's calc reads only its own items + settings (see
+// loadScopedCalc / the equivalence note there). So this loads one department's rows and runs summarize() over just
+// that scope instead of the whole project; the numbers are byte-identical to the full-load path.
 export async function departmentData(user, id) {
-  const v = await loadVisible(user);
-  const d = v.departments.find(x => x.id === id);
-  if (!d) {
-    const exists = typeof id === 'string' && (await query('SELECT 1 FROM departments WHERE id=$1', [id])).rowCount;
-    throw exists ? new HttpError(403, 'out_of_scope', { department: id }) : notFound();
-  }
+  if (typeof id !== 'string') throw notFound();           // non-string id never matched a department (was: find + exists guard)
+  const d = (await query('SELECT * FROM departments WHERE id=$1', [id])).rows[0];
+  if (!d) throw notFound();
+  // this department's applications in the reader's scope — the same set the full load would keep for this department
+  const deptApps = (await query('SELECT * FROM applications WHERE department_id=$1 ORDER BY sort', [id])).rows;
+  const apps = deptApps.filter(a => canSeeApp(user, a));
+  // canSeeDept only inspects applications of THIS department, so its own visible apps decide visibility (full scope aside)
+  if (!canSeeDept(user, id, apps)) throw new HttpError(403, 'out_of_scope', { department: id });
+  const { calc, settings } = await loadScopedCalc([d], apps);
   return {
-    department: { ...d, ...v.calc.departments.find(x => x.id === d.id) },
-    applications: v.apps.filter(a => a.department_id === d.id).map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
-    settings: calcSettings(v.settings),
+    department: { ...d, ...calc.departments.find(x => x.id === d.id) },
+    applications: apps.map(a => ({ ...a, calc: calc.applications.find(x => x.id === a.id) })),
+    settings: calcSettings(settings),
   };
 }
 
 export async function applicationData(user, id) {
   if (typeof id !== 'string') throw notFound();
   const a = await getApp(user, id);
-  const v = await loadVisible(user);
+  // BE-2: one application only. Its calc (appCalc + appBlend) reads only this application's own items + settings, so
+  // the project-wide loadVisible() is replaced by a scoped roll-up over just this application (see loadScopedCalc).
+  // The department row is still loaded (its is_base flag drives the reports-track rule inside summarize()).
   const [fns, rep, dept] = await Promise.all([
     query(`SELECT f.*, u.full_name AS updated_by_name, rb.full_name AS removed_by_name, db.full_name AS disabled_by_name,
         cb.full_name AS closed_by_name FROM functions f
@@ -100,6 +133,8 @@ export async function applicationData(user, id) {
     query('SELECT * FROM app_reports WHERE app_id=$1', [a.id]),
     query('SELECT * FROM departments WHERE id=$1', [a.department_id]),
   ]);
+  const { calc, settings } = await loadScopedCalc(dept.rows, [a]);
+  const appCalc = calc.applications.find(x => x.id === a.id);
   // the most recent reopening of each function (its attached document + reason), shown under a reopened item
   const reopenings = new Map((await query(`SELECT DISTINCT ON (function_id) function_id, id, reason, reopened_at, doc_name,
       (SELECT full_name FROM users WHERE id=reopened_by) AS reopened_by_name
@@ -117,7 +152,7 @@ export async function applicationData(user, id) {
   const appMoves = (await appMovesOf({ query }, user, [a.id])).get(a.id) || [];
   const appMovedFrom = [...appMoves].reverse().find(m => m.to_department_id === a.department_id) || null;
   return {
-    application: { ...a, calc: v.calc.applications.find(x => x.id === a.id),
+    application: { ...a, calc: appCalc,
       ...(appMoves.length ? { moves: appMoves, moved_from: appMovedFrom } : {}) },
     department: dept.rows[0],
     functions: fns.rows.map(f => ({ ...f, duplicate_of: dups.get(f.id) || [],
@@ -126,7 +161,7 @@ export async function applicationData(user, id) {
     report: rep.rows[0] || null,
     pending: await pendingFor(a.id),
     needs_approval: await needsLeadApproval(u, a),
-    settings: calcSettings(v.settings),
+    settings: calcSettings(settings),
     // lead: may decide notes (approve / reject) and approve their deletion (services/notes.js); cls: may close / reopen a function (apv_final)
     can: { pct: hasPerm(u, 'pct'), wgt: hasPerm(u, 'wgt'), tst: hasPerm(u, 'tst'), tog: hasPerm(u, 'tog'), ren: hasPerm(u, 'ren'), mov: hasPerm(u, 'mov'), rep: hasPerm(u, 'rep'),
       lead: canDecideNote(u, a), cls: hasPerm(u, 'apv_final') },
