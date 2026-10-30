@@ -3201,7 +3201,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/1821767...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/e8be8bc...HEAD
+[1.12.47]: https://github.com/mscit-admin/ets/compare/1821767...e8be8bc
 [1.12.46]: https://github.com/mscit-admin/ets/compare/8365664...1821767
 [1.12.45]: https://github.com/mscit-admin/ets/compare/64b18c6...8365664
 [1.12.44]: https://github.com/mscit-admin/ets/compare/48f9997...64b18c6
