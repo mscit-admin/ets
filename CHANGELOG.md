@@ -30,6 +30,49 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.47] — 2026-10-30 — Reveal/download the backup encryption key from the web UI / إظهار وتنزيل مفتاح التشفير من الواجهة
+
+### Added
+
+- **Frontend** — Settings → «مركز النسخ الاحتياطي» (`BackupCenter.jsx`) now has a red
+  «إظهار/تنزيل مفتاح التشفير» action that opens a warning dialog and, after fresh re-authentication
+  (password + 2FA when enabled), either shows the backup encryption key on screen or downloads it as
+  `backup.key`. Administrators no longer need the command line to obtain the key that decrypts the
+  backups. New AR/EN i18n strings; `api.js` gains the `reveal`/`download` calls.
+- **Backend** — `POST /backups/key/export { mode, password, code? }` (`routes/backups.js`): admin-only
+  (the backup-config scope), mandatory re-auth via `twoFactor(req)`, and a low per-user rate limit
+  (`ETS_KEY_EXPORT_LIMIT`, default 5/hour). `mode: 'reveal'` returns the key as JSON; `mode: 'download'`
+  streams it as an `application/octet-stream` attachment (`no-store`). Each export writes an audit row
+  (`backup_key_export`, the key **id** only — never the key) and alerts the *other* administrators
+  (notification **S16** `backup_key_exported`, carrying the key id, never the key).
+
+### Changed
+
+- **Backend** — The upload rate limit is now configurable (`ETS_UPLOAD_LIMIT`, default 10/hour) instead
+  of a fixed cap, so an operator restoring from an uploaded dump on a fresh server is not blocked by the
+  limiter.
+
+### Security
+
+- **Backend** — The backup key is handed from the privileged root agent to the unprivileged API over a
+  one-time ephemeral-key channel in the **reverse** direction: the API generates a 32-byte key `ck` in
+  memory and writes it to a `0600` inbox file; the agent (which alone can read `/etc/ets/backup.key`)
+  reads and deletes that file, encrypts the key bytes with `ck` (AES-256-GCM), and returns **only the
+  ciphertext** in the job row; the API decrypts it in memory and deletes the `ck` file in `finally`. The
+  plaintext key and `ck` are **never** written to the database, the job result/log, or any file log — the
+  stored ciphertext blob is useless without the ephemeral `ck`, which is never persisted. Covered by
+  `backups.test.js` (admin-only, re-auth, rate limit, audit key-id-only, S16 to other admins, in-memory
+  decrypt, key absent from the whole DB and file logs) and an `ETS_AGENT_E2E` test of the real root handoff.
+
+### Upgrade notes
+
+- **Database** — New migration `035_backup_export_key.sql` widens the `backup_jobs.kind` CHECK to allow
+  the `export_key` job kind (additive, idempotent). Applied automatically by `update.sh`.
+- **Deployment** — Optional environment variables: `ETS_KEY_EXPORT_LIMIT` (default 5) and
+  `ETS_UPLOAD_LIMIT` (default 10), both per-user-per-hour. No action required to keep the defaults.
+
+---
+
 ## [1.12.46] — 2026-10-30 — Code-review batch 3b: note closed-lock + scoped tracker loads / قفل ملاحظات المقفلة وتحميل مُنطّق
 
 ### Fixed
