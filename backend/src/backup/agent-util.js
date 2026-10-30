@@ -98,12 +98,22 @@ export function sealSecret(secret) {
   const enc = Buffer.concat([c.update(String(secret), 'utf8'), c.final()]);
   return { ck: k.toString('base64url'), blob: [iv.toString('base64url'), c.getAuthTag().toString('base64url'), enc.toString('base64url')].join('.') };
 }
-export function openSecret(blob, ck) {
+// AES-256-GCM(data) under a KNOWN key ck (base64url). The reverse of openWith; used by the export_key agent handler
+// to encrypt /etc/ets/backup.key under the one-time key the API placed in the inbox — only the API (which holds ck in
+// memory) can open the blob, so the result stored in backup_jobs.result is useless on its own.
+export function sealWith(ck, data) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', Buffer.from(ck, 'base64url'), iv);
+  const enc = Buffer.concat([c.update(Buffer.isBuffer(data) ? data : Buffer.from(String(data), 'utf8')), c.final()]);
+  return [iv.toString('base64url'), c.getAuthTag().toString('base64url'), enc.toString('base64url')].join('.');
+}
+export function openWith(blob, ck) {
   const [iv, tag, enc] = String(blob).trim().split('.');
   const d = crypto.createDecipheriv('aes-256-gcm', Buffer.from(ck, 'base64url'), Buffer.from(iv, 'base64url'));
   d.setAuthTag(Buffer.from(tag, 'base64url'));
-  return Buffer.concat([d.update(Buffer.from(enc, 'base64url')), d.final()]).toString('utf8');
+  return Buffer.concat([d.update(Buffer.from(enc, 'base64url')), d.final()]);
 }
+export const openSecret = (blob, ck) => openWith(blob, ck).toString('utf8');
 export const TOKEN_RE = /^[A-Za-z0-9_-]{22,64}$/;
 export function takeSecret(p, token, ck) {
   if (!TOKEN_RE.test(String(token)) || !ck) throw new Error('secret_missing');
@@ -111,6 +121,17 @@ export function takeSecret(p, token, ck) {
   let blob;
   try { blob = fs.readFileSync(f, 'utf8'); } finally { try { fs.rmSync(f, { force: true }); } catch { /* gone */ } }
   return openSecret(blob, ck);
+}
+// The reverse channel (agent ← API) for export_key: the API wrote the one-time key ck into <inbox>/<token>.sec (0600,
+// owner ets); the agent reads it, deletes it, and keeps only ck in memory. ck is never in the database (only the token
+// is in the job row), so neither the file (deleted at once) nor the row reveals it.
+export function takeInboxKey(p, token) {
+  if (!TOKEN_RE.test(String(token))) throw new Error('secret_missing');
+  const f = path.join(p.inbox, token + '.sec');
+  let ck;
+  try { ck = fs.readFileSync(f, 'utf8').trim(); } finally { try { fs.rmSync(f, { force: true }); } catch { /* gone */ } }
+  if (!ck) throw new Error('secret_missing');
+  return ck;
 }
 // a key in the agent's tmpfs directory for gpg --passphrase-file (deleted after use / after 15 minutes)
 export function keyFile(p, name, secret) {

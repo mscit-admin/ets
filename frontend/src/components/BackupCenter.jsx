@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { api, downloadFile } from '../lib/api.js';
+import { api, downloadFile, postDownloadFile } from '../lib/api.js';
 import { Icon } from './Icon.jsx';
 import { Alert, Card, Field, Indicator, Loading, Modal, toast, useLoad } from './ui.jsx';
 import { ProgressPanel, fmtBytes, useJob } from './ProgressPanel.jsx';
@@ -247,7 +247,11 @@ export function BackupSection() {
       <Card title={t('bk_key_title')}>
         <p className="small">{t('bk_key_text', { key: data.escrow.key_id || st.key_id || '—' })}</p>
         <Alert kind="orange">{t('bk_key_old_warning')}</Alert>
-        <button className="btn btn-default btn-sm" onClick={() => setAsk({ kind: 'passphrase' })}>{t('bk_pp_change')}</button>
+        <div className="row gap wrap">
+          <button className="btn btn-default btn-sm" onClick={() => setAsk({ kind: 'passphrase' })}>{t('bk_pp_change')}</button>
+          <button className="btn btn-danger btn-sm" onClick={() => setAsk({ kind: 'revealkey' })}><Icon name="shield" size={14} /> {t('bk_key_reveal')}</button>
+        </div>
+        <p className="muted small mt-s">{t('bk_key_reveal_hint')}</p>
         <JobStatus job={ppJob} />
       </Card>
 
@@ -281,7 +285,55 @@ export function BackupSection() {
           <Field label={t('bk_pp_repeat')}><input className="input" type="password" dir="ltr" autoComplete="new-password" value={pp.b} onChange={e => setPp(x => ({ ...x, b: e.target.value }))} /></Field>
         </ReauthModal>
       )}
+      {ask?.kind === 'revealkey' && <KeyRevealModal keyId={data.escrow.key_id || st.key_id || null} onClose={() => setAsk(null)} />}
     </section>
+  );
+}
+
+// Reveal / download the backup encryption key — the key that decrypts EVERY backup. A prominent red warning, fresh
+// re-authentication (password + 2FA), then either a file download (backup.key) or a one-time on-screen reveal with a
+// copy button. The key id is shown; the key is never retained by the page beyond this modal.
+function KeyRevealModal({ keyId, onClose }) {
+  const { t, errText } = useI18n();
+  const { user } = useAuth();
+  const [pw, setPw] = useState(''), [code, setCode] = useState(''), [err, setErr] = useState(null), [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(null);     // { key, key_id } once revealed on screen
+  const needCode = !!user?.totp_enabled;
+  const auth = () => {
+    const second = !needCode ? {} : /^\d{6}$/.test(code.trim()) ? { code: code.trim() } : { recovery_code: code.trim() };
+    return { password: pw, ...second };
+  };
+  const run = async mode => {
+    setBusy(true); setErr(null);
+    try {
+      if (mode === 'download') { await postDownloadFile('/backups/key/export', { mode: 'download', ...auth() }, 'backup.key'); toast(t('bk_key_downloaded')); onClose(); }
+      else { setShown(await api.post('/backups/key/export', { mode: 'reveal', ...auth() })); }
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={t('bk_key_reveal_title')} onClose={onClose}
+      footer={shown
+        ? <button className="btn btn-default" onClick={onClose}>{t('close')}</button>
+        : <><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
+          <button className="btn btn-default" disabled={busy || !pw} onClick={() => run('reveal')}>{t('bk_key_show')}</button>
+          <button className="btn btn-danger" disabled={busy || !pw} onClick={() => run('download')}><Icon name="download" size={14} /> {t('bk_key_download')}</button></>}>
+      <Alert>{t('bk_key_reveal_warning')}</Alert>
+      {err && <Alert>{errText(err)}</Alert>}
+      {shown ? (
+        <>
+          <p className="small">{t('bk_key_shown_hint')}</p>
+          <Field label={t('bk_key_label')}><textarea className="input mono" dir="ltr" readOnly rows={3} value={shown.key} onFocus={e => e.target.select()} /></Field>
+          <button className="btn btn-default btn-sm" onClick={() => { navigator.clipboard?.writeText(shown.key); toast(t('bk_copied')); }}>{t('bk_copy')}</button>
+          <p className="small mt-s">{t('bk_file_key')}: <code dir="ltr">{shown.key_id || keyId || '—'}</code></p>
+        </>
+      ) : (
+        <>
+          <p className="small mt-s">{t('bk_key_reveal_confirm', { key: keyId || '—' })}</p>
+          <Field label={t('password')}><input className="input" type="password" dir="ltr" autoComplete="current-password" value={pw} onChange={e => setPw(e.target.value)} /></Field>
+          {needCode && <Field label={t('code_or_recovery')}><input className="input otp" dir="ltr" autoComplete="one-time-code" value={code} placeholder="123456 / xxxx-xxxx-xxxx" onChange={e => setCode(e.target.value)} /></Field>}
+        </>
+      )}
+    </Modal>
   );
 }
 

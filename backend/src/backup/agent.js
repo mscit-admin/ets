@@ -12,12 +12,12 @@ import { pool, query } from '../db/pool.js';
 import { decrypt as decryptSecret } from '../services/crypto.js';
 import { validateConfig, renderBackupConf, renderRcloneConf, timerSchedule, renderTimerDropIn, fromBackupConf, parseKv,
   DEFAULT_CONFIG, SECRET_KEYS, keyId, passphraseProblem, parseArtifact, DESTS } from './config.js';
-import { agentPaths, writeAllowed, run, takeSecret, sweep, readText, readJsonFile, ips, hostname, writeAtomic } from './agent-util.js';
+import { agentPaths, writeAllowed, run, takeSecret, takeInboxKey, sealWith, sweep, readText, readJsonFile, ips, hostname, writeAtomic } from './agent-util.js';
 import { Tracker } from './progress.js';
 import { restoreInspect, restoreRun } from './restore.js';
 
 export const LOCK_KEY = 'ets_backup_agent';
-export const JOB_KINDS = ['backup_now', 'verify_now', 'test_destination', 'generate_ssh_key', 'set_passphrase', 'restore_inspect', 'restore_run'];
+export const JOB_KINDS = ['backup_now', 'verify_now', 'test_destination', 'generate_ssh_key', 'set_passphrase', 'restore_inspect', 'restore_run', 'export_key'];
 const say = (...a) => console.log(new Date().toISOString(), ...a);
 
 // ---------------------------------------------------------------- configuration
@@ -200,6 +200,20 @@ const HANDLERS = {
     writeAllowed(p, p.backupKey + '.id', id + '\n', 0o600);
     await query('UPDATE backup_config SET key_id=$1, key_changed_at=now(), escrow_confirmed_at=NULL, escrow_confirmed_by=NULL WHERE id=1', [id]);
     return { ok: true, result: { key_id: id, previous_key_id: oldId } };
+  },
+  // reveal / download the backup key from the web UI (approved, safe design). The API placed a one-time key ck in the
+  // sealed inbox (reverse of the set_passphrase channel) and keeps ck in its memory alone; here root reads /etc/ets/
+  // backup.key, encrypts it under ck, and returns ONLY the ciphertext + the key id. The plaintext key is NEVER put in
+  // result, log, or anywhere persistent: the blob stored in backup_jobs.result is useless without ck (API memory only).
+  async export_key(job, p) {
+    let ck;
+    try { ck = takeInboxKey(p, job.params.token); } finally { await setJob(job.id, { params: { ...job.params, token: null } }); }
+    if (!fs.existsSync(p.backupKey)) { ck = null; return { ok: false, result: { error: 'no_key' } }; }
+    const keyBytes = fs.readFileSync(p.backupKey);
+    const id = (readText(p.backupKey + '.id') || '').trim() || keyId(keyBytes.toString('utf8'));
+    const blob = sealWith(ck, keyBytes);
+    ck = null;
+    return { ok: true, result: { blob, key_id: id } };     // no plaintext, no log
   },
   restore_inspect: (job, p) => restoreInspect(job, p, { setJob }),
   restore_run: (job, p) => restoreRun(job, p, { setJob }),

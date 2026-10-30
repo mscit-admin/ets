@@ -192,6 +192,15 @@ const T = {
       body: [p.by ? (l === 'ar' ? `بواسطة: ${p.by}` : `By: ${p.by}`) : null, p.created ? (l === 'ar' ? `نسخة: ${String(p.created).slice(0, 16).replace('T', ' ')}` : `Backup: ${String(p.created).slice(0, 16).replace('T', ' ')}`) : null]
         .filter(Boolean).join(' · ') || null };
   },
+  // S16: to the other administrators. The key id (a scrypt hash, not the key) may sit in the body; the key itself is
+  // never passed here. The title names only the event, the body who and which key id and how it was taken.
+  backup_key_exported: (l, p) => ({
+    title: l === 'ar' ? 'أُظهر مفتاح تشفير النسخ الاحتياطية' : 'The backup encryption key was revealed',
+    body: [
+      p.by ? (l === 'ar' ? `بواسطة: ${p.by}` : `By: ${p.by}`) : null,
+      l === 'ar' ? (p.mode === 'reveal' ? 'عرض على الشاشة' : 'تنزيل') : (p.mode === 'reveal' ? 'shown on screen' : 'download'),
+      p.key_id ? (l === 'ar' ? `معرّف المفتاح: ${p.key_id}` : `Key id: ${p.key_id}`) : null,
+    ].filter(Boolean).join(' · ') || null }),
   release_event: (l, p) => {
     const roll = p.intent === 'rollback';
     const st = {
