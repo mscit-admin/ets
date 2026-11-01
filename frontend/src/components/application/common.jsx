@@ -44,7 +44,7 @@ export function ImpactTable({ impact }) {
   return (
     <div className="impact">
       <div className="impact-title">{t('impact_title')}</div>
-      <table className="table">
+      <div className="table-wrap"><table className="table">
         <thead><tr><th /><th className="num-col">{t('before')}</th><th className="num-col">{t('after')}</th><th className="num-col">{t('change')}</th></tr></thead>
         <tbody>
           {rows.map(([k, label]) => {
@@ -61,7 +61,7 @@ export function ImpactTable({ impact }) {
           <tr><td>{t('included_functions')}</td><td className="num-col num">{impact.included.before}</td><td className="num-col num"><b>{impact.included.after}</b></td>
             <td className="num-col num muted">{countDelta(impact.included.after - impact.included.before)}</td></tr>
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

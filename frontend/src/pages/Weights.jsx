@@ -84,7 +84,8 @@ export default function Weights() {
         const dw = apps.reduce((acc, a) => acc + (auto ? a.fnWeight : +w[a.id] || 0), 0);
         return (
           <Card key={d.id} title={nm(d)} actions={<span className="muted small">{t('weight')} <b className="num">{pc(dw)}</b> · <b className="num">{pc(total ? (dw / total) * 100 : 0)}%</b></span>}>
-            <table className="table">
+            <div className="table-wrap">
+            <table className="table wgt-table">
               <thead><tr><th>{t('application')}</th><th className="num-col">{t('default_weight')}</th><th className="num-col">{t('fn_weight_sum')}</th><th className="num-col">{t('weight')}</th><th className="num-col">{t('share')}</th></tr></thead>
               <tbody>
                 {apps.map(a => {
@@ -104,6 +105,7 @@ export default function Weights() {
                 })}
               </tbody>
             </table>
+            </div>
           </Card>
         );
       })}
