@@ -15,7 +15,7 @@ export default function Search() {
       {loading && !data ? <Loading /> : error ? <ErrorBox error={error} /> : (
         <Card>
           {!data.results.length ? <Empty /> : (
-            <table className="table">
+            <div className="table-wrap"><table className="table">
               <thead><tr><th>{t('functions')}</th><th>{t('application')}</th><th className="num-col">%</th></tr></thead>
               <tbody>
                 {data.results.map(r => (
@@ -27,7 +27,7 @@ export default function Search() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
       )}

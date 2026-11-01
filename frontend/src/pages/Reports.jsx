@@ -52,7 +52,8 @@ export default function Reports() {
       </div>
       {departments.map(d => (
         <Card key={d.id} title={nm(d)}>
-          <table className="table">
+          <div className="table-wrap">
+          <table className="table rep-table">
             <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30">{t('progress')}</th><th className="num-col">%</th>
               <th className="num-col hide-mobile">{t('report_items')}</th><th className="num-col" title={t('reports_combined_hint')}>{t('reports_combined')}</th>
               <th>{t('note')}</th>{can.rep && <th />}</tr></thead>
@@ -75,6 +76,7 @@ export default function Reports() {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       ))}
       {edit && <ReportModal a={edit} onClose={() => setEdit(null)} onSave={b => save(edit, b)} />}

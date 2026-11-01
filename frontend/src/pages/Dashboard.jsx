@@ -133,7 +133,7 @@ export default function Dashboard() {
 
       <div className="grid-2">
         <Card title={t('lowest_apps')}>
-          <table className="table">
+          <div className="table-wrap"><table className="table">
             <tbody>
               {lowest.map(a => (
                 <tr key={a.id}>
@@ -143,7 +143,7 @@ export default function Dashboard() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </Card>
         <Card title={t('test_status_dist')}>
           <div className="stack-bar">

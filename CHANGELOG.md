@@ -30,6 +30,32 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.48] — 2026-11-01 — Responsive web UI on phones and tablets / واجهة متجاوبة على الجوال واللوحي
+
+### Fixed
+
+- **Frontend** — The whole web UI is now verified responsive on phones (~390px) and tablets (~768px), in both
+  Arabic (RTL) and English (LTR), building on the existing responsive foundation (off-canvas sidebar,
+  `html{overflow-x:hidden}`, `.table-wrap`, `hide-mobile`, the 560/640/820/960px breakpoints). Every remaining
+  wide data table now scrolls inside its card instead of widening the page: **Weights**, **Reports**,
+  **Department**, **Search**, the Dashboard "lowest apps" table, the release-promotion history, the move/impact
+  table, and the restore-inspection counts (Weights and the 7-column Reports table keep a `min-width` so their
+  columns stay legible while scrolling — both below card width, so the desktop layout is unchanged).
+- **Frontend** — Modal footers (`.modal-foot`, shared by every dialog) wrap instead of overflowing a narrow
+  dialog, and the approval signature pair (`.signs`) stacks to one column below 560px.
+- **Frontend** — Fixed a right-to-left page overflow on **Users**: an absolutely-positioned `.sr-only`
+  (screen-reader-only) label in the users table had the viewport as its containing block, so it sat at a negative
+  X coordinate and widened the page by ~131px in Arabic, shifting the layout. `.table-wrap` is now a positioning
+  context (`position: relative`) so `overflow-x: auto` contains such descendants. The row-actions (⋮) menu is
+  portaled with fixed positioning and the item-type menu has its own positioned `.it-wrap`, so neither is affected.
+
+### Upgrade notes
+
+- No database, dependency or configuration changes. Frontend-only (CSS/markup); deploy with `update.sh` and a hard
+  refresh (**Ctrl+Shift+R**) as usual.
+
+---
+
 ## [1.12.47] — 2026-10-30 — Reveal/download the backup encryption key from the web UI / إظهار وتنزيل مفتاح التشفير من الواجهة
 
 ### Added
@@ -3201,7 +3227,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/e8be8bc...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/2e2a38e...HEAD
+[1.12.48]: https://github.com/mscit-admin/ets/compare/e8be8bc...2e2a38e
 [1.12.47]: https://github.com/mscit-admin/ets/compare/1821767...e8be8bc
 [1.12.46]: https://github.com/mscit-admin/ets/compare/8365664...1821767
 [1.12.45]: https://github.com/mscit-admin/ets/compare/64b18c6...8365664
