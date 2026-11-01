@@ -307,7 +307,11 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .donut-empty { margin: 6px 0 0; }
 
 /* ---------- tables / list view ---------- */
-.table-wrap { overflow-x: auto; }
+/* position:relative makes the wrap the containing block for any absolutely-positioned
+   descendant (e.g. an .sr-only label), so overflow-x:auto clips it instead of the element
+   leaking to the page and widening it in RTL. The row-actions ⋮ menu is portaled (fixed)
+   and the item-type menu lives in its own positioned .it-wrap, so neither is affected. */
+.table-wrap { overflow-x: auto; position: relative; }
 .table { width: 100%; border-collapse: collapse; }
 .table th {
   text-align: start; font-size: 12px; font-weight: 600; color: var(--gray-600); padding: 8px 10px;
@@ -445,6 +449,16 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   .main { padding: 14px 16px 50px; }
   .kv > div { grid-template-columns: 1fr; gap: 2px; }
   .table .w-30, .table .w-40 { width: auto; }
+}
+/* wide data tables keep their columns legible and scroll inside .table-wrap on phones/tablets
+   (on desktop the min-width is smaller than the card, so no scrollbar and the layout is unchanged) */
+.wgt-table { min-width: 540px; }
+.rep-table { min-width: 680px; }
+/* modal footers with several buttons wrap instead of overflowing a narrow dialog */
+.modal-foot { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  /* approval signature cards stack rather than squeeze two into ~320px */
+  .signs { grid-template-columns: 1fr; }
 }
 @media print {
   .navbar, .sidebar, .page-actions, .filter-bar { display: none !important; }

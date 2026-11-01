@@ -333,10 +333,10 @@ function InspectSummary({ ir, items, current }) {
         {ir.logs && <div><span>{t('bk_item_logs')}</span><span>{t('bk_ins_logs', { n: ir.logs.files })}</span></div>}
       </div>
       {d && (
-        <table className="table small mt">
+        <div className="table-wrap"><table className="table small mt">
           <thead><tr><th>{t('bk_ins_table')}</th><th>{t('bk_ins_in_backup')}</th><th>{t('bk_ins_now')}</th></tr></thead>
           <tbody>{Object.entries(counts).map(([k, v]) => <tr key={k}><td dir="ltr">{k}</td><td className="num">{v.restored}</td><td className="num">{v.live ?? '—'}</td></tr>)}</tbody>
-        </table>
+        </table></div>
       )}
       {(ir.blocking || []).map(b => <Alert key={b.code}>{t('bk_block_' + b.code, { version: b.version || '', unknown: b.unknown || '' })}</Alert>)}
       {d?.migrations?.pending && <Alert kind="orange">{t('bk_ins_older')}</Alert>}

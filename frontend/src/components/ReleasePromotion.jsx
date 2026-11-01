@@ -190,7 +190,7 @@ export function ReleaseSection() {
       {/* history — expandable rows */}
       <Card title={t('rel_history')}>
         {(history.data?.promotions || []).length === 0 ? <p className="muted">{t('rel_none')}</p> : (
-          <table className="table">
+          <div className="table-wrap"><table className="table">
             <thead><tr><th style={{ width: 24 }} /><th>{t('rel_col_version')}</th><th>{t('rel_col_by')}</th><th>{t('rel_col_when')}</th><th>{t('rel_col_status')}</th><th>{t('rel_detail_backup')}</th></tr></thead>
             <tbody>
               {history.data.promotions.map(p => (
@@ -207,7 +207,7 @@ export function ReleaseSection() {
                 </Fragment>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </Card>
 
