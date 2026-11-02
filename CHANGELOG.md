@@ -3313,7 +3313,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/3bebedf...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/686b17b...HEAD
+[1.12.52]: https://github.com/mscit-admin/ets/compare/3bebedf...686b17b
 [1.12.51]: https://github.com/mscit-admin/ets/compare/314749d...3bebedf
 [1.12.50]: https://github.com/mscit-admin/ets/compare/9ec6de5...314749d
 [1.12.49]: https://github.com/mscit-admin/ets/compare/2e2a38e...9ec6de5
