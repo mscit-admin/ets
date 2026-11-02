@@ -30,6 +30,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.50] — 2026-11-02 — Clearer row-actions (⋮) button / زرّ إجراءات الصف (⋮) أوضح
+
+### Fixed
+
+- **Frontend** — The row-actions (⋮) button (`Menu.jsx` / `.row-menu-btn`) was a faint medium-grey icon at 70%
+  opacity that only reached full strength on hover — so on touch devices (no hover) it read as barely there. It is
+  now a solid dark icon (`--text`) at full opacity everywhere, and in the mobile function cards it becomes an
+  obvious bordered tap target (40×40 with a larger glyph) next to its «إجراءات / Actions» label.
+
+### Upgrade notes
+
+- No database, dependency or configuration changes. Frontend-only (CSS); deploy with `update.sh` and a hard refresh
+  (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.49] — 2026-11-02 — Functions table becomes cards on phones and tablets / جدول الوظائف كبطاقات على الجوال واللوحي
 
 ### Fixed
