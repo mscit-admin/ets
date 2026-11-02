@@ -241,7 +241,6 @@ export function parseArtifact(name) {
   if (m[2]) return { kind: 'config', ts: m[2] };
   return { kind: 'logs', ts: m[3] + '-235959', date: m[3] };
 }
-export const tsToIso = ts => `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}T${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`;
 export const RESTORE_ITEMS = ['db', 'env', 'tls', 'install_conf', 'db_ca', 'logs'];
 export const CONFIG_ITEMS = ['env', 'tls', 'install_conf', 'db_ca'];
 

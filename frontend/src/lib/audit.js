@@ -2,7 +2,8 @@
 // application, from which value to which value, and how it came in (direct edit, approved request, import).
 // Rows written before migration 007 have no `context`; they still read well from old_value / new_value.
 
-const STATUS_PREFIX = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_', status: 'rs_' };
+import { STATUS_PREFIX as BASE_STATUS_PREFIX } from './itemRules.js';
+const STATUS_PREFIX = { ...BASE_STATUS_PREFIX, status: 'rs_' };
 const PCT_FIELDS = new Set(['progress']);
 const BOOL_FIELDS = new Set(['is_active', 'totp_exempt', 'must_change_password', 'approval.edits_need_lead', 'notify.enabled']);
 const SETTING_LABEL = {

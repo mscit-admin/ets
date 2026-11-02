@@ -14,7 +14,6 @@
 // the existing alert broadcast (services/messages.js), which pops up through AlertGate like any other «تنبيه».
 import { allSettings, getSetting } from './settings.js';
 
-export const MAINTENANCE_KEYS = ['maintenance.enabled', 'maintenance.message', 'maintenance.since', 'maintenance.by'];
 export const MAINTENANCE_MESSAGE_MAX = 1000;
 // A sensible default used for the ALERT body when the administrator left the message empty (RTL-first, the app's
 // default language). The login screen and the in-app banner fall back to their own localised strings instead.

@@ -30,6 +30,34 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.52] — 2026-11-02 — Code review cleanup: remove dead code, unify STATUS_PREFIX, batch broadcast inserts / تنظيف المراجعة
+
+### Removed
+
+- **Dead code** (from the full code review; each verified unused across backend, frontend and the mobile app):
+  7 unused backend exports (`BODY_MIN`, `pendingAlertCount` in `services/messages.js`; `MAINTENANCE_KEYS` in
+  `services/maintenance.js`; `APP_MOVE_REASON_MIN`/`APP_MOVE_REASON_MAX` in `services/app-move.js`; `tsToIso` in
+  `backup/config.js`; `gitHead` in `release/agent-util.js`), 1 unused frontend export (`isMoveAppRequest`), 6 unused
+  i18n keys (`msg_recipients`, `msg_open`, `msg_sent_to`, `users_current`, `close_hint`, `rel_phase1_note`), and 11
+  unused CSS classes in `styles/app.css` (the old department-card block, `btn-rename`/`btn-move`, `msg-posts`,
+  `alert-no-reply`).
+
+### Changed
+
+- **Frontend** — `STATUS_PREFIX` had three copies (`lib/itemRules.js` plus supersets redefined in `lib/audit.js` and
+  `pages/Imports.jsx`); the two supersets now import the base and extend it (`{ ...base, status: 'rs_' }`), removing
+  the drift risk. Behaviour unchanged.
+- **Backend** — `services/messages.js` `sendBroadcast` no longer issues two INSERTs per recipient in a loop (an N+1
+  that scaled with org-wide alerts); it now inserts all threads and all initial posts with two set-based statements,
+  with each recipient still getting exactly one thread, post and notification. `routes/export.js` imports its data
+  helpers directly from the services instead of through re-exports in `routes/tracker.js` (the re-export block is gone).
+
+### Upgrade notes
+
+- No database, dependency or configuration change. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.51] — 2026-11-02 — Security: harden TLS restore against path traversal / تحصين استعادة الشهادة ضد اجتياز المسار
 
 ### Security
@@ -3285,7 +3313,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/3bebedf...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/686b17b...HEAD
+[1.12.52]: https://github.com/mscit-admin/ets/compare/3bebedf...686b17b
 [1.12.51]: https://github.com/mscit-admin/ets/compare/314749d...3bebedf
 [1.12.50]: https://github.com/mscit-admin/ets/compare/9ec6de5...314749d
 [1.12.49]: https://github.com/mscit-admin/ets/compare/2e2a38e...9ec6de5

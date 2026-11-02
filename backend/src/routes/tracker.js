@@ -27,12 +27,6 @@ import { DATE, fitTimeline, saveSchedule } from '../services/schedule.js';
 import { getApp, summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData }
   from '../services/tracker-data.js';
 
-// The data-assembly functions and the schedule maths moved to services/ (BE-1) but are still read through this route
-// module by the Excel exports (routes/export.js); re-export them here under the same names and path.
-export { summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData }
-  from '../services/tracker-data.js';
-export { addPeriods } from '../services/schedule.js';
-
 const r = Router();
 r.use(requireAuth);
 
