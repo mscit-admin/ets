@@ -17,7 +17,6 @@ import { activeUsers, appMap } from './notify.js';
 import { messagePosted, alertResponded } from './notify-events.js';
 import { onCommit } from '../db/pool.js';
 
-export const BODY_MIN = 1;
 export const BODY_MAX = 4000;
 export const SUBJECT_MAX = 200;
 export const PREVIEW_LEN = 140;
@@ -96,16 +95,21 @@ export async function sendBroadcast(db, sender, { subject, body, recipients, aud
     [sender.id, subj, body, JSON.stringify(audience), recipients.length, k])).rows[0];
   const fromName = sender.full_name || sender.username;
   const notifType = k === 'alert' ? 'alert_received' : 'message_received';
-  for (const r of recipients) {
-    const th = (await db.query(
-      `INSERT INTO message_threads(broadcast_id, author_id, recipient_id, subject, kind, last_post_at, author_read_at)
-       VALUES ($1,$2,$3,$4,$5, now(), now()) RETURNING id`,
-      [b.id, sender.id, r.id, subj, k])).rows[0];
-    const post = (await db.query(
-      `INSERT INTO message_posts(thread_id, author_id, body) VALUES ($1,$2,$3) RETURNING id`,
-      [th.id, sender.id, body])).rows[0];
-    onCommit(db, () => messagePosted({ type: notifType, toUserId: r.id, fromName, subject: subj,
-      preview: preview(body), threadId: th.id, postId: post.id }));
+  // One thread per recipient and one initial post per thread, as two set-based inserts (recipient_id is an
+  // integer; thread id is a bigint). Each recipient still gets exactly one thread + one post + one notification
+  // with the right ids; the notifications fire onCommit, so their order no longer matters.
+  const threads = (await db.query(
+    `INSERT INTO message_threads(broadcast_id, author_id, recipient_id, subject, kind, last_post_at, author_read_at)
+     SELECT $1,$2,rid,$4,$5, now(), now() FROM unnest($3::int[]) AS rid RETURNING id, recipient_id`,
+    [b.id, sender.id, recipients.map(r => r.id), subj, k])).rows;
+  const posts = (await db.query(
+    `INSERT INTO message_posts(thread_id, author_id, body)
+     SELECT tid, $2, $3 FROM unnest($1::bigint[]) AS tid RETURNING id, thread_id`,
+    [threads.map(t => t.id), sender.id, body])).rows;
+  const postByThread = new Map(posts.map(p => [p.thread_id, p.id]));
+  for (const t of threads) {
+    onCommit(db, () => messagePosted({ type: notifType, toUserId: t.recipient_id, fromName, subject: subj,
+      preview: preview(body), threadId: t.id, postId: postByThread.get(t.id) }));
   }
   return { broadcast_id: b.id, sent: recipients.length, kind: k };
 }
@@ -125,13 +129,6 @@ export async function pendingAlert(userId) {
   if (!t) return null;
   return { thread_id: Number(t.id), broadcast_id: t.broadcast_id, subject: t.subject, body: t.body,
     from_name: t.from_name, from_username: t.from_username, created_at: t.created_at };
-}
-
-// The count of a user's pending mandatory alerts (for the nav badge / the gate signal).
-export async function pendingAlertCount(userId) {
-  return (await query(
-    `SELECT count(*)::int AS n FROM message_threads
-      WHERE recipient_id = $1 AND kind = 'alert' AND response_status IS NULL`, [userId])).rows[0].n;
 }
 
 // The recipient answers an alert: set the status (+ optional note + responded_at), post the note as a message_post

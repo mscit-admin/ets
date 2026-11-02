@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../i18n/index.jsx';
 import { api, path, isIdParam, notFoundError } from '../lib/api.js';
 import { pc } from '../lib/format.js';
+import { STATUS_PREFIX as BASE_STATUS_PREFIX } from '../lib/itemRules.js';
 import { Icon } from '../components/Icon.jsx';
 import { Alert, Card, Empty, ErrorBox, Field, Indicator, Loading, Modal, PageHeader, toast, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
@@ -177,7 +178,7 @@ function ImportModal({ onClose, onDone }) {
 // Human-readable value of a changed field
 function useFmt() {
   const { t } = useI18n();
-  const STATUS_PREFIX = { test_status: 'ts_', notif_status: 'ns_', review_status: 'rv_', status: 'rs_' };
+  const STATUS_PREFIX = { ...BASE_STATUS_PREFIX, status: 'rs_' };
   return (field, v) => {
     if (v === null || v === undefined) return '—';
     if (STATUS_PREFIX[field]) return t(STATUS_PREFIX[field] + v);

@@ -80,10 +80,3 @@ export function loadSigners(dir, keyIdFn) {
   }
   return out;
 }
-
-// A git working copy's current HEAD commit (40 hex) or null.
-export async function gitHead(p, repoDir, ref = 'HEAD') {
-  const r = await run(p.git, ['-C', repoDir, 'rev-parse', '--verify', '--quiet', ref + '^{commit}']);
-  const h = r.out.trim();
-  return /^[0-9a-f]{40}$/.test(h) ? h : null;
-}
