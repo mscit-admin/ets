@@ -3263,7 +3263,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/9ec6de5...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/314749d...HEAD
+[1.12.50]: https://github.com/mscit-admin/ets/compare/9ec6de5...314749d
 [1.12.49]: https://github.com/mscit-admin/ets/compare/2e2a38e...9ec6de5
 [1.12.48]: https://github.com/mscit-admin/ets/compare/e8be8bc...2e2a38e
 [1.12.47]: https://github.com/mscit-admin/ets/compare/1821767...e8be8bc
