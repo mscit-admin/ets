@@ -45,7 +45,7 @@ a:hover { color: var(--primary-blue); }
 h1, h2, h3 { margin: 0; font-weight: 700; }
 .num, .code, input[type=number] { font-variant-numeric: tabular-nums; }
 /* numbers with % keep LTR order inside Arabic text (e.g. 49.2% not %49.2) */
-.num, .nc-value, .dept-pct, .head-pct { unicode-bidi: isolate; direction: ltr; }
+.num, .nc-value, .head-pct { unicode-bidi: isolate; direction: ltr; }
 .code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; }
 .muted { color: var(--text-muted); }
 .small { font-size: 12px; }
@@ -257,15 +257,6 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .nc-value.orange { color: var(--orange-text); } .nc-value.red { color: var(--red-text); }
 .nc-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-.grid-depts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.dept-card { background: #fff; border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-sm), 0 0 0 1px var(--border); display: grid; gap: 12px; transition: box-shadow .15s; }
-.dept-card:hover { box-shadow: var(--shadow); color: var(--text); }
-.dept-top { display: flex; align-items: center; gap: 12px; }
-.dept-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 10px; flex: none; }
-.dept-name { flex: 1; display: grid; min-width: 0; }
-.dept-name span { font-size: 12px; color: var(--text-muted); }
-.dept-pct { font-size: 20px; font-weight: 700; }
-.dept-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 /* ---------- dashboard: users overview (1.12.9) ---------- */
@@ -1035,18 +1026,12 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 
 /* Rename of an item (1.9.1): pencil next to the title, the dialog's read-only code / current name */
 .toast.orange { background: #b35410; }
-.fn-title .btn-rename { flex: none; width: 26px; height: 26px; margin-top: -1px; opacity: .7; }
-.fn-title .btn-rename:hover, .fn-title .btn-rename:focus-visible { opacity: 1; }
 .rn-current { display: grid; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: var(--radius); background: var(--gray-50); }
 .rn-current > div { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: baseline; }
 .rn-current dt { color: var(--text-muted); font-size: 12px; font-weight: 600; }
 .rn-current dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 520px) { .rn-current > div { grid-template-columns: 1fr; gap: 2px; } }
 .req-reason .rn-reason-text { white-space: pre-wrap; }
-
-/* moving items to another application (1.10.0) */
-.fn-title .btn-move { flex: none; width: 26px; height: 26px; margin-top: -1px; opacity: .7; }
-.fn-title .btn-move:hover, .fn-title .btn-move:focus-visible { opacity: 1; }
 
 /* per-row actions consolidated into a ⋮ kebab menu (at the row's far inline edge, flips with direction) */
 .fn-actions-cell { text-align: center; }
@@ -1177,8 +1162,6 @@ textarea.mono { width: 100%; resize: vertical; }
 .msg-pick.on { background: var(--acc-bg); border-color: var(--acc); color: var(--acc); }
 
 .msg-thread-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-.msg-posts { list-style: none; margin: 0 0 12px; padding: 4px 2px; display: flex; flex-direction: column; gap: 10px;
-  max-height: 58vh; overflow-y: auto; }
 .msg-post { max-width: 80%; align-self: flex-start; background: var(--acc-bg); border-radius: var(--radius-lg); padding: 9px 12px; }
 .msg-post.mine { align-self: flex-end; background: var(--blue-bg); color: var(--blue-text); }
 .msg-post-meta { display: flex; justify-content: space-between; gap: 14px; font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px; }
@@ -1222,7 +1205,6 @@ textarea.mono { width: 100%; resize: vertical; }
 .alert-response-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fdf7ec; border: 1px solid #f0dcb4;
   border-radius: var(--radius-lg); padding: 8px 12px; margin-bottom: 12px; }
 .alert-note { background: var(--acc-bg); border-radius: var(--radius-lg); padding: 8px 12px; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
-.alert-no-reply { color: var(--text-muted); }
 
 /* the mandatory blocking popup (AlertGate) */
 .modal-backdrop.blocking { background: rgba(20, 20, 30, 0.6); }

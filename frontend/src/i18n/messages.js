@@ -972,7 +972,6 @@ export const messages = {
     msg_subject_ph: 'عنوان مختصر للرسالة',
     msg_body: 'نص الرسالة',
     msg_body_ph: 'اكتب رسالتك هنا…',
-    msg_recipients: 'المستلمون',
     msg_to_people: 'أفراد محدّدون',
     msg_search_people: 'ابحث بالاسم أو اسم المستخدم…',
     msg_everyone: 'الكل (كل من في نطاقك)',
@@ -998,9 +997,7 @@ export const messages = {
     msg_unread_replies: 'ردود جديدة',
     msg_conversation: 'المحادثة',
     msg_back: 'رجوع',
-    msg_open: 'فتح',
     msg_select_hint: 'اختر مستلمين: أفراداً، أو الكل، أو حسب الإدارة أو الدور (يمكن الجمع).',
-    msg_sent_to: 'إلى {n} مستلماً',
     msg_badge_title: 'رسائل غير مقروءة: {n}',
     msg_post_count: '{n} منشور',
     msg_type: 'النوع',
@@ -1142,7 +1139,6 @@ export const messages = {
     err_duplicate_of_required: 'اختر الوظيفة أو الوظائف المكرَّرة معها',
     err_invalid_duplicate: 'لا يمكن اختيار إحدى الوظائف المكرَّرة: غير موجودة أو خارج نطاقك أو مُزالة أو هي نفسها من الوظائف الملغاة',
     // deleting users (1.7.0)
-    users_current: 'المستخدمون',
     deleted_users: 'المستخدمون المحذوفون',
     no_deleted_users: 'لا يوجد مستخدمون محذوفون',
     delete_user: 'حذف المستخدم',
@@ -1526,7 +1522,6 @@ export const messages = {
     err_move_weight_out_of_range: 'سيتجاوز وزن التطبيق الوجهة الحد الأعلى ({max}) — عدّل الأوزان أولاً',
     // close / lock & reopen a function (migration 033)
     close_button: 'إغلاق',
-    close_hint: 'إغلاق الوظيفة بعد اعتمادها النهائي — تُقفل من التعديل وتُحتسب مكتملة 100٪',
     close_title: 'إغلاق الوظيفة (اعتماد نهائي)',
     close_msg: 'بالإغلاق تُعدّ هذه الوظيفة منتهية ولا تحتاج شيئاً آخر: تُقفل من التعديل وتُحتسب مكتملة 100٪ ضمن النسبة مع بقائها محتسَبة. يمكن لحامل الاعتماد النهائي إعادة فتحها لاحقاً بمستند رسمي وسبب مكتوب.',
     confirm_close: 'إغلاق وقفل',
@@ -1608,7 +1603,6 @@ export const messages = {
     back: 'السابق',
     // release promotion (Settings → «الترقية والنشر», Phase 1, 1.12.18)
     rel_title: 'الترقية والنشر إلى الإنتاج',
-    rel_phase1_note: 'المرحلة الأولى: هذه الشاشة تُسجّل «طلب ترقية» موقّعاً فقط. لا يتم أي نشر فعلي أو دفع إلى Git هنا؛ وكلاء النشر الجذريون (ets-release-publisher / ets-deploy-agent) يُفعَّلون في المرحلة الثانية.',
     rel_prod_running: 'الإنتاج يعمل حالياً',
     rel_prod_unknown: 'غير معروف (لم يُبلّغ وكيل النشر بعد)',
     rel_stale: 'آخر حالة من الإنتاج قديمة.',
@@ -2941,7 +2935,6 @@ export const messages = {
     msg_subject_ph: 'A short title for the message',
     msg_body: 'Message',
     msg_body_ph: 'Write your message here…',
-    msg_recipients: 'Recipients',
     msg_to_people: 'Specific people',
     msg_search_people: 'Search by name or username…',
     msg_everyone: 'Everyone (all within your scope)',
@@ -2967,9 +2960,7 @@ export const messages = {
     msg_unread_replies: 'New replies',
     msg_conversation: 'Conversation',
     msg_back: 'Back',
-    msg_open: 'Open',
     msg_select_hint: 'Choose recipients: specific people, everyone, or by department or role (combinable).',
-    msg_sent_to: 'To {n} recipient(s)',
     msg_badge_title: 'Unread messages: {n}',
     msg_post_count: '{n} post(s)',
     msg_type: 'Type',
@@ -3111,7 +3102,6 @@ export const messages = {
     err_duplicate_of_required: 'Pick the function(s) it duplicates',
     err_invalid_duplicate: 'One of the duplicated functions cannot be used: it does not exist, is outside your scope, is removed, or is one of the functions being excluded',
     // deleting users (1.7.0)
-    users_current: 'Users',
     deleted_users: 'Deleted users',
     no_deleted_users: 'No deleted users',
     delete_user: 'Delete user',
@@ -3495,7 +3485,6 @@ export const messages = {
     err_move_weight_out_of_range: 'The destination weight would exceed the limit ({max}) — adjust the weights first',
     // close / lock & reopen a function (migration 033)
     close_button: 'Close',
-    close_hint: 'Close the function after its final approval — it is locked from editing and counts as 100 % complete',
     close_title: 'Close the function (final approval)',
     close_msg: 'Closing marks this function as finished and needing nothing further: it is locked from editing and counts as 100 % complete in the percentage while still being counted. A final-approval holder can reopen it later with an official document and a written reason.',
     confirm_close: 'Close & lock',
@@ -3577,7 +3566,6 @@ export const messages = {
     back: 'Back',
     // release promotion (Settings → «الترقية والنشر», Phase 1, 1.12.18)
     rel_title: 'Release & deploy to production',
-    rel_phase1_note: 'Phase 1: this screen only records a signed promotion REQUEST. No real deploy and no git push happen here; the root deploy agents (ets-release-publisher / ets-deploy-agent) are wired in Phase 2.',
     rel_prod_running: 'Production is running',
     rel_prod_unknown: 'unknown (the deploy agent has not reported yet)',
     rel_stale: 'The last status from production is stale.',

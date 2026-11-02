@@ -24,10 +24,7 @@ import { checkMovable } from './move.js';
 import { cents, weightMode, userName, names as nm } from './move-util.js';
 import { loadUser, userRef, originIp } from './audit.js';
 import { logAudit } from './logs.js';
-import { NOTE_MIN, NOTE_MAX } from './disable.js';
 import { HttpError } from '../utils/http.js';
-
-export const APP_MOVE_REASON_MIN = NOTE_MIN, APP_MOVE_REASON_MAX = NOTE_MAX;   // same rule as an item move's reason
 
 // Lead (first-stage / second-stage approver) of a department: the team-lead permission and the WHOLE department in
 // scope (not merely one of its applications) — the move concerns every application of the department (ETS-SEC-007).

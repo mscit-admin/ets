@@ -45,7 +45,6 @@ export function moveStage(rq) {
   };
 }
 export const isMoveRequest = rq => rq.kind === 'move_function';
-export const isMoveAppRequest = rq => rq.kind === 'move_application';
 // Label of the approve button: «اعتماد», or for a move «اعتماد المصدر» / «اعتماد الوجهة» / «اعتماد المرحلتين».
 export const approveLabelKey = can => (can?.approve_as ? 'approve_' + can.approve_as : 'approve');
 export const canApproveAny = requests => (requests || []).some(r => r.can?.approve);
