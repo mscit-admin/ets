@@ -32,7 +32,7 @@ export const RE = {
   time: /^([01][0-9]|2[0-3]):[0-5][0-9]$/,
   sshTarget: /^([a-z_][a-z0-9_.-]{0,31})@([A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?):([A-Za-z0-9._/+-]{0,200})$/,
   nasDir: /^\/(mnt|media|srv)\/[A-Za-z0-9._@+-][A-Za-z0-9._/@+-]*$/,
-  remote: /^[A-Za-z0-9_-]{1,40}:([A-Za-z0-9._/-]{0,200})$/,
+  remote: /^[A-Za-z0-9_][A-Za-z0-9_-]{0,39}:([A-Za-z0-9._/-]{0,200})$/,   // first char never '-' (an rclone flag)
   endpoint: /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::[0-9]{1,5})?\/?$/,
   region: /^[a-z0-9-]{0,40}$/,
   bucket: /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/,

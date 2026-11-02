@@ -301,6 +301,21 @@ function currentTls(p) {
   if (a.DEF_TLS === 'letsencrypt') return { mode: 'letsencrypt', cert: `/etc/letsencrypt/live/${a.DEF_ADDRESS}/fullchain.pem`, key: `/etc/letsencrypt/live/${a.DEF_ADDRESS}/privkey.pem` };
   return { mode: 'selfsigned', cert: p.tlsCert, key: p.tlsKey };
 }
+// A tls_tree entry's path (and, for a symlink, its target) come from the attacker-controllable bundle manifest, so a
+// `startsWith('/etc/letsencrypt/')` prefix test is NOT enough — "/etc/letsencrypt/../../etc/cron.d/x" passes it yet
+// escapes to an arbitrary root-owned write. Resolve the path and require the REAL location to stay inside
+// /etc/letsencrypt; for a symlink, resolve its target relative to the link's own directory (Let's Encrypt's live/
+// symlinks are relative, e.g. ../../archive/host/certN.pem, which legitimately stay within the tree). Exported for tests.
+const TLS_ROOT = '/etc/letsencrypt';
+const underTlsRoot = abs => abs === TLS_ROOT || abs.startsWith(TLS_ROOT + path.sep);
+export function tlsDest(fpath, linkTarget) {
+  const dst = path.resolve(fpath);
+  if (!underTlsRoot(dst)) throw new Error('unexpected certificate path');
+  if (linkTarget !== undefined && (typeof linkTarget !== 'string' || !underTlsRoot(path.resolve(path.dirname(dst), linkTarget)))) {
+    throw new Error('unexpected certificate link target');
+  }
+  return dst;
+}
 function copyKeep(src, dst, mode, uid, gid) {
   const tmp = dst + '.ets-restore.tmp';
   fs.mkdirSync(path.dirname(dst), { recursive: true });
@@ -477,10 +492,10 @@ export async function restoreRun(job, p, { setJob }) {
       const tree = (m.files || []).filter(f => f.item === 'tls_tree');
       if (tree.length) {
         for (const f of tree) {
-          if (!f.path.startsWith('/etc/letsencrypt/')) throw new Error('unexpected certificate path');
-          keep(f.path);
-          if (f.type === 'link') { fs.mkdirSync(path.dirname(f.path), { recursive: true }); fs.rmSync(f.path, { force: true }); fs.symlinkSync(f.target, f.path); }
-          else copyKeep(from(f.path), f.path, parseInt(f.mode, 8) & 0o777, 0, 0);
+          const dst = tlsDest(f.path, f.type === 'link' ? f.target : undefined);   // rejects any path/target outside /etc/letsencrypt
+          keep(dst);
+          if (f.type === 'link') { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.rmSync(dst, { force: true }); fs.symlinkSync(f.target, dst); }
+          else copyKeep(from(f.path), dst, parseInt(f.mode, 8) & 0o777, 0, 0);
         }
       } else {
         const certSrc = m.tls?.cert, keySrc = m.tls?.key;

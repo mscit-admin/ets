@@ -238,6 +238,9 @@ r.post('/key/export', keyExportLimiter, async (req, res) => {
     }
     const key = openWith(done.result.blob, ck);       // decrypt with the in-memory ck: the plaintext key now exists only here
     const keyIdNow = done.result.key_id || null;
+    // the blob is permanently undecryptable (ck lived only in this process's memory and is now gone), but strip it
+    // from the job row anyway so no export ciphertext lingers in the database
+    await query(`UPDATE backup_jobs SET result = result - 'blob' WHERE id=$1`, [job.id]).catch(() => {});
     // audit (the key_id ONLY, never the key) and tell the other administrators — before the key leaves the server
     await logAudit(req, { action: 'backup_key_export', entity: 'backup_config', entityId: keyIdNow,
       summary: `backup key ${mode === 'reveal' ? 'revealed' : 'downloaded'}`, newValue: { key_id: keyIdNow, mode } });

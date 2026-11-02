@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.51] — 2026-11-02 — Security: harden TLS restore against path traversal / تحصين استعادة الشهادة ضد اجتياز المسار
+
+### Security
+
+- **Backend** — Hardened the TLS-certificate restore against a path-traversal write. The `tls_tree` entries in a
+  backup bundle's `manifest.json` are attacker-controllable, and the previous destination check
+  (`path.startsWith('/etc/letsencrypt/')`) could be bypassed with `..` (e.g. `/etc/letsencrypt/../../etc/cron.d/x`),
+  letting an authenticated administrator who restores a crafted bundle write — or symlink — files as **root**
+  outside the certificate tree, escaping the API's unprivileged/agent-root separation. Restore now resolves each
+  path and each symlink target and requires both to stay inside `/etc/letsencrypt` (`restore.js` `tlsDest`;
+  legitimate Let's Encrypt relative `live/ → ../../archive/` symlinks still work). Found in internal review; a
+  regression test (`backups.test.js`) exercises the traversal and symlink-target vectors. **High severity.**
+- **Backend** — Defense in depth: the one-time ciphertext blob produced by a backup-key export is now stripped from
+  the job row after the API decrypts it (it was already permanently undecryptable — the ephemeral key lives only in
+  API memory); and an rclone remote name may no longer begin with `-` (`backup/config.js`).
+
+### Upgrade notes
+
+- No database, dependency or configuration change. Backend-only; deploy with `update.sh`.
+
+---
+
 ## [1.12.50] — 2026-11-02 — Clearer row-actions (⋮) button / زرّ إجراءات الصف (⋮) أوضح
 
 ### Fixed
