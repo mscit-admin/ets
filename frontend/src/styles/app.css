@@ -352,6 +352,9 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   .fn-table td[data-label]::before { content: attr(data-label); font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .fn-table td.num-col { text-align: start; }
   .fn-table .mini-progress { flex: 1 1 100%; }                       /* progress bar on its own line */
+  /* make the ⋮ actions button an obvious, comfortable tap target in the card */
+  .fn-table .fn-actions-cell .row-menu-btn { width: 40px; height: 40px; border: 1px solid var(--border-strong); color: var(--text); background: var(--gray-50); }
+  .fn-table .fn-actions-cell .row-menu-btn .icon { width: 22px; height: 22px; }
   /* keep the row-type accent as a card edge instead of the first-cell inset bar */
   .fn-table tr.row-report { border-inline-start: 3px solid var(--it-rep-strong); }
   .fn-table tr.row-closed { border-inline-start: 3px solid var(--cyan-text); }
@@ -1047,8 +1050,10 @@ p.strong { font-weight: 700; margin: 12px 0 6px; }
 
 /* per-row actions consolidated into a ⋮ kebab menu (at the row's far inline edge, flips with direction) */
 .fn-actions-cell { text-align: center; }
-.row-menu-btn { opacity: .7; }
-.row-menu-btn:hover, .row-menu-btn:focus-visible, .row-menu-btn[aria-expanded="true"] { opacity: 1; }
+/* the ⋮ row-actions button is always clearly visible (dark, full strength) rather than a faint
+   hover-only affordance — touch devices have no hover, so a faded default read as "not there" */
+.row-menu-btn { color: var(--text); }
+.row-menu-btn:hover, .row-menu-btn:focus-visible, .row-menu-btn[aria-expanded="true"] { background: var(--gray-100); }
 .row-menu-list { min-width: 200px; }
 .row-menu-item { font-family: inherit; font-size: 13px; color: var(--text); }
 .row-menu-item .icon, .row-menu-noicon { flex: none; width: 15px; color: var(--gray-600); }
