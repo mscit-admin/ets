@@ -12,6 +12,7 @@ import path from 'node:path';
 import * as C from '../src/backup/config.js';
 import { Tracker, planPhases, ewma, scriptLineEvent, restoreFraction, estimateSeconds, PLANS } from '../src/backup/progress.js';
 import { sealSecret, openSecret, writeAllowed, agentPaths } from '../src/backup/agent-util.js';
+import { tlsDest } from '../src/backup/restore.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'TEST_DATABASE_URL not set';
@@ -52,7 +53,8 @@ test('config: injection attempts in host, path, remote, endpoint and NAS directo
     assert.equal(C.validateConfig({ nas: { enabled: true, dir: d } }).ok, false, d);
   }
   assert.ok(C.validateConfig({ nas: { enabled: true, dir: '/mnt/ets-backup' } }).ok);
-  for (const r of ['x:b;ls', 'x:b/../c', ':b', 'x y:b', 'x:$(id)', '--config=/tmp/x:b']) assert.equal(C.validRemote(r), false, r);
+  for (const r of ['x:b;ls', 'x:b/../c', ':b', 'x y:b', 'x:$(id)', '--config=/tmp/x:b', '-remote:bucket', '-x:b']) assert.equal(C.validRemote(r), false, r);
+  assert.ok(C.validRemote('remote1:bucket/path'));   // a normal rclone remote (name must not begin with '-')
   for (const e of ['http://s3.local', 'https://s3.local/;id', 'https://a b', 'file:///etc', 'https://x\n']) {
     assert.equal(C.validateConfig({ cloud: { enabled: true, mode: 's3', provider: 'Minio', bucket: 'ets-bk', endpoint: e } }).ok, false, e);
   }
@@ -60,6 +62,22 @@ test('config: injection attempts in host, path, remote, endpoint and NAS directo
   assert.equal(C.validSecret('cloud_secret_access_key', 'abc def ghij'), false);
   assert.equal(C.validSecret('cloud_secret_access_key', 'abcdefgh\nX=1'), false);
   assert.ok(C.validSecret('cloud_secret_access_key', 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY'));
+});
+
+test('restore: a tls_tree entry from the bundle manifest cannot escape /etc/letsencrypt (path traversal → root write)', () => {
+  // legitimate Let's Encrypt layout is accepted, including the relative live/ → ../../archive symlink
+  assert.equal(tlsDest('/etc/letsencrypt/archive/host/fullchain1.pem'), '/etc/letsencrypt/archive/host/fullchain1.pem');
+  assert.equal(tlsDest('/etc/letsencrypt/live/host/fullchain.pem', '../../archive/host/fullchain1.pem'), '/etc/letsencrypt/live/host/fullchain.pem');
+  // a destination path that escapes the tree is refused, even though it passes a naive startsWith() prefix check
+  // note the first two pass a naive startsWith('/etc/letsencrypt/') yet resolve outside the tree
+  for (const bad of ['/etc/letsencrypt/../../etc/cron.d/pwn', '/etc/letsencrypt/../../root/.ssh/authorized_keys',
+    '/etc/cron.d/pwn', '/etc/letsencrypt/../nginx/sites/x', '/etc/letsencryptX/y']) {
+    assert.throws(() => tlsDest(bad), /unexpected certificate path/, bad);
+  }
+  // a symlink whose target escapes the tree is refused (absolute or via ..), and a non-string target is refused
+  assert.throws(() => tlsDest('/etc/letsencrypt/live/host/x', '/root/.ssh/authorized_keys'), /link target/);
+  assert.throws(() => tlsDest('/etc/letsencrypt/live/host/x', '../../../../root/.ssh/authorized_keys'), /link target/);
+  assert.throws(() => tlsDest('/etc/letsencrypt/live/host/x', { evil: 1 }), /link target/);
 });
 
 test('config: rendering of backup.conf, rclone.conf and the timers', () => {
@@ -679,7 +697,8 @@ test('key export: admin only, re-auth, audit (key_id only, never the key), alert
   const jobs = (await pool.query(`SELECT params, result, log FROM backup_jobs WHERE kind='export_key'`)).rows;
   assert.ok(jobs.length >= 2);
   for (const j of jobs) {
-    assert.ok(j.result?.blob && j.result?.key_id === kid, 'result holds only the ciphertext blob + key_id');
+    assert.equal(j.result?.key_id, kid, 'the result keeps the key id for the audit trail');
+    assert.equal(j.result?.blob ?? null, null, 'the ciphertext blob is stripped from the row after the API reads it');
     assert.ok(!JSON.stringify(j.result).includes(KEY), 'the plaintext key is not in the job result');
     assert.equal(j.params.token, null, 'the channel token is wiped from the row');
     assert.equal(j.params.ck ?? null, null, 'ck is never written to the row');
