@@ -303,7 +303,7 @@ export default function Application() {
                 return (
                 <tr key={f.id} id={'fn-' + f.id} className={(f.removed_at ? 'row-off row-removed' : f.enabled ? '' : 'row-off') + (focusId === f.id ? ' row-focus' : '')
                   + (typeOf(f) === 'report' ? ' row-report' : '') + (locked ? ' row-closed' : '')}>
-                  <td className="w-check">
+                  <td className="w-check" data-label={t('enabled')}>
                     <input type="checkbox" checked={f.enabled} disabled={!can.tog || !!f.removed_at || locked} aria-label={t('enabled')}
                       title={locked ? t('closed_locked_hint') : f.enabled ? t('exclude_hint') : t('include_hint')}
                       onChange={e => setConfirm({ f, mode: 'toggle', enabled: e.target.checked })} />
@@ -342,13 +342,13 @@ export default function Application() {
                       )}
                     </div>
                   </td>
-                  <td className="num-col"><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled || locked} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
-                  <td className="num-col">
+                  <td className="num-col" data-label={t('weight')}><NumCell value={f.weight} min={0} max={1000} step={0.5} disabled={!can.wgt || !f.enabled || locked} label={t('weight')} onCommit={v => patch(f, { weight: v })} /></td>
+                  <td className="num-col" data-label={t('progress') + ' %'}>
                     <NumCell value={locked ? 100 : f.progress} min={0} max={100} step={5} disabled={!can.pct || !f.enabled || locked} label={t('progress')} onCommit={v => patch(f, { progress: v })}
                       check={v => { const p = progressPassProblem(f, v); return p ? t(p.key, p.vars) : null; }} />
                     <div className="mini-progress"><i style={{ width: (locked ? 100 : f.progress) + '%' }} /></div>
                   </td>
-                  <td>
+                  <td data-label={t('test_status')}>
                     <div className="ts-cell">
                       <StatusSelect value={f.test_status} prefix="ts_" states={8} disabled={!can.tst || !f.enabled || locked} label={t('test_status')} onChange={v => setStatus(f, 'test_status', v)} />
                       {!f.removed_at && passConflict(f) && (
@@ -358,15 +358,15 @@ export default function Application() {
                       )}
                     </div>
                   </td>
-                  <td><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled || locked} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
-                  <td><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled || locked} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
-                  <td className="w-check">
+                  <td data-label={t('notif_status')}><StatusSelect value={f.notif_status} prefix="ns_" disabled={!can.pct || !f.enabled || locked} label={t('notif_status')} onChange={v => setStatus(f, 'notif_status', v)} /></td>
+                  <td data-label={t('review_status')}><StatusSelect value={f.review_status} prefix="rv_" states={6} disabled={!can.tst || !f.enabled || locked} label={t('review_status')} onChange={v => setStatus(f, 'review_status', v)} /></td>
+                  <td className="w-check" data-label={t('note')}>
                     <button className={'btn-icon' + (f.note ? ' has-note' : needsNote(f) ? ' note-missing' : '')} onClick={() => setNotesFor(f)}
                       title={f.note || (needsNote(f) ? t('note_required_hint') : t('notes_history_title'))} aria-label={t('notes_history_title')}>
                       <Icon name="note" size={16} />
                     </button>
                   </td>
-                  <td className="w-check fn-actions-cell">
+                  <td className="w-check fn-actions-cell" data-label={t('row_actions')}>
                     <Menu label={t('row_actions')} items={rowActions} />
                   </td>
                 </tr>
