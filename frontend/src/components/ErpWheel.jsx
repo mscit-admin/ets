@@ -142,14 +142,27 @@ export function ErpWheel({ segments, total }) {
 // Same geometry, tween and colours (pctTone) as the system wheel, but each segment's ANGULAR WIDTH is proportional to
 // the phase weight (not equal), the arc shows the phase completion, and the hub shows the project overall %. A phase at
 // 0 % (or with the `auto` phase following a 0 % system) renders faded, like an inactive module. Phases carry no links.
-const wrapPhase = name => {
-  const words = String(name || '').split(/\s+/).filter(Boolean);
-  if (name.length <= 12 || words.length <= 1) return [name];
-  const mid = Math.ceil(words.length / 2);
-  return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
-};
+export const PHASE_ICON_FALLBACK = 'circle';
 
-function ProjectSegment({ ph, i, a0, a1, g, lang, t }) {
+// Wrap a phase name to fit the segment: greedily pack words into lines of at most `maxChars`, capped at `maxLines`;
+// if words are left over the last line ends with an ellipsis (the full name stays in the tooltip and the list below).
+function projLines(name, maxChars, maxLines) {
+  const words = String(name || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (let w = 0; w < words.length; w++) {
+    const next = cur ? cur + ' ' + words[w] : words[w];
+    if (next.length <= maxChars || !cur) { cur = next; continue; }
+    lines.push(cur); cur = words[w];
+    if (lines.length === maxLines) { cur = ''; break; }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  const shown = lines.join(' ').split(/\s+/).filter(Boolean).length;
+  if (shown < words.length && lines.length) lines[lines.length - 1] += '…';
+  return lines;
+}
+
+function ProjectSegment({ ph, i, a0, a1, g, lang }) {
   const eff = +ph.effective_pct || 0;
   const active = eff > 0.05 && a1 - a0 > 0.01;
   const pct = useTween(active ? eff : 0);
@@ -157,29 +170,41 @@ function ProjectSegment({ ph, i, a0, a1, g, lang, t }) {
   const mid = (a0 + a1) / 2;
   const [x, y] = g.pt(R_TEXT, mid);
   const name = ph[`name_${lang}`] || ph.name_ar;
-  const lines = wrapPhase(name);
   const tone = pctTone(pct);
   const { rimStart, rimEnd, rimTo } = rimAngles(a0, a1, pct);
-  const lineH = 15, nameTop = lines.length > 1 ? -8 : -2;
   const label = `${name}: ${pc(eff)}%`;
+  // Fit the content to the segment's angular width so neighbouring labels never overlap: a narrow (low-weight)
+  // segment shows only its icon and %, a wider one adds the name on one to three short lines.
+  const arc = ((a1 - a0) * Math.PI / 180) * R_TEXT;
+  const showName = arc > 70;
+  // cap the line length so even a wide segment keeps short lines (a long tangential line would run off the drawing)
+  const lines = showName ? projLines(name, Math.min(15, Math.max(6, Math.floor(arc / 7.4))), 3) : [];
+  const iconSize = 22, lineH = 13.5;
+  const stackH = iconSize + (lines.length ? lines.length * lineH + 6 : 0) + 26;
+  const top = -stackH / 2;
+  const nameY = top + iconSize + 6 + lineH - 3;
+  const chipY = top + stackH - 11;
   return (
     <g className={'erp-seg' + (active ? ' on static' : ' off')} role="img" aria-label={label}>
       <title>{label}</title>
       <path className="erp-wedge" d={g.wedge(a0, a1)} style={active ? { fill: FILLS[i % FILLS.length] } : undefined} />
       {active && <path className="erp-rim-track" d={g.arc(R_RIM, rimStart, rimEnd)} />}
       {active && pct > 0.05 && <path className="erp-rim" d={g.arc(R_RIM, rimStart, rimTo)} style={{ stroke: tone.stroke }} />}
-      {a1 - a0 > 10 && (
+      {a1 - a0 > 9 && (
         <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`} className="erp-content">
-          <text className="erp-name" textAnchor="middle" y={nameTop}>
-            {lines.map((l, k) => <tspan key={k} x="0" dy={k ? lineH : 0}>{l}</tspan>)}
-          </text>
+          <g transform={`translate(${-iconSize / 2} ${top.toFixed(1)})`}><Icon name={ph.icon || PHASE_ICON_FALLBACK} size={iconSize} /></g>
+          {showName && (
+            <text className="erp-name proj-name" textAnchor="middle" y={nameY.toFixed(1)}>
+              {lines.map((l, k) => <tspan key={k} x="0" dy={k ? lineH : 0}>{l}</tspan>)}
+            </text>
+          )}
           {active ? (
-            <g transform={`translate(0 ${nameTop + (lines.length - 1) * lineH + 22})`} className={'erp-chip' + (flash ? ' flash' : '')}>
-              <rect x="-34" y="-14" width="68" height="27" rx="13.5" />
-              <text className="erp-pct" textAnchor="middle" y="6" direction="ltr" style={{ fill: tone.text }}>{pc(pct)}%</text>
+            <g transform={`translate(0 ${chipY.toFixed(1)})`} className={'erp-chip' + (flash ? ' flash' : '')}>
+              <rect x="-30" y="-13" width="60" height="25" rx="12.5" />
+              <text className="erp-pct" textAnchor="middle" y="5" direction="ltr" style={{ fill: tone.text }}>{pc(pct)}%</text>
             </g>
           ) : (
-            <text className="erp-state" textAnchor="middle" y={nameTop + (lines.length - 1) * lineH + 21} direction="ltr">{pc(eff)}%</text>
+            <text className="erp-state" textAnchor="middle" y={chipY.toFixed(1)} direction="ltr">{pc(eff)}%</text>
           )}
         </g>
       )}
