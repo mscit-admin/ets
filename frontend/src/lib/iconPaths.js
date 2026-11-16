@@ -89,5 +89,40 @@ const UI = {
   clock: "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>",
 };
 
+// Software / infrastructure / delivery icons — a richer set to label project phases (chosen per phase in the
+// project-phases settings tab). Same 24×24 line style (stroke = currentColor).
+const TECH = {
+  code: '<path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15.5h4"/>',
+  database: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="1.6"/><rect x="3" y="13" width="18" height="7" rx="1.6"/><path d="M6.5 7.5h.01M6.5 16.5h.01"/>',
+  cloud: '<path d="M7.2 18h9a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.3 9 4.2 4.2 0 0 0 7.2 18z"/>',
+  cloud_up: '<path d="M8.5 17.5H7.2A4.2 4.2 0 0 1 6.3 9 5.5 5.5 0 0 1 16.6 10a4 4 0 0 1-.4 8h-1.3"/><path d="M12 21v-7M9.5 16.5 12 14l2.5 2.5"/>',
+  network: '<circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M12 7.2v3.8M12 11l-5.3 5.9M12 11l5.3 5.9"/>',
+  cpu: '<rect x="6" y="6" width="12" height="12" rx="1.6"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.6"/><path d="M9.5 3v3M14.5 3v3M9.5 18v3M14.5 18v3M3 9.5h3M3 14.5h3M18 9.5h3M18 14.5h3"/>',
+  shield: '<path d="M12 3 19 6v5c0 4.8-3.1 8.2-7 9.6C8.1 19.2 5 15.8 5 11V6z"/>',
+  shield_check: '<path d="M12 3 19 6v5c0 4.8-3.1 8.2-7 9.6C8.1 19.2 5 15.8 5 11V6z"/><path d="M9 11.5l2 2 4-4"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  key: '<circle cx="8" cy="9" r="4"/><path d="M10.8 11.8 20 21M16 17l2.5-2.5M18 19l2.5-2.5"/>',
+  bug: '<rect x="8" y="7" width="8" height="12" rx="4"/><path d="M8 11.5H4M20 11.5h-4M8 15.5H4M20 15.5h-4M8.5 7.5 6.5 4.5M15.5 7.5l2-3M12 7v12"/>',
+  git_branch: '<circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="8" r="2"/><path d="M7 8v8M17 10c0 4.5-5 3.5-10 4.2"/>',
+  wrench: '<path d="M15.5 5.5a4 4 0 0 0-5.3 5.3l-5.5 5.5 2.5 2.5 5.5-5.5a4 4 0 0 0 5.3-5.3l-2.5 2.5-2-.5-.5-2z"/>',
+  layers: '<path d="M12 3 21 8l-9 5-9-5z"/><path d="M3 12l9 5 9-5M3 16l9 5 9-5"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  mobile: '<rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M10.5 18h3"/>',
+  plug: '<path d="M9 3v5M15 3v5M7 8h10v2.5a5 5 0 0 1-10 0zM12 15.5V21"/>',
+  link: '<path d="M10 13a4 4 0 0 1 0-5l2.5-2.5a4 4 0 0 1 5.6 5.6L17 12M14 11a4 4 0 0 1 0 5l-2.5 2.5a4 4 0 0 1-5.6-5.6L7 12"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2.2h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  wifi: '<path d="M4.5 9a12 12 0 0 1 15 0M7.5 12.5a7.5 7.5 0 0 1 9 0M10.5 16a3 3 0 0 1 3 0"/><circle cx="12" cy="19" r="0.6"/>',
+  clipboard: '<rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9 4.5V3.5h6v1M9.5 11h5M9.5 14.5h3.5"/>',
+  rocket: '<path d="M5.5 14.5c-1.2 2.5-1.2 4.3-1.2 4.3s1.8 0 4.3-1.2M9.5 15 9 14c-1-5 4-10 10.5-10C19.5 10.5 14.5 15.5 9.5 15z"/><circle cx="14.5" cy="9.5" r="1.4"/>',
+  deploy: '<path d="M8 5l11 7-11 7z"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14-4L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4l2-2M20 20v-5h-5"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.9"/>',
+  sliders: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="17" r="2"/>',
+  briefcase: '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 7V5.2A2 2 0 0 1 10 3h4a2 2 0 0 1 2 2.2V7M3 12.5h18"/>',
+  book: '<path d="M5 4.5h10.5a2 2 0 0 1 2 2V20H7a2 2 0 0 1-2-2z"/><path d="M5 18.5a2 2 0 0 1 2-2h10.5"/>',
+};
+
 // Every icon by name (shared with the mobile app: mobile/src/components/Icon.tsx).
-export const ICON_PATHS = { ...APP, ...UI };
+export const ICON_PATHS = { ...APP, ...UI, ...TECH };

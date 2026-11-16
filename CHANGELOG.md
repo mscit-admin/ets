@@ -30,6 +30,23 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.56] — 2026-11-16 — More phase icons (software / infrastructure) / أيقونات مراحل أكثر
+
+### Added
+
+- **Frontend** — Added ~30 line icons (software, infrastructure and delivery themed: `code`, `terminal`, `database`,
+  `server`, `cloud`, `cloud_up`, `network`, `cpu`, `git_branch`, `bug`, `deploy`, `rocket`, `refresh`, `shield`,
+  `shield_check`, `lock`, `key`, `plug`, `link`, `layers`, `monitor`, `mobile`, `wifi`, `wrench`, `sliders`,
+  `clipboard`, `target`, `briefcase`, `book`, `folder`) to the icon set (`lib/iconPaths.js`). The project-phase icon
+  picker now offers 52 icons, and the default phases use fitting ones (infrastructure → server, development → code,
+  go-live → rocket).
+
+### Upgrade notes
+
+- Frontend-only; no database or configuration change. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.55] — 2026-11-16 — Project wheel: per-phase icons and tidier labels / أيقونات المراحل وتنسيق التسميات
 
 ### Added
@@ -3386,7 +3403,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/a13cf10...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/08d2c25...HEAD
+[1.12.56]: https://github.com/mscit-admin/ets/compare/a13cf10...08d2c25
 [1.12.55]: https://github.com/mscit-admin/ets/compare/b1fa725...a13cf10
 [1.12.54]: https://github.com/mscit-admin/ets/compare/55e1238...b1fa725
 [1.12.53]: https://github.com/mscit-admin/ets/compare/686b17b...55e1238

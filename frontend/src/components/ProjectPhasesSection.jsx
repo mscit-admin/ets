@@ -6,9 +6,17 @@ import { Alert, Card, ErrorBox, Loading, toast, useLoad } from './ui.jsx';
 import { Icon } from './Icon.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
-// The icons an administrator may pick for a phase (a curated subset of the app's icon set — see lib/iconPaths.js).
-const PHASE_ICONS = ['planning', 'factory', 'settings', 'users', 'flag', 'pulse', 'curve', 'scale', 'report', 'chart',
-  'crm', 'item_function', 'item_report', 'clock', 'check', 'megaphone', 'search', 'edit', 'note', 'filter', 'home', 'circle'];
+// The icons an administrator may pick for a phase (from the app's icon set — see lib/iconPaths.js), software /
+// infrastructure / delivery first, then general project icons.
+const PHASE_ICONS = [
+  // software & infrastructure
+  'code', 'terminal', 'database', 'server', 'cloud', 'cloud_up', 'network', 'cpu', 'settings', 'wrench', 'git_branch',
+  'bug', 'deploy', 'rocket', 'refresh', 'shield', 'shield_check', 'lock', 'key', 'plug', 'link', 'layers', 'monitor',
+  'mobile', 'wifi', 'factory', 'sliders',
+  // analysis, delivery & general
+  'planning', 'search', 'edit', 'chart', 'report', 'clipboard', 'target', 'briefcase', 'book', 'users', 'megaphone',
+  'crm', 'item_function', 'item_report', 'flag', 'check', 'pulse', 'curve', 'scale', 'note', 'filter', 'folder',
+  'clock', 'home', 'circle'];
 
 // A compact icon picker: a button showing the current icon that opens a small grid to choose from.
 function IconPicker({ value, onChange, label }) {
