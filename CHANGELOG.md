@@ -30,6 +30,41 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.53] — 2026-11-16 — Project phases progress: a second dashboard chart / إنجاز مراحل المشروع: رسم ثانٍ في اللوحة
+
+### Added
+
+- **Project phases progress** — a weighted, manual model of the project's delivery phases (analysis, infrastructure,
+  development, training, go-live…), shown as a **second donut chart beside the system-modules (ERP) wheel** on the
+  dashboard. Each phase has a free weight and a completion %, and **one phase may be marked auto**, taking its
+  completion live from the system-functions completion (so the development phase tracks the build automatically). The
+  overall project % is the weighted average `Σ(weight×pct) / Σ(weight)` (the total weight is free, not fixed). The
+  project chart sits on the right, the system chart on the left, and each has its details below it.
+- **Frontend** — New settings page **«إعدادات مراحل المشروع»** (route `/settings/project-phases`, in the sidebar
+  admin section) to add / rename / reorder / delete phases, set each weight and %, and mark the auto phase, with a
+  live total weight and overall-% preview (`ProjectPhases.jsx`). The project wheel is `ProjectWheel` in
+  `ErpWheel.jsx` (segment width ∝ weight, arc = completion), reusing the existing geometry and `pctTone` colors.
+- **Backend** — `GET`/`PUT /tracker/project-phases` (guarded by `cfg` **or** `apv_final`), storing the validated
+  `project.phases` settings value and writing an audit row; `services/project-phases.js` holds the validator and the
+  pure `projectProgress()` roll-up. The dashboard summary now includes the `project` roll-up **only for a reader with
+  `prj_view`** (server-side gate).
+
+### Changed
+
+- **Permissions** — Two new view permissions in the catalog (`routes/users.js`), shown per user/role in the users
+  screen: **`erp_view`** (عرض عجلة وحدات النظام) and **`prj_view`** (عرض عجلة إنجاز المشروع). Each dashboard chart is
+  shown only to a user who holds its permission; a user with neither sees no card.
+
+### Upgrade notes
+
+- **Database** — New migration `036_view_permissions.sql` grants the two permissions through role arrays
+  (idempotent, forward-only): `erp_view` to **every** role (so everyone who sees the ERP wheel today keeps seeing it),
+  and `prj_view` only to roles already holding `cfg` or `apv_final` (project managers / administrators). Adjust
+  per-user from the users screen afterwards. Applied automatically by `update.sh`; deploy with a hard refresh
+  (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.52] — 2026-11-02 — Code review cleanup: remove dead code, unify STATUS_PREFIX, batch broadcast inserts / تنظيف المراجعة
 
 ### Removed
