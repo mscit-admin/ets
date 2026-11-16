@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.57] — 2026-11-16 — Fix: phase icon picker clipped behind the table / إصلاح: منتقي الأيقونة خلف الجدول
+
+### Fixed
+
+- **Frontend** — The phase icon picker in «إعدادات مراحل المشروع» was clipped and appeared behind the table (it was
+  an absolutely-positioned grid inside the table's `overflow` container, which clips it — worst on the last row). It
+  now renders in a portal with fixed positioning anchored to its button, flipping up near the bottom of the viewport,
+  so the full grid always shows above the page — the same approach as the row-actions (⋮) menu.
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.56] — 2026-11-16 — More phase icons (software / infrastructure) / أيقونات مراحل أكثر
 
 ### Added
