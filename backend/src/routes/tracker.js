@@ -24,13 +24,43 @@ import { FIELD_PERM, FIELD_OK, NOTE_REQUIRED, notedValue, needsNote } from '../s
 import { bulkEnabled, bulkItemType, bulkPassCheck, reasonMeta } from '../services/bulk.js';
 import { impactOf, moveImpact, appMoveImpact } from '../services/impact.js';
 import { DATE, fitTimeline, saveSchedule } from '../services/schedule.js';
-import { getApp, summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData }
+import { getApp, summaryData, departmentData, applicationData, weightsData, reportsData, scheduleData, projectStatusData, projectPhasesData }
   from '../services/tracker-data.js';
+import { getSetting } from '../services/settings.js';
+import { validateProjectPhases } from '../services/project-phases.js';
 
 const r = Router();
 r.use(requireAuth);
 
 r.get('/summary', async (req, res) => res.json(await summaryData(req.user)));
+
+// ---- project phases (manual weighted model, services/project-phases.js) ----
+// Reading and writing the phases is for project managers / administrators: an OR of cfg | apv_final (not requirePerm,
+// which is a single permission). The dashboard chart itself is gated separately, by prj_view (see summaryData).
+function requirePhasesAccess(req) {
+  if (!(hasPerm(req.user, 'cfg') || hasPerm(req.user, 'apv_final'))) throw new HttpError(403, 'forbidden', { permission: 'cfg' });
+}
+
+r.get('/project-phases', async (req, res) => {
+  requirePhasesAccess(req);
+  res.json(await projectPhasesData(req.user));
+});
+
+r.put('/project-phases', async (req, res) => {
+  requirePhasesAccess(req);
+  const phases = validateProjectPhases(req.body?.phases);
+  const old = await getSetting('project.phases');
+  await tx(async c => {
+    await c.query(`INSERT INTO settings(key,value,updated_by) VALUES ('project.phases',$1,$2)
+      ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now(), updated_by=EXCLUDED.updated_by`,
+    [JSON.stringify(phases), req.user.id]);
+    await logAudit(req, { db: c, action: 'project_phases_update', entity: 'settings', entityId: 'project.phases',
+      oldValue: { phases: old }, newValue: { phases } });
+  });
+  invalidateSettings();
+  publishChange();                 // the dashboard's project chart updates live for everyone who can see it
+  res.json(await projectPhasesData(req.user));
+});
 
 r.get('/departments/:id', async (req, res) => res.json(await departmentData(req.user, req.params.id)));
 

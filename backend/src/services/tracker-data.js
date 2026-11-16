@@ -19,6 +19,7 @@ import { movesOf } from './move.js';
 import { appMovesOf } from './app-move.js';
 import { recentSnapshots } from './snapshots.js';
 import { scheduleJson } from './schedule.js';
+import { projectProgress } from './project-phases.js';
 import { HttpError, notFound } from '../utils/http.js';
 
 // Everything the user may see, plus the computed percentages.
@@ -81,6 +82,14 @@ const calcSettings = s => ({ weight_mode: s['calc.weight_mode'], notif_share: s[
 export async function summaryData(user) {
   const v = await loadVisible(user);
   const n = itemCounts(v.functions);
+  // Dashboard chart gating (project phases feature). The two dashboard charts are each behind a view permission:
+  //   erp_view — the system-modules wheel (always on the dashboard before this feature; granted to every role).
+  //   prj_view — the project-phases wheel (new; granted to project managers / administrators).
+  // The `project` roll-up is a true server-side gate: it is computed from the stored phases + the live system %
+  // (total.pct) and included ONLY for a reader with prj_view. The system wheel data (total / departments) stays in the
+  // payload because the sidebar and the rest of the dashboard read the same endpoint; the `can.erp_view` flag lets the
+  // card hide the system column server-authoritatively.
+  const seesPrj = hasPerm(user, 'prj_view');
   return {
     total: v.calc.total,
     departments: v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) })),
@@ -94,7 +103,19 @@ export async function summaryData(user) {
       experienceOff: v.functions.filter(f => !f.enabled && f.source === 'experience').length,
     },
     settings: calcSettings(v.settings),
+    can: { erp_view: hasPerm(user, 'erp_view'), prj_view: seesPrj },
+    ...(seesPrj ? { project: projectProgress(v.settings['project.phases'] || [], v.calc.total.pct) } : {}),
   };
+}
+
+// The project phases editor (/settings/project-phases): the stored phases, the live system % that an `auto` phase
+// follows (the system functions completion, total.pct), and the recomputed project roll-up. Reader must hold cfg OR
+// apv_final (guarded on the route).
+export async function projectPhasesData(user) {
+  const v = await loadVisible(user);
+  const phases = v.settings['project.phases'] || [];
+  const systemPct = v.calc.total.pct;
+  return { phases, system_pct: systemPct, ...projectProgress(phases, systemPct) };
 }
 
 // BE-2: one department only. Its output is provably local to the department — the department line is the weighted
