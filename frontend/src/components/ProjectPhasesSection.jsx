@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { pc, pctTone } from '../lib/format.js';
@@ -18,31 +19,53 @@ const PHASE_ICONS = [
   'crm', 'item_function', 'item_report', 'flag', 'check', 'pulse', 'curve', 'scale', 'note', 'filter', 'folder',
   'clock', 'home', 'circle'];
 
-// A compact icon picker: a button showing the current icon that opens a small grid to choose from.
+// A compact icon picker: a button showing the current icon that opens a small grid to choose from. The grid is
+// rendered in a portal with fixed positioning (anchored to the button, flipping up near the bottom) so it is never
+// clipped by the table's overflow or hidden behind a neighbouring row — the same approach as the row-actions menu.
 function IconPicker({ value, onChange, label }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+  const place = () => {
+    const b = btnRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    const rtl = getComputedStyle(b).direction === 'rtl';
+    const estH = 330;                                   // ~9 rows of the 6-wide grid
+    const up = r.bottom + estH > window.innerHeight && r.top > estH;
+    setPos({
+      top: up ? undefined : Math.round(r.bottom + 4),
+      bottom: up ? Math.round(window.innerHeight - r.top + 4) : undefined,
+      left: rtl ? undefined : Math.round(r.left),
+      right: rtl ? Math.round(window.innerWidth - r.right) : undefined,
+    });
+  };
+  useLayoutEffect(() => { if (open) place(); }, [open]);
   useEffect(() => {
     if (!open) return undefined;
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    const onDown = e => { if (btnRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return; setOpen(false); };
+    const onLeave = () => setOpen(false);               // a scroll or resize would strand the fixed grid — close it
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('resize', onLeave);
+    window.addEventListener('scroll', onLeave, true);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('resize', onLeave); window.removeEventListener('scroll', onLeave, true); };
   }, [open]);
   return (
-    <span className="icon-picker" ref={ref}>
-      <button type="button" className="btn-icon" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={label}>
+    <span className="icon-picker">
+      <button ref={btnRef} type="button" className="btn-icon" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={label}>
         <Icon name={value || 'circle'} size={18} />
       </button>
-      {open && (
-        <div className="icon-picker-pop" role="menu">
+      {open && pos && createPortal(
+        <div ref={popRef} className="icon-picker-pop" role="menu"
+          style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, right: pos.right }}>
           {PHASE_ICONS.map(n => (
             <button type="button" key={n} role="menuitemradio" aria-checked={n === value} aria-label={n}
               className={'icon-opt' + (n === value ? ' on' : '')} onClick={() => { onChange(n); setOpen(false); }}>
               <Icon name={n} size={18} />
             </button>
           ))}
-        </div>
-      )}
+        </div>, document.body)}
     </span>
   );
 }
