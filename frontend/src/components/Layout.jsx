@@ -110,7 +110,8 @@ function Sidebar({ open, onClose }) {
       <Icon name={icon} size={14} /><span>{label}</span>
     </NavLink>
   );
-  const admin = can('usr') || can('log') || can('cfg');
+  const canPhases = can('cfg') || can('apv_final');
+  const admin = can('usr') || can('log') || can('cfg') || canPhases;
   return (
     <>
       <div className={'side-overlay' + (open ? ' show' : '')} onClick={onClose} />
@@ -166,6 +167,7 @@ function Sidebar({ open, onClose }) {
             <div className="side-label">{t('nav_admin')}</div>
             {can('usr') && link('/users', 'users', t('nav_users'))}
             {can('log') && link('/logs', 'logs', t('nav_logs'))}
+            {canPhases && link('/settings/project-phases', 'layers', t('nav_project_phases'))}
             {can('cfg') && user?.fullScope && link('/settings', 'settings', t('nav_settings'))}
           </div>
         )}
