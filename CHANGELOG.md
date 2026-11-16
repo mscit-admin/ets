@@ -30,6 +30,23 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.56] — 2026-11-16 — More phase icons (software / infrastructure) / أيقونات مراحل أكثر
+
+### Added
+
+- **Frontend** — Added ~30 line icons (software, infrastructure and delivery themed: `code`, `terminal`, `database`,
+  `server`, `cloud`, `cloud_up`, `network`, `cpu`, `git_branch`, `bug`, `deploy`, `rocket`, `refresh`, `shield`,
+  `shield_check`, `lock`, `key`, `plug`, `link`, `layers`, `monitor`, `mobile`, `wifi`, `wrench`, `sliders`,
+  `clipboard`, `target`, `briefcase`, `book`, `folder`) to the icon set (`lib/iconPaths.js`). The project-phase icon
+  picker now offers 52 icons, and the default phases use fitting ones (infrastructure → server, development → code,
+  go-live → rocket).
+
+### Upgrade notes
+
+- Frontend-only; no database or configuration change. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.55] — 2026-11-16 — Project wheel: per-phase icons and tidier labels / أيقونات المراحل وتنسيق التسميات
 
 ### Added
