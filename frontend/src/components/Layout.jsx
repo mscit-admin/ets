@@ -167,8 +167,8 @@ function Sidebar({ open, onClose }) {
             <div className="side-label">{t('nav_admin')}</div>
             {can('usr') && link('/users', 'users', t('nav_users'))}
             {can('log') && link('/logs', 'logs', t('nav_logs'))}
-            {canPhases && link('/settings/project-phases', 'layers', t('nav_project_phases'))}
-            {can('cfg') && user?.fullScope && link('/settings', 'settings', t('nav_settings'))}
+            {/* Settings holds «مراحل المشروع» as a tab (1.12.54); a project manager (apv_final) opens it for that tab */}
+            {((can('cfg') && user?.fullScope) || can('apv_final')) && link('/settings', 'settings', t('nav_settings'))}
           </div>
         )}
         <div className="side-section">

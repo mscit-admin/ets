@@ -10,6 +10,7 @@ import { addPeriods } from '../components/SCurve.jsx';
 import { NotifySettingsCard } from '../components/NotifySettings.jsx';
 import { BackupSection } from '../components/BackupCenter.jsx';
 import { ReleaseSection } from '../components/ReleasePromotion.jsx';
+import { ProjectPhasesSection } from '../components/ProjectPhasesSection.jsx';
 
 // Settings tabs: the page used to be one long scroll; the groups are now split across tabs.
 // The active tab lives in the URL (?tab=…). Old hash deep-links still work: #timeline/#notifications/#backups
@@ -19,9 +20,12 @@ const HASH_TAB = { timeline: 'general', notifications: 'notifications', backups:
 export default function Settings() {
   const { t, dir, errText, fmtDate } = useI18n();
   const { can, refresh, user } = useAuth();
-  const { data, error, loading, reload } = useLoad(() => api.get('/settings'), []);
-  const info = useLoad(() => api.get('/system/info'), []);
-  const sched = useLoad(() => api.get('/tracker/schedule'), []);
+  // The generic settings / system / schedule reads require 'cfg'. A project manager who holds only 'apv_final' may
+  // open this page too (for the «مراحل المشروع» tab, which loads its own data), so those reads are skipped for them.
+  const isCfg = can('cfg');
+  const { data, error, loading, reload } = useLoad(() => (isCfg ? api.get('/settings') : Promise.resolve({ settings: {} })), []);
+  const info = useLoad(() => (isCfg ? api.get('/system/info') : Promise.resolve(null)), []);
+  const sched = useLoad(() => (isCfg ? api.get('/tracker/schedule') : Promise.resolve(null)), []);
   const [tl, setTl] = useState(null);
   useEffect(() => { if (sched.data) setTl({ start_date: sched.data.start_date || '', end_date: sched.data.end_date || '' }); }, [sched.data]);
   useEffect(() => { if (tl && window.location.hash === '#timeline') document.getElementById('timeline')?.scrollIntoView(); }, [!!tl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -36,11 +40,16 @@ export default function Settings() {
   // Tabs whose whole content the user cannot see are not shown. «النسخ الاحتياطي» is system-admin only
   // (the API refuses everyone else); every other tab is available to anyone who can open Settings (perm "cfg").
   const tabKeys = useMemo(() => {
-    const keys = ['general', 'security', 'notifications'];
-    if (user?.role === 'admin') keys.push('backup', 'release', 'maintenance');
-    keys.push('advanced');
+    const keys = [];
+    if (isCfg) {
+      keys.push('general', 'security', 'notifications');
+      if (user?.role === 'admin') keys.push('backup', 'release', 'maintenance');
+      keys.push('advanced');
+    }
+    // «مراحل المشروع»: available to the project managers / administrators who may edit the phases (cfg OR apv_final).
+    if (isCfg || can('apv_final')) keys.push('project');
     return keys;
-  }, [user?.role]);
+  }, [user?.role, isCfg]); // eslint-disable-line react-hooks/exhaustive-deps
   // Active tab from ?tab=…, else mapped from an old hash deep-link, else the first visible tab.
   const requested = params.get('tab');
   const hashTab = HASH_TAB[window.location.hash.slice(1)];
@@ -112,7 +121,8 @@ export default function Settings() {
   return (
     <div>
       <PageHeader title={t('settings_title')} icon="settings">
-        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>
+        {/* the project-phases tab has its own save; this global save targets the general settings (needs cfg) */}
+        {tab !== 'project' && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
@@ -178,6 +188,9 @@ export default function Settings() {
       </>}
 
       {tab === 'notifications' && <NotifySettingsCard s={s} set={set} />}
+
+      {/* project phases (1.12.54): moved here from a standalone page; editable by cfg | apv_final */}
+      {tab === 'project' && <ProjectPhasesSection />}
 
       {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
       {tab === 'backup' && user?.role === 'admin' && <BackupSection />}
