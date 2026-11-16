@@ -23,6 +23,7 @@ const UserList = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.
 const UserForm = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.UserForm })));
 const Logs = lazy(() => import('./pages/Logs.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
+const ProjectPhases = lazy(() => import('./pages/ProjectPhases.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
 const ImportList = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportList })));
 const ImportDetail = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportDetail })));
@@ -30,9 +31,10 @@ const Approvals = lazy(() => import('./pages/Approvals.jsx'));
 const Notifications = lazy(() => import('./pages/Notifications.jsx'));
 const Messages = lazy(() => import('./pages/Messages.jsx'));
 
-function Guard({ perm, children }) {
+function Guard({ perm, anyOf, children }) {
   const { can } = useAuth();
-  return can(perm) ? children : <Navigate to="/" replace />;
+  const ok = anyOf ? anyOf.some(p => can(p)) : can(perm);
+  return ok ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -85,6 +87,7 @@ export default function App() {
             <Route path="online" element={<Navigate to="/users?tab=online" replace />} />
             <Route path="logs" element={<Guard perm="log"><Logs /></Guard>} />
             <Route path="settings" element={<Guard perm="cfg"><Settings /></Guard>} />
+            <Route path="settings/project-phases" element={<Guard anyOf={['cfg', 'apv_final']}><ProjectPhases /></Guard>} />
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="messages" element={<Messages />} />
