@@ -3364,7 +3364,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/55e1238...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/b1fa725...HEAD
+[1.12.54]: https://github.com/mscit-admin/ets/compare/55e1238...b1fa725
 [1.12.53]: https://github.com/mscit-admin/ets/compare/686b17b...55e1238
 [1.12.52]: https://github.com/mscit-admin/ets/compare/3bebedf...686b17b
 [1.12.51]: https://github.com/mscit-admin/ets/compare/314749d...3bebedf
