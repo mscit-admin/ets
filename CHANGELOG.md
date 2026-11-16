@@ -30,6 +30,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.54] — 2026-11-16 — Project phases editor moved into a Settings tab / نقل محرّر مراحل المشروع إلى تبويب في الإعدادات
+
+### Changed
+
+- **Frontend** — The project-phases editor is now a **tab inside Settings** («مراحل المشروع») instead of a separate
+  sidebar page; the standalone `/settings/project-phases` route redirects to `/settings?tab=project`, and the separate
+  sidebar entry is gone. Settings is now reachable by a project manager who holds `apv_final` without `cfg` (its
+  `cfg`-only reads are skipped for them and only the «مراحل المشروع» tab shows), preserving who may edit the phases
+  (`cfg` **or** `apv_final`). The page's global save button is hidden on that tab (it has its own save).
+
+### Upgrade notes
+
+- Frontend-only; no database or configuration change. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.53] — 2026-11-16 — Project phases progress: a second dashboard chart / إنجاز مراحل المشروع: رسم ثانٍ في اللوحة
 
 ### Added
@@ -3348,7 +3364,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/55e1238...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/b1fa725...HEAD
+[1.12.54]: https://github.com/mscit-admin/ets/compare/55e1238...b1fa725
 [1.12.53]: https://github.com/mscit-admin/ets/compare/686b17b...55e1238
 [1.12.52]: https://github.com/mscit-admin/ets/compare/3bebedf...686b17b
 [1.12.51]: https://github.com/mscit-admin/ets/compare/314749d...3bebedf

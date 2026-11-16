@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { api } from '../lib/api.js';
 import { pc, pctTone } from '../lib/format.js';
-import { Alert, Card, ErrorBox, Field, Loading, PageHeader, toast, useLoad } from '../components/ui.jsx';
-import { Icon } from '../components/Icon.jsx';
+import { Alert, Card, ErrorBox, Loading, toast, useLoad } from './ui.jsx';
+import { Icon } from './Icon.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
 // A short unique slug for a new phase row (the key is required by the API; a-z0-9_- only).
@@ -23,7 +23,10 @@ function preview(rows, systemPct) {
   return { totalW, pct: phases.reduce((a, p) => a + p.contribution, 0), phases };
 }
 
-export default function ProjectPhases() {
+// The project-phases editor, rendered inside the Settings page as the «مراحل المشروع» tab (it was a standalone page
+// before 1.12.54). Reading / writing the phases is for cfg | apv_final (the API enforces it); the Settings page lets
+// an apv_final-only project manager in and shows only this tab.
+export function ProjectPhasesSection() {
   const { t, errText } = useI18n();
   const { data, error, loading, reload, refresh } = useLoad(o => api.get('/tracker/project-phases', o), []);
   const [rows, setRows] = useState([]);
@@ -74,16 +77,17 @@ export default function ProjectPhases() {
   };
 
   return (
-    <div>
-      <PageHeader title={t('pp_title')} sub={t('pp_intro')} icon="layers">
-        <button className="btn btn-default btn-sm" onClick={add}><Icon name="plus" size={14} /> {t('pp_add_phase')}</button>
-        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || invalid}>{busy ? t('saving') : t('save')}</button>
-      </PageHeader>
+    <div className="pp-section">
+      <p className="muted small mb">{t('pp_intro')}</p>
       {err && <Alert>{errText(err)}</Alert>}
       {problem && <Alert kind="orange">{t(problem)}</Alert>}
 
       <Card title={t('pp_title')} actions={
-        <span className="muted small">{t('pp_total_weight')} <b className="num">{pc(pv.totalW)}</b> · {t('pp_overall')} <b className="num" style={{ color: pctTone(pv.pct).text }}>{pc(pv.pct)}%</b> · {t('pp_system_pct')} <b className="num">{pc(systemPct)}%</b></span>}>
+        <div className="row gap wrap" style={{ alignItems: 'center' }}>
+          <span className="muted small">{t('pp_total_weight')} <b className="num">{pc(pv.totalW)}</b> · {t('pp_overall')} <b className="num" style={{ color: pctTone(pv.pct).text }}>{pc(pv.pct)}%</b> · {t('pp_system_pct')} <b className="num">{pc(systemPct)}%</b></span>
+          <button className="btn btn-default btn-sm" onClick={add}><Icon name="plus" size={14} /> {t('pp_add_phase')}</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || invalid}>{busy ? t('saving') : t('save')}</button>
+        </div>}>
         <div className="table-wrap">
           <table className="table pp-table">
             <thead>

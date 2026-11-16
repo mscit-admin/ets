@@ -23,7 +23,6 @@ const UserList = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.
 const UserForm = lazy(() => import('./pages/Users.jsx').then(m => ({ default: m.UserForm })));
 const Logs = lazy(() => import('./pages/Logs.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
-const ProjectPhases = lazy(() => import('./pages/ProjectPhases.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
 const ImportList = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportList })));
 const ImportDetail = lazy(() => import('./pages/Imports.jsx').then(m => ({ default: m.ImportDetail })));
@@ -86,8 +85,11 @@ export default function App() {
             <Route path="users/:id" element={<Guard perm="usr"><UserForm /></Guard>} />
             <Route path="online" element={<Navigate to="/users?tab=online" replace />} />
             <Route path="logs" element={<Guard perm="log"><Logs /></Guard>} />
-            <Route path="settings" element={<Guard perm="cfg"><Settings /></Guard>} />
-            <Route path="settings/project-phases" element={<Guard anyOf={['cfg', 'apv_final']}><ProjectPhases /></Guard>} />
+            {/* Settings is reachable by a project manager (apv_final) too: it holds «مراحل المشروع» as a tab,
+                and non-cfg content stays hidden from them (see Settings.jsx tabKeys). */}
+            <Route path="settings" element={<Guard anyOf={['cfg', 'apv_final']}><Settings /></Guard>} />
+            {/* the phases editor moved into the Settings «project» tab (1.12.54); keep old links working */}
+            <Route path="settings/project-phases" element={<Navigate to="/settings?tab=project" replace />} />
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="messages" element={<Messages />} />

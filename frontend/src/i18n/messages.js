@@ -722,6 +722,7 @@ export const messages = {
     set_tab_release: 'الترقية والنشر',
     set_tab_advanced: 'متقدّم',
     set_tab_maintenance: 'الصيانة',
+    set_tab_project: 'مراحل المشروع',
     // maintenance mode (1.12.38)
     maintenance_title: 'وضع الصيانة',
     maintenance_warning: 'عند التفعيل يتوقف دخول جميع المستخدمين عدا المديرين، وتُرفض طلبات غير المديرين، ويصل تنبيه إلزامي للمستخدمين النشطين. المديرون لا يُمنعون أبداً حتى يتمكنوا من إجراء الصيانة.',
@@ -1102,7 +1103,6 @@ export const messages = {
     proj_contribution: 'المساهمة {pct}%',
     proj_auto_note: '= إنجاز النظام (تلقائي)',
     proj_total: 'الإجمالي',
-    nav_project_phases: 'إعدادات مراحل المشروع',
     pp_title: 'إعدادات مراحل المشروع',
     pp_intro: 'مراحل تنفيذ المشروع بأوزان حرة ونِسَب إنجاز. يمكن ربط مرحلة واحدة تلقائياً بإنجاز وظائف النظام.',
     pp_phase: 'المرحلة',
@@ -2724,6 +2724,7 @@ export const messages = {
     set_tab_release: 'Release & deploy',
     set_tab_advanced: 'Advanced',
     set_tab_maintenance: 'Maintenance',
+    set_tab_project: 'Project phases',
     // maintenance mode (1.12.38)
     maintenance_title: 'Maintenance mode',
     maintenance_warning: 'When enabled, sign-in is disabled for everyone except administrators, non-admin requests are refused, and a mandatory alert is sent to active users. Administrators are never locked out, so they can carry out the maintenance.',
@@ -3102,7 +3103,6 @@ export const messages = {
     proj_contribution: 'Contribution {pct}%',
     proj_auto_note: '= system completion (auto)',
     proj_total: 'Total',
-    nav_project_phases: 'Project phases',
     pp_title: 'Project phases',
     pp_intro: 'The project delivery phases, each with a free weight and a completion %. One phase may track the system functions completion automatically.',
     pp_phase: 'Phase',
