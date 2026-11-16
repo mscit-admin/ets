@@ -6,6 +6,39 @@ import { Alert, Card, ErrorBox, Loading, toast, useLoad } from './ui.jsx';
 import { Icon } from './Icon.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
+// The icons an administrator may pick for a phase (a curated subset of the app's icon set — see lib/iconPaths.js).
+const PHASE_ICONS = ['planning', 'factory', 'settings', 'users', 'flag', 'pulse', 'curve', 'scale', 'report', 'chart',
+  'crm', 'item_function', 'item_report', 'clock', 'check', 'megaphone', 'search', 'edit', 'note', 'filter', 'home', 'circle'];
+
+// A compact icon picker: a button showing the current icon that opens a small grid to choose from.
+function IconPicker({ value, onChange, label }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  return (
+    <span className="icon-picker" ref={ref}>
+      <button type="button" className="btn-icon" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={label}>
+        <Icon name={value || 'circle'} size={18} />
+      </button>
+      {open && (
+        <div className="icon-picker-pop" role="menu">
+          {PHASE_ICONS.map(n => (
+            <button type="button" key={n} role="menuitemradio" aria-checked={n === value} aria-label={n}
+              className={'icon-opt' + (n === value ? ' on' : '')} onClick={() => { onChange(n); setOpen(false); }}>
+              <Icon name={n} size={18} />
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 // A short unique slug for a new phase row (the key is required by the API; a-z0-9_- only).
 const newKey = existing => {
   let i = existing.length + 1, k;
@@ -49,7 +82,7 @@ export function ProjectPhasesSection() {
 
   const edit = (i, patch) => { dirty.current = true; setRows(rs => rs.map((r, k) => (k === i ? { ...r, ...patch } : r))); };
   const setAuto = (i, on) => { dirty.current = true; setRows(rs => rs.map((r, k) => ({ ...r, auto: k === i ? on : (on ? false : r.auto) }))); };
-  const add = () => { dirty.current = true; setRows(rs => [...rs, { key: newKey(rs.map(r => r.key)), name_ar: '', name_en: '', weight: '1', pct: '0', auto: false }]); };
+  const add = () => { dirty.current = true; setRows(rs => [...rs, { key: newKey(rs.map(r => r.key)), name_ar: '', name_en: '', icon: 'circle', weight: '1', pct: '0', auto: false }]); };
   const del = i => { dirty.current = true; setRows(rs => rs.filter((_, k) => k !== i)); };
   const move = (i, d) => {
     const j = i + d;
@@ -70,7 +103,7 @@ export function ProjectPhasesSection() {
   const save = async () => {
     setBusy(true); setErr(null);
     const phases = rows.map(r => ({ key: r.key, name_ar: String(r.name_ar).trim(), name_en: String(r.name_en || '').trim(),
-      weight: +r.weight, pct: r.auto ? 0 : +r.pct, auto: !!r.auto }));
+      icon: r.icon || '', weight: +r.weight, pct: r.auto ? 0 : +r.pct, auto: !!r.auto }));
     try { await api.put('/tracker/project-phases', { phases }); toast(t('saved')); dirty.current = false; reload(); }
     catch (e) { setErr(e); }
     setBusy(false);
@@ -95,6 +128,7 @@ export function ProjectPhasesSection() {
                 <th className="pp-ord" />
                 <th>{t('pp_name_ar')}</th>
                 <th>{t('pp_name_en')}</th>
+                <th className="pp-icon-col">{t('pp_icon')}</th>
                 <th className="num-col">{t('pp_weight')}</th>
                 <th className="num-col">{t('pp_pct')}</th>
                 <th>{t('pp_auto')}</th>
@@ -113,6 +147,7 @@ export function ProjectPhasesSection() {
                     </td>
                     <td><input className="input input-sm" value={r.name_ar} onChange={e => edit(i, { name_ar: e.target.value })} aria-label={t('pp_name_ar')} maxLength={120} /></td>
                     <td><input className="input input-sm" value={r.name_en} onChange={e => edit(i, { name_en: e.target.value })} aria-label={t('pp_name_en')} maxLength={120} dir="ltr" /></td>
+                    <td className="pp-icon-col"><IconPicker value={r.icon} onChange={v => edit(i, { icon: v })} label={t('pp_icon')} /></td>
                     <td className="num-col"><input className="input input-sm num-input" type="number" min={0} max={100000} step={0.5} value={r.weight} onChange={e => edit(i, { weight: e.target.value })} aria-label={t('pp_weight')} /></td>
                     <td className="num-col">
                       <input className="input input-sm num-input" type="number" min={0} max={100} step={1} value={r.auto ? Math.round(systemPct * 10) / 10 : r.pct}

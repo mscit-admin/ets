@@ -7,6 +7,7 @@
 import { bad } from '../utils/http.js';
 
 export const PHASE_KEY_RE = /^[a-z0-9_-]{1,40}$/;
+export const PHASE_ICON_RE = /^[a-z0-9_]{1,40}$/;
 export const PHASES_MIN = 1, PHASES_MAX = 40, PHASE_NAME_MAX = 120, PHASE_WEIGHT_MAX = 100000;
 
 // Validate a `project.phases` value. Returns the normalised array (trimmed names, plain numbers) or throws bad().
@@ -36,9 +37,12 @@ export function validateProjectPhases(value) {
     const pct = ph.pct;
     if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) throw bad('invalid_value', { field: 'pct', index: i });
     if (typeof ph.auto !== 'boolean') throw bad('invalid_value', { field: 'auto', index: i });
+    // optional icon name (one of the frontend's icon set, validated there); here only a safe slug or empty
+    const icon = typeof ph.icon === 'string' ? ph.icon.trim() : '';
+    if (icon && !PHASE_ICON_RE.test(icon)) throw bad('invalid_value', { field: 'icon', index: i });
     if (ph.auto) autoCount++;
     sumW += weight;
-    return { key, name_ar, name_en, weight, pct, auto: ph.auto };
+    return { key, name_ar, name_en, icon, weight, pct, auto: ph.auto };
   });
   if (autoCount > 1) throw bad('invalid_value', { field: 'auto', reason: 'multiple_auto' });
   if (!(sumW > 0)) throw bad('invalid_value', { field: 'weight', reason: 'sum_zero' });

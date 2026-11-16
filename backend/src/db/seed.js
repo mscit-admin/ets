@@ -65,11 +65,11 @@ export const DEFAULT_SETTINGS = {
   // free weight and a stored completion %. The development phase (`auto`) takes its completion LIVE from the system
   // functions completion (total.pct). Shown on the dashboard's project chart; edited at /settings/project-phases.
   'project.phases': [
-    { key: 'analysis', name_ar: 'التحليل والتصميم', name_en: 'Analysis & design', weight: 2, pct: 92, auto: false },
-    { key: 'infra', name_ar: 'تجهيز البنية التحتية والبيانات', name_en: 'Infrastructure & data', weight: 1, pct: 65, auto: false },
-    { key: 'dev', name_ar: 'إعداد النظام والتطوير', name_en: 'System setup & development', weight: 3, pct: 0, auto: true },
-    { key: 'training', name_ar: 'التدريب والتشغيل التجريبي وتسليم الوثائق', name_en: 'Training, pilot & docs', weight: 3, pct: 65, auto: false },
-    { key: 'golive', name_ar: 'التشغيل الفعلي', name_en: 'Go-live', weight: 1, pct: 0, auto: false },
+    { key: 'analysis', name_ar: 'التحليل والتصميم', name_en: 'Analysis & design', icon: 'planning', weight: 2, pct: 92, auto: false },
+    { key: 'infra', name_ar: 'تجهيز البنية التحتية والبيانات', name_en: 'Infrastructure & data', icon: 'factory', weight: 1, pct: 65, auto: false },
+    { key: 'dev', name_ar: 'إعداد النظام والتطوير', name_en: 'System setup & development', icon: 'settings', weight: 3, pct: 0, auto: true },
+    { key: 'training', name_ar: 'التدريب والتشغيل التجريبي وتسليم الوثائق', name_en: 'Training, pilot & docs', icon: 'users', weight: 3, pct: 65, auto: false },
+    { key: 'golive', name_ar: 'التشغيل الفعلي', name_en: 'Go-live', icon: 'flag', weight: 1, pct: 0, auto: false },
   ],
   'app.logo_height': 28,               // logo height in the top bar (px)
   'app.login_logo_height': 64,         // logo height on the login screen (px)

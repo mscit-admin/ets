@@ -115,7 +115,7 @@ export default function Dashboard() {
                     return (
                       <div key={ph.key} className={'erp-ph' + (ph.auto ? ' auto' : '')}>
                         <div className="erp-ph-name">
-                          <b><span className="erp-ph-nm">{nm(ph)}</span>{ph.auto && <span className="erp-ph-auto">{t('proj_auto_note')}</span>}</b>
+                          <b><Icon name={ph.icon || 'circle'} size={14} className="erp-ph-icon" /><span className="erp-ph-nm">{nm(ph)}</span>{ph.auto && <span className="erp-ph-auto">{t('proj_auto_note')}</span>}</b>
                           <span className="erp-ph-contrib">{t('proj_contribution', { pct: pc(ph.contribution) })}</span>
                         </div>
                         <div className="erp-ph-w">{fmtW(ph.weight)}/{fmtW(project.total_weight)}</div>

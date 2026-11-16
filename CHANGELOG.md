@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.55] — 2026-11-16 — Project wheel: per-phase icons and tidier labels / أيقونات المراحل وتنسيق التسميات
+
+### Added
+
+- **Project phases** now carry an **icon**. It shows inside each segment of the project wheel and before each phase in
+  the list below it, and is chosen per phase from a new **«الأيقونة» column** (an icon picker) in the project-phases
+  settings tab. Phases store an optional `icon` field (validated in `services/project-phases.js`); the five default
+  phases get sensible icons. Existing phases without an icon fall back to a neutral icon until one is set.
+
+### Fixed
+
+- **Frontend** — The project wheel's phase labels no longer overlap or run off the drawing: each name now wraps to fit
+  its segment's width (short lines, up to three, ending with «…» when truncated — the full name stays in the tooltip
+  and the list below), and a narrow (low-weight) segment shows just its icon and %.
+
+### Upgrade notes
+
+- Frontend-only behavior; `project.phases` gains an optional `icon` field with no migration needed. Deploy with
+  `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.54] — 2026-11-16 — Project phases editor moved into a Settings tab / نقل محرّر مراحل المشروع إلى تبويب في الإعدادات
 
 ### Changed
@@ -3364,7 +3386,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/b1fa725...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/a13cf10...HEAD
+[1.12.55]: https://github.com/mscit-admin/ets/compare/b1fa725...a13cf10
 [1.12.54]: https://github.com/mscit-admin/ets/compare/55e1238...b1fa725
 [1.12.53]: https://github.com/mscit-admin/ets/compare/686b17b...55e1238
 [1.12.52]: https://github.com/mscit-admin/ets/compare/3bebedf...686b17b
