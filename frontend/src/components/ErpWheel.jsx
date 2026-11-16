@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/index.jsx';
 import { pc, pctGradient, pctTone } from '../lib/format.js';
 import { Icon } from './Icon.jsx';
-import { C, FILLS, R_HUB, R_HUB_RING, R_RIM, R_TEXT, SIZE, geo, linesOf, rimAngles, segmentAngles } from '../lib/wheelGeometry.js';
+import { C, FILLS, R_HUB, R_HUB_RING, R_RIM, R_TEXT, SIZE, geo, linesOf, rimAngles, segmentAngles, weightedAngles } from '../lib/wheelGeometry.js';
 
 const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -105,19 +105,20 @@ function Segment({ m, i, a0, a1, g, lang, t, onOpen }) {
   );
 }
 
-function Hub({ total, t }) {
+function Hub({ total, t, mark = 'ERP', label }) {
   const v = useTween(total);
   const tone = pctTone(v);
   const c = 2 * Math.PI * R_HUB_RING;
+  const lbl = label || t('erp_overall');
   return (
-    <g className="erp-hub" role="img" aria-label={`${t('erp_overall')}: ${pc(total)}%`}>
+    <g className="erp-hub" role="img" aria-label={`${lbl}: ${pc(total)}%`}>
       <circle className="erp-hub-bg" cx={C} cy={C} r={R_HUB} />
       <circle className="erp-hub-track" cx={C} cy={C} r={R_HUB_RING} />
       <circle className="erp-hub-ring" cx={C} cy={C} r={R_HUB_RING} style={{ stroke: tone.stroke }}
         strokeDasharray={`${(c * Math.max(0, Math.min(100, v))) / 100} ${c}`} transform={`rotate(-90 ${C} ${C})`} />
-      <text className="erp-hub-mark" x={C} y={C - 36} textAnchor="middle" direction="ltr">ERP</text>
+      <text className="erp-hub-mark" x={C} y={C - 36} textAnchor="middle" direction="ltr">{mark}</text>
       <text className="erp-hub-pct" x={C} y={C + 10} textAnchor="middle" direction="ltr" style={{ fill: tone.text }}>{pc(v)}%</text>
-      <text className="erp-hub-label" x={C} y={C + 36} textAnchor="middle">{t('erp_overall')}</text>
+      <text className="erp-hub-label" x={C} y={C + 36} textAnchor="middle">{lbl}</text>
     </g>
   );
 }
@@ -133,6 +134,69 @@ export function ErpWheel({ segments, total }) {
         <Segment key={m.key} m={m} i={i} a0={segmentAngles(i, n)[0]} a1={segmentAngles(i, n)[1]} g={g} lang={lang} t={t} onOpen={navigate} />
       ))}
       <Hub total={total} t={t} />
+    </svg>
+  );
+}
+
+// ---- Project phases wheel ----
+// Same geometry, tween and colours (pctTone) as the system wheel, but each segment's ANGULAR WIDTH is proportional to
+// the phase weight (not equal), the arc shows the phase completion, and the hub shows the project overall %. A phase at
+// 0 % (or with the `auto` phase following a 0 % system) renders faded, like an inactive module. Phases carry no links.
+const wrapPhase = name => {
+  const words = String(name || '').split(/\s+/).filter(Boolean);
+  if (name.length <= 12 || words.length <= 1) return [name];
+  const mid = Math.ceil(words.length / 2);
+  return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+};
+
+function ProjectSegment({ ph, i, a0, a1, g, lang, t }) {
+  const eff = +ph.effective_pct || 0;
+  const active = eff > 0.05 && a1 - a0 > 0.01;
+  const pct = useTween(active ? eff : 0);
+  const flash = useFlash(active ? Math.round(eff * 10) : null);
+  const mid = (a0 + a1) / 2;
+  const [x, y] = g.pt(R_TEXT, mid);
+  const name = ph[`name_${lang}`] || ph.name_ar;
+  const lines = wrapPhase(name);
+  const tone = pctTone(pct);
+  const { rimStart, rimEnd, rimTo } = rimAngles(a0, a1, pct);
+  const lineH = 15, nameTop = lines.length > 1 ? -8 : -2;
+  const label = `${name}: ${pc(eff)}%`;
+  return (
+    <g className={'erp-seg' + (active ? ' on static' : ' off')} role="img" aria-label={label}>
+      <title>{label}</title>
+      <path className="erp-wedge" d={g.wedge(a0, a1)} style={active ? { fill: FILLS[i % FILLS.length] } : undefined} />
+      {active && <path className="erp-rim-track" d={g.arc(R_RIM, rimStart, rimEnd)} />}
+      {active && pct > 0.05 && <path className="erp-rim" d={g.arc(R_RIM, rimStart, rimTo)} style={{ stroke: tone.stroke }} />}
+      {a1 - a0 > 10 && (
+        <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`} className="erp-content">
+          <text className="erp-name" textAnchor="middle" y={nameTop}>
+            {lines.map((l, k) => <tspan key={k} x="0" dy={k ? lineH : 0}>{l}</tspan>)}
+          </text>
+          {active ? (
+            <g transform={`translate(0 ${nameTop + (lines.length - 1) * lineH + 22})`} className={'erp-chip' + (flash ? ' flash' : '')}>
+              <rect x="-34" y="-14" width="68" height="27" rx="13.5" />
+              <text className="erp-pct" textAnchor="middle" y="6" direction="ltr" style={{ fill: tone.text }}>{pc(pct)}%</text>
+            </g>
+          ) : (
+            <text className="erp-state" textAnchor="middle" y={nameTop + (lines.length - 1) * lineH + 21} direction="ltr">{pc(eff)}%</text>
+          )}
+        </g>
+      )}
+    </g>
+  );
+}
+
+export function ProjectWheel({ phases, total }) {
+  const { t, lang, dir } = useI18n();
+  const g = geo(dir === 'rtl');
+  const angles = weightedAngles(phases.map(p => +p.weight || 0));
+  return (
+    <svg className="erp-wheel" viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" aria-label={t('erp_col_project')}>
+      {phases.map((ph, i) => (
+        <ProjectSegment key={ph.key} ph={ph} i={i} a0={angles[i][0]} a1={angles[i][1]} g={g} lang={lang} t={t} />
+      ))}
+      <Hub total={total} t={t} mark={t('proj_hub_mark')} label={t('proj_overall')} />
     </svg>
   );
 }

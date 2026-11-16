@@ -13,38 +13,38 @@ const ROLES = [
   { id: 'admin', name_ar: 'مسؤول النظام', name_en: 'System Administrator', full_scope: true,
     description_ar: 'كل الشاشات والصلاحيات، وإدارة المستخدمين والسجلات',
     description_en: 'All screens and permissions, user and log administration',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'msg'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'msg', 'erp_view', 'prj_view'] },
   { id: 'mgr', name_ar: 'مسؤول إدارة', name_en: 'Department Manager', full_scope: false,
     description_ar: 'كل تطبيقات إدارته: النسب والأوزان والاختبار والسجل',
     description_en: 'All applications of the department: progress, weights, testing, logs',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'log'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'log', 'erp_view'] },
   { id: 'ed', name_ar: 'محرّر تطبيق', name_en: 'Application Editor', full_scope: false,
     description_ar: 'نسب الإنجاز وحالة الاختبار داخل تطبيقاته، دون الأوزان',
     description_en: 'Progress and test status inside assigned applications, no weights',
-    permissions: ['pct', 'tst', 'rep'] },
+    permissions: ['pct', 'tst', 'rep', 'erp_view'] },
   { id: 'qa', name_ar: 'مختبِر', name_en: 'Tester', full_scope: false,
     description_ar: 'حالة الاختبار والملاحظات فقط — لا يغيّر نسبة ولا وزناً',
     description_en: 'Test status and notes only — cannot change progress or weights',
-    permissions: ['tst'] },
+    permissions: ['tst', 'erp_view'] },
   { id: 'pm', name_ar: 'مدير المشروع', name_en: 'Project Manager', full_scope: true,
     description_ar: 'كل الإدارات: متابعة وتعديل واستيراد، والاعتماد النهائي لنتائج الإدارات',
     description_en: 'All departments: tracking, editing, imports, and final approval of department results',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final', 'erp_view', 'prj_view'] },
   { id: 'tm', name_ar: 'المدير الفني للمشروع', name_en: 'Technical Project Manager', full_scope: true,
     description_ar: 'كل الإدارات: متابعة وتعديل واستيراد، والاعتماد النهائي لنتائج الإدارات',
     description_en: 'All departments: tracking, editing, imports, and final approval of department results',
-    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final'] },
+    permissions: ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'log', 'apv_final', 'erp_view', 'prj_view'] },
   { id: 'lead', name_ar: 'رئيس فريق إدارة', name_en: 'Department Team Lead', full_scope: false,
     description_ar: 'إدارته فقط: التعديل والاستيراد واعتماد نتائج فريقه (الاعتماد الأول)',
     description_en: "Own department: editing, imports and first approval of the team's results",
-    permissions: ['pct', 'tst', 'tog', 'ren', 'mov', 'rep', 'exp', 'imp', 'log', 'apv_dept'] },
+    permissions: ['pct', 'tst', 'tog', 'ren', 'mov', 'rep', 'exp', 'imp', 'log', 'apv_dept', 'erp_view'] },
   { id: 'member', name_ar: 'عضو فريق', name_en: 'Team Member', full_scope: false,
     description_ar: 'إدارته فقط: تحديث الإنجاز والاختبار والتقارير، واقتراح إضافة/إزالة/تضمين الوظائف، ورفع ملفات النتائج — كلها باعتماد رئيس الفريق',
     description_en: 'Own department: progress, testing, reports, proposing to add / remove / include functions, and uploading result files — all approved by the team lead',
-    permissions: ['pct', 'tst', 'tog', 'ren', 'rep', 'imp'] },
+    permissions: ['pct', 'tst', 'tog', 'ren', 'rep', 'imp', 'erp_view'] },
   { id: 'obs', name_ar: 'مطّلع', name_en: 'Observer', full_scope: false,
     description_ar: 'قراءة فقط داخل نطاقه', description_en: 'Read-only within scope',
-    permissions: [] },
+    permissions: ['erp_view'] },
 ];
 
 export const DEFAULT_SETTINGS = {
@@ -61,6 +61,16 @@ export const DEFAULT_SETTINGS = {
   'app.org_name_en': 'ERP Implementation Tracking Center',
   'app.default_language': 'ar',
   'approval.edits_need_lead': true,    // data-entry edits wait for the department team lead
+  // project phases (manual weighted model, services/project-phases.js): the delivery phases of the project, each with a
+  // free weight and a stored completion %. The development phase (`auto`) takes its completion LIVE from the system
+  // functions completion (total.pct). Shown on the dashboard's project chart; edited at /settings/project-phases.
+  'project.phases': [
+    { key: 'analysis', name_ar: 'التحليل والتصميم', name_en: 'Analysis & design', weight: 2, pct: 92, auto: false },
+    { key: 'infra', name_ar: 'تجهيز البنية التحتية والبيانات', name_en: 'Infrastructure & data', weight: 1, pct: 65, auto: false },
+    { key: 'dev', name_ar: 'إعداد النظام والتطوير', name_en: 'System setup & development', weight: 3, pct: 0, auto: true },
+    { key: 'training', name_ar: 'التدريب والتشغيل التجريبي وتسليم الوثائق', name_en: 'Training, pilot & docs', weight: 3, pct: 65, auto: false },
+    { key: 'golive', name_ar: 'التشغيل الفعلي', name_en: 'Go-live', weight: 1, pct: 0, auto: false },
+  ],
   'app.logo_height': 28,               // logo height in the top bar (px)
   'app.login_logo_height': 64,         // logo height on the login screen (px)
   // maintenance mode (1.12.31): admin-only, toggled via /api/maintenance (NOT the generic settings editor), so these

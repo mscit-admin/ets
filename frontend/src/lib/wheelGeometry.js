@@ -33,6 +33,17 @@ export const geo = mirror => {
 // Angles of segment i of n: centred on i × 360/n, starting at the top.
 export const segmentAngles = (i, n) => { const step = 360 / n; return [i * step - step / 2, i * step + step / 2]; };
 
+// Variable-width segments (project phases wheel): each segment's angular span is proportional to its weight, laid out
+// clockwise from the top. Returns [[a0, a1], …] in the same degrees-from-top space as segmentAngles, so geo()'s
+// wedge / arc / rimAngles apply unchanged. A zero (or negative) weight yields a zero-width segment (draws nothing).
+export const weightedAngles = weights => {
+  const total = weights.reduce((a, w) => a + Math.max(0, +w || 0), 0) || 1;
+  const out = [];
+  let acc = 0;
+  for (const w of weights) { const span = (Math.max(0, +w || 0) / total) * 360; out.push([acc, acc + span]); acc += span; }
+  return out;
+};
+
 // The progress arc on the outer rim of a segment: [start, end] angles for pct (0–100), inside the segment's gaps.
 export const rimAngles = (a0, a1, pct) => {
   const rimPad = (GAP / 2 / R_RIM) * (180 / Math.PI);
