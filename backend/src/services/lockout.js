@@ -30,7 +30,7 @@ export const userKey = id => 'user:' + id;
 export const accountKey = name => 'acct:' + String(name || '').trim().toLowerCase();
 
 export const isDelayed = u => !!u.locked_until && new Date(u.locked_until) > new Date();
-export const retryAfter = u => Math.max(1, Math.ceil((new Date(u.locked_until) - Date.now()) / 1000));
+const retryAfter = u => Math.max(1, Math.ceil((new Date(u.locked_until) - Date.now()) / 1000));
 export const tooManyAttempts = u => new HttpError(429, 'too_many_attempts', { retry_after: retryAfter(u) });
 
 // Counts one failure atomically and returns { attempts, locked_until, delayed }.

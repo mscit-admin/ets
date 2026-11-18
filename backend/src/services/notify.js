@@ -25,7 +25,7 @@ import { TYPES, RATE_CAPPED, typeInfo, effectivePolicy, policyOn, isMandatory, p
 import { render, GENERIC } from './notify-text.js';
 
 const SEV_RANK = { info: 0, warning: 1, critical: 2 };
-export const LINK_RE = /^\/[A-Za-z0-9/_?=&.-]*$/;
+const LINK_RE = /^\/[A-Za-z0-9/_?=&.-]*$/;
 const READ_SCAN_MAX = 2000;          // unread rows looked at for a count (a user never has that many open summaries)
 
 // ---------------------------------------------------------------- users
@@ -102,7 +102,7 @@ export function wanted(user, type, pol, rs) {
   return true;
 }
 // The phone: 'full' (title and body; no body for security / system), 'generic' or 'omit'.
-export function mobileMode(user, type, pol, rs) {
+function mobileMode(user, type, pol, rs) {
   const mandatory = isMandatory(pol, type, user.role);
   const off = !pushAllowed(pol, type) || rs?.blocks.has(`${type}|mobile`) || rs?.blocks.has('*|mobile') ||
     (!mandatory && rs?.prefs.mobile_muted.includes(type));
@@ -197,7 +197,7 @@ export async function resolveExcept(type, keep, { onlyKey = null } = {}) {
 
 // ---------------------------------------------------------------- reading
 // Everything a read needs for one user: settings, policy, applications, restrictions.
-export async function readContext(user) {
+async function readContext(user) {
   const s = await allSettings();
   return { user, pol: policyOf(s), apps: await appMap(), rs: (await restrictions([user.id])).get(user.id), enabled: s['notify.enabled'] !== false };
 }

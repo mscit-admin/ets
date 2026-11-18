@@ -142,7 +142,7 @@ export function ErpWheel({ segments, total }) {
 // Same geometry, tween and colours (pctTone) as the system wheel, but each segment's ANGULAR WIDTH is proportional to
 // the phase weight (not equal), the arc shows the phase completion, and the hub shows the project overall %. A phase at
 // 0 % (or with the `auto` phase following a 0 % system) renders faded, like an inactive module. Phases carry no links.
-export const PHASE_ICON_FALLBACK = 'circle';
+const PHASE_ICON_FALLBACK = 'circle';
 
 // Wrap a phase name to fit the segment: greedily pack words into lines of at most `maxChars`, capped at `maxLines`;
 // if words are left over the last line ends with an ellipsis (the full name stays in the tooltip and the list below).

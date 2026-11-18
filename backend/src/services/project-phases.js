@@ -6,9 +6,9 @@
 // completion (the existing total.pct), so the development phase tracks the build automatically.
 import { bad } from '../utils/http.js';
 
-export const PHASE_KEY_RE = /^[a-z0-9_-]{1,40}$/;
-export const PHASE_ICON_RE = /^[a-z0-9_]{1,40}$/;
-export const PHASES_MIN = 1, PHASES_MAX = 40, PHASE_NAME_MAX = 120, PHASE_WEIGHT_MAX = 100000;
+const PHASE_KEY_RE = /^[a-z0-9_-]{1,40}$/;
+const PHASE_ICON_RE = /^[a-z0-9_]{1,40}$/;
+const PHASES_MIN = 1, PHASES_MAX = 40, PHASE_NAME_MAX = 120, PHASE_WEIGHT_MAX = 100000;
 
 // Validate a `project.phases` value. Returns the normalised array (trimmed names, plain numbers) or throws bad().
 // Rules: an array of 1..40 phases; each has a unique non-empty slug key (^[a-z0-9_-]{1,40}$), a non-empty name_ar

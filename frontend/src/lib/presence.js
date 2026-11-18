@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api } from './api.js';
 
-export const HEARTBEAT_MS = 60_000;
+const HEARTBEAT_MS = 60_000;
 
 const ROUTES = [
   [/^\/$/, 'dashboard'], [/^\/status\/?$/, 'status'], [/^\/weights\/?$/, 'weights'], [/^\/schedule\/?$/, 'schedule'],

@@ -259,7 +259,7 @@ export function trustProxyProblem(value) {
 }
 
 // PUBLIC_BASE_URL / TLS_CERT_SHA256 (see config.mobile): → why a value is unusable, or null.
-export function mobileConfigProblem({ publicBaseUrl, certSha256 }) {
+function mobileConfigProblem({ publicBaseUrl, certSha256 }) {
   if (publicBaseUrl) {
     let u; try { u = new URL(publicBaseUrl); } catch { u = null; }
     if (!u || !['https:', 'http:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) {

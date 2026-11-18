@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.70] — 2026-11-18 — Drop unused export keywords / تنظيف التصديرات غير المستخدمة
+
+### Changed
+
+- **Code hygiene**: dropped the `export` keyword from ~68 symbols across backend and frontend that are used only
+  inside their own module and imported nowhere (verified against the whole repo, mobile included). No behaviour
+  change — the code is unchanged, only its unnecessary public surface is removed. The backup subsystem and the
+  modules the mobile app namespace-imports were intentionally left untouched.
+
+### Upgrade notes
+
+- Frontend + backend, no runtime change. Deploy with `update.sh`. No migration.
+
+---
+
 ## [1.12.69] — 2026-11-18 — Retire the legacy recovery-code format / إبطال صيغة رموز الاستعادة القديمة
 
 ### Security
@@ -3636,7 +3651,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/8567ac1...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/bfaa11f...HEAD
+[1.12.70]: https://github.com/mscit-admin/ets/compare/8567ac1...bfaa11f
 [1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
 [1.12.68]: https://github.com/mscit-admin/ets/compare/2208253...ff4ada8
 [1.12.67]: https://github.com/mscit-admin/ets/compare/7196349...2208253

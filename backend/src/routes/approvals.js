@@ -87,7 +87,7 @@ async function items(ids) {
 
 // Filters of the Approvals screen (1.12.1), also taken by its Excel export. Every one only narrows the list: what a
 // user may see is still decided by visible() below, after the query.
-export const RQ_KINDS = ['function', 'bulk', 'report', 'add_function', 'remove_function', 'restore_function', 'move_function', 'move_application'];
+const RQ_KINDS = ['function', 'bulk', 'report', 'add_function', 'remove_function', 'restore_function', 'move_function', 'move_application'];
 // a changed field; 'name' is a rename (the Arabic or the English name)
 const FIELD_OF = f => (f === 'name_ar' || f === 'name_en' ? 'name' : f);
 const FIELDS_IN = f => (f === 'name' ? ['name_ar', 'name_en'] : [f]);
@@ -203,7 +203,7 @@ r.get('/pending-count', async (req, res) => res.json(await pendingCounts(req.use
 
 // The reject reason is required and, when it RETURNS the request to its author (every kind but a move), uses the
 // same 3–500 rule as a move / rename / exclusion reason. A move reject keeps its older rule (any non-empty text).
-export const RETURN_REASON_MIN = 3, RETURN_REASON_MAX = 500;
+const RETURN_REASON_MIN = 3, RETURN_REASON_MAX = 500;
 function returnReason(body) {
   const v = str(body?.reason, RETURN_REASON_MAX);
   if (v.replace(/\s/gu, '').length < RETURN_REASON_MIN) throw bad('reason_required', { min: RETURN_REASON_MIN });

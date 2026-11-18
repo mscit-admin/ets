@@ -36,7 +36,7 @@ let dummyHash;
 export const getDummyHash = () => (dummyHash ??= bcrypt.hash('not-a-real-password', config.security.bcryptRounds));
 
 // Lowest minimum length whatever the setting says, and the minimum for administrator accounts.
-export const MIN_LENGTH_FLOOR = 10;
+const MIN_LENGTH_FLOOR = 10;
 export const ADMIN_MIN_LENGTH = 12;
 // bcrypt only uses the first 72 bytes (UTF-8): longer passwords are refused instead of silently cut.
 const MAX_BYTES = 72;
@@ -101,7 +101,7 @@ export function generateRecoveryCodes(n = 10) {
   });
 }
 
-export const normalizeRecoveryCode = c => String(c || '').trim().toLowerCase();
+const normalizeRecoveryCode = c => String(c || '').trim().toLowerCase();
 // HMAC-SHA-256 with a key derived (HKDF) from APP_SECRET, so a database copy alone cannot be searched for codes.
 const recoveryKey = () => Buffer.from(crypto.hkdfSync('sha256', config.appSecret, 'ets-recovery-codes', 'ets recovery code hmac v1', 32));
 export const hashRecoveryCode = c => 'h1:' + crypto.createHmac('sha256', recoveryKey()).update(normalizeRecoveryCode(c)).digest('hex');

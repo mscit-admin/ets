@@ -24,7 +24,7 @@ export const CALC_FUNCTIONS_SQL = `SELECT id, app_id, code, source, item_type, w
   review_status, closed_at, (note <> '') AS has_note FROM functions WHERE removed_at IS NULL`;
 
 export const ITEM_TYPES = ['function', 'report'];
-export const isReport = f => f.item_type === 'report';
+const isReport = f => f.item_type === 'report';
 
 const NOTIF_SCORE = [null, 100, 50, 0];
 

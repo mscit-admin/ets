@@ -105,7 +105,7 @@ function rejected(req, reason, extra = {}) {
   throw new HttpError(401, 'invalid_token');
 }
 
-export async function deviceAuth(req, res, next) {
+async function deviceAuth(req, res, next) {
   const h = req.get('authorization') || '';
   const m = /^Bearer ([A-Za-z0-9_-]+)$/.exec(h);
   if (!m || !TOKEN_RE.test(m[1])) return rejected(req, h ? 'malformed' : 'missing');

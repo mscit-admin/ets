@@ -26,7 +26,7 @@ const keyFor = (secret, purpose) => Buffer.from(crypto.hkdfSync('sha256', secret
 const hmac = (secret, purpose, v) => 'h1:' + crypto.createHmac('sha256', keyFor(secret, purpose)).update(v).digest('hex');
 const secrets = () => [config.appSecret, ...config.appSecretOld].filter(Boolean);
 
-export const normCode = c => String(c ?? '').toUpperCase().replace(/[\s-]/g, '');
+const normCode = c => String(c ?? '').toUpperCase().replace(/[\s-]/g, '');
 export const codeHashes = c => secrets().map(s => hmac(s, 'ets-device-pair-code v1', normCode(c)));
 export const tokenHash = t => hmac(config.appSecret, 'ets-device-token v1', String(t));
 export const tokenHashes = t => secrets().map(s => hmac(s, 'ets-device-token v1', String(t)));

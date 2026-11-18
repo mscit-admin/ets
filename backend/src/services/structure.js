@@ -24,7 +24,7 @@ function slugBase(name, fallback) {
 }
 
 // A unique slug for `table`, derived from base, checked against every existing id (archived included) in that table.
-export async function genId(c, table, base) {
+async function genId(c, table, base) {
   const rel = table === 'departments' ? 'departments' : 'applications';
   const taken = new Set((await c.query(`SELECT id FROM ${rel}`)).rows.map(r => r.id));
   let id = base;
@@ -101,7 +101,7 @@ export async function restoreDepartment(c, id) {
 
 // ---- applications ----
 
-export function applicationFields(body = {}, { create } = {}) {
+function applicationFields(body = {}, { create } = {}) {
   const name_ar = str(body.name_ar, 300);
   if (create && !name_ar) throw bad('name_required');
   const name_en = str(body.name_en, 300);

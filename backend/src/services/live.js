@@ -29,7 +29,7 @@ import { query } from '../db/pool.js';
 import { loadUserContext } from '../middleware/auth.js';
 import { logger } from './logs.js';
 
-export const CHANNEL = 'ets_live';
+const CHANNEL = 'ets_live';
 const ID = /^[a-z0-9_-]{1,40}$/i;
 
 // ---- publishing (call AFTER the transaction has committed) ----
@@ -252,7 +252,7 @@ function maybeStop() {
 }
 
 /** Closes the LISTEN connection and the heartbeat (no streams left, or shutdown). */
-export function stopListening() {
+function stopListening() {
   wanted = false;
   if (beat) { clearInterval(beat); beat = null; }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }

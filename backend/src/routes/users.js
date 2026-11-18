@@ -238,7 +238,7 @@ r.post('/', async (req, res) => {
 // in one transaction, or nothing when any row is refused. Each new account gets a random temporary password that
 // must be changed at first sign-in; the passwords are returned once, in the answer to POST /import, and are never
 // stored or logged in clear.
-export const IMPORT_MAX_ROWS = 500;
+const IMPORT_MAX_ROWS = 500;
 const cell = v => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
 // departments / applications: one cell or an array of cells (the template's extra columns), each holding ids or
 // names separated by "," "،" ";" — matched by utils/importMatch.js
@@ -616,8 +616,8 @@ r.put('/:id/notify-blocks', async (req, res) => {
 //   · the username and e-mail are free for a new account (partial unique indexes)
 // Refused for the caller's own account, for the last effective administrator, for an unknown or already deleted id.
 // A bulk request is all-or-nothing: any refused id refuses the whole request with the reason of each id.
-export const DELETE_MAX = 200;
-export const DELETE_REASON_MIN = 3, DELETE_REASON_MAX = 500;
+const DELETE_MAX = 200;
+const DELETE_REASON_MIN = 3, DELETE_REASON_MAX = 500;
 
 // The reason (required): 3+ non-whitespace characters, at most 500 — same rule as the exclusion note (1.5.1).
 function deleteReason(body) {

@@ -7,9 +7,9 @@
 import express from 'express';
 import { HttpError, stripBidi, jsonDepth, MAX_JSON_DEPTH } from '../utils/http.js';
 
-export const SMALL_LIMIT = '100kb';
+const SMALL_LIMIT = '100kb';
 export const LARGE_LIMIT = '5mb';
-export const IMPORT_LIMIT = '1mb';
+const IMPORT_LIMIT = '1mb';
 
 // Routes (relative to /api) whose body is parsed inside the route, after its auth checks, by largeJson —
 // or by userImportJson for the bulk user import (routes/users.js).

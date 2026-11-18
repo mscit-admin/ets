@@ -17,7 +17,7 @@ export const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 export const numIn = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 
 // Database ids are PostgreSQL int4: anything else is refused with 400 before it reaches a query (ETS-SEC-029).
-export const INT4_MAX = 2147483647;
+const INT4_MAX = 2147483647;
 export const isId = v => Number.isInteger(v) && v >= 1 && v <= INT4_MAX;
 export function idParam(v, field = 'id') {
   const n = typeof v === 'string' && /^[0-9]{1,10}$/.test(v) ? Number(v) : NaN;

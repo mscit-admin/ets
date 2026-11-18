@@ -16,8 +16,8 @@
 import crypto from 'node:crypto';
 import { canon } from '../backup/config.js';
 
-export const MANIFEST_SCHEMA = 1;
-export const DEFAULT_FRESHNESS_DAYS = 14;
+const MANIFEST_SCHEMA = 1;
+const DEFAULT_FRESHNESS_DAYS = 14;
 const VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 const COMMIT_RE = /^[0-9a-f]{40}$/;
 const NONCE_RE = /^[0-9a-f]{16,128}$/;

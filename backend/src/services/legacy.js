@@ -28,7 +28,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || 0));
 
 // Items the file would leave «نجح» below 100 % by changing their test status or progress (1.8.1): the import's row
 // errors. An item already passed below 100 % that the file leaves as it is, is not one.
-export async function legacyPassErrors(c, p) {
+async function legacyPassErrors(c, p) {
   const rows = (await c.query('SELECT id, app_id, code, name_ar, name_en, item_type, progress, test_status FROM functions WHERE removed_at IS NULL')).rows;
   const list = [];
   for (const r of rows) {

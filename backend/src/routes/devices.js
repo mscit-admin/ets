@@ -33,7 +33,7 @@ r.post('/pair-code', authLimiter, requireAuth, async (req, res) => {
 
 r.use(requireAuth);
 
-export async function devicesOf(userId) {
+async function devicesOf(userId) {
   return (await query(`SELECT id, name, platform, app_version, created_at, last_seen_at, revoked_at, revoke_reason
     FROM mobile_devices WHERE user_id=$1 AND (revoked_at IS NULL OR revoked_at > now() - interval '30 days')
     ORDER BY revoked_at IS NOT NULL, created_at DESC`, [userId])).rows;

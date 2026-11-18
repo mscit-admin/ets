@@ -11,7 +11,7 @@ import { NOTE_MIN, NOTE_MAX } from './disable.js';
 export const REASON_MIN = NOTE_MIN, REASON_MAX = NOTE_MAX;
 // A reopen order is a small file; the whole JSON body is capped at LARGE_LIMIT (5 MB, middleware/body.js), and base64
 // inflates by ~⅓, so 3 MB of file bytes always fits with the reason alongside it.
-export const DOC_MAX_BYTES = 3 * 1024 * 1024;
+const DOC_MAX_BYTES = 3 * 1024 * 1024;
 
 export function parseReopenReason(raw) {
   const reason = typeof raw === 'string' ? raw.trim() : '';

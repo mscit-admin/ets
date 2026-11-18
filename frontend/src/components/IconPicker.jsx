@@ -4,7 +4,7 @@ import { Icon } from './Icon.jsx';
 
 // A broad set of icons for departments (emblems) and applications, drawn from lib/iconPaths.js — software /
 // infrastructure / delivery first, then general business icons. Shared by the structure screen's dialogs.
-export const CATALOG_ICONS = [
+const CATALOG_ICONS = [
   'server', 'database', 'cloud', 'network', 'cpu', 'code', 'terminal', 'monitor', 'mobile', 'wifi', 'plug', 'link',
   'shield', 'lock', 'key', 'layers', 'folder', 'deploy', 'rocket', 'wrench', 'sliders', 'factory', 'people', 'person',
   'coins', 'tag', 'crm', 'megaphone', 'briefcase', 'book', 'clipboard', 'chart', 'report', 'planning', 'target',

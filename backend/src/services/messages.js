@@ -19,7 +19,7 @@ import { onCommit } from '../db/pool.js';
 
 export const BODY_MAX = 4000;
 export const SUBJECT_MAX = 200;
-export const PREVIEW_LEN = 140;
+const PREVIEW_LEN = 140;
 
 const preview = s => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().slice(0, PREVIEW_LEN) : '');
 
@@ -32,7 +32,7 @@ function userDepts(user, apps) {
 
 // Can sender see / message target? Symmetric. Full scope on either side → yes; otherwise their department reaches
 // must overlap. Never lets a scoped sender reach a user outside their scope.
-export function canSeeUser(sender, target, apps) {
+function canSeeUser(sender, target, apps) {
   if (sender.id === target.id) return true;
   if (sender.fullScope || target.fullScope) return true;
   const a = userDepts(sender, apps), b = userDepts(target, apps);
@@ -81,7 +81,7 @@ export async function resolveAudience(sender, audience) {
 export const KINDS = ['message', 'alert'];
 export const normKind = k => (k === 'alert' ? 'alert' : 'message');
 // The two response statuses an alert recipient must choose from (1.12.29): «موافق على التنبيه» / «أنتظر — أعمل على المنصة».
-export const RESPONSE_STATUSES = ['ack', 'working'];
+const RESPONSE_STATUSES = ['ack', 'working'];
 
 // Create the broadcast + one thread per recipient + the initial post in each, in one transaction. kind: 'message'
 // (the default) or 'alert'. Fires a 'message_received' (or, for an alert, 'alert_received') alert to each recipient
