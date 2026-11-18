@@ -34,6 +34,9 @@ export const SETTING_RULES = {
   'logs.access_retention_days': v => Number.isInteger(v) && v >= 7 && v <= 3650,
   'app.org_name_ar': v => typeof v === 'string' && v.length <= 120,
   'app.org_name_en': v => typeof v === 'string' && v.length <= 120,
+  // copyright line shown in the footer of the system (Settings → General); empty hides the footer
+  'app.copyright_ar': v => typeof v === 'string' && v.length <= 200,
+  'app.copyright_en': v => typeof v === 'string' && v.length <= 200,
   'app.default_language': v => ['ar', 'en'].includes(v),
   'approval.edits_need_lead': v => typeof v === 'boolean',
   'app.logo_height': v => Number.isInteger(v) && v >= 20 && v <= 80,

@@ -195,6 +195,15 @@ function MaintenanceBanner() {
   );
 }
 
+// Copyright line in the footer of the system, set in Settings → General (empty hides it).
+function AppFooter() {
+  const { nm } = useI18n();
+  const { info } = useBranding();
+  const text = info ? nm({ name_ar: info.copyright_ar, name_en: info.copyright_en }) : '';
+  if (!text) return null;
+  return <footer className="app-foot">{text}</footer>;
+}
+
 export default function Layout() {
   const [open, setOpen] = useState(false);
   usePresenceReporter();          // online users (1.11.0): this tab's screen, for the administrators' list
@@ -204,7 +213,10 @@ export default function Layout() {
       <MaintenanceBanner />
       <div className="app-body">
         <Sidebar open={open} onClose={() => setOpen(false)} />
-        <main className="main"><ErrorBoundary><Suspense fallback={<Loading />}><Outlet /></Suspense></ErrorBoundary></main>
+        <main className="main">
+          <ErrorBoundary><Suspense fallback={<Loading />}><Outlet /></Suspense></ErrorBoundary>
+          <AppFooter />
+        </main>
       </div>
     </div>
   );

@@ -21,6 +21,7 @@ const r = Router();
 r.get('/public-info', async (req, res) => {
   const s = await allSettings();
   res.json({ org_name_ar: s['app.org_name_ar'], org_name_en: s['app.org_name_en'], default_language: s['app.default_language'],
+    copyright_ar: s['app.copyright_ar'] ?? '', copyright_en: s['app.copyright_en'] ?? '',
     branding: await brandingVersions(), logo_height: s['app.logo_height'], login_logo_height: s['app.login_logo_height'],
     // maintenance mode (1.12.38): the login screen shows the banner before anyone signs in. Only { enabled, message }.
     maintenance: await publicMaintenanceState() });

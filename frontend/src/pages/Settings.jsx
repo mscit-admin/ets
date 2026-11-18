@@ -21,6 +21,7 @@ const HASH_TAB = { timeline: 'general', notifications: 'notifications', backups:
 export default function Settings() {
   const { t, dir, errText, fmtDate } = useI18n();
   const { can, refresh, user } = useAuth();
+  const { reload: reloadBranding } = useBranding();   // refresh org name / copyright footer after a general save
   // The generic settings / system / schedule reads require 'cfg'. A project manager who holds only 'apv_final' may
   // open this page too (for the «مراحل المشروع» tab, which loads its own data), so those reads are skipped for them.
   const isCfg = can('cfg');
@@ -101,7 +102,7 @@ export default function Settings() {
         await api.put('/tracker/timeline', { start_date: tl.start_date || null, end_date: tl.end_date || null });
         sched.reload();
       }
-      toast(t('saved')); reload(); refresh();
+      toast(t('saved')); reload(); refresh(); reloadBranding?.();
     } catch (e) { setErr(e); }
     setBusy(false);
   };
@@ -148,6 +149,8 @@ export default function Settings() {
             <Field label={t('default_language')}>
               <select className="input" value={s['app.default_language']} onChange={e => set('app.default_language', e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select>
             </Field>
+            <Field label={t('copyright_ar')} hint={t('copyright_hint')}><input className="input" value={s['app.copyright_ar'] ?? ''} onChange={e => set('app.copyright_ar', e.target.value)} maxLength={200} /></Field>
+            <Field label={t('copyright_en')}><input className="input" dir="ltr" value={s['app.copyright_en'] ?? ''} onChange={e => set('app.copyright_en', e.target.value)} maxLength={200} /></Field>
           </div>
         </Card>
 
