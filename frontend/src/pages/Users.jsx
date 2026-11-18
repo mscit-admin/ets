@@ -9,6 +9,7 @@ import { UserNotifyCard } from '../components/UserNotify.jsx';
 import { UserImport } from './UserImport.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
 import { DeleteUsersDialog, RestoreUserDialog, undeletable } from '../components/DeleteUsers.jsx';
+import { useReauth, ReauthConfirm } from '../components/Reauth.jsx';
 import OnlineUsers from './OnlineUsers.jsx';
 
 // The Users screen has three top-level tabs: «المستخدمون» (active user management), «المستخدمون المحذوفون»
@@ -248,6 +249,7 @@ function UserFormInner({ id }) {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pwModal, setPwModal] = useState(false);
+  const [twoFaReset, setTwoFaReset] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -310,7 +312,7 @@ function UserFormInner({ id }) {
       <PageHeader title={isNew ? t('new_user') : u.full_name} sub={!isNew && <span dir="ltr">{u.username}</span>} icon="user">
         {!isNew && <>
           {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>}
-          {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => action('reset-2fa')}>{t('reset_2fa')}</button>}
+          {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setTwoFaReset(true)}>{t('reset_2fa')}</button>}
           {isLocked(u) && <button className="btn btn-default btn-sm" onClick={unlockUser}>{t('unlock')}</button>}
           {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}
           <span title={self ? t('del_self_tip') : undefined}>
@@ -432,6 +434,9 @@ function UserFormInner({ id }) {
       {!isNew && <UserNotifyCard u={u} self={self} onChanged={usr.reload} />}
 
       {pwModal && <ResetPassword id={id} onClose={() => setPwModal(false)} onDone={() => { setPwModal(false); usr.reload(); }} />}
+      {twoFaReset && <ReauthConfirm title={t('reset_2fa')} hint={t('reset_2fa_confirm')} confirmLabel={t('reset_2fa')}
+        onConfirm={async body => { await api.post(path`/users/${id}/reset-2fa`, body); toast(t('saved')); setTwoFaReset(false); usr.reload(); }}
+        onClose={() => setTwoFaReset(false)} />}
       {deleting && <DeleteUsersDialog users={[u]} onClose={() => setDeleting(false)} onDone={() => nav('/users', { replace: true })} />}
     </div>
   );
@@ -442,16 +447,20 @@ function ResetPassword({ id, onClose, onDone }) {
   const [pw, setPw] = useState('');
   const [must, setMust] = useState(true);
   const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const reauth = useReauth();
   const run = async () => {
-    try { await api.post(path`/users/${id}/reset-password`, { password: pw, must_change: must }); toast(t('saved')); onDone(); }
-    catch (e) { setErr(e); }
+    setBusy(true); setErr(null);
+    try { await api.post(path`/users/${id}/reset-password`, { password: pw, must_change: must, ...reauth.body }); toast(t('saved')); onDone(); }
+    catch (e) { setErr(e); setBusy(false); }
   };
   return (
     <Modal title={t('reset_password')} onClose={onClose}
-      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button><button className="btn btn-primary" onClick={run}>{t('save')}</button></>}>
+      footer={<><button className="btn btn-default" onClick={onClose}>{t('cancel')}</button><button className="btn btn-primary" onClick={run} disabled={busy || !pw || !reauth.ready}>{t('save')}</button></>}>
       {err && <Alert>{errText(err)}</Alert>}
       <Field label={t('new_password')} hint={t('password_hint')}><input className="input" type="password" dir="ltr" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} /></Field>
       <label className="check"><input type="checkbox" checked={must} onChange={e => setMust(e.target.checked)} /> {t('must_change_pw_next')}</label>
+      {reauth.node}
     </Modal>
   );
 }

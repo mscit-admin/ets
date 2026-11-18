@@ -41,6 +41,9 @@ r.get('/summary', async (req, res) => res.json(await summaryData(req.user)));
 // which is a single permission). The dashboard chart itself is gated separately, by prj_view (see summaryData).
 function requirePhasesAccess(req) {
   if (!(hasPerm(req.user, 'cfg') || hasPerm(req.user, 'apv_final'))) throw new HttpError(403, 'forbidden', { permission: 'cfg' });
+  // project.phases is a project-wide setting: require full scope, consistent with /weights, /schedule and /timeline,
+  // so a department-scoped user who was given cfg/apv_final as an override cannot edit the project-wide model.
+  if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope');
 }
 
 r.get('/project-phases', async (req, res) => {

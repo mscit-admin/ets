@@ -114,7 +114,7 @@ test('usr is for administrators only; no self-grant (ETS-SEC-004, P3-AUTHZ-01)',
   const adm = await root.post('/users', { username: 'admin2', full_name: 'Second Admin', role_id: 'admin', password: 'Second-Admin-2026', must_change_password: false });
   assert.equal(adm.status, 201);
   ids.admin2 = adm.data.user.id;
-  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'Second-Admin-2027', must_change: false })).status, 200);
+  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'Second-Admin-2027', must_change: false, reauth_password: 'Passw0rd-123' })).status, 200);
   assert.equal((await root.post('/users/bulk-2fa', { user_ids: [ids.member0], exempt: true })).status, 200);
   // demoting an admin drops a stored 'usr' grant
   await pool.query(`INSERT INTO user_permissions(user_id,permission,granted) VALUES ($1,'usr',true)`, [ids.admin2]);
@@ -369,11 +369,17 @@ test('Phase 7 leftovers: bulk-2fa self, duplicate overrides, own password reset 
   assert.equal(r.status, 400); assert.equal(r.data.error, 'invalid_permission');
   assert.equal((await pool.query(`SELECT count(*)::int n FROM users WHERE username='dupe1'`)).rows[0].n, 0);
   // V2-N5: an administrator's own password changes through /auth/change-password (current password asked)
-  r = await root.post(`/users/${ids.root}/reset-password`, { password: 'Self-Reset-2026x', must_change: false });
+  r = await root.post(`/users/${ids.root}/reset-password`, { password: 'Self-Reset-2026x', must_change: false, reauth_password: 'Passw0rd-123' });
   assert.equal(r.status, 400); assert.equal(r.data.error, 'use_change_password');
   assert.equal((await root.get('/auth/me')).status, 200);                  // nothing changed, session still valid
   await as('root');                                                       // old password still works
-  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'Second-Admin-2028', must_change: false })).status, 200);
+  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'Second-Admin-2028', must_change: false, reauth_password: 'Passw0rd-123' })).status, 200);
+  // F1 step-up: the sensitive admin actions are refused without valid re-authentication (the admin's own password)
+  assert.equal((await root.post(`/users/${ids.admin2}/reset-password`, { password: 'No-Reauth-2029', must_change: false })).data.error, 'wrong_password');
+  assert.equal((await root.post(`/users/${ids.admin2}/reset-2fa`, { reauth_password: 'wrong-pw' })).data.error, 'wrong_password');
+  assert.equal((await root.post('/users/bulk-delete', { ids: [ids.admin2], reason: 'no reauth attempt here' })).data.error, 'wrong_password');
+  await pool.query(`UPDATE users SET failed_attempts=0, locked_until=NULL WHERE username='root'`);   // clear the reauth-failure counter
+  assert.equal((await root.get(`/users/${ids.admin2}`)).status, 200);     // admin2 still exists — nothing happened
 });
 
 test('partial readers: batch figures and pending counts follow the scope (V2-N2, V2-N3)', { skip }, async () => {

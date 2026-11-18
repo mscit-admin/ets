@@ -304,7 +304,12 @@ test('users: create, last-admin protection, reset password', { skip }, async () 
   assert.equal((await c.post('/users', { username: 'fin.mgr', full_name: 'X', role_id: 'obs', password: 'Finance-2026x' })).data.error, 'username_taken');
   const rootId = (await pool.query(`SELECT id FROM users WHERE username='root'`)).rows[0].id;
   assert.equal((await c.patch('/users/' + rootId, { role_id: 'obs' })).data.error, 'cannot_change_own_role');
-  const r = await c.post(`/users/${created.data.user.id}/reset-password`, { password: 'Another-2026x' });
+  // root was enrolled in 2FA by an earlier test, so the step-up re-auth (F1) needs a current code too; clear
+  // totp_last_step first so the fresh code is not rejected by the replay guard (same as the freshCode helper)
+  const { decrypt } = await import('../src/services/crypto.js');
+  await pool.query(`UPDATE users SET totp_last_step=NULL WHERE username='root'`);
+  const rootSecret = decrypt((await pool.query(`SELECT totp_secret FROM users WHERE username='root'`)).rows[0].totp_secret);
+  const r = await c.post(`/users/${created.data.user.id}/reset-password`, { password: 'Another-2026x', reauth_password: 'Passw0rd-123', code: totp(rootSecret) });
   assert.equal(r.status, 200);
   assert.equal((await client().login('fin.mgr', 'Another-2026x')).status, 200);
   // a non-admin cannot reach user management

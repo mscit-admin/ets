@@ -326,7 +326,7 @@ test('a deleted user disappears from the list', { skip }, async () => {
   await c.report('dashboard');
   assert.ok(await row(c.sessionId));
   const admin = await signedIn('root');
-  const r = await admin.del('/users/' + ids.gone, { reason: 'left the project' });
+  const r = await admin.del('/users/' + ids.gone, { reason: 'left the project', reauth_password: 'Passw0rd-123' });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(await row(c.sessionId), undefined);
   assert.ok(!(await admin.get('/presence')).data.rows.some(x => x.user.id === ids.gone));

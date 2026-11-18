@@ -319,7 +319,7 @@ test('ETS-SEC-018/055: admin 2FA reset ends the user\'s sessions; a pending 2FA 
   assert.equal((await pending.login('rh')).data.stage, 'verify');
   const admin = client();
   assert.equal((await admin.login('boss')).data.stage, 'done');
-  assert.equal((await admin.post(`/users/${(await user('rh')).id}/reset-2fa`)).status, 200);
+  assert.equal((await admin.post(`/users/${(await user('rh')).id}/reset-2fa`, { reauth_password: PW })).status, 200);
   assert.equal((await victim.get('/tracker/summary')).status, 401);
   const r = await pending.post('/auth/2fa/verify', { code: '123456' });
   assert.equal(r.status, 401);                                           // partial session revoked as well

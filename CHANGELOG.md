@@ -30,6 +30,26 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.67] — 2026-11-18 — Security hardening: step-up re-auth on admin user actions / تحصين أمني
+
+### Security
+
+- **Step-up re-authentication on sensitive user-administration actions** (finding F1, Medium). Resetting another
+  user's password, resetting their two-step verification, and deleting a user (single or bulk) now require the
+  administrator to re-enter their **own password** (plus a current 2FA code when they have 2FA), mirroring the backup
+  routes. This stops a hijacked or left-open admin session from taking over accounts without re-proving identity. A
+  re-auth prompt was added to the reset-password, reset-2FA and delete dialogs.
+- **`project.phases` now requires full scope** (finding F2, Low): the project-wide phases setting is guarded with
+  `fullScope` like the other project-wide writers (`/weights`, `/schedule`, `/timeline`), so a department-scoped user
+  who was granted `cfg`/`apv_final` as an override cannot edit the project-wide model.
+
+### Upgrade notes
+
+- No migration. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). After upgrading, administrators are
+  asked for their password (and 2FA code if enabled) when resetting a password/2FA or deleting a user.
+
+---
+
 ## [1.12.66] — 2026-11-18 — Configurable copyright footer / تذييل حقوق النشر القابل للتعديل
 
 ### Added
@@ -3575,7 +3595,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/7196349...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/2208253...HEAD
+[1.12.67]: https://github.com/mscit-admin/ets/compare/7196349...2208253
 [1.12.66]: https://github.com/mscit-admin/ets/compare/6043fa2...7196349
 [1.12.65]: https://github.com/mscit-admin/ets/compare/cd0e8aa...6043fa2
 [1.12.64]: https://github.com/mscit-admin/ets/compare/61a2556...cd0e8aa

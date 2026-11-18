@@ -13,6 +13,7 @@ import { matchList, matchOne, roleIndex, languageIndex, placeIndex } from '../ut
 import { revokeDevices } from '../services/devices.js';
 import { requestsSettled, accountUnlocked, accountReactivated } from '../services/notify-events.js';
 import { isDelayed } from '../services/lockout.js';
+import { reauth } from './auth.js';
 import { publishNotif } from '../services/live.js';
 import { TYPES, isLockedCell } from '../services/notify-catalog.js';
 
@@ -444,7 +445,16 @@ r.patch('/:id', async (req, res) => {
   res.json({ user: await loadUser(id) });
 });
 
+// Step-up re-authentication for the most sensitive admin actions (reset another user's password, reset their 2FA,
+// delete an account): the administrator must re-enter their OWN password, plus a 2FA code when they have 2FA on, so a
+// hijacked/left-open admin session cannot take over accounts. Mirrors the backup routes' twoFactor() guard. The
+// admin's password arrives as `reauth_password` (the body's `password` is the target user's new password); the 2FA
+// code / recovery code arrive as `code` / `recovery_code` (read by reauth()).
+const stepUp = req => reauth(req, { password: req.body?.reauth_password, secondFactor: true,
+  events: ['user_admin_reauth_bad_password', 'user_admin_reauth_bad_code'] });
+
 r.post('/:id/reset-password', async (req, res) => {
+  await stepUp(req);
   const id = idParam(req.params.id);
   // an administrator changes their own password through /auth/change-password, which asks for the current
   // one: a hijacked session must not be able to set a new password without it (V2-N5)
@@ -465,6 +475,7 @@ r.post('/:id/reset-password', async (req, res) => {
 
 // Removes the user's authenticator; they enrol again on next login if 2FA is required.
 r.post('/:id/reset-2fa', async (req, res) => {
+  await stepUp(req);
   const id = idParam(req.params.id);
   const u = await loadUser(id);
   await tx(async c => {
@@ -638,6 +649,7 @@ async function closedContext(c, req, kind, row, reason) {
 }
 
 async function deleteUsers(req, ids, reason, { bulk }) {
+  await stepUp(req);                                  // the admin re-authenticates before any account is deleted
   const out = await tx(async c => {
     // the administrators and the users concerned are locked first (same order as PATCH, see lockAdmins)
     await c.query(`SELECT id FROM users WHERE role_id='admin' OR id = ANY($1) ORDER BY id FOR UPDATE`, [ids]);

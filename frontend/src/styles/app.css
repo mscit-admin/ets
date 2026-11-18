@@ -232,6 +232,8 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .main { flex: 1; min-width: 0; padding: 18px 26px 60px; max-width: 1320px; }
 .app-foot { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center;
   font-size: 12px; color: var(--text-muted); }
+/* step-up re-auth fields appended to a sensitive admin dialog */
+.reauth-fields { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
 .only-mobile { display: none; }
 
 /* ---------- page ---------- */

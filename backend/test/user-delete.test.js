@@ -134,10 +134,10 @@ test('a reason of 3–500 characters is required (400)', { skip }, async () => {
 
 test('nobody deletes themselves; the last administrator is never deleted', { skip }, async () => {
   const root = await as('root');
-  const self = await root.del('/users/' + ids.root, { reason: REASON });
+  const self = await root.del('/users/' + ids.root, { reason: REASON, reauth_password: PW });
   assert.equal(self.status, 400);
   assert.equal(self.data.error, 'cannot_delete_self');
-  const selfBulk = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.root], reason: REASON });
+  const selfBulk = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.root], reason: REASON, reauth_password: PW });
   assert.equal(selfBulk.status, 400);
   assert.equal(selfBulk.data.error, 'bulk_delete_refused');
   assert.deepEqual(selfBulk.data.errors.map(e => [e.id, e.error]), [[ids.root, 'cannot_delete_self']]);
@@ -146,17 +146,17 @@ test('nobody deletes themselves; the last administrator is never deleted', { ski
   // root2 is the last effective admin and cannot be deleted, even by root (who still holds usr + admin role)
   await pool.query(`INSERT INTO user_permissions(user_id, permission, granted) VALUES ($1,'cfg',false)`, [ids.root]);
   try {
-    const last = await root.del('/users/' + ids.root2, { reason: REASON });
+    const last = await root.del('/users/' + ids.root2, { reason: REASON, reauth_password: PW });
     assert.equal(last.status, 400);
     assert.equal(last.data.error, 'last_admin');
-    const lastBulk = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.root2], reason: REASON });
+    const lastBulk = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.root2], reason: REASON, reauth_password: PW });
     assert.equal(lastBulk.data.error, 'bulk_delete_refused');
     assert.deepEqual(lastBulk.data.errors.map(e => [e.id, e.error]), [[ids.root2, 'last_admin']]);
   } finally {
     await pool.query(`DELETE FROM user_permissions WHERE user_id=$1`, [ids.root]);
   }
   assert.equal((await one('SELECT count(*)::int AS n FROM users WHERE deleted_at IS NOT NULL')).n, 0);
-  assert.equal((await root.del('/users/2000000000', { reason: REASON })).status, 404);
+  assert.equal((await root.del('/users/2000000000', { reason: REASON, reauth_password: PW })).status, 404);
   assert.equal((await root.del('/users/abc', { reason: REASON })).status, 400);
 });
 
@@ -172,7 +172,7 @@ test('single delete: login refused, sessions and live stream end, hidden, histor
   await pool.query('UPDATE functions SET updated_by=$2, disabled_by=$2 WHERE id=$1', [f.id, ids.salem]);
   const auditBefore = (await one('SELECT count(*)::int AS n FROM audit_log WHERE user_id=$1', [ids.salem])).n;
 
-  const r = await root.del('/users/' + ids.salem, { reason: '  ' + REASON + '  ' });
+  const r = await root.del('/users/' + ids.salem, { reason: '  ' + REASON + '  ', reauth_password: PW });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.deepEqual(r.data.deleted, [{ id: ids.salem, username: 'salem' }]);
 
@@ -198,14 +198,14 @@ test('single delete: login refused, sessions and live stream end, hidden, histor
   assert.ok(!list.some(u => u.id === ids.salem));
   assert.equal((await root.get('/users/' + ids.salem)).status, 404);
   assert.equal((await root.patch('/users/' + ids.salem, { full_name: 'x' })).status, 404);
-  assert.equal((await root.post(`/users/${ids.salem}/reset-password`, { password: 'Another-Passw0rd-1' })).status, 404);
+  assert.equal((await root.post(`/users/${ids.salem}/reset-password`, { password: 'Another-Passw0rd-1', reauth_password: PW })).status, 404);
   const deleted = (await root.get('/users?deleted=1')).data.users;
   const d = deleted.find(u => u.id === ids.salem);
   assert.equal(d.delete_reason, REASON);
   assert.equal(d.deleted_by_name, 'Full root');
   assert.equal(d.username_taken, false);
   // deleting again: already deleted
-  const again = await root.del('/users/' + ids.salem, { reason: REASON });
+  const again = await root.del('/users/' + ids.salem, { reason: REASON, reauth_password: PW });
   assert.equal(again.status, 400);
   assert.equal(again.data.error, 'already_deleted');
   // history: names still resolve
@@ -273,7 +273,7 @@ test('pending requests and import files of a deleted user are closed with an aud
   const lead = await as('lead_hr');
   assert.ok((await lead.get('/approvals?status=pending')).data.requests.some(x => x.id === rqId));
 
-  const d = await root.del('/users/' + ids.member_hr, { reason: REASON });
+  const d = await root.del('/users/' + ids.member_hr, { reason: REASON, reauth_password: PW });
   assert.equal(d.status, 200, JSON.stringify(d.data));
   assert.equal(d.data.requests_withdrawn, 1);
   assert.equal(d.data.imports_rejected, 1);
@@ -304,7 +304,7 @@ test('pending requests and import files of a deleted user are closed with an aud
 test('bulk delete is all or nothing, with the reason of each refused id', { skip }, async () => {
   const root = await as('root');
   const before = (await one('SELECT count(*)::int AS n FROM audit_log')).n;
-  const bad = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.bulk2, ids.salem, 1999999999, ids.root], reason: REASON });
+  const bad = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.bulk2, ids.salem, 1999999999, ids.root], reason: REASON, reauth_password: PW });
   assert.equal(bad.status, 400);
   assert.equal(bad.data.error, 'bulk_delete_refused');
   assert.deepEqual(bad.data.errors.map(e => [e.id, e.error]),
@@ -313,7 +313,7 @@ test('bulk delete is all or nothing, with the reason of each refused id', { skip
   assert.equal((await one('SELECT count(*)::int AS n FROM audit_log')).n, before, 'nothing written');
 
   const b1 = await as('bulk1');
-  const ok = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.bulk2], reason: REASON });
+  const ok = await root.post('/users/bulk-delete', { ids: [ids.bulk1, ids.bulk2], reason: REASON, reauth_password: PW });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.deepEqual(ok.data.deleted.map(x => x.username), ['bulk1', 'bulk2']);
   assert.equal((await b1.get('/auth/me')).data.authenticated, false);
@@ -349,7 +349,7 @@ test('the username (and e-mail) of a deleted user can be used again; restore nee
   const r409 = await root.post(`/users/${ids.salem}/restore`, { reason: 'came back' });
   assert.equal(r409.status, 409);
   assert.equal(r409.data.error, 'username_taken');
-  assert.equal((await root.del('/users/' + newId, { reason: 'test account' })).status, 200);
+  assert.equal((await root.del('/users/' + newId, { reason: 'test account', reauth_password: PW })).status, 200);
   assert.equal((await root.post(`/users/${ids.salem}/restore`, { reason: 'x' })).status, 400);       // reason required
   const ok = await root.post(`/users/${ids.salem}/restore`, { reason: 'came back' });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
