@@ -53,14 +53,14 @@ export default function Weights() {
 
   return (
     <div>
-      <PageHeader title={t('weights_title')} icon="scale">
-        <ExportButton report="weights" />
-        {global && <button className="btn btn-default btn-sm" onClick={reset}>{t('reset_defaults')}</button>}
-        {editable && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
+      <PageHeader title={t('weights_title')} icon="scale" help="hb_weights_head">
+        <span data-help="hb_weights_export" data-help-title="export_xlsx"><ExportButton report="weights" /></span>
+        {global && <button className="btn btn-default btn-sm" onClick={reset} data-help="hb_weights_reset" data-help-title="reset_defaults">{t('reset_defaults')}</button>}
+        {editable && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy} data-help="hb_weights_save" data-help-title="save">{busy ? t('saving') : t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
       {s && (
-        <Card title={t('sec_calc')}>
+        <Card title={t('sec_calc')} help="hb_weights_calc">
           <div className="form-grid">
             <Field label={t('weight_mode')}>
               <select className="input" value={s.weight_mode} disabled={!global} onChange={e => setS({ ...s, weight_mode: e.target.value })}>
@@ -83,7 +83,7 @@ export default function Weights() {
         const apps = data.applications.filter(a => a.department_id === d.id);
         const dw = apps.reduce((acc, a) => acc + (auto ? a.fnWeight : +w[a.id] || 0), 0);
         return (
-          <Card key={d.id} title={nm(d)} actions={<span className="muted small">{t('weight')} <b className="num">{pc(dw)}</b> · <b className="num">{pc(total ? (dw / total) * 100 : 0)}%</b></span>}>
+          <Card key={d.id} title={nm(d)} help="hb_weights_table" actions={<span className="muted small">{t('weight')} <b className="num">{pc(dw)}</b> · <b className="num">{pc(total ? (dw / total) * 100 : 0)}%</b></span>}>
             <div className="table-wrap">
             <table className="table wgt-table">
               <thead><tr><th>{t('application')}</th><th className="num-col">{t('default_weight')}</th><th className="num-col">{t('fn_weight_sum')}</th><th className="num-col">{t('weight')}</th><th className="num-col">{t('share')}</th></tr></thead>

@@ -113,7 +113,7 @@ export function UserImport({ onClose, onDone }) {
 
       {step !== 'done' && <>
         <p className="muted small">{t('imp_intro', { max: MAX_ROWS })}</p>
-        <div className="row gap wrap mb">
+        <div className="row gap wrap mb" data-help="hb_userimport_template" data-help-title="hb_userimport_template_t">
           <span className="small"><b>{t('imp_template')}:</b></span>
           <button className="btn btn-default btn-sm" disabled={!meta.data} onClick={() => downloadTemplate('xlsx', meta.data, t, lang).catch(e => setErr(e))}>
             <Icon name="download" size={14} /> Excel (.xlsx)</button>
@@ -122,14 +122,14 @@ export function UserImport({ onClose, onDone }) {
         </div>
         {meta.data && <HelpLists meta={meta.data} />}
         <Field label={t('imp_choose_file')} hint={t('imp_file_hint')}>
-          <input className="input" type="file" accept=".xlsx,.csv" disabled={busy} onChange={e => { choose(e.target.files[0]); e.target.value = ''; }} />
+          <input className="input" type="file" accept=".xlsx,.csv" disabled={busy} data-help="hb_userimport_file" data-help-title="hb_userimport_file_t" onChange={e => { choose(e.target.files[0]); e.target.value = ''; }} />
         </Field>
         {file && <p className="muted small" dir="ltr">{file.name}</p>}
         {busy && step === 'choose' && <Loading />}
       </>}
 
       {step === 'preview' && check && <>
-        <div className="row gap wrap mb">
+        <div className="row gap wrap mb" data-help="hb_userimport_preview" data-help-title="hb_userimport_preview_t">
           <Indicator color="green">{t('imp_ok_n', { n: check.ok })}</Indicator>
           {check.errors > 0 && <Indicator color="red">{t('imp_errors_n', { n: check.errors })}</Indicator>}
           {check.errors > 0 && <>
@@ -141,7 +141,7 @@ export function UserImport({ onClose, onDone }) {
         {check.errors > 0 ? <Alert kind="orange">{t('imp_fix_and_retry')}</Alert> : <Alert kind="green">{t('imp_ready', { n: rows.length })}</Alert>}
         {busy && <Alert kind="blue">{t('imp_creating_hint')}</Alert>}
         <div className="table-wrap imp-table">
-          <table className="table">
+          <table className="table" data-help="hb_userimport_preview_table" data-help-title="hb_userimport_preview_table_t">
             <thead><tr><th>{t('imp_line')}</th><th>{t('username')}</th><th>{t('full_name')}</th><th>{t('role')}</th>
               <th>{t('language')}</th><th>{t('imp_departments')}</th><th>{t('imp_applications')}</th><th>{t('status')}</th></tr></thead>
             <tbody>
@@ -176,7 +176,7 @@ export function UserImport({ onClose, onDone }) {
       {step === 'done' && created && <>
         <Alert kind="orange"><b>{t('imp_passwords_once')}</b></Alert>
         <p className="small">{t('imp_passwords_hint', { n: created.length })}</p>
-        <div className="row gap wrap mb">
+        <div className="row gap wrap mb" data-help="hb_userimport_passwords" data-help-title="hb_userimport_passwords_t">
           <button className="btn btn-default btn-sm" onClick={copyPasswords}><Icon name="note" size={14} /> {t('copy')}</button>
           <button className="btn btn-default btn-sm" onClick={() => savePasswords('xlsx').catch(e => setErr(e))}><Icon name="download" size={14} /> {t('download')} (.xlsx)</button>
           <button className="btn btn-default btn-sm" onClick={() => savePasswords('csv')}><Icon name="download" size={14} /> {t('download')} (.csv)</button>
@@ -196,7 +196,7 @@ export function UserImport({ onClose, onDone }) {
 function HelpLists({ meta }) {
   const { t, nm } = useI18n();
   return (
-    <details className="imp-help mb">
+    <details className="imp-help mb" data-help="hb_userimport_ids" data-help-title="hb_userimport_ids_t">
       <summary>{t('imp_help_title')}</summary>
       <p className="muted small">{t('imp_help_text')}</p>
       <div className="imp-help-grid">

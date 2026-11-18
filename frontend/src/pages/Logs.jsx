@@ -160,14 +160,14 @@ export default function Logs() {
 
   return (
     <div>
-      <PageHeader title={t('logs_title')} icon="logs">
+      <PageHeader title={t('logs_title')} icon="logs" help="hb_logs_head">
         {admin && (
           <button className="btn btn-default btn-sm" onClick={verify} disabled={integrity?.busy}>
             <Icon name="check" size={14} /> {t('verify_integrity')}
           </button>
         )}
         {/* every export needs 'exp' as well as 'log' (export policy); the server checks both */}
-        {can('exp') && <a className="btn btn-default btn-sm" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>}
+        {can('exp') && <a className="btn btn-default btn-sm" data-help="hb_logs_export" data-help-title="hb_logs_export_t" href={'/api' + path`/logs/${type}/export` + qs(applied)}><Icon name="download" size={14} /> {t('export_csv')}</a>}
         <ExportButton report="log" params={{ type, ...applied }} />
       </PageHeader>
       {can('exp') && <FunctionChangesExport />}
@@ -192,11 +192,11 @@ export default function Logs() {
           {stats.data.log_write_failures > 0 && <NumberCard label={t('log_write_failures')} value={stats.data.log_write_failures} color="red" />}
         </div>
       )}
-      <div className="tabs">
+      <div className="tabs" data-help="hb_logs_tabs" data-help-title="hb_logs_tabs_t">
         {types.map(k => <button key={k} className={'tab' + (k === type ? ' active' : '')} onClick={() => switchType(k)}>{t('log_' + k)}</button>)}
       </div>
       <Card>
-        <form className="filter-bar" onSubmit={e => { e.preventDefault(); setPage(1); setApplied(f); }}>
+        <form className="filter-bar" data-help="hb_logs_filters" data-help-title="hb_logs_filters_t" onSubmit={e => { e.preventDefault(); setPage(1); setApplied(f); }}>
           <input className="input input-sm" placeholder={t('filter') + '…'} value={f.q} onChange={e => setF({ ...f, q: e.target.value })} />
           <label className="inline-field">{t('from')} <input className="input input-sm" type="date" value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></label>
           <label className="inline-field">{t('to')} <input className="input input-sm" type="date" value={f.to} onChange={e => setF({ ...f, to: e.target.value })} /></label>
@@ -216,7 +216,7 @@ export default function Logs() {
         </form>
         {loading && !data ? <Loading /> : error ? <ErrorBox error={error} /> : !data.rows.length ? <Empty /> : (
           <div className="table-wrap">
-            <table className="table list-view clickable">
+            <table className="table list-view clickable" data-help="hb_logs_table" data-help-title="hb_logs_table_t">
               <thead><tr>{cols.map(([k]) => <th key={k}>{t(k)}</th>)}</tr></thead>
               <tbody>{data.rows.map(r => <tr key={r.id} onClick={() => setDetail(r)}>{cols.map(([k, fn]) => <td key={k}>{fn(r)}</td>)}</tr>)}</tbody>
             </table>

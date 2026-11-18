@@ -48,12 +48,12 @@ export function ImportList() {
   if (error) return <ErrorBox error={error} />;
   return (
     <div>
-      <PageHeader title={t('imports_title')} sub={t('imports_sub')} icon="upload">
+      <PageHeader title={t('imports_title')} sub={t('imports_sub')} icon="upload" help="hb_imports_head">
         <ExportButton report="imports" params={{ status }} />
-        {data.can_import && <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}><Icon name="upload" size={14} /> {t('import_file')}</button>}
+        {data.can_import && <button className="btn btn-primary btn-sm" data-help="hb_imports_upload" data-help-title="hb_imports_upload_t" onClick={() => setOpen(true)}><Icon name="upload" size={14} /> {t('import_file')}</button>}
       </PageHeader>
       <Alert kind="blue">{t('two_approvals_hint')}</Alert>
-      <Card>
+      <Card help="hb_imports_list" helpTitle="hb_imports_list_t">
         <div className="filter-bar">
           <select className="input input-sm" value={status} onChange={e => setStatus(e.target.value)} aria-label={t('status')}>
             <option value="">{t('status')}: {t('all')}</option>
@@ -215,12 +215,12 @@ export function ImportDetail() {
     <div>
       <div className="breadcrumb"><Link to="/imports">{t('nav_imports')}</Link><Icon name="chevron" size={12} className="flip" /><span>{t('batch')} #{b.id}</span></div>
       <PageHeader title={`${t('batch')} #${b.id} — ${targetLabel(b, t, nm)}`}
-        sub={<>{t('uploaded_by')}: {b.uploaded_by_name} · {fmtDate(b.uploaded_at)}{b.filename && <> · <span dir="ltr">{b.filename}</span></>}</>} icon="upload">
+        sub={<>{t('uploaded_by')}: {b.uploaded_by_name} · {fmtDate(b.uploaded_at)}{b.filename && <> · <span dir="ltr">{b.filename}</span></>}</>} icon="upload" help="hb_imports_detail_head">
         <Indicator color={STATUS_COLOR[b.status]}>{t('st_' + b.status)}</Indicator>
         <ExportButton report="import_detail" params={{ id: b.id }} />
-        {b.can.approve_lead && <button className="btn btn-primary btn-sm" onClick={() => setDlg({ mode: 'lead' })}>{t('approve')} — {t('approval_lead')}</button>}
-        {b.can.approve_final && <button className="btn btn-primary btn-sm" onClick={() => setDlg({ mode: 'final' })}>{t('approve')} — {t('approval_final')}</button>}
-        {b.can.reject && <button className="btn btn-default btn-sm" onClick={() => setDlg({ mode: 'reject' })}>{t('reject')}</button>}
+        {b.can.approve_lead && <button className="btn btn-primary btn-sm" data-help="hb_imports_approve_lead" data-help-title="hb_imports_approve_lead_t" onClick={() => setDlg({ mode: 'lead' })}>{t('approve')} — {t('approval_lead')}</button>}
+        {b.can.approve_final && <button className="btn btn-primary btn-sm" data-help="hb_imports_approve_final" data-help-title="hb_imports_approve_final_t" onClick={() => setDlg({ mode: 'final' })}>{t('approve')} — {t('approval_final')}</button>}
+        {b.can.reject && <button className="btn btn-default btn-sm" data-help="hb_imports_reject" data-help-title="hb_imports_reject_t" onClick={() => setDlg({ mode: 'reject' })}>{t('reject')}</button>}
       </PageHeader>
 
       {b.status === 'pending' && <Alert kind="orange">{t('two_approvals_hint')}</Alert>}
@@ -236,7 +236,7 @@ export function ImportDetail() {
             </tbody>
           </table>
         </Card>
-        <Card title={t('approvals')}>
+        <Card title={t('approvals')} help="hb_imports_signatures">
           <div className="signs">
             <Signature label={t('approval_lead')} who={b.lead_by_name} at={b.lead_at} note={b.lead_note} />
             <Signature label={t('approval_final')} who={b.final_by_name} at={b.final_at} note={b.final_note} />

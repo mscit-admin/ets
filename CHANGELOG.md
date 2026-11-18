@@ -30,6 +30,31 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.74] — 2026-11-18 — Learning assistant flies to the element + full-screen coverage / المساعد يطير إلى العنصر وتغطية كل الشاشات
+
+### Changed
+
+- **Frontend**: the help assistant now **flies next to the element being explained** instead of staying in its
+  corner. On a click in explain-mode the robot animates (smooth `top`/`left` transition) to the element, shows its
+  explanation in a bubble beside it, keeps the element outlined while explaining, follows it on scroll/resize, and
+  flies back to its home corner on exit. Bubble placement (side/vertical) is chosen to stay within the viewport.
+
+### Added
+
+- **Frontend**: help-assistant explanations now cover **every authenticated screen** (first pass, section/primary-
+  control level). Newly tagged: Dashboard, Weights, Schedule, Search, Department, Application, Reports, Online users,
+  Users (+ user form, roles/permissions/scope, deleted users), User import, Profile (incl. password & 2FA),
+  Notifications, Approvals, Imports (two-signature flow), Logs (tabs/filters/export), Messages (inbox/alerts/compose),
+  and the full Settings screen (all tabs). ~195 bilingual (AR/EN) explanation strings, organised per area under
+  `src/i18n/help/*` and merged into the i18n dictionary. `PageHeader`/`Card`/`NumberCard` forward `help`/`helpTitle`;
+  other elements opt in with `data-help`.
+
+### Upgrade notes
+
+- None. Frontend-only; no API, database or deployment change.
+
+---
+
 ## [1.12.73] — 2026-11-18 — Learning assistant (flying professor robot) / المساعد التعليمي (الروبوت الأستاذ الطائر)
 
 ### Added
@@ -3749,7 +3774,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/221d587...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/728c71d...HEAD
+[1.12.74]: https://github.com/mscit-admin/ets/compare/221d587...728c71d
 [1.12.73]: https://github.com/mscit-admin/ets/compare/02d26d4...221d587
 [1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...02d26d4
 [1.12.71]: https://github.com/mscit-admin/ets/compare/bfaa11f...38afb67

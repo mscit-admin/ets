@@ -30,7 +30,7 @@ export function UserList() {
   const setTab = v => setParams(v === 'users' ? {} : { tab: v });
   return (
     <div>
-      <div className="tabs" role="tablist">
+      <div className="tabs" role="tablist" data-help="hb_users_tabs" data-help-title="hb_users_tabs_t">
         <button type="button" role="tab" aria-selected={tab === 'users'} className={'tab' + (tab === 'users' ? ' active' : '')}
           onClick={() => setTab('users')}>{t('nav_users')}</button>
         <button type="button" role="tab" aria-selected={tab === 'deleted'} className={'tab' + (tab === 'deleted' ? ' active' : '')}
@@ -75,13 +75,13 @@ function DeletedUsers() {
   if (error) return <ErrorBox error={error} />;
   return (
     <div>
-      <PageHeader title={t('users_title')} icon="users">
+      <PageHeader title={t('users_title')} icon="users" help="hb_users_deleted_head">
         <ExportButton report="users" params={{ deleted: 1 }} adminOnly />
       </PageHeader>
       <Card>
         {!data.users.length ? <p className="muted">{t('no_deleted_users')}</p> : (
           <div className="table-wrap">
-            <table className="table list-view">
+            <table className="table list-view" data-help="hb_users_deleted_table" data-help-title="hb_users_deleted_table_t">
               <thead>
                 <tr>
                   <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('deleted_at')}</th>
@@ -101,7 +101,8 @@ function DeletedUsers() {
                       <td className="small del-reason-cell">{u.delete_reason}</td>
                       <td>
                         <span title={blocked ? t(blocked) : undefined}>
-                          <button className="btn btn-default btn-sm" disabled={!!blocked} onClick={() => setRestoring(u)}>
+                          <button className="btn btn-default btn-sm" disabled={!!blocked} onClick={() => setRestoring(u)}
+                            data-help="hb_users_restore" data-help-title="hb_users_restore_t">
                             <Icon name="restore" size={14} /> {t('restore_user')}
                           </button>
                         </span>
@@ -149,18 +150,18 @@ function UsersManage() {
 
   return (
     <div>
-      <PageHeader title={t('users_title')} icon="users">
+      <PageHeader title={t('users_title')} icon="users" help="hb_users_head">
         {online.data && (
           <Link to="/users?tab=online" className="btn btn-ghost btn-sm" title={t('ou_title')}>
             <Indicator color={online.data.online ? 'green' : 'gray'}>{t('ou_now_online', { n: online.data.online })}</Indicator>
           </Link>
         )}
         <ExportButton report="users" adminOnly />
-        <button className="btn btn-default btn-sm" onClick={() => setImporting(true)}><Icon name="upload" size={14} /> {t('imp_button')}</button>
-        <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')}><Icon name="plus" size={14} /> {t('new_user')}</button>
+        <button className="btn btn-default btn-sm" onClick={() => setImporting(true)} data-help="hb_users_import" data-help-title="hb_users_import_t"><Icon name="upload" size={14} /> {t('imp_button')}</button>
+        <button className="btn btn-primary btn-sm" onClick={() => nav('/users/new')} data-help="hb_users_new" data-help-title="hb_users_new_t"><Icon name="plus" size={14} /> {t('new_user')}</button>
       </PageHeader>
       {importing && <UserImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); reload(); }} />}
-      <Card title={t('two_fa')} actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
+      <Card title={t('two_fa')} help="hb_users_2fa" actions={<span className="muted small">{t('mfa_mode')}: <b>{t('mfa_' + data.mfa_mode)}</b></span>}>
         <div className="row gap wrap">
           <button className="btn btn-default btn-sm" onClick={() => bulk(true, true)}>{t('bulk_2fa_off_all')}</button>
           <button className="btn btn-default btn-sm" onClick={() => bulk(false, true)}>{t('bulk_2fa_on_all')}</button>
@@ -176,13 +177,13 @@ function UsersManage() {
       </Card>
       <Card>
         <div className="table-wrap">
-          <table className="table list-view">
+          <table className="table list-view" data-help="hb_users_table" data-help-title="hb_users_table_t">
             <thead>
               <tr>
                 <th className="w-check"><input type="checkbox" aria-label={t('all')} checked={sel.size === selectable.length && selectable.length > 0}
                   onChange={e => setSel(e.target.checked ? new Set(selectable.map(u => u.id)) : new Set())} /></th>
-                <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th>{t('status')}</th>
-                <th>{t('two_fa')}</th><th className="hide-mobile">{t('scope')}</th><th className="hide-mobile">{t('last_login')}</th>
+                <th>{t('full_name')}</th><th>{t('username')}</th><th>{t('role')}</th><th data-help="hb_users_col_status" data-help-title="hb_users_col_status_t">{t('status')}</th>
+                <th data-help="hb_users_col_2fa" data-help-title="hb_users_col_2fa_t">{t('two_fa')}</th><th className="hide-mobile" data-help="hb_users_col_scope" data-help-title="hb_users_col_scope_t">{t('scope')}</th><th className="hide-mobile">{t('last_login')}</th>
                 <th className="w-check"><span className="sr-only">{t('delete_user')}</span></th>
               </tr>
             </thead>
@@ -309,21 +310,21 @@ function UserFormInner({ id }) {
   return (
     <div>
       <div className="breadcrumb"><Link to="/users">{t('nav_users')}</Link><Icon name="chevron" size={12} className="flip" /><span>{isNew ? t('new_user') : u.full_name}</span></div>
-      <PageHeader title={isNew ? t('new_user') : u.full_name} sub={!isNew && <span dir="ltr">{u.username}</span>} icon="user">
+      <PageHeader title={isNew ? t('new_user') : u.full_name} sub={!isNew && <span dir="ltr">{u.username}</span>} icon="user" help="hb_users_form_head">
         {!isNew && <>
-          {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)}>{t('reset_password')}</button>}
-          {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setTwoFaReset(true)}>{t('reset_2fa')}</button>}
-          {isLocked(u) && <button className="btn btn-default btn-sm" onClick={unlockUser}>{t('unlock')}</button>}
-          {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')}>{t('revoke_sessions')}</button>}
+          {!self && <button className="btn btn-default btn-sm" onClick={() => setPwModal(true)} data-help="hb_users_resetpw" data-help-title="hb_users_resetpw_t">{t('reset_password')}</button>}
+          {u.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setTwoFaReset(true)} data-help="hb_users_reset2fa" data-help-title="hb_users_reset2fa_t">{t('reset_2fa')}</button>}
+          {isLocked(u) && <button className="btn btn-default btn-sm" onClick={unlockUser} data-help="hb_users_unlock" data-help-title="hb_users_unlock_t">{t('unlock')}</button>}
+          {u.sessions.length > 0 && <button className="btn btn-default btn-sm" onClick={() => action('revoke-sessions')} data-help="hb_users_revoke" data-help-title="hb_users_revoke_t">{t('revoke_sessions')}</button>}
           <span title={self ? t('del_self_tip') : undefined}>
-            <button className="btn btn-danger btn-sm" disabled={self} onClick={() => setDeleting(true)}><Icon name="trash" size={14} /> {t('delete_user')}</button>
+            <button className="btn btn-danger btn-sm" disabled={self} onClick={() => setDeleting(true)} data-help="hb_users_delete" data-help-title="hb_users_delete_t"><Icon name="trash" size={14} /> {t('delete_user')}</button>
           </span>
         </>}
-        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy} data-help="hb_users_save" data-help-title="hb_users_save_t">{busy ? t('saving') : t('save')}</button>
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
-      <Card title={t('details')}>
+      <Card title={t('details')} help="hb_users_details">
         {!isNew && isLocked(u) && (
           <Alert kind="red">
             <div className="row gap wrap" style={{ alignItems: 'center' }}>
@@ -356,7 +357,7 @@ function UserFormInner({ id }) {
         )}
       </Card>
 
-      <Card title={t('role')}>
+      <Card title={t('role')} help="hb_users_role">
         <div className="role-grid">
           {m.roles.map(r => (
             <label key={r.id} className={'role-opt' + (f.role_id === r.id ? ' on' : '')}>
@@ -367,7 +368,7 @@ function UserFormInner({ id }) {
         </div>
       </Card>
 
-      <Card title={t('permissions')}>
+      <Card title={t('permissions')} help="hb_users_perms">
         <table className="table">
           <thead><tr><th>{t('permissions')}</th><th>{t('perm_from_role')}</th><th>{t('status')}</th></tr></thead>
           <tbody>
@@ -396,7 +397,7 @@ function UserFormInner({ id }) {
         </table>
       </Card>
 
-      <Card title={t('scope')} actions={<span className="muted small">{role?.full_scope ? t('full_scope') : t('scope_hint')}</span>}>
+      <Card title={t('scope')} help="hb_users_scope" actions={<span className="muted small">{role?.full_scope ? t('full_scope') : t('scope_hint')}</span>}>
         {!role?.full_scope && !f.scopes.length && <Alert kind="orange">{t('scope_empty_warning')}</Alert>}
         <div className="scope-grid">
           {m.departments.map(d => (
@@ -414,7 +415,7 @@ function UserFormInner({ id }) {
       </Card>
 
       {!isNew && (
-        <Card title={t('leave_title')} actions={<span className="muted small">{t('leave_hint')}</span>}>
+        <Card title={t('leave_title')} help="hb_users_leave" actions={<span className="muted small">{t('leave_hint')}</span>}>
           <label className="check"><input type="checkbox" checked={f.on_leave} onChange={e => setF({ ...f, on_leave: e.target.checked })} /> {t('on_leave')}</label>
           <div className="form-grid mt">
             <Field label={t('leave_from')} hint={t('leave_dates_hint')}><input className="input" type="date" value={f.leave_from} max={f.leave_to || undefined} onChange={e => setF({ ...f, leave_from: e.target.value })} /></Field>

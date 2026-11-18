@@ -43,15 +43,15 @@ export default function Reports() {
         <div className="breadcrumb"><Link to={'/department/' + dept}>{nm(departments[0], 'short')}</Link><Icon name="chevron" size={12} className="flip" /><span>{t('reports_title')}</span></div>
       )}
       <PageHeader title={dept && departments[0] ? `${t('reports_title')} — ${nm(departments[0], 'short')}` : t('reports_title')}
-        sub={t('reports_sub')} icon="report">
+        sub={t('reports_sub')} icon="report" help="hb_reports_head">
         <ExportButton report="reports" params={{ dept: dept || '' }} />
       </PageHeader>
       <div className="grid-cards">
-        <NumberCard label={t('report_progress')} value={<Pct value={sw ? sp / sw : 0} />} sub={<>{t('reports_share')}: <span className="num">{Math.round(settings.reports_share * 100)}%</span></>} />
-        {[1, 2, 3].map(i => <NumberCard key={i} label={t('rs_' + i)} value={counts[i]} color={REPORT_COLORS[i]} />)}
+        <NumberCard label={t('report_progress')} value={<Pct value={sw ? sp / sw : 0} />} sub={<>{t('reports_share')}: <span className="num">{Math.round(settings.reports_share * 100)}%</span></>} help="hb_reports_progress" />
+        {[1, 2, 3].map(i => <NumberCard key={i} label={t('rs_' + i)} value={counts[i]} color={REPORT_COLORS[i]} help="hb_reports_status" />)}
       </div>
       {departments.map(d => (
-        <Card key={d.id} title={nm(d)}>
+        <Card key={d.id} title={nm(d)} help="hb_reports_table">
           <div className="table-wrap">
           <table className="table rep-table">
             <thead><tr><th>{t('application')}</th><th>{t('report_status')}</th><th className="w-30">{t('progress')}</th><th className="num-col">%</th>

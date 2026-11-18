@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { messages } from './messages.js';
+import { helpMessages } from './help/index.js';
 
 const I18n = createContext(null);
 const STORE = 'ets.lang';
@@ -26,9 +27,9 @@ export function I18nProvider({ children }) {
   const setDefaultLang = useCallback(l => { if (!chosen.current && !readStored()) setLangState(l === 'en' ? 'en' : 'ar'); }, []);
 
   const value = useMemo(() => {
-    const dict = messages[lang];
+    const dict = { ...helpMessages[lang], ...messages[lang] };
     const t = (key, vars) => {
-      let s = dict[key] ?? messages.ar[key] ?? key;
+      let s = dict[key] ?? messages.ar[key] ?? helpMessages.ar[key] ?? key;
       if (vars) for (const [k, v] of Object.entries(vars)) s = s.split('{' + k + '}').join(String(v));
       return s;
     };

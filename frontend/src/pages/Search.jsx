@@ -11,9 +11,9 @@ export default function Search() {
   const { data, error, loading } = useLoad(() => api.get('/tracker/search?q=' + encodeURIComponent(q)), [q]);
   return (
     <div>
-      <PageHeader title={t('search_results')} sub={`«${q}»`} icon="search" />
+      <PageHeader title={t('search_results')} sub={`«${q}»`} icon="search" help="hb_search_head" />
       {loading && !data ? <Loading /> : error ? <ErrorBox error={error} /> : (
-        <Card>
+        <Card help="hb_search_table" helpTitle="search_results">
           {!data.results.length ? <Empty /> : (
             <div className="table-wrap"><table className="table">
               <thead><tr><th>{t('functions')}</th><th>{t('application')}</th><th className="num-col">%</th></tr></thead>

@@ -20,12 +20,12 @@ export default function Department() {
   return (
     <div>
       <div className="breadcrumb"><Link to="/">{t('nav_home')}</Link><Icon name="chevron" size={12} className="flip" /><span>{nm(d, 'short')}</span></div>
-      <PageHeader title={nm(d)} sub={`${t('apps_count', { n: applications.length })} · ${t('weight')} ${pc(d.weight)}`} icon={d.emblem}>
+      <PageHeader title={nm(d)} sub={`${t('apps_count', { n: applications.length })} · ${t('weight')} ${pc(d.weight)}`} icon={d.emblem} help="hb_dept_head">
         <ExportButton report="department" params={{ id: d.id }} />
         <ExportButton report="functions_all" params={{ dept: d.id }} label={t('export_functions_all')} />
         <div className="head-pct"><Pct value={d.pct} /></div>
       </PageHeader>
-      <Card>
+      <Card help="hb_dept_apps" helpTitle="hb_dept_apps_t">
         <div className="table-wrap">
         <table className="table list-view">
           <thead>

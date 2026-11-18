@@ -46,14 +46,14 @@ export default function Schedule() {
 
   return (
     <div>
-      <PageHeader title={t('schedule_title')} icon="curve">
-        <ExportButton report="schedule" />
-        {can && <button className="btn btn-primary btn-sm" onClick={save}>{t('save')}</button>}
+      <PageHeader title={t('schedule_title')} icon="curve" help="hb_sched_head">
+        <span data-help="hb_sched_export" data-help-title="export_xlsx"><ExportButton report="schedule" /></span>
+        {can && <button className="btn btn-primary btn-sm" onClick={save} data-help="hb_sched_save" data-help-title="save">{t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
       <CurveKpis m={m} />
-      <Card className="curve-card"><SCurveChart m={m} s={s} /></Card>
-      <Card title={t('details')}>
+      <Card className="curve-card" help="hb_sched_curve" helpTitle="schedule_title"><SCurveChart m={m} s={s} /></Card>
+      <Card title={t('details')} help="hb_sched_details">
         <div className="form-grid">
           {s.end_date ? <>
             <Field label={t('project_start')}><div className="field-static">{fmtDay(s.start_date)}</div></Field>
@@ -72,7 +72,7 @@ export default function Schedule() {
         </div>
         <div className="field-hint mb">{t('timeline_from_settings')}{data.can.timeline && <> · <Link to="/settings#timeline">{t('project_timeline')}</Link></>}</div>
         <div className="table-wrap">
-          <table className="table">
+          <table className="table" data-help="hb_sched_table">
             <thead><tr><th>{t('period')}</th><th className="num-col">{t('planned')} %</th><th className="num-col">{t('actual')} %</th><th className="num-col">{t('deviation')}</th>{can && <th />}</tr></thead>
             <tbody>
               {plan.map((p, i) => {

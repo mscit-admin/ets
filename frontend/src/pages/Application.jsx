@@ -194,10 +194,10 @@ export default function Application() {
         <span>{nm(a)}</span>
       </div>
       {data.needs_approval && <Alert kind="blue">{t('edits_need_lead_notice')}</Alert>}
-      <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon}>
-        {(can.pct || can.tst || can.tog || can.mov) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)}>{t('bulk_set')}</button>}
-        {can.mov && <button className="btn btn-default btn-sm" onClick={() => setMovingApp(true)}><Icon name="move" size={14} /> {t('amv_button')}</button>}
-        {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}><Icon name="plus" size={14} /> {t('add_function')}</button>}
+      <PageHeader title={nm(a)} sub={a.sub_ar} icon={a.icon} help="hb_app_head">
+        {(can.pct || can.tst || can.tog || can.mov) && <button className="btn btn-default btn-sm" onClick={() => setBulk(true)} data-help="hb_app_bulk">{t('bulk_set')}</button>}
+        {can.mov && <button className="btn btn-default btn-sm" onClick={() => setMovingApp(true)} data-help="hb_app_move"><Icon name="move" size={14} /> {t('amv_button')}</button>}
+        {can.tog && <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)} data-help="hb_app_add"><Icon name="plus" size={14} /> {t('add_function')}</button>}
         <ExportButton report="functions" params={{ id: a.id, q: filter.q, source: filter.source, test: filter.test, reason: filter.reason,
           item_type: filter.type, show_off: filter.showOff ? 1 : '', show_removed: filter.showRemoved ? 1 : '' }} />
       </PageHeader>
@@ -211,7 +211,7 @@ export default function Application() {
       )}
 
       <div ref={sentinelRef} className="sticky-sentinel" aria-hidden="true" />
-      <div ref={stickyRef} className={'app-sticky' + (stuck ? ' stuck' : '')}>
+      <div ref={stickyRef} className={'app-sticky' + (stuck ? ' stuck' : '')} data-help="hb_app_pct" data-help-title="hb_app_pct_t">
         <PctEquation calc={calc} settings={settings} />
       </div>
 
@@ -240,8 +240,8 @@ export default function Application() {
       )}
 
       <div ref={tableRef} className="fn-table-card">
-      <Card>
-        <div className="filter-bar">
+      <Card help="hb_app_table" helpTitle="hb_app_table_t">
+        <div className="filter-bar" data-help="hb_app_filter" data-help-title="hb_app_filter_t">
           <input className="input input-sm" placeholder={t('filter') + '…'} value={filter.q} onChange={e => setFilter({ ...filter, q: e.target.value })} />
           <select className="input input-sm" value={filter.source} onChange={e => setFilter({ ...filter, source: e.target.value })} aria-label={t('source')}>
             <option value="">{t('source')}: {t('all')}</option>

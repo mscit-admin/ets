@@ -34,9 +34,9 @@ export default function Profile() {
 
   return (
     <div>
-      <PageHeader title={t('profile_title')} sub={`${user.full_name} · ${nm(user, 'role_name')}`} icon="user" />
+      <PageHeader title={t('profile_title')} sub={`${user.full_name} · ${nm(user, 'role_name')}`} icon="user" help="hb_profile_head" />
       <div className="grid-2">
-        <Card title={t('details')}>
+        <Card title={t('details')} help="hb_profile_info">
           <div className="kv">
             <div><span>{t('username')}</span><span dir="ltr">{user.username}</span></div>
             <div><span>{t('role')}</span><span>{nm(user, 'role_name')}</span></div>
@@ -48,7 +48,7 @@ export default function Profile() {
           </Field>
         </Card>
 
-        <Card title={t('two_fa')}>
+        <Card title={t('two_fa')} help="hb_profile_2fa">
           {codes ? <RecoveryCodes codes={codes} onDone={() => setCodes(null)} /> : enrolling ? (
             <TotpEnroll preset={enrolling} onEnabled={c => { setEnrolling(null); setCodes(c); refresh(); }} />
           ) : (
@@ -58,20 +58,20 @@ export default function Profile() {
               <p>{user.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>}
                 {user.totp_enabled && <span className="muted small"> · {t('codes_left', { n: user.recovery_codes_left })}</span>}</p>
               <div className="row gap wrap">
-                {!user.totp_enabled && mode !== 'off' && <button className="btn btn-primary btn-sm" onClick={() => setConfirm('enable')}>{t('enable_2fa')}</button>}
-                {user.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setConfirm('codes')}>{t('regenerate_codes')}</button>}
-                {user.totp_enabled && (mode !== 'required' || user.totp_exempt) && <button className="btn btn-default btn-sm" onClick={() => setConfirm('disable')}>{t('disable_2fa')}</button>}
+                {!user.totp_enabled && mode !== 'off' && <button className="btn btn-primary btn-sm" onClick={() => setConfirm('enable')} data-help="hb_profile_2fa_enable" data-help-title="hb_profile_2fa_enable_t">{t('enable_2fa')}</button>}
+                {user.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setConfirm('codes')} data-help="hb_profile_2fa_regen" data-help-title="hb_profile_2fa_regen_t">{t('regenerate_codes')}</button>}
+                {user.totp_enabled && (mode !== 'required' || user.totp_exempt) && <button className="btn btn-default btn-sm" onClick={() => setConfirm('disable')} data-help="hb_profile_2fa_disable" data-help-title="hb_profile_2fa_disable_t">{t('disable_2fa')}</button>}
               </div>
             </div>
           )}
         </Card>
       </div>
 
-      <Card title={t('change_password')}>
+      <Card title={t('change_password')} help="hb_profile_password">
         <div className="narrow"><PasswordForm /></div>
       </Card>
 
-      <NotifyPrefsCard />
+      <span data-help="hb_profile_notifyprefs"><NotifyPrefsCard /></span>
       <DevicesCard />
 
       {confirm && (

@@ -83,12 +83,12 @@ export default function Approvals() {
 
   return (
     <div>
-      <PageHeader title={t('approvals_title')} sub={t('approvals_sub')} icon="check">
+      <PageHeader title={t('approvals_title')} sub={t('approvals_sub')} icon="check" help="hb_approvals_head">
         <ExportButton report="approvals" params={{ ...f, mine: f.mine === '1' ? 1 : '', awaiting: f.awaiting === '1' ? 1 : '' }} />
-        {approvable.length > 0 && <button className="btn btn-primary btn-sm" onClick={() => setConfirm({ kind: 'approveAll' })}>
+        {approvable.length > 0 && <button className="btn btn-primary btn-sm" data-help="hb_approvals_approve_all" data-help-title="hb_approvals_approve_all_t" onClick={() => setConfirm({ kind: 'approveAll' })}>
           {filtered ? t('approve_shown_n', { n: approvable.length }) : t('approve_all')}</button>}
       </PageHeader>
-      <Card className="rq-filters">
+      <Card className="rq-filters" help="hb_approvals_filters" helpTitle="hb_approvals_filters_t">
         <div className="filter-bar">
           <input className="input input-sm" type="search" placeholder={t('rqf_search')} title={t('rqf_search_hint')} aria-label={t('rqf_search')} value={text} onChange={e => setText(e.target.value)} />
           <select className="input input-sm" value={f.status} onChange={e => setFilter('status', e.target.value)} aria-label={t('status')}>
@@ -114,7 +114,7 @@ export default function Approvals() {
       {data?.truncated && <Alert kind="orange">{t('rqf_truncated', { n: data.requests.length })}</Alert>}
       {error ? <ErrorBox error={error} /> : loading && !data ? <Loading /> : !data.requests.length
         ? <Card><Empty>{filtered ? t('rqf_none') : t('no_requests')}</Empty></Card> : data.requests.map(rq => (
-        <Card key={rq.id} className="req-card"
+        <Card key={rq.id} className="req-card" help="hb_approvals_request"
           title={rq.kind === 'move_application'
             ? <span className="link-row mv-route"><Icon name="move" size={15} /> {t('amv_rq_title', {
               app: nm(rq, 'app_name'), from: nm(rq, 'dept_name'), to: nm(rq, 'target_dept_name') })}
@@ -129,8 +129,8 @@ export default function Approvals() {
           actions={<>
             <span className="muted small">{rq.requested_by_name} · {fmtDate(rq.requested_at)}</span>
             <Indicator color={STATUS_COLOR[rq.status]}>{t('rq_' + rq.status)}</Indicator>
-            {rq.can.approve && <button className="btn btn-primary btn-xs" onClick={() => setConfirm({ kind: 'approve', rq })}>{t(approveLabelKey(rq.can))}</button>}
-            {rq.can.reject && <button className="btn btn-default btn-xs" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
+            {rq.can.approve && <button className="btn btn-primary btn-xs" data-help="hb_approvals_approve" data-help-title="hb_approvals_approve_t" onClick={() => setConfirm({ kind: 'approve', rq })}>{t(approveLabelKey(rq.can))}</button>}
+            {rq.can.reject && <button className="btn btn-default btn-xs" data-help="hb_approvals_reject" data-help-title="hb_approvals_reject_t" onClick={() => setDlg({ rq, mode: 'reject' })}>{t('reject')}</button>}
             {rq.can.resubmit && <button className="btn btn-primary btn-xs" onClick={() => act(rq, 'resubmit')}>{t('resubmit')}</button>}
             {rq.can.withdraw && <button className="btn btn-default btn-xs" onClick={() => act(rq, 'withdraw')}>{t('withdraw')}</button>}
           </>}>

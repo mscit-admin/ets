@@ -124,13 +124,13 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title={t('settings_title')} icon="settings">
+      <PageHeader title={t('settings_title')} icon="settings" help="hb_settings_head">
         {/* the project-phases tab has its own save; this global save targets the general settings (needs cfg) */}
-        {tab !== 'project' && tab !== 'structure' && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
+        {tab !== 'project' && tab !== 'structure' && <button className="btn btn-primary btn-sm" data-help="hb_settings_save" data-help-title="hb_settings_save_title" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
-      <div className="tabs" role="tablist" ref={tablistRef} aria-label={t('settings_title')} onKeyDown={onTabKey}>
+      <div className="tabs" role="tablist" ref={tablistRef} aria-label={t('settings_title')} onKeyDown={onTabKey} data-help="hb_settings_tabs" data-help-title="hb_settings_tabs_title">
         {tabKeys.map(k => (
           <button key={k} type="button" role="tab" id={tabId(k)} aria-selected={tab === k} aria-controls={panelId}
             tabIndex={tab === k ? 0 : -1} className={'tab' + (tab === k ? ' active' : '')}
@@ -142,15 +142,15 @@ export default function Settings() {
       {tab === 'general' && <>
         {tl && sched.data?.can.timeline && <TimelineCard tl={tl} setTl={setTl} unit={sched.data.unit} />}
 
-        <Card title={t('sec_general')}>
+        <Card title={t('sec_general')} help="hb_settings_general">
           <div className="form-grid">
             <Field label={t('org_name_ar')}><input className="input" value={s['app.org_name_ar']} onChange={e => set('app.org_name_ar', e.target.value)} /></Field>
             <Field label={t('org_name_en')}><input className="input" dir="ltr" value={s['app.org_name_en']} onChange={e => set('app.org_name_en', e.target.value)} /></Field>
             <Field label={t('default_language')}>
-              <select className="input" value={s['app.default_language']} onChange={e => set('app.default_language', e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select>
+              <select className="input" data-help="hb_settings_language" data-help-title="hb_settings_language_title" value={s['app.default_language']} onChange={e => set('app.default_language', e.target.value)}><option value="ar">العربية</option><option value="en">English</option></select>
             </Field>
-            <Field label={t('copyright_ar')} hint={t('copyright_hint')}><input className="input" value={s['app.copyright_ar'] ?? ''} onChange={e => set('app.copyright_ar', e.target.value)} maxLength={200} /></Field>
-            <Field label={t('copyright_en')}><input className="input" dir="ltr" value={s['app.copyright_en'] ?? ''} onChange={e => set('app.copyright_en', e.target.value)} maxLength={200} /></Field>
+            <Field label={t('copyright_ar')} hint={t('copyright_hint')}><input className="input" data-help="hb_settings_copyright" data-help-title="hb_settings_copyright_title" value={s['app.copyright_ar'] ?? ''} onChange={e => set('app.copyright_ar', e.target.value)} maxLength={200} /></Field>
+            <Field label={t('copyright_en')}><input className="input" dir="ltr" data-help="hb_settings_copyright" data-help-title="hb_settings_copyright_title" value={s['app.copyright_en'] ?? ''} onChange={e => set('app.copyright_en', e.target.value)} maxLength={200} /></Field>
           </div>
         </Card>
 
@@ -158,7 +158,7 @@ export default function Settings() {
       </>}
 
       {tab === 'security' && <>
-        <Card title={t('sec_2fa')}>
+        <Card title={t('sec_2fa')} help="hb_settings_2fa">
           <div className="radio-list">
             {['off', 'optional', 'required'].map(m => (
               <label key={m} className={'role-opt' + (s['mfa.mode'] === m ? ' on' : '')}>
@@ -172,19 +172,19 @@ export default function Settings() {
           </div>
         </Card>
 
-        <Card title={t('sec_approvals')}>
+        <Card title={t('sec_approvals')} help="hb_settings_approvals">
           <label className="check"><input type="checkbox" checked={!!s['approval.edits_need_lead']}
             onChange={e => set('approval.edits_need_lead', e.target.checked)} /> {t('edits_need_lead')}</label>
           <div className="field-hint mt-s">{t('edits_need_lead_hint')}</div>
         </Card>
 
-        <Card title={t('sec_security')}>
+        <Card title={t('sec_security')} help="hb_settings_password">
           <div className="form-grid">
             <Field label={t('password_min_length')}>{num('security.password_min_length', 10, 64)}</Field>
           </div>
         </Card>
 
-        <Card title={t('sec_logs')}>
+        <Card title={t('sec_logs')} help="hb_settings_logs">
           <div className="form-grid">
             <Field label={t('retention_days')}>{num('logs.retention_days', 30, 3650)}</Field>
             <Field label={t('audit_retention_days')} hint={t('audit_retention_hint')}>{num('logs.audit_retention_days', 365, 10950)}</Field>
@@ -193,21 +193,21 @@ export default function Settings() {
         </Card>
       </>}
 
-      {tab === 'notifications' && <NotifySettingsCard s={s} set={set} />}
+      {tab === 'notifications' && <div data-help="hb_settings_notifications" data-help-title="hb_settings_notifications_title"><NotifySettingsCard s={s} set={set} /></div>}
 
       {/* project phases (1.12.54): moved here from a standalone page; editable by cfg | apv_final */}
-      {tab === 'project' && <ProjectPhasesSection />}
+      {tab === 'project' && <div data-help="hb_settings_phases" data-help-title="hb_settings_phases_title"><ProjectPhasesSection /></div>}
 
       {/* structure management: create / edit / archive departments and applications (permission 'str') */}
-      {tab === 'structure' && <StructureSection />}
+      {tab === 'structure' && <div data-help="hb_settings_structure" data-help-title="hb_settings_structure_title"><StructureSection /></div>}
 
       {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
-      {tab === 'backup' && user?.role === 'admin' && <BackupSection />}
-      {tab === 'release' && user?.role === 'admin' && <ReleaseSection />}
+      {tab === 'backup' && user?.role === 'admin' && <div data-help="hb_settings_backup" data-help-title="hb_settings_backup_title"><BackupSection /></div>}
+      {tab === 'release' && user?.role === 'admin' && <div data-help="hb_settings_release" data-help-title="hb_settings_release_title"><ReleaseSection /></div>}
       {tab === 'maintenance' && user?.role === 'admin' && <MaintenanceSection />}
 
       {tab === 'advanced' && <>
-        <Card title={t('sec_data')}>
+        <Card title={t('sec_data')} help="hb_settings_data">
           <div className="row gap wrap">
             {can('exp') && <button className="btn btn-default btn-sm" onClick={exportData}><Icon name="download" size={14} /> {t('export_data')}</button>}
             {can('imp') && (
@@ -220,7 +220,7 @@ export default function Settings() {
         </Card>
 
         {info.data && (
-          <Card title={t('sec_system')}>
+          <Card title={t('sec_system')} help="hb_settings_system">
             <div className="kv">
               <div><span>{t('version')}</span><span className="num">{info.data.app_version} · Node {info.data.node}</span></div>
               <div><span>PostgreSQL</span><span className="small" dir="ltr">{info.data.database.version.split(' on ')[0]}</span></div>
@@ -259,7 +259,7 @@ function MaintenanceSection() {
     setBusy(false);
   };
   return (
-    <Card title={t('maintenance_title')}>
+    <Card title={t('maintenance_title')} help="hb_settings_maintenance">
       {err && <Alert>{errText(err)}</Alert>}
       <Alert kind="orange">{t('maintenance_warning')}</Alert>
       <label className="check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> {t('maintenance_enable')}</label>
@@ -309,7 +309,7 @@ function BrandingCard() {
     try { await api.del(path`/branding/${key}`); toast(t('saved')); b.reload(); } catch (e) { toast(errText(e), 'red'); }
   };
   return (
-    <Card title={t('sec_branding')}>
+    <Card title={t('sec_branding')} help="hb_settings_branding">
       <div className="brand-grid">
         {slots.map(s => (
           <div key={s.key} className="brand-slot">
@@ -361,7 +361,7 @@ function TimelineCard({ tl, setTl, unit }) {
   if (ok) { periods = 1; while (addPeriods(tl.start_date, unit, periods) < new Date(tl.end_date + 'T00:00:00') && periods <= 61) periods++; }
   return (
     <section id="timeline">
-      <Card title={t('sec_timeline')}>
+      <Card title={t('sec_timeline')} help="hb_settings_timeline">
         <div className="form-grid">
           <Field label={t('project_start')}><input className="input" type="date" value={tl.start_date} onChange={e => setTl({ ...tl, start_date: e.target.value })} /></Field>
           <Field label={t('project_end')}><input className="input" type="date" min={tl.start_date || undefined} value={tl.end_date} onChange={e => setTl({ ...tl, end_date: e.target.value })} /></Field>
