@@ -170,3 +170,25 @@ test('summary includes `project` only with prj_view', { skip }, async () => {
   assert.equal(os.data.can.erp_view, true);          // every role keeps the system wheel
   assert.equal(os.data.project, undefined);          // project data withheld server-side
 });
+
+test('F3: without erp_view the system-wheel figures are withheld, structure kept', { skip }, async () => {
+  // revoke erp_view from obsu via a per-user override
+  await pool.query(`INSERT INTO user_permissions(user_id, permission, granted) VALUES ($1,'erp_view',false)
+    ON CONFLICT (user_id, permission) DO UPDATE SET granted=false`, [ids.obsu]);
+  try {
+    const obs = await as('obsu');
+    const s = (await obs.get('/tracker/summary')).data;
+    assert.equal(s.can.erp_view, false);
+    assert.equal(s.total.pct, null);                 // overall progress withheld
+    assert.equal(s.total.fnPct, null);
+    assert.ok(Array.isArray(s.total.tests));         // non-wheel test counts kept
+    assert.ok(s.departments.length > 0);
+    for (const d of s.departments) {
+      assert.equal(d.pct, null);                     // per-department progress withheld
+      assert.equal(d.fnPct, null);
+      assert.ok(d.id && (d.name_ar || d.name_en));   // structural fields kept for the sidebar
+    }
+  } finally {
+    await pool.query(`DELETE FROM user_permissions WHERE user_id=$1 AND permission='erp_view'`, [ids.obsu]);
+  }
+});

@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.68] — 2026-11-18 — Gate the system-wheel figures by erp_view; dead-code cleanup
+
+### Security
+
+- **The system-modules wheel figures are now withheld server-side from readers without `erp_view`** (finding F3,
+  Low), for consistency with the `prj_view` gate. `/tracker/summary` still returns the structural department and
+  application rows (the sidebar navigation needs the names, colours and icons), but the overall and per-department
+  progress percentages are nulled when the reader lacks `erp_view`. The department pages remain the authoritative
+  place those figures are read, under the normal data-scope checks. (In the default configuration every role holds
+  `erp_view`, so this only matters when it is explicitly revoked.)
+
+### Removed
+
+- **Dead code cleanup**: removed three unused i18n keys (`erp_view_perm_pill`, `pp_phase`, `str_add`) and dead CSS
+  (`.erp-body`, `.erp-side`, `.erp-overall`) left over from the old two-column ERP dashboard layout.
+
+### Upgrade notes
+
+- No migration. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.67] — 2026-11-18 — Security hardening: step-up re-auth on admin user actions / تحصين أمني
 
 ### Security
