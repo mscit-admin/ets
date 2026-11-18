@@ -30,12 +30,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Security
 
-- **CI (gitleaks)**: added `.gitleaks.toml` with a narrow allowlist for two verified non-secret values the default
-  generic-api-key rule flagged in history — a dummy value in `backend/test/backups.test.js` (asserts cloud secrets
-  are stored encrypted and never returned) and the `.env.example` `APP_SECRET` placeholder in
-  `backend/test/config.test.js` (asserts the app refuses that placeholder). All default rules stay active; the
-  allowlist matches only those exact values, so no real secret can be hidden. The gitleaks workflow now passes
-  `--config .gitleaks.toml`.
+- **CI (gitleaks)**: added `.gitleaks.toml` with a narrow allowlist for the two verified non-secret values the
+  default generic-api-key rule flagged in history — an illustrative example `signer_key_id` (`a1b2c3d4e5f60718`) in
+  the release-promotion design docs, and a dummy test password (`Nightjar-2026q`) in
+  `backend/test/auth-security.test.js`. All default rules stay active; the allowlist matches only those exact
+  values, so no real secret can be hidden. The gitleaks workflow now passes `--config .gitleaks.toml`.
 
 ---
 
