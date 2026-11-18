@@ -30,6 +30,25 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.69] — 2026-11-18 — Retire the legacy recovery-code format / إبطال صيغة رموز الاستعادة القديمة
+
+### Security
+
+- **Retired the pre-1.0.0 recovery-code format** (finding F4, Low). Recovery codes made before 1.0.0 were stored as a
+  bare, unsalted SHA-256, open to an offline dictionary attack by anyone with a database copy. Since 1.0.0 they are a
+  keyed HMAC-SHA-256 (`h1:`, derived from `APP_SECRET`). Migration 039 deletes any remaining legacy-format codes and
+  adds a CHECK constraint so only the keyed format can be stored; login no longer computes the legacy hash. The now
+  obsolete “recovery codes are outdated” warning was removed.
+
+### Upgrade notes
+
+- Runs a database migration (deletes legacy-format recovery codes + adds a CHECK constraint; no other data changed).
+  **A user who still had only pre-1.0.0 recovery codes loses them** — they keep signing in with their authenticator
+  and generate fresh codes from their profile; an administrator can reset their 2FA if they are locked out. Deploy
+  with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.68] — 2026-11-18 — Gate the system-wheel figures by erp_view; dead-code cleanup
 
 ### Security
@@ -3617,7 +3636,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/ff4ada8...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/8567ac1...HEAD
+[1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
 [1.12.68]: https://github.com/mscit-admin/ets/compare/2208253...ff4ada8
 [1.12.67]: https://github.com/mscit-admin/ets/compare/7196349...2208253
 [1.12.66]: https://github.com/mscit-admin/ets/compare/6043fa2...7196349

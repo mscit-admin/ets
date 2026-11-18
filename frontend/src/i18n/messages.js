@@ -826,7 +826,6 @@ export const messages = {
     confirm_with_password: 'أكّد بكلمة المرور',
     confirm_with_password_code: 'أكّد بكلمة المرور ورمز التحقق',
     code_or_recovery: 'رمز تطبيق المصادقة أو رمز احتياطي',
-    recovery_codes_outdated: 'رموزك الاحتياطية بصيغة قديمة أضعف. أصدِر رموزاً جديدة واحفظها بدل القديمة',
     // errors (codes from the API)
     err_invalid_credentials: 'اسم المستخدم أو البريد الإلكتروني أو كلمة المرور غير صحيحة. بعد عدة محاولات فاشلة يتوقف الدخول إلى الحساب بضع دقائق ثم يعود تلقائياً',
     err_account_locked: 'الحساب مقفل مؤقتاً بسبب محاولات فاشلة متكررة. حاول لاحقاً أو تواصل مع المسؤول',
@@ -2881,7 +2880,6 @@ export const messages = {
     confirm_with_password: 'Confirm with your password',
     confirm_with_password_code: 'Confirm with your password and a verification code',
     code_or_recovery: 'Authenticator code or recovery code',
-    recovery_codes_outdated: 'Your recovery codes use an older, weaker format. Generate new ones and keep them instead of the old ones',
     err_invalid_credentials: 'Incorrect username, email or password. After several failed attempts, sign-in to the account pauses for a few minutes and then resumes by itself',
     err_account_locked: 'Account temporarily locked after repeated failed attempts. Try later or contact the administrator',
     err_too_many_attempts: 'Too many attempts. Wait {retry_after} seconds and try again',

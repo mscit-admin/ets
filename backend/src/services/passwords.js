@@ -105,6 +105,7 @@ export const normalizeRecoveryCode = c => String(c || '').trim().toLowerCase();
 // HMAC-SHA-256 with a key derived (HKDF) from APP_SECRET, so a database copy alone cannot be searched for codes.
 const recoveryKey = () => Buffer.from(crypto.hkdfSync('sha256', config.appSecret, 'ets-recovery-codes', 'ets recovery code hmac v1', 32));
 export const hashRecoveryCode = c => 'h1:' + crypto.createHmac('sha256', recoveryKey()).update(normalizeRecoveryCode(c)).digest('hex');
-// Hashes a typed code may be stored under: the current keyed hash, and the plain SHA-256 used before 1.0.0
-// (those codes keep working until used or regenerated; the profile page suggests regenerating them).
-export const recoveryCodeHashes = c => [hashRecoveryCode(c), crypto.createHash('sha256').update(normalizeRecoveryCode(c)).digest('hex')];
+// Hash a typed code is stored under. Only the current keyed `h1:` form is accepted — the legacy plain SHA-256 format
+// was retired in migration 039 (no legacy rows remain, enforced by a CHECK constraint). Returned as a one-element
+// array so the login lookup's `code_hash = ANY($2)` keeps working unchanged.
+export const recoveryCodeHashes = c => [hashRecoveryCode(c)];

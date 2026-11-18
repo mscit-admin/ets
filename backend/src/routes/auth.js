@@ -296,15 +296,14 @@ r.get('/me', async (req, res) => {
     return res.json({ authenticated: true, stage: req.session.mfa_stage,
       user: { username: req.user.username, language: req.user.language }, session, ...org });
   }
-  const codes = req.user.totp_enabled
-    ? (await query(`SELECT count(*)::int AS n, (count(*) FILTER (WHERE code_hash NOT LIKE 'h1:%'))::int AS old
-        FROM user_recovery_codes WHERE user_id=$1 AND used_at IS NULL`, [req.user.id])).rows[0]
-    : { n: 0, old: 0 };
+  // every recovery code is now the keyed h1: format (the legacy weaker format was retired in migration 039)
+  const left = req.user.totp_enabled
+    ? (await query('SELECT count(*)::int AS n FROM user_recovery_codes WHERE user_id=$1 AND used_at IS NULL', [req.user.id])).rows[0].n
+    : 0;
   res.json({
     authenticated: true,
     stage: 'done',
-    // recovery_codes_outdated: unused codes made before 1.0.0 (weaker format); the profile page suggests new ones
-    user: { ...req.user, recovery_codes_left: codes.n, recovery_codes_outdated: codes.old > 0 },
+    user: { ...req.user, recovery_codes_left: left },
     mfa_mode: s['mfa.mode'],
     session,
     // maintenance mode (1.12.38): { enabled, message } only — the in-app banner (Layout). Admins see it too, as a note.
