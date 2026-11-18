@@ -34,6 +34,7 @@ export async function usersOverview() {
         SELECT us.user_id, ap.department_id FROM user_scopes us JOIN applications ap ON ap.id=us.ref_id WHERE us.kind='application'
       ) z ON z.dept_id = d.id
          AND EXISTS (SELECT 1 FROM users u WHERE u.id=z.user_id AND u.deleted_at IS NULL AND u.is_active)
+      WHERE d.archived_at IS NULL
       GROUP BY d.id, d.name_ar, d.name_en, d.sort
       ORDER BY d.sort`),
     onlineUserCount(),

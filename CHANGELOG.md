@@ -30,6 +30,33 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.60] — 2026-11-18 — Structure management: departments & applications / إدارة الهيكلة
+
+### Added
+
+- **Structure management** — a new **«إدارة الهيكلة»** tab under Settings (new `str` permission, granted to
+  administrators and project managers) to **create, edit and archive departments (modules) and applications** from the
+  UI, as a department → application tree. Functions are still managed on each application page (the existing feature).
+  - A new department or application enters the progress roll-up **immediately** (retroactive): the overall % reflects
+    the wider scope at once. No schedule/baseline change.
+  - Slug ids are generated automatically from the English name and kept unique.
+  - **Archive, never delete.** Archiving a department or application is a reversible soft-delete (`archived_at`): it
+    takes the item out of every calculation, picker and move target while keeping its full history (audit, moves,
+    imports); it can be restored at any time. A department with a live application must have it archived/moved first.
+  - Every create / edit / archive / restore is written to the audit log.
+
+### Database
+
+- Migration `037_structure.sql`: adds `archived_at / archived_by / archive_reason` to `departments` and
+  `applications` (+ partial live indexes), and the `str` permission (granted to roles holding `cfg` or `apv_final`).
+
+### Upgrade notes
+
+- Runs a database migration (adds nullable columns + a permission grant; no data is modified). Deploy with
+  `update.sh` (which applies migrations) and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.59] — 2026-11-18 — Drop placeholder ERP modules / إزالة الوحدات غير المفعّلة من مخطط ERP
 
 ### Changed
@@ -3452,7 +3479,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/55d9189...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/918907f...HEAD
+[1.12.60]: https://github.com/mscit-admin/ets/compare/55d9189...918907f
 [1.12.59]: https://github.com/mscit-admin/ets/compare/8105a83...55d9189
 [1.12.58]: https://github.com/mscit-admin/ets/compare/54fd5d5...8105a83
 [1.12.57]: https://github.com/mscit-admin/ets/compare/08d2c25...54fd5d5

@@ -118,6 +118,7 @@ const TECH = {
   rocket: '<path d="M5.5 14.5c-1.2 2.5-1.2 4.3-1.2 4.3s1.8 0 4.3-1.2M9.5 15 9 14c-1-5 4-10 10.5-10C19.5 10.5 14.5 15.5 9.5 15z"/><circle cx="14.5" cy="9.5" r="1.4"/>',
   deploy: '<path d="M8 5l11 7-11 7z"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14-4L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4l2-2M20 20v-5h-5"/>',
+  archive: '<path d="M3 4h18v4H3z"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M9.5 12h5"/>',
   target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.9"/>',
   sliders: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="17" r="2"/>',
   briefcase: '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M8 7V5.2A2 2 0 0 1 10 3h4a2 2 0 0 1 2 2.2V7M3 12.5h18"/>',
