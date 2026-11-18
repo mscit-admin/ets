@@ -57,11 +57,12 @@ describe('wheel geometry (shared with the web)', () => {
 
 describe('module mapping (shared erpModules.js)', () => {
   const depts = [dept('hr', 40, 30), dept('fin', 60, 10), dept('com', 0), dept('inf', 10), dept('lab', 70)];
-  it('full scope: tracked modules active, the others not activated, unknown departments appended', () => {
+  it('full scope: tracked modules active, infrastructure and unknown departments appended', () => {
     const segs = wheelSegments(depts, { fullScope: true });
     expect(segs.slice(0, STANDARD_MODULES.length).map(s => s.key)).toEqual(STANDARD_MODULES.map(m => m.key));
     expect(segs.find(s => s.key === 'hr')).toMatchObject({ state: 'active', pct: 40 });
-    expect(segs.find(s => s.key === 'production')).toMatchObject({ state: 'inactive' });
+    // every listed module maps to a real department, so none is drawn faded when all are present
+    expect(segs.every(s => s.state !== 'inactive')).toBe(true);
     expect(segs.find(s => s.key === 'infrastructure')).toMatchObject({ state: 'active', pct: 10 });
     expect(segs[segs.length - 1]).toMatchObject({ key: 'dept:lab', state: 'active', pct: 70 });
   });
@@ -73,6 +74,6 @@ describe('module mapping (shared erpModules.js)', () => {
   it('label lines per language', () => {
     const sales = STANDARD_MODULES.find(m => m.key === 'sales')!;
     expect(linesOf(sales, 'ar')).toEqual(['المبيعات', 'والتسويق']);
-    expect(linesOf(STANDARD_MODULES[0], 'en')).toEqual(['Production']);
+    expect(linesOf(STANDARD_MODULES[0], 'en')).toEqual(['Human', 'Resources']);
   });
 });
