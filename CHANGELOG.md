@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.58] — 2026-11-18 — Project progress formula note / ملاحظة معادلة احتساب النسب
+
+### Added
+
+- **Frontend** — A «كيف تُحتسب النسبة؟» note explaining the project-progress formula (each phase's contribution =
+  weight × completion ÷ total weight; overall = the sum of contributions; an auto phase takes its % live from the
+  system functions completion). It is shown via an info (ⓘ) toggle in both places the project % appears: the
+  «مراحل المشروع» settings tab and the dashboard project card (shared `FormulaNote` component).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.57] — 2026-11-16 — Fix: phase icon picker clipped behind the table / إصلاح: منتقي الأيقونة خلف الجدول
 
 ### Fixed
@@ -3418,7 +3433,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/54fd5d5...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/8105a83...HEAD
+[1.12.58]: https://github.com/mscit-admin/ets/compare/54fd5d5...8105a83
 [1.12.57]: https://github.com/mscit-admin/ets/compare/08d2c25...54fd5d5
 [1.12.56]: https://github.com/mscit-admin/ets/compare/a13cf10...08d2c25
 [1.12.55]: https://github.com/mscit-admin/ets/compare/b1fa725...a13cf10

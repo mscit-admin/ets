@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 import { STANDARD_MODULES, wheelSegments } from '../lib/erpModules.js';
 import { ErpLegend, ErpWheel, ProjectWheel } from '../components/ErpWheel.jsx';
+import { FormulaNote } from '../components/FormulaNote.jsx';
 import { LiveBadge } from '../components/LiveBadge.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { CurveKpis, SCurveChart, scheduleModel } from '../components/SCurve.jsx';
@@ -106,6 +107,7 @@ export default function Dashboard() {
               <div className="erp-headline">
                 <span className="hv num" style={{ color: pctTone(project.pct).text }}>{pc(project.pct)}%</span>
                 <span className="ht"><b>{t('proj_overall_label')}</b><span>{t('proj_weighted_on', { n: project.phases.length, w: fmtW(project.total_weight) })}</span></span>
+                <FormulaNote />
               </div>
               <div className="erp-detail">
                 <p className="muted small erp-count">{t('proj_phase_cols')}</p>
