@@ -714,7 +714,6 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
    are in viewBox units (560 × 560). */
 :root { --erp-navy: #14315a; --erp-off: #eceff3; --erp-off-line: #c3ccd7; --erp-off-text: #56616e; --erp-track: #dde5ef; }
 .erp-card .card-head h3 { color: var(--erp-navy); }
-.erp-body { display: grid; grid-template-columns: minmax(0, 520px) minmax(240px, 1fr); gap: 20px 28px; align-items: center; }
 .erp-figure { width: 100%; max-width: 520px; margin: 0 auto; }
 .erp-wheel { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--font); }
 .erp-wedge { fill: var(--erp-off); transition: fill .2s, filter .2s; }
@@ -743,10 +742,6 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .erp-hub-mark { fill: var(--erp-navy); font-size: 12px; font-weight: 800; letter-spacing: .32em; }
 .erp-hub-pct { font-size: 34px; font-weight: 800; }
 .erp-hub-label { fill: var(--text-muted); font-size: 12.5px; font-weight: 600; }
-.erp-side { min-width: 0; }
-.erp-overall { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-.erp-overall .nc-label { width: 100%; }
-.erp-overall > b { font-size: 30px; line-height: 1.1; font-weight: 800; }
 .erp-count { margin: 10px 0 6px; }
 .erp-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .erp-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 72px 60px; align-items: center; gap: 10px; padding: 7px 6px;
@@ -806,12 +801,7 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .live-badge.live i { background: #30a66d; box-shadow: 0 0 0 3px rgba(48, 166, 109, .2); }
 .live-badge.polling { background: var(--orange-bg); color: var(--orange-text); }
 .live-badge.polling i { background: #f0883a; }
-@media (max-width: 1100px) {
-  .erp-body { grid-template-columns: minmax(0, 1fr); }
-  .erp-side { max-width: 560px; width: 100%; margin: 0 auto; }
-}
 @media (max-width: 560px) {
-  .erp-body { gap: 12px; padding-inline: 6px; }
   .erp-name { font-size: 16px; }
   .proj-name { font-size: 13px; }
   .erp-state { font-size: 14px; }

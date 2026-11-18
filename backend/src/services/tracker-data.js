@@ -86,13 +86,18 @@ export async function summaryData(user) {
   //   erp_view — the system-modules wheel (always on the dashboard before this feature; granted to every role).
   //   prj_view — the project-phases wheel (new; granted to project managers / administrators).
   // The `project` roll-up is a true server-side gate: it is computed from the stored phases + the live system %
-  // (total.pct) and included ONLY for a reader with prj_view. The system wheel data (total / departments) stays in the
-  // payload because the sidebar and the rest of the dashboard read the same endpoint; the `can.erp_view` flag lets the
-  // card hide the system column server-authoritatively.
+  // (total.pct) and included ONLY for a reader with prj_view.
   const seesPrj = hasPerm(user, 'prj_view');
+  // erp_view gates the system-modules wheel. The structural department / application rows must stay in the payload —
+  // the sidebar navigation reads the same endpoint and needs the names, colours and icons — but a reader without
+  // erp_view should not get the wheel's PROGRESS figures (F3). So when !erp_view we null the overall and per-department
+  // percentages while keeping everything structural (ids, names, colours, emblems, test counts, the apps list). The
+  // department pages remain the authoritative place those figures are read, under the normal data-scope checks.
+  const seesSys = hasPerm(user, 'erp_view');
+  const strip = (o, keys) => (seesSys ? o : { ...o, ...Object.fromEntries(keys.map(k => [k, null])) });
   return {
-    total: v.calc.total,
-    departments: v.departments.map(d => ({ ...d, ...v.calc.departments.find(x => x.id === d.id) })),
+    total: strip(v.calc.total, ['pct', 'fnPct']),
+    departments: v.departments.map(d => strip({ ...d, ...v.calc.departments.find(x => x.id === d.id) }, ['pct', 'fnPct'])),
     applications: v.apps.map(a => ({ ...a, calc: v.calc.applications.find(x => x.id === a.id) })),
     // functions / done: function items only; report_items: the items marked as reports (1.8.0); notes: every item
     counts: {

@@ -30,6 +30,28 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.68] — 2026-11-18 — Gate the system-wheel figures by erp_view; dead-code cleanup
+
+### Security
+
+- **The system-modules wheel figures are now withheld server-side from readers without `erp_view`** (finding F3,
+  Low), for consistency with the `prj_view` gate. `/tracker/summary` still returns the structural department and
+  application rows (the sidebar navigation needs the names, colours and icons), but the overall and per-department
+  progress percentages are nulled when the reader lacks `erp_view`. The department pages remain the authoritative
+  place those figures are read, under the normal data-scope checks. (In the default configuration every role holds
+  `erp_view`, so this only matters when it is explicitly revoked.)
+
+### Removed
+
+- **Dead code cleanup**: removed three unused i18n keys (`erp_view_perm_pill`, `pp_phase`, `str_add`) and dead CSS
+  (`.erp-body`, `.erp-side`, `.erp-overall`) left over from the old two-column ERP dashboard layout.
+
+### Upgrade notes
+
+- No migration. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.67] — 2026-11-18 — Security hardening: step-up re-auth on admin user actions / تحصين أمني
 
 ### Security
@@ -3595,7 +3617,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/2208253...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/ff4ada8...HEAD
+[1.12.68]: https://github.com/mscit-admin/ets/compare/2208253...ff4ada8
 [1.12.67]: https://github.com/mscit-admin/ets/compare/7196349...2208253
 [1.12.66]: https://github.com/mscit-admin/ets/compare/6043fa2...7196349
 [1.12.65]: https://github.com/mscit-admin/ets/compare/cd0e8aa...6043fa2
