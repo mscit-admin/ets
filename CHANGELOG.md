@@ -28,6 +28,15 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Security
+
+- **CI (gitleaks)**: added `.gitleaks.toml` with a narrow allowlist for two verified non-secret values the default
+  generic-api-key rule flagged in history — a dummy value in `backend/test/backups.test.js` (asserts cloud secrets
+  are stored encrypted and never returned) and the `.env.example` `APP_SECRET` placeholder in
+  `backend/test/config.test.js` (asserts the app refuses that placeholder). All default rules stay active; the
+  allowlist matches only those exact values, so no real secret can be hidden. The gitleaks workflow now passes
+  `--config .gitleaks.toml`.
+
 ---
 
 ## [1.12.74] — 2026-11-18 — Learning assistant flies to the element + full-screen coverage / المساعد يطير إلى العنصر وتغطية كل الشاشات

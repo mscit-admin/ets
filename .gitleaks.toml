@@ -1,0 +1,18 @@
+title = "ETS — gitleaks configuration"
+
+# Keep ALL of gitleaks' default rules (so real secrets still fail the scan); only add a narrow allowlist for two
+# verified non-secret values that the default generic-api-key rule flags. Both are test fixtures, not credentials:
+#   1. backend/test/backups.test.js — a dummy value used to assert that cloud backup secrets are stored encrypted
+#      and never returned by the API (the test literally checks the value does NOT appear in any response).
+#   2. backend/test/config.test.js — the .env.example APP_SECRET placeholder, used in a test that asserts the app
+#      REFUSES to start with this placeholder. It is the opposite of a leaked secret.
+# The allowlist matches on the exact secret values, so it cannot hide any other (real) secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified non-secret test fixtures / the .env.example placeholder (not real credentials)"
+regexes = [
+  '''TopSecretKey/abc\+123456''',
+  '''change-me-to-a-long-random-string-of-at-least-32-chars''',
+]
