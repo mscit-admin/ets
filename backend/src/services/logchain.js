@@ -11,7 +11,7 @@
 // comparing it with a head recorded outside the database detects a chain that was rebuilt end to end.
 import { pool } from '../db/pool.js';
 
-export const CHAINED = { audit_log: 'ets_audit_row_text', auth_log: 'ets_auth_row_text' };
+const CHAINED = { audit_log: 'ets_audit_row_text', auth_log: 'ets_auth_row_text' };
 const BATCH = 5000;
 const MAX_BREAKS = 100;
 

@@ -59,7 +59,7 @@ export function maskUsername(v) {
 
 // Events worth a look straight away: written to the file log at level warn with alert:true, so a journald /
 // syslog forwarder or SIEM rule can pick them out (ETS-SEC-075).
-export const ALERT_EVENTS = new Set(['account_locked', 'mfa_policy_changed', 'mfa_exempted_by_admin', 'mfa_reset_by_admin',
+const ALERT_EVENTS = new Set(['account_locked', 'mfa_policy_changed', 'mfa_exempted_by_admin', 'mfa_reset_by_admin',
   'password_reset_by_admin', 'sessions_revoked_by_admin', 'csrf_rejected', 'admin_created_cli', 'mfa_reset_cli']);
 
 // Who ran a command-line script, for the audit rows it writes: "cli:<operating-system user>".

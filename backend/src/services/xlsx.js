@@ -9,7 +9,7 @@ import { neutralise } from '../utils/csv.js';
 const BAD_XML = /[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g;
 const MAX_CELL = 32767;           // Excel's limit for one cell
 
-export const textCell = v => {
+const textCell = v => {
   if (v === null || v === undefined) return null;
   const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
   return neutralise(s.replace(BAD_XML, '')).slice(0, MAX_CELL);

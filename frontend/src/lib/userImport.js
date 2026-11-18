@@ -6,17 +6,17 @@ import { languageIndex, matchList, matchOne, normalize, placeIndex, roleIndex } 
 
 // The template adds department_2/3 and application_2/3 to the seven API columns (one more drop-down each);
 // an older file with the seven columns only is read the same way.
-export const EXTRA = { departments: ['department_2', 'department_3'], applications: ['application_2', 'application_3'] };
+const EXTRA = { departments: ['department_2', 'department_3'], applications: ['application_2', 'application_3'] };
 export const TEMPLATE_COLUMNS = ['username', 'full_name', 'email', 'role', 'language',
   'departments', ...EXTRA.departments, 'applications', ...EXTRA.applications];
 const REQUIRED = ['username', 'full_name', 'role'];
 export const MAX_ROWS = 500;
-export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 // ---- CSV ----
 // RFC 4180: UTF-8 (a BOM is dropped), quoted fields with "" escapes, separators and line breaks inside quotes,
 // CRLF / LF / CR line ends. A ';'-separated file (Excel in some regional settings) is recognised by its header.
-export function parseCsv(text) {
+function parseCsv(text) {
   let s = String(text);
   if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
   const firstLine = s.slice(0, s.search(/\r|\n|$/));
@@ -55,7 +55,7 @@ const csvCell = v => {
   return /[",\r\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 };
 // UTF-8 with BOM and CRLF, so Excel opens Arabic text correctly.
-export const toCsv = rows => '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+const toCsv = rows => '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 // ---- reading a file → rows ----
 const cellText = v => {
@@ -69,7 +69,7 @@ const headerId = h => cellText(h).split('/')[0].trim().toLowerCase().replace(/\s
 
 // → { rows: [{ line, username, full_name, … }], missing: [column names] }. Empty lines are skipped;
 // `line` is the row number in the file (header = 1), shown next to each result.
-export function sheetToRows(table) {
+function sheetToRows(table) {
   const [head = [], ...body] = table;
   const names = head.map(headerId);
   const idx = Object.fromEntries(TEMPLATE_COLUMNS.map(c => [c, names.indexOf(c)]));
@@ -119,7 +119,7 @@ export function resolveRow(ix, r) {
 }
 
 // ---- files offered for download ----
-export function downloadBlob(filename, blob) {
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), { href: url, download: filename });
   document.body.appendChild(a); a.click(); a.remove();
@@ -139,7 +139,7 @@ export async function downloadXlsx(filename, sheets) {
 }
 
 // Help lists (roles, departments, applications) from GET /users/meta, in both languages.
-export function helpRows(meta, t) {
+function helpRows(meta, t) {
   const rows = [[t('imp_help_kind'), 'id', 'العربية', 'English', t('imp_help_note')]];
   const bold = [];
   const section = title => { rows.push([]); bold.push(rows.length); rows.push([title]); };
@@ -167,14 +167,14 @@ const colLetter = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 2
 
 // The drop-down texts: the name in the UI language; a name that two items share gets its id in brackets
 // ("Name (id)", also accepted on upload).
-export function listLabels(items, label) {
+function listLabels(items, label) {
   const seen = new Map();
   for (const it of items) { const k = normalize(label(it)); seen.set(k, (seen.get(k) || 0) + 1); }
   return items.map(it => (seen.get(normalize(label(it))) > 1 || !label(it) ? `${label(it)} (${it.id})` : label(it)));
 }
 
 // ExcelJS: the module (browser: loaded on demand; node: for checks) → ExcelJS.Workbook with the three sheets.
-export function buildTemplate(ExcelJS, meta, t, lang) {
+function buildTemplate(ExcelJS, meta, t, lang) {
   const name = o => (lang === 'en' ? o.name_en || o.name_ar : o.name_ar || o.name_en);
   const lists = {
     role: listLabels(meta.roles, name),

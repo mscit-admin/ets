@@ -9,7 +9,7 @@ import { useI18n } from '../i18n/index.jsx';
 import { Icon } from './Icon.jsx';
 import { ITEM_TYPES } from '../lib/itemRules.js';
 
-export const typeIcon = type => (type === 'report' ? 'item_report' : 'item_function');
+const typeIcon = type => (type === 'report' ? 'item_report' : 'item_function');
 
 export function TypeBadge({ type, compact = false }) {
   const { t } = useI18n();

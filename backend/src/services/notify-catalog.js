@@ -108,7 +108,7 @@ export const isEligibleCell = (type, role) => ['+', '-', '!'].includes(TYPES[typ
 export const isLockedCell = (type, role) => TYPES[type]?.matrix[role] === '!';
 
 // The default policy (the matrix of §3.1): { type: { roles: { role: bool }, push: bool, mandatory: bool } }.
-export function defaultPolicy() {
+function defaultPolicy() {
   return Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, {
     roles: Object.fromEntries(ROLES.filter(r => isEligibleCell(k, r)).map(r => [r, t.matrix[r] !== '-'])),
     push: t.push, mandatory: false,
@@ -134,7 +134,7 @@ export function effectivePolicy(stored) {
 
 // Validation of a notify.policy value (SETTING_RULES): an object of known types; each { roles?, push?, mandatory? }.
 // Refused: enabling a cell that is not eligible (❌), switching off a mandatory cell (🔒), unknown keys / values.
-export function policyProblem(v) {
+function policyProblem(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return 'not_an_object';
   for (const [k, cell] of Object.entries(v)) {
     if (!Object.hasOwn(TYPES, k)) return 'unknown_type:' + k;
@@ -161,9 +161,9 @@ export const isMandatory = (pol, type, role) => type !== RATE_CAPPED && (isLocke
 export const pushAllowed = (pol, type) => type === RATE_CAPPED || !!pol[type]?.push;
 
 // ---- settings of the notifications (Settings → «الإشعارات»): defaults and validation rules
-export const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];          // 0 = Sunday … 6 = Saturday
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];          // 0 = Sunday … 6 = Saturday
 const intRule = (lo, hi) => v => Number.isInteger(v) && v >= lo && v <= hi;
-export const validTimeZone = v => {
+const validTimeZone = v => {
   if (typeof v !== 'string' || !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(v) || v.length > 60) return false;
   try { new Intl.DateTimeFormat('en-US', { timeZone: v }); return true; } catch { return false; }
 };

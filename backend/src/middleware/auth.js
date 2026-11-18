@@ -84,7 +84,7 @@ export async function loadUserContext(userId) {
 }
 
 // Does this request report genuine user activity for the idle timeout? (see sessionMiddleware)
-export const isUserActivity = req => req.get('x-ets-activity') === '1' && req.get('x-ets-live') !== '1' &&
+const isUserActivity = req => req.get('x-ets-activity') === '1' && req.get('x-ets-live') !== '1' &&
   req.path !== '/events' && !(req.method === 'POST' && req.path === '/presence');
 
 // When an idle session ends if nobody acts before (last_seen_at + SESSION_IDLE_MINUTES), and its absolute end.

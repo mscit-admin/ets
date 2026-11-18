@@ -46,7 +46,7 @@ function useSmooth(target) {
   return v;
 }
 
-export function ProgressBar2({ percent, state }) {
+function ProgressBar2({ percent, state }) {
   const v = useSmooth(percent);
   return (
     <div className={'pbar ' + (STATE_CLASS[state] || 'run')} role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>

@@ -20,7 +20,7 @@ export function addPeriods(start, unit, k) {
 }
 
 // Number of periods from start to close: the smallest k whose period end reaches the close date.
-export function periodsBetween(start, end, unit) {
+function periodsBetween(start, end, unit) {
   let k = 1;
   while (addPeriods(start, unit, k) < end && k <= 61) k++;
   return k;

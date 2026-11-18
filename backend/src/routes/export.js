@@ -35,7 +35,7 @@ const pick = (qs, keys) => Object.fromEntries(keys.map(k => [k, q1(qs, k)]).filt
 
 // A changed value (edit request item / import change) as the screens show it. Exported so the consolidated
 // function-changes report renders before / after with the very same formatter as the Approvals / Import exports.
-export function fmtValue(L, kind, field, v) {
+function fmtValue(L, kind, field, v) {
   const { t } = L;
   if (v === null || v === undefined || v === '') return '';
   if (field === 'create') return [v.name_ar, `${t('weight')} ${v.weight}`, `${t('progress')} ${v.progress}%`, v.enabled ? t('yes') : t('no'),

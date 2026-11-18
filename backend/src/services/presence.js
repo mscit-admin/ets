@@ -18,8 +18,8 @@ import { getSetting } from './settings.js';
 import { logger } from './logs.js';
 import { bad, own } from '../utils/http.js';
 
-export const ONLINE_SECONDS = 120;          // last report at most 2 minutes ago → online
-export const IDLE_SECONDS = 15 * 60;        // 2–15 minutes → idle; older → not listed (and cleaned up)
+const ONLINE_SECONDS = 120;          // last report at most 2 minutes ago → online
+const IDLE_SECONDS = 15 * 60;        // 2–15 minutes → idle; older → not listed (and cleaned up)
 const ACTIVE_GAP_SECONDS = 90;              // two reports at most this far apart: the time between them was active
 const DAILY_KEEP_DAYS = 7;
 export const LOCK_KEY = 'ets_presence_cleanup';
@@ -45,7 +45,7 @@ const REF_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const NUM_RE = /^[0-9]{1,9}$/;
 
 /** Checks a report's body → { path, screen, ref } (unknown screen keys become 'unknown'). Throws 400. */
-export function parseReport(body) {
+function parseReport(body) {
   const b = body && typeof body === 'object' ? body : {};
   const path = typeof b.path === 'string' ? b.path : '';
   if (!PATH_RE.test(path) || path.includes('//')) throw bad('invalid_value', { field: 'path' });
@@ -140,7 +140,7 @@ export function resetPresenceState() {
 }
 
 // "Chrome 141 · Windows", "ETS app · Android" … from the stored user agent (shortened to 160 characters).
-export function deviceSummary(ua, client) {
+function deviceSummary(ua, client) {
   const s = String(ua || '');
   if (!s) return client === 'mobile' ? 'ETS app' : '';
   const os = /Android/i.test(s) ? 'Android' : /iPhone|iPad|iOS/i.test(s) ? 'iOS' : /Windows/i.test(s) ? 'Windows'

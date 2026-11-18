@@ -12,8 +12,8 @@
 //     the sign-in page with a notice. A sleeping PC or a hidden tab is checked as soon as the tab is visible again.
 import { api } from './api.js';
 
-export const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
-export const PING_EVERY_MS = 60_000;
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+const PING_EVERY_MS = 60_000;
 const SLACK_MS = 2_000;              // check a little after the deadline (clock rounding)
 const MAX_TIMER_MS = 2 ** 31 - 1;    // setTimeout limit
 

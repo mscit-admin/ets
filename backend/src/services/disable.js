@@ -9,7 +9,7 @@ export const DISABLE_REASONS = ['duplicate', 'out_of_scope', 'not_required', 'ot
 export const NOTE_MAX = 500;
 // The note is required for every reason a user chooses (1.5.1): at least NOTE_MIN non-whitespace characters.
 export const NOTE_MIN = 3;
-export const MAX_DUPLICATES = 50;
+const MAX_DUPLICATES = 50;
 // Fields of a request body that belong to the reason (not columns edited directly).
 export const REASON_KEYS = ['disabled_reason', 'disabled_note', 'duplicate_of'];
 

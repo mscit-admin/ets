@@ -22,7 +22,7 @@ import { HttpError, bad } from '../utils/http.js';
 
 export const MOVE_MAX = 200;                       // items in one bulk move
 export const REASON_MIN = NOTE_MIN, REASON_MAX = NOTE_MAX;   // same rule as a rename / an exclusion note
-export const APP_WEIGHT_MAX = 1000;                // as PUT /tracker/weights
+const APP_WEIGHT_MAX = 1000;                // as PUT /tracker/weights
 
 // The reason of a move: required, 3–500 characters, spaces not counted.
 export function parseMoveReason(raw) {
@@ -179,7 +179,7 @@ export async function applyMove(c, req, { srcId, dstId, ids, reason, userId = re
 }
 
 // Weight share the items would carry if the move were made now (approval screen: request time vs now).
-export async function currentShare(c, srcId, ids) {
+async function currentShare(c, srcId, ids) {
   return (await currentShares(c, [{ srcId, ids }]))[0];
 }
 

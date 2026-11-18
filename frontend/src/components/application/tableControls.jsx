@@ -5,7 +5,7 @@ import { Icon } from '../Icon.jsx';
 import { toast } from '../ui.jsx';
 
 // Functions table pagination: rows per page (remembered per browser, default 10).
-export const PAGE_SIZES = [5, 10, 15, 20, 25];
+const PAGE_SIZES = [5, 10, 15, 20, 25];
 const PAGE_SIZE_KEY = 'ets.fnPageSize';
 export const readPageSize = () => {
   try { const n = parseInt(localStorage.getItem(PAGE_SIZE_KEY), 10); return PAGE_SIZES.includes(n) ? n : 10; } catch { return 10; }

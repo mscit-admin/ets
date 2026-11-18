@@ -52,7 +52,7 @@ function TfaBadge({ u }) {
 }
 
 // An account is paused (progressive lockout) while locked_until is still in the future (services/lockout.js).
-export const isLocked = u => !!u.locked_until && new Date(u.locked_until) > new Date();
+const isLocked = u => !!u.locked_until && new Date(u.locked_until) > new Date();
 
 // A clear red badge for a paused account, saying WHY (failed attempts) and until when. Used in the users list and
 // on the user detail page; the «until HH:MM» is the local time the pause lifts on its own.
