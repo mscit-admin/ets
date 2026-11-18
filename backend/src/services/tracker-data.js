@@ -25,8 +25,8 @@ import { HttpError, notFound } from '../utils/http.js';
 // Everything the user may see, plus the computed percentages.
 export async function loadVisible(user) {
   const [d, a, f, rep, settings] = await Promise.all([
-    query('SELECT * FROM departments ORDER BY sort'),
-    query('SELECT * FROM applications ORDER BY sort'),
+    query('SELECT * FROM departments WHERE archived_at IS NULL ORDER BY sort'),
+    query('SELECT * FROM applications WHERE archived_at IS NULL ORDER BY sort'),
     query(CALC_FUNCTIONS_SQL),
     query('SELECT * FROM app_reports'),
     allSettings(),
@@ -127,7 +127,7 @@ export async function departmentData(user, id) {
   const d = (await query('SELECT * FROM departments WHERE id=$1', [id])).rows[0];
   if (!d) throw notFound();
   // this department's applications in the reader's scope — the same set the full load would keep for this department
-  const deptApps = (await query('SELECT * FROM applications WHERE department_id=$1 ORDER BY sort', [id])).rows;
+  const deptApps = (await query('SELECT * FROM applications WHERE department_id=$1 AND archived_at IS NULL ORDER BY sort', [id])).rows;
   const apps = deptApps.filter(a => canSeeApp(user, a));
   // canSeeDept only inspects applications of THIS department, so its own visible apps decide visibility (full scope aside)
   if (!canSeeDept(user, id, apps)) throw new HttpError(403, 'out_of_scope', { department: id });

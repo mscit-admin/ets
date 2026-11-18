@@ -28,6 +28,8 @@ import { getApp, summaryData, departmentData, applicationData, weightsData, repo
   from '../services/tracker-data.js';
 import { getSetting } from '../services/settings.js';
 import { validateProjectPhases } from '../services/project-phases.js';
+import { structureData, createDepartment, updateDepartment, archiveDepartment, restoreDepartment,
+  createApplication, updateApplication, archiveApplication, restoreApplication } from '../services/structure.js';
 
 const r = Router();
 r.use(requireAuth);
@@ -411,7 +413,7 @@ r.get('/function-options', async (req, res) => {
   const exclude = String(req.query.exclude || '').split(',').filter(Boolean).slice(0, 500).map(Number).filter(isId);
   if (!all && !appId) throw bad('invalid_value', { field: 'app_id' });
   if (!all) await getApp(req.user, appId);
-  const apps = all ? (await query('SELECT id, department_id FROM applications')).rows.filter(x => canSeeApp(req.user, x)).map(x => x.id) : [appId];
+  const apps = all ? (await query('SELECT id, department_id FROM applications WHERE archived_at IS NULL')).rows.filter(x => canSeeApp(req.user, x)).map(x => x.id) : [appId];
   const params = [exclude, apps];
   // with_off=1: excluded items too (choosing the items of a bulk move, 1.10.0); never removed ones
   let where = `f.removed_at IS NULL ${req.query.with_off === '1' ? '' : 'AND f.enabled'} AND NOT (f.id = ANY($1)) AND f.app_id = ANY($2)`;
@@ -581,8 +583,8 @@ r.get('/move-targets', requirePerm('mov'), async (req, res) => {
   }
   if (!appId) throw bad('invalid_value', { field: 'app_id' });
   const cur = await getApp(req.user, appId);
-  const [d, a] = await Promise.all([query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments ORDER BY sort'),
-    query('SELECT id, department_id, name_ar, name_en, icon, sort FROM applications ORDER BY sort')]);
+  const [d, a] = await Promise.all([query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments WHERE archived_at IS NULL ORDER BY sort'),
+    query('SELECT id, department_id, name_ar, name_en, icon, sort FROM applications WHERE archived_at IS NULL ORDER BY sort')]);
   const apps = a.rows.filter(x => x.id !== cur.id && canSeeApp(req.user, x));
   res.json({ current: { app_id: cur.id, department_id: cur.department_id },
     departments: d.rows.map(x => ({ ...x, applications: apps.filter(y => y.department_id === x.id).map(({ sort: _s, ...y }) => y) }))
@@ -670,7 +672,7 @@ r.get('/app-move-targets', requirePerm('mov'), async (req, res) => {
   const appId = str(req.query.app_id, 40);
   if (!appId) throw bad('invalid_value', { field: 'app_id' });
   const cur = await getApp(req.user, appId);
-  const d = (await query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments ORDER BY sort')).rows;
+  const d = (await query('SELECT id, name_ar, name_en, short_ar, short_en, emblem, is_base, sort FROM departments WHERE archived_at IS NULL ORDER BY sort')).rows;
   res.json({ current: { app_id: cur.id, department_id: cur.department_id },
     departments: d.filter(x => x.id !== cur.department_id && coversDept(req.user, x.id)).map(({ sort: _s, ...x }) => x) });
 });
@@ -882,6 +884,145 @@ r.post('/import', requirePerm('imp'), requirePerm('cfg'), largeJson, async (req,
   publishChange();
   logSystem('import', 'legacy tracker data imported', { by: req.user.username, ...counts });
   res.json({ ok: true, counts });
+});
+
+// ---- structure management (migration 037): create / edit / archive departments and applications ----
+// All of these need the 'str' permission AND full scope (structure is a project-wide, administrator-level change).
+// Nothing is hard-deleted: "archive" is a reversible soft-delete that takes the row out of every calculation and
+// picker while keeping its history. A new / restored row enters the roll-up at once (retroactive), so publishChange()
+// with no hint refreshes every open screen.
+const requireStructure = (req) => { if (!req.user.fullScope) throw new HttpError(403, 'out_of_scope'); };
+// department / application ids are text slugs (not integer serials): look them up by the raw string route param.
+const loadDept = async id => {
+  if (typeof id !== 'string' || !id) throw notFound();
+  const d = (await query('SELECT * FROM departments WHERE id=$1', [id])).rows[0];
+  if (!d) throw notFound();
+  return d;
+};
+const loadAppRow = async id => {
+  if (typeof id !== 'string' || !id) throw notFound();
+  const a = (await query('SELECT * FROM applications WHERE id=$1', [id])).rows[0];
+  if (!a) throw notFound();
+  return a;
+};
+
+r.get('/structure', requirePerm('str'), async (req, res) => { requireStructure(req); res.json(await structureData()); });
+
+r.post('/departments', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const d = await tx(async c => {
+    const dep = await createDepartment(c, req.body, req.user.id);
+    await logAudit(req, { db: c, action: 'create', entity: 'department', entityId: dep.id,
+      summary: `+ ${dep.name_ar.slice(0, 80)}`, newValue: { name_ar: dep.name_ar, name_en: dep.name_en, is_base: dep.is_base } });
+    return dep;
+  });
+  publishChange();
+  logSystem('structure', 'department created', { by: req.user.username, id: d.id });
+  res.json({ ok: true, department: d });
+});
+
+r.patch('/departments/:id', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadDept(req.params.id);
+  if (before.archived_at) throw bad('department_archived');
+  const d = await tx(async c => {
+    const dep = await updateDepartment(c, before.id, req.body);
+    await logAudit(req, { db: c, action: 'update', entity: 'department', entityId: dep.id, summary: dep.name_ar.slice(0, 80),
+      oldValue: { name_ar: before.name_ar, name_en: before.name_en, short_ar: before.short_ar, short_en: before.short_en, color: before.color, emblem: before.emblem, is_base: before.is_base },
+      newValue: { name_ar: dep.name_ar, name_en: dep.name_en, short_ar: dep.short_ar, short_en: dep.short_en, color: dep.color, emblem: dep.emblem, is_base: dep.is_base } });
+    return dep;
+  });
+  publishChange();
+  res.json({ ok: true, department: d });
+});
+
+r.post('/departments/:id/archive', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadDept(req.params.id);
+  if (before.archived_at) throw bad('already_archived');
+  const reason = str(req.body?.reason, 500) || null;
+  const d = await tx(async c => {
+    const dep = await archiveDepartment(c, before.id, reason, req.user.id);
+    await logAudit(req, { db: c, action: 'archive', entity: 'department', entityId: before.id, summary: before.name_ar.slice(0, 80), context: reason ? { reason } : undefined });
+    return dep;
+  });
+  publishChange();
+  logSystem('structure', 'department archived', { by: req.user.username, id: before.id });
+  res.json({ ok: true, department: d });
+});
+
+r.post('/departments/:id/restore', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadDept(req.params.id);
+  if (!before.archived_at) throw bad('not_archived');
+  const d = await tx(async c => {
+    const dep = await restoreDepartment(c, before.id);
+    await logAudit(req, { db: c, action: 'restore', entity: 'department', entityId: before.id, summary: before.name_ar.slice(0, 80) });
+    return dep;
+  });
+  publishChange();
+  res.json({ ok: true, department: d });
+});
+
+r.post('/departments/:id/applications', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const dept = await loadDept(req.params.id);
+  if (dept.archived_at) throw bad('department_archived');
+  const a = await tx(async c => {
+    const app = await createApplication(c, dept.id, req.body, req.user.id);
+    await logAudit(req, { db: c, action: 'create', entity: 'application', entityId: app.id,
+      summary: `${dept.id}/ ${app.name_ar.slice(0, 80)}`, newValue: { department_id: dept.id, name_ar: app.name_ar, name_en: app.name_en, weight: Number(app.weight) } });
+    return app;
+  });
+  publishChange({ dept_id: dept.id });
+  logSystem('structure', 'application created', { by: req.user.username, id: a.id, dept: dept.id });
+  res.json({ ok: true, application: a });
+});
+
+r.patch('/applications/:id', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadAppRow(req.params.id);
+  if (before.archived_at) throw bad('application_archived');
+  const a = await tx(async c => {
+    const app = await updateApplication(c, before.id, req.body, req.user.id);
+    await logAudit(req, { db: c, action: 'update', entity: 'application', entityId: app.id, summary: app.name_ar.slice(0, 80),
+      oldValue: { name_ar: before.name_ar, name_en: before.name_en, sub_ar: before.sub_ar, icon: before.icon, note_ar: before.note_ar },
+      newValue: { name_ar: app.name_ar, name_en: app.name_en, sub_ar: app.sub_ar, icon: app.icon, note_ar: app.note_ar } });
+    return app;
+  });
+  publishChange({ dept_id: before.department_id, app_id: before.id });
+  res.json({ ok: true, application: a });
+});
+
+r.post('/applications/:id/archive', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadAppRow(req.params.id);
+  if (before.archived_at) throw bad('already_archived');
+  const reason = str(req.body?.reason, 500) || null;
+  const a = await tx(async c => {
+    const app = await archiveApplication(c, before.id, reason, req.user.id);
+    await logAudit(req, { db: c, action: 'archive', entity: 'application', entityId: before.id, summary: before.name_ar.slice(0, 80), context: reason ? { reason } : undefined });
+    return app;
+  });
+  publishChange({ dept_id: before.department_id });
+  logSystem('structure', 'application archived', { by: req.user.username, id: before.id });
+  res.json({ ok: true, application: a });
+});
+
+r.post('/applications/:id/restore', requirePerm('str'), async (req, res) => {
+  requireStructure(req);
+  const before = await loadAppRow(req.params.id);
+  if (!before.archived_at) throw bad('not_archived');
+  // the department must be live to restore into it (its totals would otherwise exclude a visible app)
+  const dept = (await query('SELECT archived_at FROM departments WHERE id=$1', [before.department_id])).rows[0];
+  if (!dept || dept.archived_at) throw bad('department_archived');
+  const a = await tx(async c => {
+    const app = await restoreApplication(c, before.id, req.user.id);
+    await logAudit(req, { db: c, action: 'restore', entity: 'application', entityId: before.id, summary: before.name_ar.slice(0, 80) });
+    return app;
+  });
+  publishChange({ dept_id: before.department_id });
+  res.json({ ok: true, application: a });
 });
 
 export default r;

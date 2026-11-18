@@ -6,8 +6,8 @@ import { summarize, itemCounts, CALC_FUNCTIONS_SQL } from './calc.js';
 
 export async function takeSnapshot() {
   const [d, a, f, rep, settings] = await Promise.all([
-    query('SELECT * FROM departments ORDER BY sort'),
-    query('SELECT * FROM applications ORDER BY sort'),
+    query('SELECT * FROM departments WHERE archived_at IS NULL ORDER BY sort'),
+    query('SELECT * FROM applications WHERE archived_at IS NULL ORDER BY sort'),
     query(CALC_FUNCTIONS_SQL),
     query('SELECT * FROM app_reports'),
     allSettings(),

@@ -21,7 +21,7 @@ const r = Router();
 r.use(requireAuth, requirePerm('usr'), requireAdmin);
 
 // erp_view / prj_view (migration 036): may see the system-modules wheel / the project-phases wheel on the dashboard.
-const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'apv_dept', 'apv_final', 'msg', 'erp_view', 'prj_view'];
+const PERMISSIONS = ['pct', 'wgt', 'tst', 'tog', 'ren', 'mov', 'sch', 'rep', 'exp', 'imp', 'usr', 'log', 'cfg', 'str', 'apv_dept', 'apv_final', 'msg', 'erp_view', 'prj_view'];
 
 // Never includes secrets (password hash, TOTP secret), so rows can be returned as-is.
 const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language, u.is_active, u.must_change_password,
@@ -33,8 +33,8 @@ const USER_COLS = `u.id, u.username, u.full_name, u.email, u.role_id, u.language
 r.get('/meta', async (req, res) => {
   const [roles, depts, apps] = await Promise.all([
     query(`SELECT * FROM roles ORDER BY array_position(ARRAY['admin','pm','tm','lead','member','mgr','ed','qa','obs'], id)`),
-    query('SELECT id, name_ar, name_en, short_ar, short_en FROM departments ORDER BY sort'),
-    query('SELECT id, department_id, name_ar, name_en FROM applications ORDER BY sort'),
+    query('SELECT id, name_ar, name_en, short_ar, short_en FROM departments WHERE archived_at IS NULL ORDER BY sort'),
+    query('SELECT id, department_id, name_ar, name_en FROM applications WHERE archived_at IS NULL ORDER BY sort'),
   ]);
   res.json({ roles: roles.rows, permissions: PERMISSIONS, departments: depts.rows, applications: apps.rows,
     mfa_mode: await getSetting('mfa.mode') });
@@ -255,8 +255,8 @@ function importRows(body) {
 // → [{ index, username, status: 'ok'|'error', errors: [codes], user? }] — `user` (the values to insert) when ok.
 async function checkImportRows(rows) {
   const [roles, depts, apps, defaultLang] = await Promise.all([
-    query('SELECT id, name_ar, name_en, full_scope FROM roles'), query('SELECT id, name_ar, name_en, short_ar, short_en FROM departments'),
-    query('SELECT id, name_ar, name_en FROM applications'), getSetting('app.default_language'),
+    query('SELECT id, name_ar, name_en, full_scope FROM roles'), query('SELECT id, name_ar, name_en, short_ar, short_en FROM departments WHERE archived_at IS NULL'),
+    query('SELECT id, name_ar, name_en FROM applications WHERE archived_at IS NULL'), getSetting('app.default_language'),
   ]);
   const roleMap = new Map(roles.rows.map(x => [x.id, x]));
   // ids, Arabic / English names and short names are accepted (ambiguous name → ambiguous_value)

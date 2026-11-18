@@ -11,6 +11,7 @@ import { NotifySettingsCard } from '../components/NotifySettings.jsx';
 import { BackupSection } from '../components/BackupCenter.jsx';
 import { ReleaseSection } from '../components/ReleasePromotion.jsx';
 import { ProjectPhasesSection } from '../components/ProjectPhasesSection.jsx';
+import { StructureSection } from '../components/StructureSection.jsx';
 
 // Settings tabs: the page used to be one long scroll; the groups are now split across tabs.
 // The active tab lives in the URL (?tab=…). Old hash deep-links still work: #timeline/#notifications/#backups
@@ -48,6 +49,8 @@ export default function Settings() {
     }
     // «مراحل المشروع»: available to the project managers / administrators who may edit the phases (cfg OR apv_final).
     if (isCfg || can('apv_final')) keys.push('project');
+    // «إدارة الهيكلة»: create / edit / archive departments and applications (permission 'str').
+    if (can('str')) keys.push('structure');
     return keys;
   }, [user?.role, isCfg]); // eslint-disable-line react-hooks/exhaustive-deps
   // Active tab from ?tab=…, else mapped from an old hash deep-link, else the first visible tab.
@@ -122,7 +125,7 @@ export default function Settings() {
     <div>
       <PageHeader title={t('settings_title')} icon="settings">
         {/* the project-phases tab has its own save; this global save targets the general settings (needs cfg) */}
-        {tab !== 'project' && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
+        {tab !== 'project' && tab !== 'structure' && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? t('saving') : t('save')}</button>}
       </PageHeader>
       {err && <Alert>{errText(err)}</Alert>}
 
@@ -191,6 +194,9 @@ export default function Settings() {
 
       {/* project phases (1.12.54): moved here from a standalone page; editable by cfg | apv_final */}
       {tab === 'project' && <ProjectPhasesSection />}
+
+      {/* structure management: create / edit / archive departments and applications (permission 'str') */}
+      {tab === 'structure' && <StructureSection />}
 
       {/* backups (1.12.0): system administrators only — the API refuses everyone else as well */}
       {tab === 'backup' && user?.role === 'admin' && <BackupSection />}

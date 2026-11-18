@@ -98,7 +98,7 @@ export async function applyLegacy(c, p, userId) {
 // user: whose scope limits the content (ETS-SEC-006) — applications outside it are left out, and the
 // project-wide schedule is included for full-scope users only.
 export async function buildLegacy(c, { user }) {
-  const visible = new Set((await c.query('SELECT id, department_id FROM applications')).rows.filter(a => canSeeApp(user, a)).map(a => a.id));
+  const visible = new Set((await c.query('SELECT id, department_id FROM applications WHERE archived_at IS NULL')).rows.filter(a => canSeeApp(user, a)).map(a => a.id));
   const fns = (await c.query('SELECT app_id, code, weight, progress, enabled, test_status, note, notif_status, review_status FROM functions WHERE removed_at IS NULL')).rows
     .filter(x => visible.has(x.app_id));
   const f = {};
