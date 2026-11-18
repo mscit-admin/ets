@@ -32,7 +32,7 @@ jobs:
         run: pip install semgrep
       - name: Scan
         run: >-
-          semgrep scan --sarif --output semgrep.sarif --metrics=off --error=false
+          semgrep scan --sarif --output semgrep.sarif --metrics=off
           --config p/javascript --config p/react --config p/nodejs
           --config p/owasp-top-ten --config p/secrets
           --exclude node_modules --exclude dist

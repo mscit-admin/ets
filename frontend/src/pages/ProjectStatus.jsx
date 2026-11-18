@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon.jsx';
 import { SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
+import { StatusGuide } from '../components/StatusGuide.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
 const iso = x => '⁦' + x + '⁩';
@@ -60,6 +61,8 @@ export default function ProjectStatus() {
         {st.can.timeline && <Link to="/settings#timeline" className="btn btn-default btn-sm"><Icon name="calendar" size={14} /> {t('project_timeline')}</Link>}
         <ExportButton report="project_status" />
       </PageHeader>
+
+      <StatusGuide />
 
       <Card className="status-hero">
         <div className="sh-top">

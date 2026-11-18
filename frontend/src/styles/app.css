@@ -883,6 +883,21 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
   font-size: 12px; line-height: 1.55; color: var(--text); max-width: min(480px, 100%); text-align: start; }
 .formula-note b { display: block; margin-bottom: 4px; color: var(--blue-text); font-size: 12.5px; font-weight: 700; }
 .formula-note ul { margin: 0; padding-inline-start: 18px; display: grid; gap: 3px; }
+
+/* ---- project-status "how to read this screen" guide ---- */
+.status-guide-wrap { margin: 0 0 16px; }
+.status-guide-wrap .btn.active { color: var(--blue-text); border-color: color-mix(in srgb, var(--blue-text) 40%, var(--border)); background: var(--blue-bg); }
+.status-guide { margin-top: 10px; padding: 16px 18px; }
+.status-guide h3 { margin: 0 0 2px; font-size: 15px; }
+.status-guide h4 { margin: 14px 0 6px; font-size: 13px; color: var(--blue-text); font-weight: 700;
+  border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.status-guide .sg-group:first-of-type h4 { margin-top: 8px; }
+.status-guide dl { margin: 0; display: grid; gap: 6px; }
+.status-guide .sg-row { display: grid; grid-template-columns: minmax(130px, 190px) 1fr; gap: 10px; align-items: start; }
+.status-guide dt { font-weight: 600; color: var(--text); font-size: 12.5px; }
+.status-guide dd { margin: 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.55; }
+@media (max-width: 640px) { .status-guide .sg-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+
 @media (max-width: 820px) {
   .erp-cols { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px; }
 }
