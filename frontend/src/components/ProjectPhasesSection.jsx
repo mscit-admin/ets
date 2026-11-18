@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { pc, pctTone } from '../lib/format.js';
 import { Alert, Card, ErrorBox, Loading, toast, useLoad } from './ui.jsx';
 import { Icon } from './Icon.jsx';
+import { FormulaNote } from './FormulaNote.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
 // The icons an administrator may pick for a phase (from the app's icon set — see lib/iconPaths.js), software /
@@ -142,7 +143,7 @@ export function ProjectPhasesSection() {
 
   return (
     <div className="pp-section">
-      <p className="muted small mb">{t('pp_intro')}</p>
+      <div className="mb"><span className="muted small">{t('pp_intro')}</span> <FormulaNote /></div>
       {err && <Alert>{errText(err)}</Alert>}
       {problem && <Alert kind="orange">{t(problem)}</Alert>}
 
