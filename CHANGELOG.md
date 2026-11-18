@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.61] — 2026-11-18 — Collapsible departments in structure management / طيّ وفتح الإدارات
+
+### Changed
+
+- **Frontend** — In the «إدارة الهيكلة» screen each department (module) is now collapsible: its applications list
+  folds and unfolds with a chevron, so the tree opens as a compact overview (departments only) and the applications
+  show on demand. A «توسيع الكل / طيّ الكل» (expand all / collapse all) control was added. Departments are collapsed
+  by default.
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.60] — 2026-11-18 — Structure management: departments & applications / إدارة الهيكلة
 
 ### Added
@@ -3479,7 +3494,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/918907f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/9c76046...HEAD
+[1.12.61]: https://github.com/mscit-admin/ets/compare/918907f...9c76046
 [1.12.60]: https://github.com/mscit-admin/ets/compare/55d9189...918907f
 [1.12.59]: https://github.com/mscit-admin/ets/compare/8105a83...55d9189
 [1.12.58]: https://github.com/mscit-admin/ets/compare/54fd5d5...8105a83

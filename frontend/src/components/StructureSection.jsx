@@ -138,6 +138,7 @@ export function StructureSection() {
   const { t, nm, errText } = useI18n();
   const { data, error, loading, reload, refresh } = useLoad(o => api.get('/tracker/structure', o), []);
   const [showArchived, setShowArchived] = useState(false);
+  const [open, setOpen] = useState(() => new Set());    // ids of the expanded departments (collapsed by default)
   const [dialog, setDialog] = useState(null);           // { type, deptId?, dept?, app?, row?, kind? }
   const [actErr, setActErr] = useState(null);
   useLiveUpdates(refresh);
@@ -155,19 +156,28 @@ export function StructureSection() {
   const liveDepts = data.departments.filter(d => !d.archived_at);
   const archivedDepts = data.departments.filter(d => d.archived_at);
   const hasArchived = archivedDepts.length > 0 || data.applications.some(a => a.archived_at);
+  const shownDepts = [...liveDepts, ...(showArchived ? archivedDepts : [])];
+  const toggle = id => setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allOpen = shownDepts.length > 0 && shownDepts.every(d => open.has(d.id));
+  const toggleAll = () => setOpen(allOpen ? new Set() : new Set(shownDepts.map(d => d.id)));
 
   const DeptBlock = ({ d }) => {
     const apps = appsOf(d.id);
     const live = apps.filter(a => !a.archived_at);
     const arch = apps.filter(a => a.archived_at);
+    const isOpen = open.has(d.id);
+    const shownApps = [...live, ...(showArchived ? arch : [])];
     return (
       <div className={'str-dept' + (d.archived_at ? ' archived' : '')}>
         <div className="str-dept-head">
-          <span className="str-emblem" style={{ color: d.color }}><Icon name={d.emblem || 'layers'} size={20} /></span>
-          <span className="str-names">
-            <b>{nm(d)}{d.is_base && <span className="chip">{t('str_base_chip')}</span>}{d.archived_at && <span className="chip gray">{t('str_archived_chip')}</span>}</b>
-            <span className="muted small">{d.name_en} · {t('str_app_count', { n: d.active_app_count })}</span>
-          </span>
+          <button type="button" className="str-toggle" aria-expanded={isOpen} onClick={() => toggle(d.id)}>
+            <Icon name="chevron" size={14} className={'str-chevron' + (isOpen ? ' open' : '')} />
+            <span className="str-emblem" style={{ color: d.color }}><Icon name={d.emblem || 'layers'} size={20} /></span>
+            <span className="str-names">
+              <b>{nm(d)}{d.is_base && <span className="chip">{t('str_base_chip')}</span>}{d.archived_at && <span className="chip gray">{t('str_archived_chip')}</span>}</b>
+              <span className="muted small">{d.name_en} · {t('str_app_count', { n: d.active_app_count })}</span>
+            </span>
+          </button>
           <span className="str-actions">
             {!d.archived_at && <>
               <button className="btn btn-default btn-xs" onClick={() => setDialog({ type: 'app', deptId: d.id })}><Icon name="plus" size={13} /> {t('str_add_app')}</button>
@@ -177,12 +187,9 @@ export function StructureSection() {
             {d.archived_at && <button className="btn btn-default btn-xs" onClick={() => restoreDept(d)}><Icon name="refresh" size={13} /> {t('str_restore')}</button>}
           </span>
         </div>
-        {(live.length > 0 || (showArchived && arch.length > 0)) && (
-          <ul className="str-apps">
-            {live.map(a => <AppRow key={a.id} a={a} />)}
-            {showArchived && arch.map(a => <AppRow key={a.id} a={a} />)}
-          </ul>
-        )}
+        {isOpen && (shownApps.length > 0
+          ? <ul className="str-apps">{shownApps.map(a => <AppRow key={a.id} a={a} />)}</ul>
+          : <p className="str-apps-empty muted small">{t('str_no_apps')}</p>)}
       </div>
     );
   };
@@ -212,6 +219,11 @@ export function StructureSection() {
       {actErr && <Alert>{errText(actErr)}</Alert>}
       <Card title={t('str_title')} actions={
         <div className="row gap wrap" style={{ alignItems: 'center' }}>
+          {shownDepts.length > 0 && (
+            <button className="btn btn-default btn-xs" onClick={toggleAll}>
+              <Icon name="chevron" size={12} className={'str-chevron' + (allOpen ? ' open' : '')} /> {allOpen ? t('str_collapse_all') : t('str_expand_all')}
+            </button>
+          )}
           {hasArchived && (
             <label className="row gap small" style={{ alignItems: 'center' }}>
               <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} /> <span className="muted">{t('str_show_archived')}</span>
