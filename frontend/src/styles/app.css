@@ -870,8 +870,9 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 /* phase icon picker: a button with the current icon that opens a small grid */
 .icon-picker { position: relative; display: inline-block; }
 .icon-picker > .btn-icon { border: 1px solid var(--border-strong); background: var(--gray-50); }
-/* rendered in a portal (position:fixed set inline), so z-index only needs to clear the page chrome */
-.icon-picker-pop { z-index: 60; display: grid; grid-template-columns: repeat(6, 32px); gap: 2px; padding: 6px;
+/* rendered in a portal (position:fixed set inline); z-index must clear the modal backdrop (100) so the picker opens
+   in front of a dialog (the structure screen opens it inside a Modal), while staying below toasts (200) */
+.icon-picker-pop { z-index: 150; display: grid; grid-template-columns: repeat(6, 32px); gap: 2px; padding: 6px;
   background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow); }
 .icon-opt { display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; border-radius: 6px; cursor: pointer; color: var(--text-muted); }
 .icon-opt:hover { background: var(--gray-100); color: var(--text); }
