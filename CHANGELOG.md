@@ -3718,8 +3718,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/RELHASH...HEAD
-[1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...RELHASH
+[Unreleased]: https://github.com/mscit-admin/ets/compare/02d26d4...HEAD
+[1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...02d26d4
 [1.12.71]: https://github.com/mscit-admin/ets/compare/bfaa11f...38afb67
 [1.12.70]: https://github.com/mscit-admin/ets/compare/8567ac1...bfaa11f
 [1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
