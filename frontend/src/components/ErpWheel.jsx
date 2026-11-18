@@ -230,11 +230,12 @@ export function ProjectWheel({ phases, total }) {
 export function ErpLegend({ segments }) {
   const { t, dir } = useI18n();
   const scoped = segments.some(s => s.state === 'out_of_scope');
+  const inactive = segments.some(s => s.state === 'inactive');
   return (
     <div className="erp-legend">
       <ul className="erp-keys">
         <li><i className="sw on" />{t('erp_active')}</li>
-        <li><i className="sw off" />{t('erp_not_activated')}</li>
+        {inactive && <li><i className="sw off" />{t('erp_not_activated')}</li>}
         {scoped && <li><i className="sw off scope" />{t('erp_out_of_scope')}</li>}
       </ul>
       <div className="erp-scale">

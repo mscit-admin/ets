@@ -1088,7 +1088,7 @@ export const messages = {
     erp_scale: 'لون النسبة',
     erp_scale_low: 'حرِج',
     erp_scale_high: 'جيد',
-    erp_active_count: '{n} من {of} وحدات قياسية مفعّلة',
+    erp_active_modules: '{n} وحدات مفعّلة',
     // project phases chart + editor (manual weighted model)
     erp_card_title: 'وحدات النظام وإنجاز المشروع',
     erp_col_system: 'وحدات النظام (ERP)',
@@ -3093,7 +3093,7 @@ export const messages = {
     erp_scale: 'Percentage colour',
     erp_scale_low: 'Critical',
     erp_scale_high: 'Good',
-    erp_active_count: '{n} of {of} standard modules activated',
+    erp_active_modules: '{n} active modules',
     // project phases chart + editor (manual weighted model)
     erp_card_title: 'System modules & project progress',
     erp_col_system: 'System modules (ERP)',

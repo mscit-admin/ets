@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { pc, pctTone, TEST_COLORS } from '../lib/format.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useLiveUpdates } from '../lib/live.js';
-import { STANDARD_MODULES, wheelSegments } from '../lib/erpModules.js';
+import { wheelSegments } from '../lib/erpModules.js';
 import { ErpLegend, ErpWheel, ProjectWheel } from '../components/ErpWheel.jsx';
 import { FormulaNote } from '../components/FormulaNote.jsx';
 import { LiveBadge } from '../components/LiveBadge.jsx';
@@ -33,7 +33,6 @@ export default function Dashboard() {
   const { total, departments, applications, counts, settings, project } = data;
   const segments = wheelSegments(departments, { fullScope: !!user?.fullScope });
   const activeSegs = segments.filter(x => x.state === 'active');
-  const activeStd = segments.filter(x => x.state === 'active' && STANDARD_MODULES.some(m => m.key === x.key)).length;
   const lowest = [...applications].sort((a, b) => a.calc.pct - b.calc.pct).slice(0, 5);
   const tests = total.tests;
   const testedTotal = tests.reduce((a, b) => a + b, 0) || 1;
@@ -78,7 +77,7 @@ export default function Dashboard() {
                 <span className="ht"><b>{t('sys_headline')}</b><span><span className="num">{pc(total.fnPct)}%</span> {t('functions_only')}</span></span>
               </div>
               <div className="erp-detail">
-                <p className="muted small erp-count">{t('erp_active_count', { n: activeStd, of: STANDARD_MODULES.length })}</p>
+                <p className="muted small erp-count">{t('erp_active_modules', { n: activeSegs.length })}</p>
                 <ul className="erp-list">
                   {activeSegs.map(m => {
                     const tone = pctTone(m.pct);

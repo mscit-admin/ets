@@ -30,6 +30,25 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.59] — 2026-11-18 — Drop placeholder ERP modules / إزالة الوحدات غير المفعّلة من مخطط ERP
+
+### Changed
+
+- **Frontend / Mobile** — The ERP system wheel on the dashboard now shows only the modules backed by a real
+  department. The five placeholder modules that had no department (الإنتاج، التخطيط، إدارة المخزون، التقارير،
+  علاقات العملاء) were removed, so the wheel no longer draws empty «غير مفعّل» segments and redraws evenly from the
+  activated modules. None of these affected any percentage — they were purely visual placeholders.
+- The count under the card now reads «{n} وحدات مفعّلة» / "{n} active modules" (the number of activated modules)
+  instead of «{n} من 8 وحدات قياسية مفعّلة», which referred to the now-removed placeholders.
+- The wheel legend shows the «غير مفعّل» / "Not activated" key only when a faded segment is actually present
+  (e.g. a mapped department that was removed).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.58] — 2026-11-18 — Project progress formula note / ملاحظة معادلة احتساب النسب
 
 ### Added

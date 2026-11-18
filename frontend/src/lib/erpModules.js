@@ -5,16 +5,14 @@
 //   icon      line icon name from components/Icon.jsx
 //   name_*    label on the wheel; lines_* optionally splits it over two lines inside the segment
 //   depts     ids of the departments (table departments, backend/src/db/seed/catalog.json) whose progress this
-//             module shows. A module without a department of the system is drawn faded: «غير مفعّل» / "Not activated".
+//             module shows. Every module here maps to a real department of the system; one whose department is
+//             outside the reader's scope is drawn faded («خارج نطاقك» / "Out of your scope"), and one whose mapped
+//             department no longer exists is drawn faded («غير مفعّل» / "Not activated").
 //
-// Order = position around the wheel, clockwise from the top (mirrored in Arabic), as in the standard ERP figure.
+// Order = position around the wheel, clockwise from the top (mirrored in Arabic). Only modules backed by a real
+// department are listed — placeholder modules with no department were removed so the wheel shows no empty segments.
 export const STANDARD_MODULES = [
-  { key: 'production', icon: 'factory', name_ar: 'الإنتاج', name_en: 'Production', depts: [] },
   { key: 'hr', icon: 'people', name_ar: 'الموارد البشرية', name_en: 'Human Resources', lines_en: ['Human', 'Resources'], depts: ['hr'] },
-  { key: 'planning', icon: 'planning', name_ar: 'التخطيط', name_en: 'Planning', depts: [] },
-  { key: 'inventory', icon: 'box', name_ar: 'إدارة المخزون', name_en: 'Inventory Management', lines_en: ['Inventory', 'Management'], depts: [] },
-  { key: 'reporting', icon: 'chart', name_ar: 'التقارير', name_en: 'Reporting', depts: [] },
-  { key: 'crm', icon: 'crm', name_ar: 'علاقات العملاء', name_en: 'CRM', depts: [] },
   { key: 'sales', icon: 'megaphone', name_ar: 'المبيعات والتسويق', name_en: 'Sales & Marketing', lines_ar: ['المبيعات', 'والتسويق'], lines_en: ['Sales &', 'Marketing'], depts: ['com'] },
   { key: 'finance', icon: 'coins', name_ar: 'المالية والمحاسبة', name_en: 'Finance & Accounting', lines_ar: ['المالية', 'والمحاسبة'], lines_en: ['Finance &', 'Accounting'], depts: ['fin'] },
 ];

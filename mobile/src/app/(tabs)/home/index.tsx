@@ -7,7 +7,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/useLoad';
 import type { Summary } from '@/lib/types';
-import { STANDARD_MODULES, TEST_COLORS, pc, wheelSegments, type Segment } from '@/shared/web';
+import { TEST_COLORS, pc, wheelSegments, type Segment } from '@/shared/web';
 import { colors, fontSize, radius, space, stackSeg } from '@/theme';
 import { toneOf } from '@/theme/tone';
 import { ErpWheel } from '@/components/ErpWheel';
@@ -39,11 +39,12 @@ function ModuleRow({ m }: { m: Segment }) {
 function Legend({ segments }: { segments: Segment[] }) {
   const { t } = useI18n();
   const scoped = segments.some(x => x.state === 'out_of_scope');
+  const inactive = segments.some(x => x.state === 'inactive');
   return (
     <View style={st.legend}>
       <View style={st.keys}>
         <View style={st.key}><View style={[st.sw, { backgroundColor: colors.erpSwatchOn }]} /><Txt size={12.5} color={colors.gray700}>{t('erp_active')}</Txt></View>
-        <View style={st.key}><View style={[st.sw, st.swOff]} /><Txt size={12.5} color={colors.gray700}>{t('erp_not_activated')}</Txt></View>
+        {inactive && <View style={st.key}><View style={[st.sw, st.swOff]} /><Txt size={12.5} color={colors.gray700}>{t('erp_not_activated')}</Txt></View>}
         {scoped && <View style={st.key}><View style={[st.sw, st.swOff, { backgroundColor: colors.erpScope }]} /><Txt size={12.5} color={colors.gray700}>{t('erp_out_of_scope')}</Txt></View>}
       </View>
       <Txt size={fontSize.s} color={colors.textMuted}>{t('erp_scale')}</Txt>
@@ -66,7 +67,6 @@ export default function Dashboard() {
     const { total, departments, applications, counts, settings } = data;
     const segments = wheelSegments(departments, { fullScope: !!user?.fullScope });
     const active = segments.filter(x => x.state === 'active');
-    const activeStd = active.filter(x => STANDARD_MODULES.some(m => m.key === x.key)).length;
     const lowest = [...applications].sort((a, b) => a.calc.pct - b.calc.pct).slice(0, 5);
     const tests = total.tests;
     const testedTotal = tests.reduce((a, b) => a + b, 0) || 1;
@@ -86,7 +86,7 @@ export default function Dashboard() {
                 <Txt size={fontSize.s} color={colors.textMuted}>{pctText(total.fnPct)} {t('functions_only')}</Txt>
               </View>
             </View>
-            <Txt size={fontSize.s} color={colors.textMuted} style={st.count}>{t('erp_active_count', { n: activeStd, of: STANDARD_MODULES.length })}</Txt>
+            <Txt size={fontSize.s} color={colors.textMuted} style={st.count}>{t('erp_active_modules', { n: active.length })}</Txt>
             <View>{active.map(m => <ModuleRow key={m.key} m={m} />)}</View>
             <Legend segments={segments} />
           </View>
