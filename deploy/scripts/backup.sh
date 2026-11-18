@@ -83,8 +83,22 @@ key_id() {   # id of the key that encrypts the backups (cached next to the key, 
 
 # ================================================================= destinations (SSH, NAS: rsync — cloud: rclone)
 ssh_cmd() {
-  printf 'ssh -i %s -p %s -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=%s -o ConnectTimeout=20 -o ServerAliveInterval=15' \
-    "$BACKUP_SSH_KEY" "$BACKUP_SSH_PORT" "$SSH_KNOWN"
+  # Host-key policy (TOFU, upgraded after the first run):
+  #   - no key pinned yet for this host in $SSH_KNOWN → accept-new, so the very first offsite copy / --test still
+  #     works and pins the key (its fingerprint is then shown by --test, see below);
+  #   - once the key is pinned → yes (full strict verification) on every later run, so a changed/forged host key is
+  #     refused rather than trusted silently. If the backup server is legitimately rebuilt, remove its old entry
+  #     from $SSH_KNOWN so the next run re-pins it.
+  # To be strict from the very first connection, pin the key out of band before the first backup, e.g.:
+  #   ssh-keyscan -p "$BACKUP_SSH_PORT" <host> >> "$SSH_KNOWN"
+  # BACKUP_SSH_STRICT=1 (env or backup.conf) forces yes unconditionally.
+  local skc=accept-new h=${BACKUP_SSH_TARGET#*@}; h=${h%%:*}
+  [[ "$BACKUP_SSH_PORT" == 22 ]] || h="[$h]:$BACKUP_SSH_PORT"
+  if [[ "${BACKUP_SSH_STRICT:-0}" == 1 ]] || { [[ -s "$SSH_KNOWN" ]] && ssh-keygen -F "$h" -f "$SSH_KNOWN" >/dev/null 2>&1; }; then
+    skc=yes
+  fi
+  printf 'ssh -i %s -p %s -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=%s -o UserKnownHostsFile=%s -o ConnectTimeout=20 -o ServerAliveInterval=15' \
+    "$BACKUP_SSH_KEY" "$BACKUP_SSH_PORT" "$skc" "$SSH_KNOWN"
 }
 # rsync target of a destination (SSH: user@host:path; NAS: the mounted directory)
 rs_target() { if [[ $1 == ssh ]]; then printf '%s' "${BACKUP_SSH_TARGET%/}/"; else printf '%s/' "${BACKUP_NAS_DIR%/}"; fi; }

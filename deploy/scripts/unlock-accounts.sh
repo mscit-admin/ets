@@ -10,30 +10,49 @@
 # الاستخدام:
 #   sudo bash deploy/scripts/unlock-accounts.sh                 # كل الحسابات المقفولة حالياً
 #   sudo bash deploy/scripts/unlock-accounts.sh user1 user2     # أسماء/بُرُد محدّدة فقط
-#   DATABASE_URL=postgres://ets:pw@127.0.0.1/ets bash deploy/scripts/unlock-accounts.sh
+#   # إعدادات الاتصال تُقرأ تلقائياً من /etc/ets/ets.env (متغيّرات PG*)؛ أو مرّرها صراحةً في البيئة:
+#   sudo PGHOST=127.0.0.1 PGDATABASE=ets PGUSER=ets PGPASSWORD=pw bash deploy/scripts/unlock-accounts.sh
+#   sudo ETS_ENV_FILE=/path/to/ets.env bash deploy/scripts/unlock-accounts.sh
 #
-# ملاحظة: فكّ القفل عبر هذا السكربت (SQL مباشر) لا يُسجَّل في سجل التدقيق ولا يُطلق تنبيهات S14/S15؛
-#         إن أردت التوثيق الكامل استخدم زر «فكّ القفل» في شاشة الإدارة ← المستخدمون.
+# تحذير أمني: فكّ القفل عبر هذا السكربت (SQL مباشر) *يتجاوز* سجل التدقيق ولا يُطلق تنبيهات الأمان (S14/S15).
+#         الطريقة الأساسية والمُوصى بها هي زر «فكّ القفل» في شاشة الإدارة ← المستخدمون (تُسجَّل بالكامل مع تنبيهاتها)؛
+#         لا تستخدم هذا السكربت إلا عند تعذّر الوصول إلى شاشة الإدارة.
 
 set -euo pipefail
 
 # ---- مصدر الاتصال بقاعدة البيانات -------------------------------------------------------------------
-# يُفضَّل DATABASE_URL (نفس ما يستخدمه التطبيق). إن لم يُضبط، نحاول قراءته من /opt/ets/.env ثم backend/.env.
-DB_URL="${DATABASE_URL:-}"
-if [[ -z "$DB_URL" ]]; then
-  for f in /opt/ets/.env /opt/ets/backend/.env "$(dirname "$0")/../../backend/.env" "$(dirname "$0")/../../.env"; do
-    if [[ -f "$f" ]]; then
-      line="$(grep -E '^DATABASE_URL=' "$f" | tail -n1 || true)"
-      if [[ -n "$line" ]]; then DB_URL="${line#DATABASE_URL=}"; DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"; break; fi
+# نفس مصدر بقية أدوات النشر (deploy/scripts/backup.sh و deploy/scripts/deploy-lib.sh): المتغيّرات المنفصلة PG*
+# في ملف البيئة الذي يكتبه المثبّت فعلاً /etc/ets/ets.env (PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD).
+# لا يوجد DATABASE_URL في هذا الملف. ما كان مضبوطاً في البيئة مسبقاً له الأولوية (يسمح للمشغّل بتمرير الاتصال صراحةً).
+ENVF="${ETS_ENV_FILE:-/etc/ets/ets.env}"
+
+# env_get FILE KEY — قيمة KEY من ملف البيئة (تُزال علامات الاقتباس). تُقرأ كبيانات ولا تُنفَّذ إطلاقاً (لا source/eval)،
+# مطابقة لـ env_get في deploy-lib.sh و bk_env_get في backup-lib.sh.
+env_get() {
+  local v; v=$(sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1)
+  v=${v%\'}; v=${v#\'}; v=${v%\"}; v=${v#\"}; printf '%s' "$v"
+}
+
+if [[ -r "$ENVF" ]]; then
+  for k in PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE PGSSLROOTCERT PGSSLCERT PGSSLKEY; do
+    if [[ -z "${!k:-}" ]]; then
+      v="$(env_get "$ENVF" "$k")"
+      [[ -n "$v" ]] && export "$k=$v"
     fi
   done
 fi
-if [[ -z "$DB_URL" ]]; then
-  echo "خطأ: لم أجد DATABASE_URL. مرّره في البيئة أو تأكّد من وجوده في /opt/ets/.env" >&2
+
+# قاعدة بيانات على خادم آخر تستخدم TLS افتراضياً (مطابق لـ deploy/scripts/backup.sh).
+case "${PGHOST:-}" in ''|127.0.0.1|localhost|::1|/*) : ;; *) export PGSSLMODE="${PGSSLMODE:-require}" ;; esac
+
+if [[ -z "${PGDATABASE:-}" ]]; then
+  echo "خطأ: لم أجد إعدادات الاتصال بقاعدة البيانات. شغّل السكربت بصلاحية قراءة $ENVF (sudo)،" >&2
+  echo "      أو مرّر متغيّرات PG* صراحةً (PGHOST/PGDATABASE/PGUSER/PGPASSWORD)." >&2
   exit 1
 fi
 
-PSQL=(psql "$DB_URL" -v ON_ERROR_STOP=1)
+# psql يقرأ PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD تلقائياً من البيئة؛ -X لتجاهل ~/.psqlrc.
+PSQL=(psql -X -v ON_ERROR_STOP=1)
 
 # ---- تحديد نطاق الحسابات (الكل أو أسماء محدّدة) -------------------------------------------------------
 # شرط القفل مطابق لـ services/lockout.js: locked_until موجود وفي المستقبل.
