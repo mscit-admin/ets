@@ -16,6 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependency review
+        # Requires the repo's Dependency Graph feature (Settings → Code security and analysis). Until an admin
+        # enables it the action errors with "Dependency review is not supported on this repository", so keep this
+        # non-blocking for now; once the graph is on, drop continue-on-error so high-severity findings block PRs.
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high

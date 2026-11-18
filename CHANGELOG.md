@@ -42,9 +42,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   departments-vs-plan (gap and the risk/delay thresholds), and the quality & readiness indicators. Bilingual
   (Arabic/English), RTL-aware, reuses the existing metric labels so wording stays in sync with the page.
 
+### Fixed
+
+- **CI**: the Semgrep workflow used the invalid `--error=false` (Semgrep's `--error` is a bare flag), which aborted
+  the scan with exit code 2; removed it so findings upload to the Code scanning tab without failing the run. The
+  Dependency Review workflow is now `continue-on-error` until the repository's Dependency Graph feature is enabled
+  (it otherwise errors with "Dependency review is not supported on this repository").
+
 ### Upgrade notes
 
-- None. Frontend-only; no API, database or deployment change.
+- None for the app. CI: to make Dependency Review enforce again, enable Dependency Graph under the repository's
+  Code security and analysis settings, then drop `continue-on-error` from `.github/workflows/dependency-review.yml`.
 
 ---
 
