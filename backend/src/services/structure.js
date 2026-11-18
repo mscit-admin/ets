@@ -44,11 +44,21 @@ export function departmentData(body = {}, { create } = {}) {
   if (!HEX.test(color)) throw bad('invalid_value');
   const emblem = str(body.emblem, 40) || null;
   if (emblem && !ICON.test(emblem)) throw bad('invalid_value');
+  const wheel_icon = str(body.wheel_icon, 40) || null;
+  if (wheel_icon && !ICON.test(wheel_icon)) throw bad('invalid_value');
+  const wheel_order = body.wheel_order === null || body.wheel_order === undefined || body.wheel_order === ''
+    ? null : Math.trunc(num(body.wheel_order, 0, 100000, 0));
   return {
     name_ar, name_en: name_en || name_ar,
     short_ar: str(body.short_ar, 120) || name_ar,
     short_en: str(body.short_en, 120) || name_en || name_ar,
     color, emblem, is_base: body.is_base === true,
+    // ERP wheel appearance (migration 038): all optional, with sensible fallbacks applied in the wheel itself
+    wheel_show: body.wheel_show !== false,
+    wheel_icon,
+    wheel_label_ar: str(body.wheel_label_ar, 120) || null,
+    wheel_label_en: str(body.wheel_label_en, 120) || null,
+    wheel_order,
   };
 }
 
@@ -56,18 +66,24 @@ export async function createDepartment(c, body, userId) {
   const d = departmentData(body, { create: true });
   const id = await genId(c, 'departments', slugBase(d.name_en, 'dept'));
   const sort = (await c.query('SELECT COALESCE(max(sort), 0) + 1 AS s FROM departments')).rows[0].s;
-  return (await c.query(`INSERT INTO departments(id, name_ar, name_en, short_ar, short_en, color, emblem, is_base, sort)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-  [id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base, sort])).rows[0];
+  // a new department defaults to the next wheel position when none is given, so it appears after the existing ones
+  const wheelOrder = d.wheel_order ?? (await c.query('SELECT COALESCE(max(wheel_order), 0) + 1 AS s FROM departments')).rows[0].s;
+  return (await c.query(`INSERT INTO departments(id, name_ar, name_en, short_ar, short_en, color, emblem, is_base, sort,
+      wheel_show, wheel_icon, wheel_label_ar, wheel_label_en, wheel_order)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+  [id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base, sort,
+    d.wheel_show, d.wheel_icon, d.wheel_label_ar, d.wheel_label_en, wheelOrder])).rows[0];
 }
 
 export async function updateDepartment(c, id, body) {
   const d = departmentData(body, { create: false });
   // name_ar is required when present; an edit that blanks it is rejected (keep the column NOT NULL meaningful)
   if (!d.name_ar) throw bad('name_required');
-  return (await c.query(`UPDATE departments SET name_ar=$2, name_en=$3, short_ar=$4, short_en=$5, color=$6, emblem=$7, is_base=$8
+  return (await c.query(`UPDATE departments SET name_ar=$2, name_en=$3, short_ar=$4, short_en=$5, color=$6, emblem=$7, is_base=$8,
+      wheel_show=$9, wheel_icon=$10, wheel_label_ar=$11, wheel_label_en=$12, wheel_order=COALESCE($13, wheel_order)
     WHERE id=$1 AND archived_at IS NULL RETURNING *`,
-  [id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base])).rows[0];
+  [id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base,
+    d.wheel_show, d.wheel_icon, d.wheel_label_ar, d.wheel_label_en, d.wheel_order])).rows[0];
 }
 
 export async function archiveDepartment(c, id, reason, userId) {

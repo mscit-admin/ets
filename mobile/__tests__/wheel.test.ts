@@ -55,23 +55,32 @@ describe('wheel geometry (shared with the web)', () => {
   });
 });
 
-describe('module mapping (shared erpModules.js)', () => {
+describe('wheel segments (department-driven, shared erpModules.js)', () => {
   const depts = [dept('hr', 40, 30), dept('fin', 60, 10), dept('com', 0), dept('inf', 10), dept('lab', 70)];
-  it('full scope: tracked modules active, infrastructure and unknown departments appended', () => {
+  it('each visible department is one active segment keyed by its id', () => {
     const segs = wheelSegments(depts, { fullScope: true });
-    expect(segs.slice(0, STANDARD_MODULES.length).map(s => s.key)).toEqual(STANDARD_MODULES.map(m => m.key));
-    expect(segs.find(s => s.key === 'hr')).toMatchObject({ state: 'active', pct: 40 });
-    // every listed module maps to a real department, so none is drawn faded when all are present
-    expect(segs.every(s => s.state !== 'inactive')).toBe(true);
-    expect(segs.find(s => s.key === 'infrastructure')).toMatchObject({ state: 'active', pct: 10 });
-    expect(segs[segs.length - 1]).toMatchObject({ key: 'dept:lab', state: 'active', pct: 70 });
+    expect(segs.map(s => s.key).sort()).toEqual(['com', 'fin', 'hr', 'inf', 'lab']);
+    expect(segs.every(s => s.state === 'active')).toBe(true);
+    expect(segs.find(s => s.key === 'hr')).toMatchObject({ pct: 40, dept: expect.objectContaining({ id: 'hr' }) });
+    expect(segs.find(s => s.key === 'inf')).toMatchObject({ pct: 10 });
+    expect(segs.find(s => s.key === 'lab')).toMatchObject({ pct: 70 });
   });
-  it('limited scope: a mapped department outside it is out_of_scope, never a %', () => {
-    const segs = wheelSegments([dept('hr', 40)], { fullScope: false });
-    expect(segs.find(s => s.key === 'finance')).toMatchObject({ state: 'out_of_scope' });
-    expect(segs.find(s => s.key === 'finance')?.pct).toBeUndefined();
+  it('wheel_order orders the segments; wheel_label overrides the name; wheel_show:false hides it', () => {
+    const custom = [
+      { ...dept('a', 10), wheel_order: 2, wheel_label_en: 'Second' },
+      { ...dept('b', 20), wheel_order: 1 },
+      { ...dept('c', 30), wheel_show: false },
+    ] as any;
+    const segs = wheelSegments(custom, {});
+    expect(segs.map(s => s.key)).toEqual(['b', 'a']);               // ordered by wheel_order; c is hidden
+    expect(segs.find(s => s.key === 'a')?.name_en).toBe('Second');  // label override
+    expect(segs.find(s => s.key === 'c')).toBeUndefined();          // hidden from the wheel
   });
-  it('label lines per language', () => {
+  it('a long two-word wheel label wraps onto two balanced lines', () => {
+    const segs = wheelSegments([{ ...dept('x', 50), wheel_label_ar: 'المبيعات والتسويق' }] as any, {});
+    expect(segs[0].lines_ar).toEqual(['المبيعات', 'والتسويق']);
+  });
+  it('legacy STANDARD_MODULES data + linesOf stay available for the move pickers', () => {
     const sales = STANDARD_MODULES.find(m => m.key === 'sales')!;
     expect(linesOf(sales, 'ar')).toEqual(['المبيعات', 'والتسويق']);
     expect(linesOf(STANDARD_MODULES[0], 'en')).toEqual(['Human', 'Resources']);

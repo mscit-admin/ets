@@ -895,6 +895,8 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .color-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .color-dot.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg); }
 .color-input { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
+.str-wheel-box { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2, #f7f8fa); }
+.str-wheel-box > .field { margin-top: 8px; }
 .str-tree { display: grid; gap: 10px; }
 .str-dept { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card, #fff); overflow: hidden; }
 .str-dept.archived { opacity: 0.72; background: var(--surface-2, #f7f8fa); }
