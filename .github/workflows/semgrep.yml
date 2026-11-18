@@ -1,0 +1,45 @@
+name: Semgrep (SAST)
+
+# Pattern-based static analysis with the community rulesets (JS/React/Node/OWASP + secrets). Token-free: the free
+# registry packs are fetched from semgrep.dev on the runner. Results are uploaded as SARIF to the Code scanning tab.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 3 * * 1" # weekly, Monday — jittered minute
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Scan
+        run: >-
+          semgrep scan --sarif --output semgrep.sarif --metrics=off --error=false
+          --config p/javascript --config p/react --config p/nodejs
+          --config p/owasp-top-ten --config p/secrets
+          --exclude node_modules --exclude dist
+          backend/src frontend/src mobile/src
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
