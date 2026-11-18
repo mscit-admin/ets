@@ -79,21 +79,21 @@ export default function OnlineUsers() {
   );
   const client = r => <>{t('ou_client_' + r.client)}{r.device && <div className="muted small" dir="ltr">{r.device}</div>}</>;
   const action = r => (r.is_me ? null : (
-    <button className="btn btn-default btn-sm" disabled={busy === r.session_ref} onClick={() => end(r)}>
+    <button className="btn btn-default btn-sm" disabled={busy === r.session_ref} onClick={() => end(r)} data-help="hb_online_end">
       <Icon name="logout" size={14} /> {t('ou_end_session')}
     </button>
   ));
 
   return (
     <div>
-      <PageHeader title={t('ou_title')} sub={t('ou_sub')} icon="pulse" />
+      <PageHeader title={t('ou_title')} sub={t('ou_sub')} icon="pulse" help="hb_online_head" />
       <div className="grid-cards">
-        <NumberCard label={t('ou_online')} value={c.online} color="green" />
-        <NumberCard label={t('ou_idle')} value={c.idle} color={c.idle ? 'orange' : ''} />
-        <NumberCard label={t('ou_sessions')} value={c.sessions} sub={t('ou_users_n', { n: c.users })} />
+        <NumberCard label={t('ou_online')} value={c.online} color="green" help="hb_online_stat_online" />
+        <NumberCard label={t('ou_idle')} value={c.idle} color={c.idle ? 'orange' : ''} help="hb_online_stat_idle" />
+        <NumberCard label={t('ou_sessions')} value={c.sessions} sub={t('ou_users_n', { n: c.users })} help="hb_online_stat_sessions" />
       </div>
-      <Card>
-        <div className="filter-bar">
+      <Card help="hb_online_list" helpTitle="hb_online_list_t">
+        <div className="filter-bar" data-help="hb_online_filter" data-help-title="hb_online_filter_t">
           <select className="input input-sm" value={f.role} onChange={e => setF({ ...f, role: e.target.value })} aria-label={t('role')}>
             <option value="">{t('role')}: {t('all')}</option>
             {(meta.data?.roles || []).map(r => <option key={r.id} value={r.id}>{nm(r)}</option>)}
