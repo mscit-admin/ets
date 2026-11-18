@@ -33,6 +33,13 @@ jobs:
             | tar -xz gitleaks
           ./gitleaks version
       - name: Scan history
-        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
+        run: ./gitleaks git . --config .gitleaks.toml --redact --no-banner --report-format json --report-path gitleaks-history.json --exit-code 1
+      - name: Show findings (redacted metadata only)
+        if: always()
+        run: |
+          if [ -f gitleaks-history.json ]; then
+            echo "findings — rule / file:line / commit (secret values are redacted):"
+            jq -r '.[] | "[\(.RuleID)] \(.File):\(.StartLine) commit=\(.Commit[0:10])"' gitleaks-history.json
+          fi
       - name: Scan working tree
         run: ./gitleaks dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
