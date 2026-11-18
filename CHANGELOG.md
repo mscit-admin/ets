@@ -3636,7 +3636,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/ff4ada8...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/8567ac1...HEAD
+[1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
 [1.12.68]: https://github.com/mscit-admin/ets/compare/2208253...ff4ada8
 [1.12.67]: https://github.com/mscit-admin/ets/compare/7196349...2208253
 [1.12.66]: https://github.com/mscit-admin/ets/compare/6043fa2...7196349
