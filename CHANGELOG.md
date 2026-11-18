@@ -30,6 +30,24 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.72] — 2026-11-18 — Project-status screen guide / دليل قراءة شاشة حالة المشروع
+
+### Added
+
+- **Frontend**: a collapsible "How to read this" guide (`شرح الشاشة`) on the Project Status page
+  (`components/StatusGuide.jsx`), opened from a button under the page header. It explains every section and
+  metric on the screen — the overall status badge and its states, time-elapsed vs. work-done, schedule
+  performance (planned/actual/deviation, schedule delay via earned schedule, SPI, SPI(t)), forecast & pace
+  (forecast close, current/required pace, days remaining, forecast by SPI(t)), the S-curve, the recommendations,
+  departments-vs-plan (gap and the risk/delay thresholds), and the quality & readiness indicators. Bilingual
+  (Arabic/English), RTL-aware, reuses the existing metric labels so wording stays in sync with the page.
+
+### Upgrade notes
+
+- None. Frontend-only; no API, database or deployment change.
+
+---
+
 ## [1.12.71] — 2026-11-18 — Deploy hardening (infra security findings) / تصليب إعدادات النشر
 
 Defense-in-depth hardening of the deployment configuration from the phase-2 infrastructure security review.
@@ -3700,7 +3718,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/38afb67...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/RELHASH...HEAD
+[1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...RELHASH
 [1.12.71]: https://github.com/mscit-admin/ets/compare/bfaa11f...38afb67
 [1.12.70]: https://github.com/mscit-admin/ets/compare/8567ac1...bfaa11f
 [1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
