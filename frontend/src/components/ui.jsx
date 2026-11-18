@@ -21,9 +21,12 @@ export function Pct({ value }) {
   return <span className="num">{pc(value)}%</span>;
 }
 
-export function PageHeader({ title, sub, children, icon }) {
+// `help` / `helpTitle` (optional): i18n keys read by the HelpBot assistant. `help` is the key of the explanation
+// body; `helpTitle` the key of its title (the bot falls back to the element's own heading when omitted). PageHeader
+// carries a generic page-chrome explanation by default so every page is explainable even before it is tagged.
+export function PageHeader({ title, sub, children, icon, help, helpTitle }) {
   return (
-    <div className="page-head">
+    <div className="page-head" data-help={help || 'hb_pagehead'} data-help-title={helpTitle || (help ? undefined : 'hb_pagehead_t')}>
       <div className="page-title">
         {icon && <span className="page-icon"><Icon name={icon} size={20} /></span>}
         <div>
@@ -36,9 +39,9 @@ export function PageHeader({ title, sub, children, icon }) {
   );
 }
 
-export function Card({ title, actions, children, className = '' }) {
+export function Card({ title, actions, children, className = '', help, helpTitle }) {
   return (
-    <section className={'card ' + className}>
+    <section className={'card ' + className} data-help={help || undefined} data-help-title={helpTitle || undefined}>
       {(title || actions) && (
         <div className="card-head">
           <h3>{title}</h3>
@@ -50,9 +53,9 @@ export function Card({ title, actions, children, className = '' }) {
   );
 }
 
-export function NumberCard({ label, value, sub, color }) {
+export function NumberCard({ label, value, sub, color, help, helpTitle }) {
   return (
-    <div className="number-card">
+    <div className="number-card" data-help={help || undefined} data-help-title={helpTitle || undefined}>
       <div className="nc-label">{label}</div>
       <div className={'nc-value ' + (color || '')}>{value}</div>
       {sub && <div className="nc-sub">{sub}</div>}

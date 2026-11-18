@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary.jsx';
 import { useBranding } from '../lib/branding.jsx';
 import { Loading, useLoad } from './ui.jsx';
 import { NotificationBell } from './NotificationBell.jsx';
+import { HelpBot } from './HelpBot.jsx';
 import { usePresenceReporter } from '../lib/presence.js';
 import { useLiveUpdates, useNotifStream } from '../lib/live.js';
 
@@ -41,16 +42,16 @@ function Navbar({ onMenu }) {
           <img src={logo} alt="" className="brand-logo" />
           <span className="brand-name">{nm({ name_ar: me?.org_name_ar, name_en: me?.org_name_en }) || t('app_title')}</span>
         </NavLink>
-        <form className="nav-search" onSubmit={e => { e.preventDefault(); if (q.trim().length >= 2) nav('/search?q=' + encodeURIComponent(q.trim())); }}>
+        <form className="nav-search" data-help="hb_search" data-help-title="hb_search_t" onSubmit={e => { e.preventDefault(); if (q.trim().length >= 2) nav('/search?q=' + encodeURIComponent(q.trim())); }}>
           <Icon name="search" size={15} />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('search_placeholder')} aria-label={t('search_placeholder')} />
         </form>
         <div className="nav-right">
-          <NotificationBell />
-          <button className="btn btn-sm btn-ghost" onClick={switchLang} title={t('language')}>
+          <span data-help="hb_notif" data-help-title="hb_notif_t"><NotificationBell /></span>
+          <button className="btn btn-sm btn-ghost" onClick={switchLang} title={t('language')} data-help="hb_lang" data-help-title="hb_lang_t">
             <Icon name="globe" size={15} /> <span className="hide-mobile">{t('lang_switch')}</span>
           </button>
-          <div className="dropdown" ref={menuRef}>
+          <div className="dropdown" ref={menuRef} data-help="hb_account" data-help-title="hb_account_t">
             <button className="avatar" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open} title={user?.full_name}>
               {initials}
             </button>
@@ -88,8 +89,8 @@ function Sidebar({ open, onClose }) {
   useNotifStream(refreshCounts, refreshCounts);
   useEffect(() => { onClose(); }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const link = (to, icon, label, end) => (
-    <NavLink to={to} end={end} className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+  const link = (to, icon, label, end, help) => (
+    <NavLink to={to} end={end} className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')} data-help={help}>
       <Icon name={icon} size={16} /><span>{label}</span>
     </NavLink>
   );
@@ -118,19 +119,19 @@ function Sidebar({ open, onClose }) {
       <aside className={'sidebar' + (open ? ' open' : '')}>
         <div className="side-section">
           <div className="side-label">{t('nav_tracker')}</div>
-          {link('/', 'home', t('nav_home'), true)}
-          {link('/status', 'pulse', t('nav_status'))}
-          {link('/weights', 'scale', t('nav_weights'))}
-          {link('/schedule', 'curve', t('nav_schedule'))}
-          <NavLink to="/imports" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+          {link('/', 'home', t('nav_home'), true, 'hb_nav_home')}
+          {link('/status', 'pulse', t('nav_status'), false, 'hb_nav_status')}
+          {link('/weights', 'scale', t('nav_weights'), false, 'hb_nav_weights')}
+          {link('/schedule', 'curve', t('nav_schedule'), false, 'hb_nav_schedule')}
+          <NavLink to="/imports" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')} data-help="hb_nav_imports">
             <Icon name="upload" size={16} /><span>{t('nav_imports')}</span>
             {pending?.awaiting_me > 0 && <span className="side-badge" title={t('awaiting_you', { n: pending.awaiting_me })}>{pending.awaiting_me}</span>}
           </NavLink>
-          <NavLink to="/approvals" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+          <NavLink to="/approvals" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')} data-help="hb_nav_approvals">
             <Icon name="check" size={16} /><span>{t('nav_approvals')}</span>
             {edits?.awaiting_me > 0 && <span className="side-badge" title={t('edits_awaiting_you', { n: edits.awaiting_me })}>{edits.awaiting_me}</span>}
           </NavLink>
-          <NavLink to="/messages" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')}>
+          <NavLink to="/messages" className={({ isActive }) => 'side-link' + (isActive ? ' active' : '')} data-help="hb_nav_messages">
             <Icon name="inbox" size={16} /><span>{t('nav_messages')}</span>
             {msgs?.total > 0 && <span className={'side-badge' + (msgs.pending_alerts > 0 ? ' alert' : '')}
               title={msgs.pending_alerts > 0 ? t('alert_badge_title', { n: msgs.pending_alerts }) : t('msg_badge_title', { n: msgs.total })}>{msgs.total}</span>}
@@ -138,7 +139,7 @@ function Sidebar({ open, onClose }) {
         </div>
         <div className="side-section">
           <div className="side-label">{t('departments')}</div>
-          {link('/reports', 'report', t('nav_reports'), true)}
+          {link('/reports', 'report', t('nav_reports'), true, 'hb_nav_reports')}
           {(data?.departments || []).map(d => {
             const isOpen = expanded.has(d.id);
             const apps = (data.applications || []).filter(a => a.department_id === d.id);
@@ -165,14 +166,14 @@ function Sidebar({ open, onClose }) {
         {admin && (
           <div className="side-section">
             <div className="side-label">{t('nav_admin')}</div>
-            {can('usr') && link('/users', 'users', t('nav_users'))}
-            {can('log') && link('/logs', 'logs', t('nav_logs'))}
+            {can('usr') && link('/users', 'users', t('nav_users'), false, 'hb_nav_users')}
+            {can('log') && link('/logs', 'logs', t('nav_logs'), false, 'hb_nav_logs')}
             {/* Settings holds «مراحل المشروع» as a tab (1.12.54); a project manager (apv_final) opens it for that tab */}
-            {((can('cfg') && user?.fullScope) || can('apv_final')) && link('/settings', 'settings', t('nav_settings'))}
+            {((can('cfg') && user?.fullScope) || can('apv_final')) && link('/settings', 'settings', t('nav_settings'), false, 'hb_nav_settings')}
           </div>
         )}
         <div className="side-section">
-          {link('/profile', 'user', t('nav_profile'))}
+          {link('/profile', 'user', t('nav_profile'), false, 'hb_nav_profile')}
         </div>
       </aside>
     </>
@@ -218,6 +219,7 @@ export default function Layout() {
           <AppFooter />
         </main>
       </div>
+      <HelpBot />
     </div>
   );
 }

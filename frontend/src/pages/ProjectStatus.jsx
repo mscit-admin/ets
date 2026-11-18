@@ -9,7 +9,6 @@ import { Icon } from '../components/Icon.jsx';
 import { SCurveChart, scheduleModel } from '../components/SCurve.jsx';
 import { Card, ErrorBox, Indicator, Loading, NumberCard, PageHeader, useLoad } from '../components/ui.jsx';
 import { ExportButton } from '../components/ExportButton.jsx';
-import { StatusGuide } from '../components/StatusGuide.jsx';
 import { useLiveUpdates } from '../lib/live.js';
 
 const iso = x => '⁦' + x + '⁩';
@@ -57,14 +56,12 @@ export default function ProjectStatus() {
 
   return (
     <div>
-      <PageHeader title={t('status_title')} sub={t('status_sub')} icon="pulse">
+      <PageHeader title={t('status_title')} sub={t('status_sub')} icon="pulse" help="hb_page_status" helpTitle="status_title">
         {st.can.timeline && <Link to="/settings#timeline" className="btn btn-default btn-sm"><Icon name="calendar" size={14} /> {t('project_timeline')}</Link>}
         <ExportButton report="project_status" />
       </PageHeader>
 
-      <StatusGuide />
-
-      <Card className="status-hero">
+      <Card className="status-hero" help="g_d_status" helpTitle="g_t_status">
         <div className="sh-top">
           <StatusBadge status={h.status} big />
           <div className="sh-headline">{text(h.insights[0])}</div>
@@ -95,49 +92,49 @@ export default function ProjectStatus() {
       {h.ready && <>
         <h2 className="section-title">{t('sec_schedule_perf')}</h2>
         <div className="grid-cards">
-          <NumberCard label={t('planned_now')} value={iso(pc(h.planned) + '%')} sub={t('planned_now_hint')} />
-          <NumberCard label={t('actual_now')} value={iso(pc(m.current) + '%')} sub={t('current_pct')} />
+          <NumberCard label={t('planned_now')} value={iso(pc(h.planned) + '%')} sub={t('planned_now_hint')} help="g_d_planned" helpTitle="planned_now" />
+          <NumberCard label={t('actual_now')} value={iso(pc(m.current) + '%')} sub={t('current_pct')} help="g_d_actual" helpTitle="actual_now" />
           <NumberCard label={t('deviation')} value={signed(h.deviation)} color={h.deviation >= 0 ? 'green' : 'red'}
-            sub={(h.deviation >= 0 ? '▲ ' + t('ahead_of_plan') : '▼ ' + t('behind_plan')) + ' · ' + t('pts')} />
+            sub={(h.deviation >= 0 ? '▲ ' + t('ahead_of_plan') : '▼ ' + t('behind_plan')) + ' · ' + t('pts')} help="g_d_deviation" helpTitle="deviation" />
           <NumberCard label={t('schedule_delay')} value={txt(h.delayDays !== 0 ? days(h.delayDays) : t('none'))}
             color={h.delayDays > 45 ? 'red' : h.delayDays > 14 ? 'orange' : 'green'}
-            sub={h.delayDays > 0 ? t('delay_hint', { date: fmtDay(h.esDate) }) : h.delayDays < 0 ? t('ahead_hint') : t('on_plan_hint')} />
+            sub={h.delayDays > 0 ? t('delay_hint', { date: fmtDay(h.esDate) }) : h.delayDays < 0 ? t('ahead_hint') : t('on_plan_hint')} help="g_d_delay" helpTitle="schedule_delay" />
           <NumberCard label={t('spi')} value={h.spi === null ? '—' : iso(h.spi.toFixed(2))}
-            color={h.spi === null ? '' : h.spi >= 0.95 ? 'green' : h.spi >= 0.85 ? 'orange' : 'red'} sub={t('spi_hint')} />
+            color={h.spi === null ? '' : h.spi >= 0.95 ? 'green' : h.spi >= 0.85 ? 'orange' : 'red'} sub={t('spi_hint')} help="g_d_spi" helpTitle="spi" />
           <NumberCard label={t('spi_t')} value={h.spiT === null ? '—' : iso(h.spiT.toFixed(2))}
-            color={h.spiT === null ? '' : h.spiT >= 0.95 ? 'green' : h.spiT >= 0.85 ? 'orange' : 'red'} sub={t('spi_t_hint')} />
+            color={h.spiT === null ? '' : h.spiT >= 0.95 ? 'green' : h.spiT >= 0.85 ? 'orange' : 'red'} sub={t('spi_t_hint')} help="g_d_spit" helpTitle="spi_t" />
         </div>
 
         <h2 className="section-title">{t('sec_forecast')}</h2>
         <div className="grid-cards">
           <NumberCard label={t('forecast_end')} value={h.forecast ? txt(fmtDay(h.forecast)) : '—'}
             color={h.forecastDelay === null || h.forecastDelay > 14 ? 'red' : h.forecastDelay > 0 ? 'orange' : 'green'}
-            sub={h.forecastDelay === null ? t('no_pace') : h.forecastDelay > 0 ? t('after_plan_by', { d: days(h.forecastDelay) }) : t('before_plan_by', { d: days(h.forecastDelay) })} />
+            sub={h.forecastDelay === null ? t('no_pace') : h.forecastDelay > 0 ? t('after_plan_by', { d: days(h.forecastDelay) }) : t('before_plan_by', { d: days(h.forecastDelay) })} help="g_d_forecast" helpTitle="forecast_end" />
           <NumberCard label={t('current_pace')} value={h.pacePerMonth === null ? '—' : iso(pc(h.pacePerMonth) + '%')}
-            sub={h.paceSource === 'recent' ? t('pace_recent', { n: iso(h.paceWindow) }) : t('pace_average')} />
+            sub={h.paceSource === 'recent' ? t('pace_recent', { n: iso(h.paceWindow) }) : t('pace_average')} help="g_d_pace" helpTitle="current_pace" />
           <NumberCard label={t('required_pace')} value={h.requiredPerMonth === null ? '—' : iso(pc(h.requiredPerMonth) + '%')}
             color={h.paceRatio === null ? '' : h.paceRatio > 1.15 ? 'red' : 'green'}
-            sub={h.paceRatio ? t('pace_ratio', { x: iso(h.paceRatio.toFixed(1)) }) : t('per_month')} />
+            sub={h.paceRatio ? t('pace_ratio', { x: iso(h.paceRatio.toFixed(1)) }) : t('per_month')} help="g_d_reqpace" helpTitle="required_pace" />
           <NumberCard label={t('days_remaining')} value={h.remainingDays >= 0 ? iso(h.remainingDays) : '—'}
-            color={h.remainingDays < 0 ? 'red' : ''} sub={h.remainingDays < 0 ? t('past_close_by', { d: days(h.remainingDays) }) : t('until_close')} />
-          <NumberCard label={t('forecast_by_spi')} value={h.forecastByEs ? txt(fmtDay(h.forecastByEs)) : '—'} sub={t('forecast_by_spi_hint')} />
+            color={h.remainingDays < 0 ? 'red' : ''} sub={h.remainingDays < 0 ? t('past_close_by', { d: days(h.remainingDays) }) : t('until_close')} help="g_d_days" helpTitle="days_remaining" />
+          <NumberCard label={t('forecast_by_spi')} value={h.forecastByEs ? txt(fmtDay(h.forecastByEs)) : '—'} sub={t('forecast_by_spi_hint')} help="g_d_forecast_spi" helpTitle="forecast_by_spi" />
         </div>
       </>}
 
-      <Card className="curve-card" title={t('schedule_title')}
+      <Card className="curve-card" title={t('schedule_title')} help="g_d_curve" helpTitle="schedule_title"
         actions={<Link to="/schedule" className="btn btn-default btn-xs">{t('details')}</Link>}>
         <SCurveChart m={m} s={st.schedule} trend={st.trend} />
       </Card>
 
       <div className="grid-2">
-        <Card title={<span className="link-row"><Icon name="flag" size={15} /> {t('recommendations')}</span>}>
+        <Card help="g_d_insights" helpTitle="recommendations" title={<span className="link-row"><Icon name="flag" size={15} /> {t('recommendations')}</span>}>
           <ul className="insights">
             {h.insights.map((i, k) => (
               <li key={k} className={'lvl-' + i.level}><Icon name={LEVEL_ICON[i.level]} size={16} /><span>{text(i)}</span></li>
             ))}
           </ul>
         </Card>
-        <Card title={t('dept_vs_plan')}>
+        <Card title={t('dept_vs_plan')} help="g_d_dept" helpTitle="dept_vs_plan">
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>{t('departments')}</th><th className="num-col">{t('actual')}</th><th className="num-col">{t('gap_to_plan')}</th><th className="num-col">{t('change_30d')}</th><th>{t('status')}</th></tr></thead>
@@ -159,7 +156,7 @@ export default function ProjectStatus() {
 
       <h2 className="section-title">{t('sec_quality')}</h2>
       <div className="grid-2">
-        <Card title={t('functions_state')}>
+        <Card title={t('functions_state')} help="g_d_functions" helpTitle="functions_state">
           <div className="stack-bar">
             {[['done', 'green'], ['in_progress', 'blue'], ['not_started', 'gray']].map(([k, col]) => c[k] > 0 && (
               <div key={k} className={'seg ' + col} style={{ width: (c[k] / (c.functions || 1)) * 100 + '%' }} title={`${t('fs_' + k)}: ${c[k]}`} />
@@ -171,7 +168,7 @@ export default function ProjectStatus() {
             ))}
           </ul>
         </Card>
-        <Card title={t('quality_flags')}>
+        <Card title={t('quality_flags')} help="g_d_quality" helpTitle="quality_flags">
           <div className="kv wide">
             <div><span>{t('ts_2')} / {t('ts_1')}</span><span className="num">{c.tests[2]} / {c.tests[1]}</span></div>
             <div><span>{t('ts_3')}</span><span className={'num ' + (c.tests[3] ? 'red-text' : '')}>{c.tests[3]}</span></div>
