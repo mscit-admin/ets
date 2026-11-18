@@ -1,0 +1,17 @@
+title = "ETS — gitleaks configuration"
+
+# Keep ALL of gitleaks' default rules (so real secrets still fail the scan); only allowlist two verified non-secret
+# values that the default generic-api-key rule flags in git history. Neither is a credential:
+#   1. "a1b2c3d4e5f60718" — a made-up EXAMPLE signer_key_id in the release-promotion design docs
+#      (docs/handover/*-Release-Promotion-Design.md); an illustrative hex id, not a key.
+#   2. "Nightjar-2026q"  — a dummy test password in backend/test/auth-security.test.js (a password-strength test).
+# The allowlist matches these exact values, so it cannot hide any other (real) secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified non-secret doc example + test password (not real credentials)"
+regexes = [
+  '''a1b2c3d4e5f60718''',
+  '''Nightjar-2026q''',
+]
