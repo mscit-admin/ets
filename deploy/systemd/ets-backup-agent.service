@@ -20,3 +20,30 @@ RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
 TimeoutStartSec=6h
 UMask=0077
+
+# Hardening — finding I1, defense-in-depth (check with: systemd-analyze security ets-backup-agent).
+# Kernel / privilege-escalation / namespace restrictions that do NOT constrain where the agent writes or which
+# helpers it runs, so they are safe for this un-sandboxed root oneshot.
+# Deliberately NOT added (would break real function — this path cannot be exercised in the dev sandbox):
+#   - NoNewPrivileges: a restore on a log-protected database runs ets-log-protect, which execs `sudo -u postgres`
+#     (deploy/scripts/log-protect.sh:45); the pre-restore safety backup / superuser restore path goes through it.
+#     no_new_privs makes sudo refuse, so leave it off (runuser, which the agent also uses, does NOT need it).
+#   - ProtectSystem=strict / ReadWritePaths: a restore writes operator-chosen cert/key paths (DEF_CERT/DEF_KEY via
+#     currentTls/putFiles in src/backup/restore.js) plus /etc/ets, /etc/systemd/system, /etc/letsencrypt/<domain>,
+#     /etc/ssl, /var/backups/ets, /var/lib/ets and /var/log, and manages nginx + ets-backend — too broad to confine
+#     safely without risking the disaster-recovery path.
+#   - MemoryDenyWriteExecute: breaks the V8 / Node JIT (same reason as ets-backend).
+#   - PrivateTmp / RestrictAddressFamilies / CapabilityBoundingSet: the restore web of helpers (gpg, ets-backup,
+#     ets-backup-verify, rclone, rsync, ssh, pg_restore, chown) needs host /tmp sharing, many address families and
+#     capabilities (CAP_CHOWN/CAP_DAC_OVERRIDE/CAP_SETUID …); left to a tested follow-up.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native

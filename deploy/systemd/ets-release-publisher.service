@@ -19,3 +19,28 @@ StandardOutput=append:/var/log/ets-release-publisher.log
 StandardError=append:/var/log/ets-release-publisher.log
 TimeoutStartSec=30min
 UMask=0077
+
+# Hardening — finding I1, defense-in-depth (check with: systemd-analyze security ets-release-publisher).
+# This agent only runs git / ssh / node (verify.mjs) — no setuid helper and no sudo — so NoNewPrivileges is safe
+# here (unlike the deploy and backup agents, which exec sudo). PrivateTmp is safe too: the only /tmp use is the
+# verifier's own temp dir (src/release/publisher.js verifyWithHelper → os.tmpdir()), read by a child in the same
+# namespace; nothing outside the service shares those files.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native
+# Deliberately NOT added (would risk breaking the push — untestable in the dev sandbox):
+#   - ProtectSystem=strict / ReadWritePaths: the git working copy (conf.REPO_DIR, operator-configured) and its whole
+#     .git tree must be writable for fetch/checkout/reset/stash/commit, and REPO_DIR is not known to this unit, so a
+#     precise ReadWritePaths cannot be written safely.
+#   - ProtectHome: git reads /root/.gitconfig (safe.directory) and ssh writes /root/.ssh/known_hosts (accept-new).
+#   - MemoryDenyWriteExecute: breaks the V8 / Node JIT (same reason as ets-backend).

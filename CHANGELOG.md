@@ -30,6 +30,55 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.71] — 2026-11-18 — Deploy hardening (infra security findings) / تصليب إعدادات النشر
+
+Defense-in-depth hardening of the deployment configuration from the phase-2 infrastructure security review.
+No CRITICAL/HIGH findings; all items below are LOW / MEDIUM-LOW defense-in-depth. **Deploy-config only — no
+application code or database change.** These files are validated statically (`bash -n`, `systemd-analyze verify`);
+the authoritative checks run at deploy time (see Upgrade notes).
+
+### Security
+
+- **Deployment (I3)**: cap concurrent backup uploads per IP on `/api/backups/upload` — the route accepts a 4 GB
+  body with `proxy_request_buffering off`, so a single client could tie up bandwidth/CPU with many parallel
+  uploads. New `limit_conn_zone ets_upload_conn` (in `ets-https.conf.tpl`) + `limit_conn ets_upload_conn 2`
+  with `limit_conn_status 429` (in `ets-app.conf.tpl`). A restore is a rare one-at-a-time admin action, so 2 is ample.
+- **Deployment (I2)**: SSH offsite backup (`backup.sh`) and server restore (`restore-server.sh`) now use
+  trust-on-first-use **then strict** host-key checking — `accept-new` only until the host key is pinned, then full
+  `StrictHostKeyChecking=yes` on every later run, so a changed/forged key is refused instead of trusted silently.
+  First-run (incl. disaster recovery onto a fresh host) still works. `BACKUP_SSH_STRICT=1` forces strict from the
+  first byte; out-of-band `ssh-keyscan` pinning is documented inline.
+- **Deployment (I1)**: added conservative per-service `systemd` sandboxing to the three root oneshot agents
+  (`ets-backup-agent`, `ets-deploy-agent`, `ets-release-publisher`) — kernel/privilege/namespace restrictions
+  (`ProtectKernel*`, `RestrictSUIDSGID`, `RestrictNamespaces`, `LockPersonality`, `SystemCallArchitectures=native`,
+  etc.). `ets-release-publisher` additionally gets `NoNewPrivileges` + `PrivateTmp` (it runs no `sudo`).
+  `NoNewPrivileges`/`ProtectSystem=strict` are deliberately **not** applied to the backup/deploy agents because
+  they exec `sudo` and must write `/opt/ets`, cert/key paths and manage services; each omission is documented
+  inline in the unit file.
+
+### Changed
+
+- **Deployment (I5)**: `unlock-accounts.sh` now reads the DB connection from `PG*` variables in `/etc/ets/ets.env`
+  (the file the installer actually writes), matching `backup.sh`/`deploy-lib.sh`, instead of the stale
+  `/opt/ets/.env` + `DATABASE_URL` paths that never exist on a real install. Values are read as data (`sed`, no
+  `source`/`eval`); any `PG*` already set in the environment still wins. The audit-bypass warning is strengthened
+  to point operators to the fully-logged «فكّ القفل» admin-UI button as the primary path.
+- **Deployment (I4, docs)**: `ets-headers.conf` now documents how to opt into HSTS `includeSubDomains`/`preload`
+  for a public-domain deployment, and records that CSP `style-src 'unsafe-inline'` is required (React inline
+  `style={{}}` attributes). No header value changed.
+
+### Upgrade notes
+
+- These changes take effect only after `update.sh`/`install.sh` re-renders the nginx templates and reinstalls the
+  systemd units (which triggers `systemctl daemon-reload`). On the server, verify: `sudo nginx -t` on the rendered
+  config, and `systemd-analyze security ets-backup-agent|ets-deploy-agent|ets-release-publisher` (expect the
+  exposure score to drop from the ~9.6 baseline).
+- SSH backups: the first run after this update still connects via `accept-new` and pins the host key; every run
+  after that is strict. If the backup/restore server is legitimately rebuilt, remove its old entry from the
+  known_hosts file (`/etc/ets/backup_known_hosts`, or `~/.ssh/known_hosts` for restore) so the next run re-pins it.
+
+---
+
 ## [1.12.70] — 2026-11-18 — Drop unused export keywords / تنظيف التصديرات غير المستخدمة
 
 ### Changed
@@ -3651,7 +3700,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/bfaa11f...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/38afb67...HEAD
+[1.12.71]: https://github.com/mscit-admin/ets/compare/bfaa11f...38afb67
 [1.12.70]: https://github.com/mscit-admin/ets/compare/8567ac1...bfaa11f
 [1.12.69]: https://github.com/mscit-admin/ets/compare/ff4ada8...8567ac1
 [1.12.68]: https://github.com/mscit-admin/ets/compare/2208253...ff4ada8

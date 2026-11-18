@@ -90,7 +90,14 @@ case "$FROM" in
   '') ;;
   ssh:*)
     T=${FROM#ssh:}; bk_valid_ssh_target "$T" || die "invalid SSH source $T (user@host:/path)"
-    SSHC="ssh -p $SSHPORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new${SSHKEY:+ -i $SSHKEY -o IdentitiesOnly=yes}"
+    # Host-key policy (same TOFU-then-strict rule as the backup command, over the default known_hosts):
+    # verify strictly (yes) when this host's key is already pinned; fall back to accept-new only when it is not
+    # (a genuine first contact, e.g. disaster recovery onto a fresh server). Pin it out of band first
+    # (ssh-keyscan -p "$SSHPORT" <host> >> ~/.ssh/known_hosts), or set BACKUP_SSH_STRICT=1, to be strict from the start.
+    RHOST=${T#*@}; RHOST=${RHOST%%:*}; [[ "$SSHPORT" == 22 ]] || RHOST="[$RHOST]:$SSHPORT"
+    RSKC=accept-new
+    if [[ "${BACKUP_SSH_STRICT:-0}" == 1 ]] || ssh-keygen -F "$RHOST" >/dev/null 2>&1; then RSKC=yes; fi
+    SSHC="ssh -p $SSHPORT -o BatchMode=yes -o StrictHostKeyChecking=$RSKC${SSHKEY:+ -i $SSHKEY -o IdentitiesOnly=yes}"
     l_ssh() { rsync -e "$SSHC" --list-only --no-human-readable "${T%/}/" | awk '{print $NF}'; }
     f_ssh() { rsync -t -e "$SSHC" "${T%/}/$1" "$WORK/in/" ; }
     fetch_latest l_ssh f_ssh ;;

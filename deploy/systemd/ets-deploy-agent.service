@@ -20,3 +20,26 @@ StandardError=append:/var/log/ets-deploy-agent.log
 # a deploy (build + migrations + health gate, and possibly a code rollback) can take a while
 TimeoutStartSec=6h
 UMask=0077
+
+# Hardening — finding I1, defense-in-depth (check with: systemd-analyze security ets-deploy-agent).
+# ONLY the kernel / privilege-escalation / namespace set here: this agent must write /opt/ets and run update.sh
+# (build + migrations + service restarts), so NO filesystem confinement is added (ProtectSystem=strict and friends
+# would break the deploy — as the unit header already notes).
+# Deliberately NOT added (would break the deploy — untestable in the dev sandbox):
+#   - NoNewPrivileges: update.sh → deploy-lib.sh builds as `sudo -u $BUILD_USER` (deploy/scripts/deploy-lib.sh:94)
+#     and migrates as `sudo -u ets` / `sudo -u postgres` via ets-log-protect (deploy-lib.sh:291, log-protect.sh:45);
+#     no_new_privs makes sudo refuse. (The agent does not rely on any setuid helper for escalation otherwise.)
+#   - ProtectSystem=strict / ReadWritePaths / ProtectHome / PrivateTmp: update.sh writes /opt/ets, apt-get installs
+#     rclone, npm builds in the build user's home and git rewrites the working copy — host FS and /tmp are required.
+#   - MemoryDenyWriteExecute: breaks the V8 / Node JIT (same reason as ets-backend).
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native

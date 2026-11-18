@@ -120,6 +120,11 @@ location ~* ^/api/auth/(login|change-password|2fa/(verify|setup|enable|disable|r
 location = /api/backups/upload {
     client_max_body_size 4g;
     proxy_request_buffering off;
+    # Finding I3 (DoS): the 4 GB body + proxy_request_buffering off is authenticated only inside the API, so a
+    # single IP could tie up bandwidth/CPU with many concurrent large uploads. Cap concurrent uploads per IP
+    # (zone ets_upload_conn in ets-https.conf). A restore is a rare, one-at-a-time admin action, so 2 is ample.
+    limit_conn ets_upload_conn 2;
+    limit_conn_status 429;
     proxy_pass http://127.0.0.1:__API_PORT__;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
