@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.64] — 2026-11-18 — Draggable sign-in box; language switch in its corner / تحريك مربع الدخول وزر اللغة في زاويته
+
+### Changed
+
+- **Login screen** — The sign-in box can now be **dragged freely with the mouse**: grab it anywhere that is not a
+  field, button or link and move it; double-click an empty area to snap it back to the centre. The **language switch**
+  moved from above the page into the **top corner of the box itself** (a compact pill). Applies to every auth card
+  (sign-in, two-step verification, enrolment, password change).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.63] — 2026-11-18 — Fix: icon picker behind dialogs / إصلاح ظهور منتقي الأيقونات خلف النوافذ
 
 ### Fixed

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { api, downloadText } from '../lib/api.js';
@@ -9,15 +9,32 @@ import { useBranding } from '../lib/branding.jsx';
 function AuthCard({ title, sub, children }) {
   const { t, lang, setLang, nm } = useI18n();
   const { info, logo, loginBg, loginLogoHeight } = useBranding();
+  // The sign-in box can be dragged with the mouse: grab it anywhere that is not an interactive control (input,
+  // button, link, label) and move it freely. Double-click an empty area to snap it back to the centre.
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef(null);
+  const onPointerDown = e => {
+    if (e.button !== 0 || e.target.closest('input, textarea, select, button, a, label')) return;
+    e.preventDefault();                                  // don't start a text selection while dragging
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = e => {
+    if (!drag.current) return;
+    setPos({ x: drag.current.ox + (e.clientX - drag.current.sx), y: drag.current.oy + (e.clientY - drag.current.sy) });
+  };
+  const endDrag = e => { if (drag.current) { drag.current = null; e.currentTarget.releasePointerCapture?.(e.pointerId); } };
+  const resetPos = e => { if (!e.target.closest('input, textarea, select, button, a, label')) setPos({ x: 0, y: 0 }); };
   return (
     <div className={'auth-page' + (loginBg ? ' with-bg' : '')} style={loginBg ? { backgroundImage: `url("${loginBg}")` } : undefined}>
-      <div className="auth-top">
-        <button className="btn btn-sm btn-ghost" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>
-          <Icon name="globe" size={15} /> {t('lang_switch')}
-        </button>
-      </div>
       <div className="auth-wrap">
-        <div className="auth-card">
+        <div className="auth-card" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag}
+          onPointerCancel={endDrag} onDoubleClick={resetPos}
+          style={(pos.x || pos.y) ? { transform: `translate(${pos.x}px, ${pos.y}px)` } : undefined}>
+          {/* language switch in the top corner of the sign-in box */}
+          <button type="button" className="auth-lang" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title={t('lang_switch')}>
+            <Icon name="globe" size={15} /> {t('lang_switch')}
+          </button>
           {/* logo and system name at the top of the sign-in box */}
           <div className="auth-brand">
             <img src={logo} alt="" className="auth-logo" style={{ height: loginLogoHeight }} />
