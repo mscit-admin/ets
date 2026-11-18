@@ -105,6 +105,19 @@ export async function seed({ log = console.log } = {}) {
           is_base=EXCLUDED.is_base, sort=EXCLUDED.sort`,
         [d.id, d.name_ar, d.name_en, d.short_ar, d.short_en, d.color, d.emblem, d.is_base, d.sort]);
     }
+    // ERP wheel defaults (migration 038): reproduce the previously hardcoded wheel for the seeded departments, only
+    // while a department has not been customised from the structure screen yet (wheel_order IS NULL), so user edits
+    // to the wheel appearance are never overwritten on a redeploy.
+    const WHEEL_DEFAULTS = [
+      ['hr', 'people', 'الموارد البشرية', 'Human Resources', 1],
+      ['com', 'megaphone', 'المبيعات والتسويق', 'Sales & Marketing', 2],
+      ['fin', 'coins', 'المالية والمحاسبة', 'Finance & Accounting', 3],
+      ['inf', 'server', 'البنية التحتية', 'Infrastructure', 4],
+    ];
+    for (const [id, icon, lar, len, ord] of WHEEL_DEFAULTS) {
+      await c.query(`UPDATE departments SET wheel_icon=$2, wheel_label_ar=$3, wheel_label_en=$4, wheel_order=$5
+        WHERE id=$1 AND wheel_order IS NULL`, [id, icon, lar, len, ord]);
+    }
     for (const a of cat.applications) {
       // department_id is set ONLY on the first INSERT (initial catalog placement); it is intentionally LEFT OUT of the
       // ON CONFLICT update because an application may have been moved to another department (1.12.16, application_moves)

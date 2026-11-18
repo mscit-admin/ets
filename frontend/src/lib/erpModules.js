@@ -1,16 +1,13 @@
-// ERP module wheel of the dashboard (components/ErpWheel.jsx) — the list of modules and which department of the
-// system feeds each one. Edit this file to rename, reorder or remap modules; nothing else needs to change.
+// ERP module wheel of the dashboard (components/ErpWheel.jsx).
 //
-//   key       stable identifier of the module (never shown)
-//   icon      line icon name from components/Icon.jsx
-//   name_*    label on the wheel; lines_* optionally splits it over two lines inside the segment
-//   depts     ids of the departments (table departments, backend/src/db/seed/catalog.json) whose progress this
-//             module shows. Every module here maps to a real department of the system; one whose department is
-//             outside the reader's scope is drawn faded («خارج نطاقك» / "Out of your scope"), and one whose mapped
-//             department no longer exists is drawn faded («غير مفعّل» / "Not activated").
+// Since 1.12.62 the wheel is DEPARTMENT-DRIVEN: each department is a wheel segment and controls its own appearance
+// through its wheel_* columns (migration 038), all editable from the structure screen — wheel_show (draw it or not),
+// wheel_icon (falls back to emblem), wheel_label_ar/en (falls back to the short name) and wheel_order (position).
+// A new department appears on the wheel automatically; nothing here needs editing to add or reorder a module.
 //
-// Order = position around the wheel, clockwise from the top (mirrored in Arabic). Only modules backed by a real
-// department are listed — placeholder modules with no department were removed so the wheel shows no empty segments.
+// STANDARD_MODULES / EXTRA_MODULES below are LEGACY: they no longer drive the wheel (wheelSegments ignores them).
+// They remain only so MoveDialog / the mobile item dialog can still show the classic module name beside a department
+// in their pickers (moduleOf). Safe to leave as-is.
 export const STANDARD_MODULES = [
   { key: 'hr', icon: 'people', name_ar: 'الموارد البشرية', name_en: 'Human Resources', lines_en: ['Human', 'Resources'], depts: ['hr'] },
   { key: 'sales', icon: 'megaphone', name_ar: 'المبيعات والتسويق', name_en: 'Sales & Marketing', lines_ar: ['المبيعات', 'والتسويق'], lines_en: ['Sales &', 'Marketing'], depts: ['com'] },
@@ -24,33 +21,39 @@ export const EXTRA_MODULES = [
   { key: 'infrastructure', icon: 'server', name_ar: 'البنية التحتية', name_en: 'Infrastructure', depts: ['inf'] },
 ];
 
-/**
- * Segments of the wheel for the departments of /api/tracker/summary (already limited to the reader's scope).
- *   state 'active'      — a department in the summary: pct = its progress (weighted when several)
- *   state 'inactive'    — a standard module with no department in the system
- *   state 'out_of_scope'— the module's department exists but is outside the reader's scope (no % is shown)
- * fullScope: the reader sees every department (a mapped department missing from the summary then no longer exists).
- */
-export function wheelSegments(departments, { fullScope }) {
-  const byId = new Map(departments.map(d => [d.id, d]));
-  const used = new Set();
-  const seg = (m, extra) => {
-    const ds = m.depts.map(id => byId.get(id)).filter(Boolean);
-    ds.forEach(d => used.add(d.id));
-    if (ds.length) {
-      const w = ds.reduce((a, d) => a + (+d.weight || 0), 0);
-      const pct = w > 0 ? ds.reduce((a, d) => a + (+d.weight || 0) * (+d.pct || 0), 0) / w : ds.reduce((a, d) => a + (+d.pct || 0), 0) / ds.length;
-      return { ...m, state: 'active', pct, dept: ds[0], departments: ds };
-    }
-    if (!m.depts.length) return { ...m, state: 'inactive' };
-    if (!fullScope) return { ...m, state: 'out_of_scope' };
-    return extra ? null : { ...m, state: 'inactive' };     // an extra module whose department was removed: no segment
-  };
-  const out = [...STANDARD_MODULES.map(m => seg(m, false)), ...EXTRA_MODULES.map(m => seg(m, true))].filter(Boolean);
-  for (const d of departments) {
-    if (used.has(d.id)) continue;
-    out.push({ key: 'dept:' + d.id, icon: d.emblem || 'layers', name_ar: d.short_ar || d.name_ar, name_en: d.short_en || d.name_en,
-      depts: [d.id], state: 'active', pct: +d.pct || 0, dept: d, departments: [d] });
+// Split a wheel label into at most two balanced lines when it is long and has a space, so a two-word module name
+// (e.g. «المبيعات والتسويق») wraps inside the segment instead of running off it. Short names stay on one line.
+function wheelLines(name) {
+  const s = String(name || '').trim();
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || s.length <= 12) return [s];
+  let best = 1, bestDiff = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const diff = Math.abs(words.slice(0, i).join(' ').length - words.slice(i).join(' ').length);
+    if (diff < bestDiff) { bestDiff = diff; best = i; }
   }
-  return out;
+  return [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+}
+
+/**
+ * Segments of the wheel, built from the departments of /api/tracker/summary (already limited to the reader's scope).
+ * Each visible department (wheel_show !== false) is one 'active' segment, ordered by wheel_order (then sort), drawn
+ * with its wheel_icon / wheel_label (falling back to emblem / short name). A hidden department (wheel_show === false)
+ * is left off the wheel but still counts in the hub total. The `fullScope` option is accepted for signature
+ * compatibility and no longer used (out-of-scope departments are simply absent from the summary).
+ */
+export function wheelSegments(departments, _opts = {}) {
+  return departments
+    .filter(d => d.wheel_show !== false)
+    .slice()
+    .sort((a, b) => (a.wheel_order ?? a.sort ?? 0) - (b.wheel_order ?? b.sort ?? 0) || (a.sort ?? 0) - (b.sort ?? 0))
+    .map(d => {
+      const name_ar = d.wheel_label_ar || d.short_ar || d.name_ar;
+      const name_en = d.wheel_label_en || d.short_en || d.name_en;
+      return {
+        key: d.id, icon: d.wheel_icon || d.emblem || 'layers', name_ar, name_en,
+        lines_ar: wheelLines(name_ar), lines_en: wheelLines(name_en),
+        depts: [d.id], state: 'active', pct: +d.pct || 0, dept: d, departments: [d],
+      };
+    });
 }

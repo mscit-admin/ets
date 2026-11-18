@@ -192,6 +192,40 @@ test('archive takes a row out of calc & pickers but keeps it (reversible); guard
   assert.ok(Math.abs(sum.data.departments.find(d => d.id === did).pct - 100) < 1e-6, 'restored dept at 100 again');
 });
 
+test('wheel fields: a department carries its wheel appearance, editable and hideable', { skip }, async () => {
+  const root = await as('root');
+  // seeded departments reproduce the old hardcoded wheel
+  const st0 = await root.get('/tracker/structure');
+  const com = st0.data.departments.find(d => d.id === 'com');
+  assert.equal(com.wheel_label_ar, 'المبيعات والتسويق');
+  assert.equal(com.wheel_icon, 'megaphone');
+  assert.equal(com.wheel_order, 2);
+
+  // create a department with explicit wheel appearance, hidden from the wheel
+  const c = await root.post('/tracker/departments', {
+    name_ar: 'التقنية', name_en: 'Tech', wheel_show: false, wheel_icon: 'server',
+    wheel_label_ar: 'التقنية والبنية', wheel_label_en: 'Tech & Infra', wheel_order: 9,
+  });
+  assert.equal(c.status, 200);
+  const did = c.data.department.id;
+  assert.equal(c.data.department.wheel_show, false);
+  assert.equal(c.data.department.wheel_icon, 'server');
+  assert.equal(c.data.department.wheel_order, 9);
+
+  // the summary carries the wheel fields so the client can build the wheel from the departments
+  const sum = await root.get('/tracker/summary');
+  const d = sum.data.departments.find(x => x.id === did);
+  assert.equal(d.wheel_show, false);
+  assert.equal(d.wheel_label_ar, 'التقنية والبنية');
+
+  // editing can show it again and change its label
+  const up = await root.patch(`/tracker/departments/${did}`, { name_ar: 'التقنية', wheel_show: true, wheel_label_ar: 'التقنية' });
+  assert.equal(up.status, 200);
+  assert.equal(up.data.department.wheel_show, true);
+  assert.equal(up.data.department.wheel_label_ar, 'التقنية');
+  assert.equal(up.data.department.wheel_order, 9);           // order preserved when not re-sent (COALESCE)
+});
+
 test('validation: name required, bad colour / icon rejected', { skip }, async () => {
   const root = await as('root');
   assert.equal((await root.post('/tracker/departments', { name_ar: '   ' })).status, 400);

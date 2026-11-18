@@ -30,6 +30,30 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.62] — 2026-11-18 — Department-driven ERP wheel / التحكّم بظهور الإدارة في عجلة ERP
+
+### Changed
+
+- **ERP wheel is now department-driven.** The dashboard wheel map moved out of the hardcoded `erpModules.js` into
+  per-department columns (migration 038), all editable from the «إدارة الهيكلة» screen: each department controls
+  whether it is drawn on the wheel (**wheel_show** — a hidden department still counts in the overall %), its
+  **wheel icon**, its **wheel label** (AR/EN) and its **wheel order**. A new department appears on the wheel
+  automatically and can be tuned or hidden from the screen — no code change.
+- The seeded wheel is reproduced exactly by the migration, so the dashboard looks identical right after upgrading.
+- Long two-word wheel labels wrap onto two balanced lines inside the segment automatically.
+
+### Database
+
+- Migration `038_wheel_fields.sql`: adds `wheel_show / wheel_icon / wheel_label_ar / wheel_label_en / wheel_order`
+  to `departments`, and backfills the four seeded departments to match the previous hardcoded wheel.
+
+### Upgrade notes
+
+- Runs a database migration (adds columns + backfills wheel defaults; no data modified). Deploy with `update.sh` and
+  a hard refresh (**Ctrl+Shift+R**).
+
+---
+
 ## [1.12.61] — 2026-11-18 — Collapsible departments in structure management / طيّ وفتح الإدارات
 
 ### Changed
@@ -3494,7 +3518,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/9c76046...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/cb0710d...HEAD
+[1.12.62]: https://github.com/mscit-admin/ets/compare/9c76046...cb0710d
 [1.12.61]: https://github.com/mscit-admin/ets/compare/918907f...9c76046
 [1.12.60]: https://github.com/mscit-admin/ets/compare/55d9189...918907f
 [1.12.59]: https://github.com/mscit-admin/ets/compare/8105a83...55d9189

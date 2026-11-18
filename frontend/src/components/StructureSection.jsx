@@ -16,6 +16,9 @@ function DepartmentDialog({ dept, onClose, onSaved }) {
   const [f, setF] = useState(() => ({
     name_ar: dept?.name_ar || '', name_en: dept?.name_en || '', short_ar: dept?.short_ar || '', short_en: dept?.short_en || '',
     color: dept?.color || DEPT_COLORS[0], emblem: dept?.emblem || 'layers', is_base: !!dept?.is_base,
+    wheel_show: dept ? dept.wheel_show !== false : true,
+    wheel_label_ar: dept?.wheel_label_ar || '', wheel_label_en: dept?.wheel_label_en || '',
+    wheel_icon: dept?.wheel_icon || '', wheel_order: dept?.wheel_order != null ? String(dept.wheel_order) : '',
   }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -57,6 +60,26 @@ function DepartmentDialog({ dept, onClose, onSaved }) {
         <span>{t('str_is_base')}</span>
       </label></Field>
       <p className="muted small">{t('str_is_base_hint')}</p>
+
+      <div className="str-wheel-box">
+        <label className="row gap" style={{ alignItems: 'center' }}>
+          <input type="checkbox" checked={f.wheel_show} onChange={e => set({ wheel_show: e.target.checked })} />
+          <b>{t('str_wheel_show')}</b>
+        </label>
+        <p className="muted small">{t('str_wheel_hint')}</p>
+        {f.wheel_show && (
+          <>
+            <div className="row gap wrap" style={{ alignItems: 'flex-end' }}>
+              <Field label={t('str_wheel_icon')}><IconPicker value={f.wheel_icon || f.emblem} onChange={v => set({ wheel_icon: v })} label={t('str_wheel_icon')} /></Field>
+              <Field label={t('str_wheel_order')} className="grow"><input className="input" type="number" min={1} max={99} step={1} value={f.wheel_order} onChange={e => set({ wheel_order: e.target.value })} placeholder="—" /></Field>
+            </div>
+            <div className="row gap wrap">
+              <Field label={t('str_wheel_label_ar')} className="grow"><input className="input" value={f.wheel_label_ar} onChange={e => set({ wheel_label_ar: e.target.value })} maxLength={120} placeholder={f.short_ar || f.name_ar} /></Field>
+              <Field label={t('str_wheel_label_en')} className="grow"><input className="input" dir="ltr" value={f.wheel_label_en} onChange={e => set({ wheel_label_en: e.target.value })} maxLength={120} placeholder={f.short_en || f.name_en} /></Field>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -174,7 +197,7 @@ export function StructureSection() {
             <Icon name="chevron" size={14} className={'str-chevron' + (isOpen ? ' open' : '')} />
             <span className="str-emblem" style={{ color: d.color }}><Icon name={d.emblem || 'layers'} size={20} /></span>
             <span className="str-names">
-              <b>{nm(d)}{d.is_base && <span className="chip">{t('str_base_chip')}</span>}{d.archived_at && <span className="chip gray">{t('str_archived_chip')}</span>}</b>
+              <b>{nm(d)}{d.is_base && <span className="chip">{t('str_base_chip')}</span>}{!d.archived_at && d.wheel_show === false && <span className="chip gray">{t('str_wheel_hidden_chip')}</span>}{d.archived_at && <span className="chip gray">{t('str_archived_chip')}</span>}</b>
               <span className="muted small">{d.name_en} · {t('str_app_count', { n: d.active_app_count })}</span>
             </span>
           </button>
