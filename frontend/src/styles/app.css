@@ -1346,8 +1346,9 @@ textarea.mono { width: 100%; resize: vertical; }
 .note-add .btn { align-self: flex-end; }
 
 /* ---- HelpBot — floating professor-robot help assistant (components/HelpBot.jsx) ---- */
-.help-bot { position: fixed; inset-block-end: 20px; inset-inline-end: 20px; z-index: 1200;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+/* Positioned by top/left (set inline from JS) so it glides between its home corner and the element it explains. */
+.help-bot { position: fixed; width: 60px; height: 60px; z-index: 1200;
+  transition: top .55s cubic-bezier(.34, 1.3, .5, 1), left .55s cubic-bezier(.34, 1.3, .5, 1); }
 .hb-trigger { width: 60px; height: 60px; border-radius: 50%; border: none; cursor: pointer;
   background: linear-gradient(145deg, var(--blue-text, #2b6cb0), #1f3b6e); color: #fff;
   box-shadow: 0 6px 18px rgba(31, 59, 110, 0.35); display: grid; place-items: center;
@@ -1362,10 +1363,17 @@ textarea.mono { width: 100%; resize: vertical; }
 @keyframes hb-point { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-10deg); } }
 @keyframes hb-pulse { 0%, 100% { box-shadow: 0 0 0 4px var(--blue-bg), 0 8px 22px rgba(31,59,110,.45); } 50% { box-shadow: 0 0 0 9px transparent, 0 8px 22px rgba(31,59,110,.45); } }
 
-.hb-bubble { position: relative; max-width: min(340px, calc(100vw - 48px)); background: var(--card, #fff);
+.hb-bubble { position: absolute; width: max-content; max-width: min(320px, calc(100vw - 32px)); background: var(--card, #fff);
   color: var(--text); border: 1px solid var(--border); border-inline-start: 4px solid var(--blue-text, #2b6cb0);
   border-radius: 12px; padding: 14px 16px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
   font-size: 13px; line-height: 1.6; animation: hb-pop .18s ease; }
+/* home: above the resting robot, aligned to its inline-end (screen) edge */
+.hb-bubble.hb-home { inset-block-end: calc(100% + 10px); inset-inline-end: 0; }
+/* flying: beside the robot, which sits next to the element being explained */
+.hb-bubble.hb-right { left: calc(100% + 12px); }
+.hb-bubble.hb-left { right: calc(100% + 12px); }
+.hb-bubble.hb-down { top: 0; }
+.hb-bubble.hb-up { bottom: 0; }
 @keyframes hb-pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .hb-bubble-title { display: block; color: var(--blue-text, #2b6cb0); font-size: 14px; font-weight: 700; margin-bottom: 5px; padding-inline-end: 18px; }
 .hb-bubble p { margin: 0; }
@@ -1377,8 +1385,9 @@ textarea.mono { width: 100%; resize: vertical; }
 /* explain mode: a help cursor everywhere, and a highlight on hoverable explainable elements */
 body.hb-arming, body.hb-arming * { cursor: help !important; }
 body.hb-arming [data-help]:hover { outline: 2px solid var(--blue-text, #2b6cb0); outline-offset: 2px; border-radius: 6px; }
-.hb-flash { animation: hb-flash 1.2s ease; }
-@keyframes hb-flash { 0%, 100% { box-shadow: none; } 25%, 60% { box-shadow: 0 0 0 3px var(--blue-text, #2b6cb0); } }
+/* the element currently being explained stays highlighted while the robot sits beside it */
+.hb-explained { outline: 2px solid var(--blue-text, #2b6cb0) !important; outline-offset: 3px; border-radius: 6px;
+  box-shadow: 0 0 0 4px var(--blue-bg) !important; transition: outline .2s ease, box-shadow .2s ease; }
 
 @media (max-width: 640px) { .help-bot { inset-block-end: 14px; inset-inline-end: 14px; } .hb-trigger { width: 52px; height: 52px; } }
 @media (prefers-reduced-motion: reduce) { .hb-bot, .hb-bot .hb-pointer, .help-bot.armed .hb-trigger { animation: none; } }
