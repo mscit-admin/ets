@@ -30,17 +30,27 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
-## [1.12.72] — 2026-11-18 — Project-status screen guide / دليل قراءة شاشة حالة المشروع
+## [1.12.73] — 2026-11-18 — Learning assistant (flying professor robot) / المساعد التعليمي (الروبوت الأستاذ الطائر)
 
 ### Added
 
-- **Frontend**: a collapsible "How to read this" guide (`شرح الشاشة`) on the Project Status page
-  (`components/StatusGuide.jsx`), opened from a button under the page header. It explains every section and
-  metric on the screen — the overall status badge and its states, time-elapsed vs. work-done, schedule
-  performance (planned/actual/deviation, schedule delay via earned schedule, SPI, SPI(t)), forecast & pace
-  (forecast close, current/required pace, days remaining, forecast by SPI(t)), the S-curve, the recommendations,
-  departments-vs-plan (gap and the risk/delay thresholds), and the quality & readiness indicators. Bilingual
-  (Arabic/English), RTL-aware, reuses the existing metric labels so wording stays in sync with the page.
+- **Frontend**: a system-wide help assistant — a floating "professor robot" (glasses, graduation cap, teaching
+  pointer; gently floating) present on every screen via the app layout (`components/HelpBot.jsx`). Click the robot
+  to arm "explain mode", then click any part of the system: the click is intercepted (no navigation) and a detailed
+  explanation of that element appears in a bubble beside the robot. Elements opt in with a `data-help` attribute
+  (i18n body key) and optional `data-help-title`; `PageHeader`, `Card` and `NumberCard` forward these props.
+  Untagged elements show a friendly fallback. Bilingual (AR/EN), RTL-aware, keyboard-dismissable (Esc), respects
+  `prefers-reduced-motion`.
+- **Coverage (first slice)**: the main navigation (home, status, weights, schedule, imports, approvals, messages,
+  reports, users, logs, settings, profile), the top-bar tools (search, notifications, language, account), a generic
+  page-header explanation on every page, and the **entire Project Status screen** (overall status, each schedule and
+  forecast metric — planned/actual/deviation/SPI/SPI(t)/pace/forecast — the S-curve, recommendations, departments
+  table and quality cards). Other screens will be tagged iteratively.
+
+### Changed
+
+- **Frontend**: replaced the collapsible "How to read this" panel added earlier on the Project Status page
+  (`StatusGuide.jsx`, removed) with the assistant above; its explanations are reused as the per-element help content.
 
 ### Fixed
 
@@ -53,6 +63,19 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 - None for the app. CI: to make Dependency Review enforce again, enable Dependency Graph under the repository's
   Code security and analysis settings, then drop `continue-on-error` from `.github/workflows/dependency-review.yml`.
+
+---
+
+## [1.12.72] — 2026-11-18 — Project-status screen guide / دليل قراءة شاشة حالة المشروع
+
+> Superseded by 1.12.73: the standalone guide panel below was replaced by the system-wide learning assistant
+> before this reached `main`. Kept for history.
+
+### Added
+
+- **Frontend**: a collapsible "How to read this" guide (`شرح الشاشة`) on the Project Status page
+  (`components/StatusGuide.jsx`), opened from a button under the page header. It explained every section and
+  metric on the screen. (Replaced in 1.12.73.)
 
 ---
 
@@ -3726,7 +3749,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/02d26d4...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/RELHASH...HEAD
+[1.12.73]: https://github.com/mscit-admin/ets/compare/02d26d4...RELHASH
 [1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...02d26d4
 [1.12.71]: https://github.com/mscit-admin/ets/compare/bfaa11f...38afb67
 [1.12.70]: https://github.com/mscit-admin/ets/compare/8567ac1...bfaa11f
