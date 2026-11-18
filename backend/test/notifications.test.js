@@ -623,7 +623,7 @@ test('deactivated / deleted / forced-password users receive nothing', { skip }, 
   await pool.query(`UPDATE users SET must_change_password=true WHERE id=$1`, [ids.mem_hr]);
   await pool.query(`UPDATE users SET is_active=false WHERE id=$1`, [ids.lead_hr]);
   const root = await as('root');
-  assert.equal((await root.del(`/users/${ids.gone}`, { reason: 'left the team' })).status, 200);
+  assert.equal((await root.del(`/users/${ids.gone}`, { reason: 'left the team', reauth_password: 'Passw0rd-123' })).status, 200);
   await digest();
   assert.equal((await rows('gone')).length, 0, 'deleted');
   assert.equal((await rows('mem_hr')).length, 0, 'must change the password first');

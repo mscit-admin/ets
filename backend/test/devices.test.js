@@ -294,13 +294,13 @@ test('account changes revoke the phones in the same transaction: deactivated, pa
   assert.equal((await phone(p.token, '/m/me')).status, 401, 'stays revoked after reactivation');
   // password reset by an administrator
   const q = await paired('ahmad');
-  assert.equal((await admin.post(`/users/${ids.ahmad}/reset-password`, { password: 'Another-Passw0rd-9', must_change: false })).status, 200);
+  assert.equal((await admin.post(`/users/${ids.ahmad}/reset-password`, { password: 'Another-Passw0rd-9', must_change: false, reauth_password: 'Passw0rd-123' })).status, 200);
   assert.equal((await phone(q.token, '/m/me')).status, 401);
   assert.ok((await pool.query(`SELECT 1 FROM mobile_devices WHERE id=$1 AND revoke_reason='password_reset'`, [q.device_id])).rowCount);
   await pool.query(`UPDATE users SET password_hash=(SELECT password_hash FROM users WHERE id=$1) WHERE id=$2`, [ids.sara, ids.ahmad]);
   // deleted: revoked in the same transaction, with the audit rows
   const r = await paired('ahmad');
-  const del = await admin.del(`/users/${ids.ahmad}`, { reason: 'left the company' });
+  const del = await admin.del(`/users/${ids.ahmad}`, { reason: 'left the company', reauth_password: 'Passw0rd-123' });
   assert.equal(del.status, 200); assert.equal(del.data.devices_revoked, 1);
   assert.equal((await phone(r.token, '/m/me')).status, 401);
   const d = (await pool.query('SELECT revoke_reason, revoked_by FROM mobile_devices WHERE id=$1', [r.device_id])).rows[0];

@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/index.jsx';
 import { api, path } from '../lib/api.js';
 import { Alert, Modal, toast } from './ui.jsx';
 import { Icon } from './Icon.jsx';
+import { useReauth } from './Reauth.jsx';
 
 // Deleting users (1.7.0): a soft delete on the server (backend routes/users.js, migration 015). The account can no
 // longer sign in, its sessions end, its pending requests are withdrawn; its name stays in the history.
@@ -58,15 +59,16 @@ export function DeleteUsersDialog({ users, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [tried, setTried] = useState(false);
+  const reauth = useReauth();
   const one = users.length === 1;
   const byId = new Map(users.map(u => [u.id, u]));
   const run = async () => {
     setTried(true);
-    if (reasonProblem(reason)) return;
+    if (reasonProblem(reason) || !reauth.ready) return;
     setBusy(true); setErr(null);
     try {
-      const r = one ? await api.del(path`/users/${users[0].id}`, { reason: reason.trim() })
-        : await api.post('/users/bulk-delete', { ids: users.map(u => u.id), reason: reason.trim() });
+      const r = one ? await api.del(path`/users/${users[0].id}`, { reason: reason.trim(), ...reauth.body })
+        : await api.post('/users/bulk-delete', { ids: users.map(u => u.id), reason: reason.trim(), ...reauth.body });
       toast(t('del_done_n', { n: r.deleted.length }) + (r.requests_withdrawn || r.imports_rejected
         ? ' — ' + t('del_closed_n', { n: r.requests_withdrawn + r.imports_rejected }) : ''));
       onDone(r);
@@ -77,7 +79,7 @@ export function DeleteUsersDialog({ users, onClose, onDone }) {
     <Modal title={one ? t('del_title_one') : t('del_title_n', { n: users.length })} onClose={onClose} wide
       footer={<>
         <button className="btn btn-default" onClick={onClose}>{t('cancel')}</button>
-        <button className="btn btn-danger" disabled={busy || !!reasonProblem(reason)} onClick={run}>
+        <button className="btn btn-danger" disabled={busy || !!reasonProblem(reason) || !reauth.ready} onClick={run}>
           <Icon name="trash" size={14} /> {busy ? t('saving') : one ? t('del_confirm_one') : t('del_confirm_n', { n: users.length })}
         </button>
       </>}>
@@ -95,6 +97,7 @@ export function DeleteUsersDialog({ users, onClose, onDone }) {
         {users.map(u => <li key={u.id}><b>{u.full_name}</b> <bdi dir="ltr" className="muted code">{u.username}</bdi></li>)}
       </ul>
       <ReasonField value={reason} onChange={setReason} label={t('del_reason')} showErrors={tried} />
+      {reauth.node}
     </Modal>
   );
 }
