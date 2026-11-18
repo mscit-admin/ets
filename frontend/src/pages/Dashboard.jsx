@@ -45,9 +45,9 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home">
-        <ExportButton report="summary" />
-        <ExportButton report="functions_all" label={t('export_functions_all')} />
+      <PageHeader title={t('nav_home')} sub={settings.weight_mode === 'auto' ? t('weight_mode_auto') : t('weight_mode_fixed')} icon="home" help="hb_dash_head">
+        <span data-help="hb_dash_export" data-help-title="export_xlsx"><ExportButton report="summary" /></span>
+        <span data-help="hb_dash_export_fn" data-help-title="export_functions_all"><ExportButton report="functions_all" label={t('export_functions_all')} /></span>
       </PageHeader>
 
       {pending?.pending > 0 && (
@@ -60,14 +60,14 @@ export default function Dashboard() {
         <Link to="/approvals" className="alert orange block-link"><b>{t('edits_awaiting_you', { n: edits.awaiting_me })}</b></Link>
       )}
       {(seesSys || seesPrj) && (
-      <section className="card erp-card" aria-labelledby="erp-title">
+      <section className="card erp-card" aria-labelledby="erp-title" data-help="hb_dash_erp">
         <div className="card-head">
           <h3 id="erp-title">{t('erp_card_title')}</h3>
           <div className="card-actions"><LiveBadge /></div>
         </div>
         <div className={'erp-cols' + (seesSys && seesPrj ? '' : ' single')}>
           {seesSys && (
-            <div className="erp-col sys">
+            <div className="erp-col sys" data-help="hb_dash_sys">
               <div className="erp-col-head">
                 <span className="erp-col-title"><span className="sw on" />{t('erp_col_system')}</span>
               </div>
@@ -98,7 +98,7 @@ export default function Dashboard() {
             </div>
           )}
           {seesPrj && (
-            <div className="erp-col proj">
+            <div className="erp-col proj" data-help="hb_dash_proj">
               <div className="erp-col-head">
                 <span className="erp-col-title"><span className="sw proj" />{t('erp_col_project')}</span>
               </div>
@@ -136,7 +136,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-        <div className="erp-stats">
+        <div className="erp-stats" data-help="hb_dash_stats">
           <div className="erp-stat">
             <span className="nc-label">{t('functions_counted')}</span>
             <b className="nc-value">{counts.functions}</b>
@@ -163,7 +163,7 @@ export default function Dashboard() {
         const m = scheduleModel({ ...ps.schedule, current_pct: ps.total.pct });
         const h = projectHealth(m, ps);
         return (
-          <Card className="curve-card" title={t('schedule_title')}
+          <Card className="curve-card" title={t('schedule_title')} help="hb_dash_schedule"
             actions={<Link to="/status" className="btn btn-default btn-xs">{t('view_status')}</Link>}>
             <Link to="/status" className="health-strip mb">
               <StatusBadge status={h.status} big />
@@ -184,7 +184,7 @@ export default function Dashboard() {
       {can('usr') && <UsersOverview />}
 
       <div className="grid-2">
-        <Card title={t('lowest_apps')}>
+        <Card title={t('lowest_apps')} help="hb_dash_lowest">
           <div className="table-wrap"><table className="table">
             <tbody>
               {lowest.map(a => (
@@ -197,7 +197,7 @@ export default function Dashboard() {
             </tbody>
           </table></div>
         </Card>
-        <Card title={t('test_status_dist')}>
+        <Card title={t('test_status_dist')} help="hb_dash_tests">
           <div className="stack-bar">
             {tests.map((n, i) => n > 0 && (
               <div key={i} className={'seg ' + TEST_COLORS[i]} style={{ width: (n / testedTotal) * 100 + '%' }} title={`${t('ts_' + i)}: ${n}`} />
