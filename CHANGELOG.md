@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.61] — 2026-11-18 — Collapsible departments in structure management / طيّ وفتح الإدارات
+
+### Changed
+
+- **Frontend** — In the «إدارة الهيكلة» screen each department (module) is now collapsible: its applications list
+  folds and unfolds with a chevron, so the tree opens as a compact overview (departments only) and the applications
+  show on demand. A «توسيع الكل / طيّ الكل» (expand all / collapse all) control was added. Departments are collapsed
+  by default.
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.60] — 2026-11-18 — Structure management: departments & applications / إدارة الهيكلة
 
 ### Added

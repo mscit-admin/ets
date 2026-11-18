@@ -899,6 +899,12 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .str-dept { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card, #fff); overflow: hidden; }
 .str-dept.archived { opacity: 0.72; background: var(--surface-2, #f7f8fa); }
 .str-dept-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.str-toggle { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; background: none; border: 0;
+  padding: 0; margin: 0; cursor: pointer; text-align: start; color: inherit; font: inherit; }
+.str-toggle:hover .str-names b { color: var(--blue-text); }
+.str-chevron { transform: rotate(90deg); transition: transform 0.15s ease; color: var(--text-muted); flex: 0 0 auto; }
+.str-chevron.open { transform: rotate(-90deg); }
+.str-apps-empty { margin: 0; padding: 0 12px 10px; padding-inline-start: 42px; }
 .str-emblem { display: inline-flex; flex: 0 0 auto; }
 .str-names { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .str-names b { display: flex; align-items: center; gap: 2px; }

@@ -759,6 +759,9 @@ export const messages = {
     str_app_count: '{n} تطبيق',
     str_fn_count: '{n} وظيفة',
     str_empty: 'لا توجد إدارات بعد. ابدأ بإضافة إدارة.',
+    str_no_apps: 'لا توجد تطبيقات في هذه الإدارة بعد.',
+    str_expand_all: 'توسيع الكل',
+    str_collapse_all: 'طيّ الكل',
     // maintenance mode (1.12.38)
     maintenance_title: 'وضع الصيانة',
     maintenance_warning: 'عند التفعيل يتوقف دخول جميع المستخدمين عدا المديرين، وتُرفض طلبات غير المديرين، ويصل تنبيه إلزامي للمستخدمين النشطين. المديرون لا يُمنعون أبداً حتى يتمكنوا من إجراء الصيانة.',
@@ -2802,6 +2805,9 @@ export const messages = {
     str_app_count: '{n} applications',
     str_fn_count: '{n} functions',
     str_empty: 'No departments yet. Start by adding a department.',
+    str_no_apps: 'No applications in this department yet.',
+    str_expand_all: 'Expand all',
+    str_collapse_all: 'Collapse all',
     // maintenance mode (1.12.38)
     maintenance_title: 'Maintenance mode',
     maintenance_warning: 'When enabled, sign-in is disabled for everyone except administrators, non-admin requests are refused, and a mandatory alert is sent to active users. Administrators are never locked out, so they can carry out the maintenance.',
