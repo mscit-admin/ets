@@ -57,7 +57,6 @@ export default function Profile() {
               {user.totp_exempt && <Alert kind="gray">{t('tfa_exempt_note')}</Alert>}
               <p>{user.totp_enabled ? <Indicator color="green">{t('tfa_on')}</Indicator> : <Indicator color="orange">{t('tfa_off')}</Indicator>}
                 {user.totp_enabled && <span className="muted small"> · {t('codes_left', { n: user.recovery_codes_left })}</span>}</p>
-              {user.recovery_codes_outdated && <Alert kind="orange">{t('recovery_codes_outdated')}</Alert>}
               <div className="row gap wrap">
                 {!user.totp_enabled && mode !== 'off' && <button className="btn btn-primary btn-sm" onClick={() => setConfirm('enable')}>{t('enable_2fa')}</button>}
                 {user.totp_enabled && <button className="btn btn-default btn-sm" onClick={() => setConfirm('codes')}>{t('regenerate_codes')}</button>}

@@ -60,8 +60,11 @@ test('recovery codes: 12 characters, unbiased alphabet, keyed hash (not plain SH
   assert.match(h, /^h1:[0-9a-f]{64}$/);
   assert.notEqual(h.slice(3), crypto.createHash('sha256').update(codes[0]).digest('hex'));
   assert.equal(pw.hashRecoveryCode(' ' + codes[0].toUpperCase() + ' '), h);   // typed in capitals / with spaces
-  // legacy (pre-1.0.0) codes are still found through their plain SHA-256
-  assert.equal(pw.recoveryCodeHashes('abcd-efgh')[1], crypto.createHash('sha256').update('abcd-efgh').digest('hex'));
+  // the legacy plain-SHA-256 format was retired (migration 039): only the keyed h1: hash is produced now
+  const hashes = pw.recoveryCodeHashes('abcd-efgh');
+  assert.equal(hashes.length, 1);
+  assert.equal(hashes[0], pw.hashRecoveryCode('abcd-efgh'));
+  assert.ok(!hashes.includes(crypto.createHash('sha256').update('abcd-efgh').digest('hex')));
 });
 
 test('BCRYPT_ROUNDS is clamped', () => {

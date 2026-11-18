@@ -16,7 +16,7 @@ const ENV = {
   ETS_ENV_FILE: 'none',
 };
 
-let server, base, pool, totp, encrypt, hashPassword;
+let server, base, pool, totp, encrypt, hashPassword, hashRecoveryCode;
 
 before(async () => {
   if (skip) return;
@@ -27,7 +27,7 @@ before(async () => {
   await (await import('../src/db/seed.js')).seed({ log: () => {} });
   ({ totp } = await import('../src/services/totp.js'));
   ({ encrypt } = await import('../src/services/crypto.js'));
-  ({ hashPassword } = await import('../src/services/passwords.js'));
+  ({ hashPassword, hashRecoveryCode } = await import('../src/services/passwords.js'));
   const h = await hashPassword(PW);
   const names = ['boss', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'p1', 'p2', 'p3', 'p4', 'e1', 'e2', 'rh', 'chg'];
   for (const n of names) {
@@ -243,14 +243,14 @@ test('ETS-SEC-021: one TOTP code sent in parallel is accepted only once', { skip
   assert.ok(res.filter(r => r.status !== 200).every(r => r.data.error === 'invalid_code' || r.data.error === 'too_many_attempts'));
 });
 
-test('ETS-SEC-021/030: a recovery code sent in parallel is accepted once; legacy SHA-256 codes still work', { skip }, async () => {
+test('ETS-SEC-021: a recovery code sent in parallel is accepted exactly once', { skip }, async () => {
   await enrol('m5');
   const u = await user('m5');
-  const legacy = 'abcd-efgh';
-  await pool.query('INSERT INTO user_recovery_codes(user_id, code_hash) VALUES ($1,$2)', [u.id, crypto.createHash('sha256').update(legacy).digest('hex')]);
+  const code = 'abcd-efgh';
+  await pool.query('INSERT INTO user_recovery_codes(user_id, code_hash) VALUES ($1,$2)', [u.id, hashRecoveryCode(code)]);
   const clients = Array.from({ length: 5 }, () => client());
   for (const c of clients) await c.login('m5');
-  const res = await Promise.all(clients.map(c => c.post('/auth/2fa/verify', { recovery_code: legacy.toUpperCase() })));
+  const res = await Promise.all(clients.map(c => c.post('/auth/2fa/verify', { recovery_code: code.toUpperCase() })));
   assert.equal(res.filter(r => r.status === 200).length, 1);
   await pool.query(`UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=$1`, [u.id]);
 });
@@ -258,22 +258,17 @@ test('ETS-SEC-021/030: a recovery code sent in parallel is accepted once; legacy
 test('ETS-SEC-030/016: regenerated recovery codes are keyed hashes and need password + code', { skip }, async () => {
   const secret = await enrol('m6');
   const id = (await user('m6')).id;
-  await pool.query('INSERT INTO user_recovery_codes(user_id, code_hash) VALUES ($1,$2)', [id, crypto.createHash('sha256').update('zzzz-zzzz').digest('hex')]);
   const c = client();
   await c.login('m6');
   await c.post('/auth/2fa/verify', { code: await freshCode('m6', secret) });
-  assert.equal((await c.get('/auth/me')).data.user.recovery_codes_outdated, true);
   assert.equal((await c.post('/auth/2fa/recovery-codes', { password: PW })).data.error, 'mfa_code_required');
   const r = await c.post('/auth/2fa/recovery-codes', { password: PW, code: totp(secret, Date.now() + 30_000) });
   assert.equal(r.status, 200);
   assert.equal(r.data.recovery_codes.length, 10);
   assert.match(r.data.recovery_codes[0], /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/);
   const rows = (await pool.query('SELECT code_hash FROM user_recovery_codes WHERE user_id=$1', [id])).rows;
-  assert.ok(rows.every(x => /^h1:[0-9a-f]{64}$/.test(x.code_hash)));
-  assert.ok(!rows.some(x => x.code_hash.includes(crypto.createHash('sha256').update(r.data.recovery_codes[0]).digest('hex'))));
-  const me = (await c.get('/auth/me')).data.user;
-  assert.equal(me.recovery_codes_outdated, false);
-  assert.equal(me.recovery_codes_left, 10);
+  assert.ok(rows.every(x => /^h1:[0-9a-f]{64}$/.test(x.code_hash)));          // all keyed, no legacy format
+  assert.equal((await c.get('/auth/me')).data.user.recovery_codes_left, 10);
   // a new code signs in
   const c2 = client();
   await c2.login('m6');
@@ -368,4 +363,15 @@ test('ETS-SEC-019/054: forced password change — policy for admins, only the pa
   assert.ok(weak.data.reasons.includes('password_too_common'));
   assert.equal((await c.post('/auth/change-password', { current_password: PW, new_password: 'Nightjar-2026q' })).status, 200);
   assert.equal((await c.get('/tracker/summary')).status, 200);
+});
+
+test('F4: the legacy plain-SHA-256 recovery-code format is retired (CHECK rejects it)', { skip }, async () => {
+  const uid = (await user('m1')).id;
+  // a keyed h1: hash is allowed
+  await pool.query(`INSERT INTO user_recovery_codes(user_id, code_hash) VALUES ($1, 'h1:' || repeat('a', 64))`, [uid]);
+  // a bare SHA-256 (legacy pre-1.0.0 format) is refused by the constraint added in migration 039
+  await assert.rejects(
+    pool.query(`INSERT INTO user_recovery_codes(user_id, code_hash) VALUES ($1, repeat('b', 64))`, [uid]),
+    /user_recovery_codes_keyed|check/i);
+  await pool.query('DELETE FROM user_recovery_codes WHERE user_id=$1', [uid]);
 });
