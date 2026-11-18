@@ -188,7 +188,7 @@ function Thread({ id, onBack, onChanged }) {
         </div>
       </div>
       {isAlert && (
-        <div className="alert-response-bar">
+        <div className="alert-response-bar" data-help="hb_messages_alert_response" data-help-title="hb_messages_alert_response_t">
           <span>{t('alert_response_label')}:</span> <StatusBadge status={thread.response_status} />
           {thread.responded_at && <time className="muted small"> · {fmtDate(thread.responded_at)}</time>}
           {!thread.response_status && thread.side === 'recipient' && <span className="muted small"> · {t('alert_awaiting_you')}</span>}
@@ -282,7 +282,7 @@ function Inbox({ onOpenThread }) {
   if (error) return <ErrorBox error={error} />;
   if (!data?.threads?.length) return <Card><Empty>{t('msg_no_inbox')}</Empty></Card>;
   return (
-    <Card>
+    <Card help="hb_messages_inbox" helpTitle="hb_messages_inbox_t">
       <ul className="msg-list">
         {data.threads.map(th => (
           <ThreadRow key={th.id} title={`${th.from_name}${th.subject ? ' · ' + th.subject : ''}`} sub={th.preview}
@@ -367,7 +367,7 @@ function Alerts({ onOpenThread, canSend }) {
     if (sent.loading) return <>{tabs}<Loading /></>;
     if (sent.error) return <>{tabs}<ErrorBox error={sent.error} /></>;
     if (!sent.data?.alerts?.length) return <>{tabs}<Card><Empty>{t('alert_no_sent')}</Empty></Card></>;
-    return <>{tabs}<Card><ul className="msg-list">
+    return <>{tabs}<Card help="hb_messages_alerts" helpTitle="hb_messages_alerts_t"><ul className="msg-list">
       {sent.data.alerts.map(a => (
         <ThreadRow key={a.id} title={<><Icon name="bell" size={13} /> {a.subject || a.preview}</>} time={a.created_at}
           sub={`${t('alert_count_ack', { n: a.counts.ack })} · ${t('alert_count_working', { n: a.counts.working })} · ${t('alert_count_pending', { n: a.counts.pending })}`}
@@ -379,7 +379,7 @@ function Alerts({ onOpenThread, canSend }) {
   if (mine.loading) return <>{tabs}<Loading /></>;
   if (mine.error) return <>{tabs}<ErrorBox error={mine.error} /></>;
   if (!mine.data?.alerts?.length) return <>{tabs}<Card><Empty>{t('alert_no_received')}</Empty></Card></>;
-  return <>{tabs}<Card><ul className="msg-list">
+  return <>{tabs}<Card help="hb_messages_alerts" helpTitle="hb_messages_alerts_t"><ul className="msg-list">
     {mine.data.alerts.map(a => (
       <li key={a.id} className="msg-row">
         <button className="msg-row-main" onClick={() => onOpenThread(a.id)}>
@@ -412,17 +412,17 @@ export default function Messages() {
   if (openThread) {
     return (
       <div className="msg-page">
-        <PageHeader title={t('messages_title')} sub={t('messages_sub')} icon="inbox" />
+        <PageHeader title={t('messages_title')} sub={t('messages_sub')} icon="inbox" help="hb_messages_head" />
         <Thread id={openThread} onBack={() => { setThread(null); bump(); }} onChanged={bump} />
       </div>
     );
   }
   return (
     <div className="msg-page">
-      <PageHeader title={t('messages_title')} sub={t('messages_sub')} icon="inbox">
-        {msg && <button className="btn btn-primary btn-sm" onClick={() => setCompose(true)}><Icon name="plus" size={14} /> {t('msg_compose')}</button>}
+      <PageHeader title={t('messages_title')} sub={t('messages_sub')} icon="inbox" help="hb_messages_head">
+        {msg && <button className="btn btn-primary btn-sm" data-help="hb_messages_compose" data-help-title="hb_messages_compose_t" onClick={() => setCompose(true)}><Icon name="plus" size={14} /> {t('msg_compose')}</button>}
       </PageHeader>
-      <div className="tabs" role="tablist">
+      <div className="tabs" role="tablist" data-help="hb_messages_tabs" data-help-title="hb_messages_tabs_t">
         <button role="tab" aria-selected={tab === 'inbox'} className={'tab' + (tab === 'inbox' ? ' active' : '')} onClick={() => setTab('inbox')}>
           <Icon name="inbox" size={15} /> {t('msg_inbox')}
         </button>
