@@ -44,7 +44,6 @@ function AuthCard({ title, sub, children }) {
           {sub && <p className="auth-sub">{sub}</p>}
           {children}
         </div>
-        <div className="auth-foot">ETS · {new Date().getFullYear()}</div>
       </div>
     </div>
   );

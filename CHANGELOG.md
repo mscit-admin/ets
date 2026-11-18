@@ -30,6 +30,18 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.65] — 2026-11-18 — Remove the «ETS · year» footer on the login screen / إزالة تذييل «ETS · السنة» من شاشة الدخول
+
+### Removed
+
+- **Login screen** — The small «ETS · {year}» line under the sign-in box was removed (and its now-unused CSS).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.64] — 2026-11-18 — Draggable sign-in box; language switch in its corner / تحريك مربع الدخول وزر اللغة في زاويته
 
 ### Changed
