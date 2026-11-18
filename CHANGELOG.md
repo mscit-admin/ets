@@ -30,6 +30,18 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.65] — 2026-11-18 — Remove the «ETS · year» footer on the login screen / إزالة تذييل «ETS · السنة» من شاشة الدخول
+
+### Removed
+
+- **Login screen** — The small «ETS · {year}» line under the sign-in box was removed (and its now-unused CSS).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.64] — 2026-11-18 — Draggable sign-in box; language switch in its corner / تحريك مربع الدخول وزر اللغة في زاويته
 
 ### Changed
@@ -3547,7 +3559,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/cd0e8aa...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/6043fa2...HEAD
+[1.12.65]: https://github.com/mscit-admin/ets/compare/cd0e8aa...6043fa2
 [1.12.64]: https://github.com/mscit-admin/ets/compare/61a2556...cd0e8aa
 [1.12.63]: https://github.com/mscit-admin/ets/compare/cb0710d...61a2556
 [1.12.62]: https://github.com/mscit-admin/ets/compare/9c76046...cb0710d
