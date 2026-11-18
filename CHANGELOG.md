@@ -30,6 +30,20 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.63] — 2026-11-18 — Fix: icon picker behind dialogs / إصلاح ظهور منتقي الأيقونات خلف النوافذ
+
+### Fixed
+
+- **Frontend** — The icon picker grid (used for the department emblem and the wheel icon in the «إدارة الهيكلة»
+  dialogs) rendered behind the modal because its z-index (60) was below the modal backdrop (100). Raised it to 150
+  so it opens in front of the dialog, anchored to its button (still below toasts).
+
+### Upgrade notes
+
+- Frontend-only. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**). No migration.
+
+---
+
 ## [1.12.62] — 2026-11-18 — Department-driven ERP wheel / التحكّم بظهور الإدارة في عجلة ERP
 
 ### Changed
