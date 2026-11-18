@@ -57,12 +57,12 @@ export default function Notifications() {
 
   return (
     <div className="notif-page">
-      <PageHeader title={t('notifications')} sub={t('notif_page_sub')} icon="bell">
-        <Link className="btn btn-default btn-sm" to="/profile#notifications"><Icon name="settings" size={14} /> {t('notif_prefs')}</Link>
-        <button className="btn btn-default btn-sm" onClick={markAll}><Icon name="check" size={14} /> {t('mark_all_read')}</button>
+      <PageHeader title={t('notifications')} sub={t('notif_page_sub')} icon="bell" help="hb_notif2_head">
+        <Link className="btn btn-default btn-sm" to="/profile#notifications" data-help="hb_notif2_prefs" data-help-title="hb_notif2_prefs_t"><Icon name="settings" size={14} /> {t('notif_prefs')}</Link>
+        <button className="btn btn-default btn-sm" onClick={markAll} data-help="hb_notif2_markall" data-help-title="hb_notif2_markall_t"><Icon name="check" size={14} /> {t('mark_all_read')}</button>
       </PageHeader>
       <Card>
-        <div className="notif-filters">
+        <div className="notif-filters" data-help="hb_notif2_filters" data-help-title="hb_notif2_filters_t">
           <select className="input input-sm" value={f.category} onChange={e => set('category', e.target.value)} aria-label={t('notif_category')}>
             {TABS.map(k => <option key={k} value={k === 'all' ? '' : k}>{t('notif_category')}: {t('ncat_' + k)}</option>)}
           </select>
@@ -80,11 +80,11 @@ export default function Notifications() {
             <label className="check"><input type="checkbox" checked={unreadShown.every(n => sel.has(n.id))}
               onChange={e => setSel(e.target.checked ? new Set(unreadShown.map(n => n.id)) : new Set())} /> {t('select_all')}</label>
           )}
-          <button className="btn btn-primary btn-sm" disabled={!sel.size} onClick={markSel}>{t('mark_selected_read', { n: sel.size })}</button>
+          <button className="btn btn-primary btn-sm" disabled={!sel.size} onClick={markSel} data-help="hb_notif2_marksel" data-help-title="hb_notif2_marksel_t">{t('mark_selected_read', { n: sel.size })}</button>
         </div>
         <ErrorBox error={err} />
         {items === null ? <Loading /> : !items.length ? <Empty>{t('notif_none')}</Empty> : (
-          <ul className="notif-list">
+          <ul className="notif-list" data-help="hb_notif2_list" data-help-title="hb_notif2_list_t">
             {items.map(n => (
               <NotifRow key={n.id} n={n} onOpen={openItem} onToggle={toggle} select={
                 <input type="checkbox" className="notif-select" disabled={n.read} checked={sel.has(n.id)} aria-label={t('select') + ': ' + n.title}
