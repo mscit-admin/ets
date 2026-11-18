@@ -30,6 +30,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.66] — 2026-11-18 — Configurable copyright footer / تذييل حقوق النشر القابل للتعديل
+
+### Added
+
+- **A copyright line in the footer of the system**, editable from **Settings → General** (bilingual
+  `app.copyright_ar` / `app.copyright_en`). It appears centred at the bottom of every page; leaving both empty hides
+  the footer. The footer updates live after saving the settings.
+
+### Upgrade notes
+
+- No migration — the new setting ships a default (`© جميع الحقوق محفوظة` / `© All rights reserved`) merged at read
+  time, so it works on existing databases immediately. Deploy with `update.sh` and a hard refresh (**Ctrl+Shift+R**),
+  then edit the text in Settings → General.
+
+---
+
 ## [1.12.65] — 2026-11-18 — Remove the «ETS · year» footer on the login screen / إزالة تذييل «ETS · السنة» من شاشة الدخول
 
 ### Removed

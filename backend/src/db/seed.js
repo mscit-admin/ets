@@ -59,6 +59,8 @@ export const DEFAULT_SETTINGS = {
   'logs.access_retention_days': 90,    // HTTP access log
   'app.org_name_ar': 'مركز متابعة إنجاز ERP',
   'app.org_name_en': 'ERP Implementation Tracking Center',
+  'app.copyright_ar': '© جميع الحقوق محفوظة',   // footer line (Settings → General); empty hides the footer
+  'app.copyright_en': '© All rights reserved',
   'app.default_language': 'ar',
   'approval.edits_need_lead': true,    // data-entry edits wait for the department team lead
   // project phases (manual weighted model, services/project-phases.js): the delivery phases of the project, each with a

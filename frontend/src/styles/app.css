@@ -230,6 +230,8 @@ input[type=range] { accent-color: var(--primary); width: 100%; }
 .side-sublink { padding: 4px 8px; font-size: 12.5px; gap: 8px; color: var(--gray-700); }
 .side-sublink.strong { font-weight: 700; color: var(--text); }
 .main { flex: 1; min-width: 0; padding: 18px 26px 60px; max-width: 1320px; }
+.app-foot { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center;
+  font-size: 12px; color: var(--text-muted); }
 .only-mobile { display: none; }
 
 /* ---------- page ---------- */
