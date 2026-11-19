@@ -28,6 +28,22 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+---
+
+## [1.12.75] — 2026-11-19 — Help assistant: company-brand colour + every element explainable / لون الشركة على المساعد وجعل كل جزء قابلاً للشرح
+
+### Changed
+
+- **Frontend**: the help assistant (robot) now wears the **company brand colour** (the corporate logo's orange)
+  instead of blue — the robot body, its halo/glow while armed, the explanation bubble accent, and the highlight
+  around the element being explained. Implemented with scoped `--hb-*` CSS variables so the rest of the app's theme
+  is unchanged.
+- **Frontend**: **every part of every screen is now explainable.** The assistant already resolves a click to the
+  nearest element carrying `data-help`; the three app regions — the top bar, the navigation sidebar, and the main
+  content area — now each carry a fallback explanation, so a click anywhere lands on at least a screen-level
+  explanation while the existing section/control tags still give the specific one. The "no explanation yet" state no
+  longer appears for normal UI.
+
 ### Security
 
 - **CI (gitleaks)**: added `.gitleaks.toml` with a narrow allowlist for the two verified non-secret values the
@@ -35,6 +51,10 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   the release-promotion design docs, and a dummy test password (`Nightjar-2026q`) in
   `backend/test/auth-security.test.js`. All default rules stay active; the allowlist matches only those exact
   values, so no real secret can be hidden. The gitleaks workflow now passes `--config .gitleaks.toml`.
+
+### Upgrade notes
+
+- None. Frontend + CI only; no API, database or deployment change.
 
 ---
 
@@ -3782,7 +3802,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/728c71d...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/2907a4a...HEAD
+[1.12.75]: https://github.com/mscit-admin/ets/compare/728c71d...2907a4a
 [1.12.74]: https://github.com/mscit-admin/ets/compare/221d587...728c71d
 [1.12.73]: https://github.com/mscit-admin/ets/compare/02d26d4...221d587
 [1.12.72]: https://github.com/mscit-admin/ets/compare/38afb67...02d26d4

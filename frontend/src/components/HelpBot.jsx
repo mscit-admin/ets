@@ -37,7 +37,7 @@ function ProfessorBot() {
       </g>
       <line x1="36" y1="10" x2="36" y2="3" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
       <circle cx="36" cy="3.4" r="2.6" fill="#f4b740" />
-      <rect x="16" y="10" width="40" height="32" rx="11" fill="#eef3fb" stroke="currentColor" strokeWidth="2.4" />
+      <rect x="16" y="10" width="40" height="32" rx="11" fill="#FFF4ED" stroke="currentColor" strokeWidth="2.4" />
       <rect x="11" y="20" width="5" height="11" rx="2.2" fill="currentColor" />
       <rect x="56" y="20" width="5" height="11" rx="2.2" fill="currentColor" />
       <g className="hb-glasses" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -45,16 +45,16 @@ function ProfessorBot() {
         <circle cx="44" cy="26" r="7" fill="#ffffff" />
         <line x1="35" y1="26" x2="37" y2="26" />
       </g>
-      <circle cx="28" cy="26" r="2.6" fill="#1f3b6e" />
-      <circle cx="44" cy="26" r="2.6" fill="#1f3b6e" />
+      <circle cx="28" cy="26" r="2.6" fill="#A2380E" />
+      <circle cx="44" cy="26" r="2.6" fill="#A2380E" />
       <path d="M29 35 q7 5 14 0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
       <g className="hb-cap">
-        <polygon points="36,2 58,11 36,20 14,11" fill="#1f3b6e" />
-        <rect x="33.5" y="13" width="5" height="7" fill="#1f3b6e" />
+        <polygon points="36,2 58,11 36,20 14,11" fill="#A2380E" />
+        <rect x="33.5" y="13" width="5" height="7" fill="#A2380E" />
         <line x1="58" y1="11" x2="58" y2="19" stroke="#f4b740" strokeWidth="1.6" strokeLinecap="round" />
         <circle cx="58" cy="20" r="2" fill="#f4b740" />
       </g>
-      <rect x="22" y="44" width="28" height="18" rx="7" fill="#dbe6fa" stroke="currentColor" strokeWidth="2.4" />
+      <rect x="22" y="44" width="28" height="18" rx="7" fill="#FBD9C6" stroke="currentColor" strokeWidth="2.4" />
       <circle cx="31" cy="53" r="2" fill="currentColor" />
       <circle cx="41" cy="53" r="2" fill="currentColor" />
     </svg>
