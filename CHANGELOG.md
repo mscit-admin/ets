@@ -3817,8 +3817,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/RELHASH...HEAD
-[1.12.76]: https://github.com/mscit-admin/ets/compare/2907a4a...RELHASH
+[Unreleased]: https://github.com/mscit-admin/ets/compare/1f6a7b8...HEAD
+[1.12.76]: https://github.com/mscit-admin/ets/compare/2907a4a...1f6a7b8
 [1.12.75]: https://github.com/mscit-admin/ets/compare/728c71d...2907a4a
 [1.12.74]: https://github.com/mscit-admin/ets/compare/221d587...728c71d
 [1.12.73]: https://github.com/mscit-admin/ets/compare/02d26d4...221d587
