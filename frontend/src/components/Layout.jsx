@@ -35,7 +35,7 @@ function Navbar({ onMenu }) {
   const initials = (user?.full_name || user?.username || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('');
 
   return (
-    <header className="navbar">
+    <header className="navbar" data-help="hb_topbar" data-help-title="hb_topbar_t">
       <div className="navbar-inner">
         <button className="btn-icon only-mobile" onClick={onMenu} aria-label="menu"><Icon name="menu" size={18} /></button>
         <NavLink to="/" className="brand">
@@ -116,7 +116,7 @@ function Sidebar({ open, onClose }) {
   return (
     <>
       <div className={'side-overlay' + (open ? ' show' : '')} onClick={onClose} />
-      <aside className={'sidebar' + (open ? ' open' : '')}>
+      <aside className={'sidebar' + (open ? ' open' : '')} data-help="hb_sidebar" data-help-title="hb_sidebar_t">
         <div className="side-section">
           <div className="side-label">{t('nav_tracker')}</div>
           {link('/', 'home', t('nav_home'), true, 'hb_nav_home')}
@@ -214,7 +214,7 @@ export default function Layout() {
       <MaintenanceBanner />
       <div className="app-body">
         <Sidebar open={open} onClose={() => setOpen(false)} />
-        <main className="main">
+        <main className="main" data-help="hb_main" data-help-title="hb_main_t">
           <ErrorBoundary><Suspense fallback={<Loading />}><Outlet /></Suspense></ErrorBoundary>
           <AppFooter />
         </main>
