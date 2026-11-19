@@ -28,16 +28,30 @@ function placeFor(rect) {
   return { top, left, side: cx > vw / 2 ? 'left' : 'right', vert: top < vh / 2 ? 'down' : 'up' };
 }
 
+// The professor robot: original blue body/head, wearing an orange academic robe that carries a simplified version of
+// the company's swirl-globe logo on the chest. The circle background stays blue (see .hb-trigger). currentColor
+// (white, from the button) draws the robot outlines.
 function ProfessorBot() {
   return (
     <svg className="hb-bot" viewBox="0 0 72 72" width="46" height="46" aria-hidden="true" focusable="false">
       <g className="hb-pointer">
-        <line x1="50" y1="52" x2="68" y2="26" stroke="#8a5a2b" strokeWidth="2.6" strokeLinecap="round" />
+        <line x1="50" y1="50" x2="68" y2="26" stroke="#8a5a2b" strokeWidth="2.6" strokeLinecap="round" />
         <circle cx="68" cy="26" r="3.2" fill="#f4b740" stroke="#c88a1e" strokeWidth="1" />
+      </g>
+      {/* academic robe / gown bearing the company logo (the torso) */}
+      <g className="hb-robe">
+        <path d="M19 44 Q36 40 53 44 L57 64 Q36 68 15 64 Z" fill="#E85D28" stroke="#BB4311" strokeWidth="2" strokeLinejoin="round" />
+        <path d="M36 44 L31.5 64 Q36 65 40.5 64 Z" fill="#F2874F" />
+        <path d="M27 45 Q36 50 45 45" fill="none" stroke="#BB4311" strokeWidth="2" strokeLinecap="round" />
+        {/* logo badge: white roundel with a simplified orange swirl-globe (evokes the corporate mark) */}
+        <circle cx="36" cy="54" r="6" fill="#ffffff" stroke="#BB4311" strokeWidth="1.1" />
+        <path d="M32.6 51 Q37.6 54 33.4 57.2" fill="none" stroke="#E85D28" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M35.6 50.5 Q40.4 54 36.2 57.6" fill="none" stroke="#E85D28" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M38.8 51.4 Q41.4 54 39.2 56.4" fill="none" stroke="#F2874F" strokeWidth="1.4" strokeLinecap="round" />
       </g>
       <line x1="36" y1="10" x2="36" y2="3" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
       <circle cx="36" cy="3.4" r="2.6" fill="#f4b740" />
-      <rect x="16" y="10" width="40" height="32" rx="11" fill="#FFF4ED" stroke="currentColor" strokeWidth="2.4" />
+      <rect x="16" y="10" width="40" height="32" rx="11" fill="#eef3fb" stroke="currentColor" strokeWidth="2.4" />
       <rect x="11" y="20" width="5" height="11" rx="2.2" fill="currentColor" />
       <rect x="56" y="20" width="5" height="11" rx="2.2" fill="currentColor" />
       <g className="hb-glasses" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -45,18 +59,15 @@ function ProfessorBot() {
         <circle cx="44" cy="26" r="7" fill="#ffffff" />
         <line x1="35" y1="26" x2="37" y2="26" />
       </g>
-      <circle cx="28" cy="26" r="2.6" fill="#A2380E" />
-      <circle cx="44" cy="26" r="2.6" fill="#A2380E" />
+      <circle cx="28" cy="26" r="2.6" fill="#1f3b6e" />
+      <circle cx="44" cy="26" r="2.6" fill="#1f3b6e" />
       <path d="M29 35 q7 5 14 0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
       <g className="hb-cap">
-        <polygon points="36,2 58,11 36,20 14,11" fill="#A2380E" />
-        <rect x="33.5" y="13" width="5" height="7" fill="#A2380E" />
+        <polygon points="36,2 58,11 36,20 14,11" fill="#1f3b6e" />
+        <rect x="33.5" y="13" width="5" height="7" fill="#1f3b6e" />
         <line x1="58" y1="11" x2="58" y2="19" stroke="#f4b740" strokeWidth="1.6" strokeLinecap="round" />
         <circle cx="58" cy="20" r="2" fill="#f4b740" />
       </g>
-      <rect x="22" y="44" width="28" height="18" rx="7" fill="#FBD9C6" stroke="currentColor" strokeWidth="2.4" />
-      <circle cx="31" cy="53" r="2" fill="currentColor" />
-      <circle cx="41" cy="53" r="2" fill="currentColor" />
     </svg>
   );
 }
