@@ -14,7 +14,7 @@ jobs:
     name: Review PR dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Dependency review
         # Requires the repo's Dependency Graph feature (Settings → Code security and analysis). Until an admin
         # enables it the action errors with "Dependency review is not supported on this repository", so keep this
