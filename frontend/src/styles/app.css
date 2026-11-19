@@ -1346,9 +1346,10 @@ textarea.mono { width: 100%; resize: vertical; }
 .note-add .btn { align-self: flex-end; }
 
 /* ---- HelpBot — floating professor-robot help assistant (components/HelpBot.jsx) ---- */
-/* Company-brand palette (the orange of the corporate logo). Scoped to the assistant via --hb-* vars so the rest of
-   the app's theme tokens are untouched. */
-:root { --hb-brand: #E85D28; --hb-brand-deep: #BB4311; --hb-brand-bg: #FDEDE3; --hb-brand-shadow: 187, 67, 17; }
+/* The assistant's chrome (circle background, bubble accent, highlight) uses the app's blue, like the original; the
+   company brand shows on the robot itself — it wears an orange robe bearing the logo (see ProfessorBot in
+   HelpBot.jsx). Scoped --hb-* vars keep the rest of the app's theme untouched. */
+:root { --hb-brand: #2b6cb0; --hb-brand-deep: #1f3b6e; --hb-brand-bg: #e7f0fb; --hb-brand-shadow: 31, 59, 110; }
 /* Positioned by top/left (set inline from JS) so it glides between its home corner and the element it explains. */
 .help-bot { position: fixed; width: 60px; height: 60px; z-index: 1200;
   transition: top .55s cubic-bezier(.34, 1.3, .5, 1), left .55s cubic-bezier(.34, 1.3, .5, 1); }

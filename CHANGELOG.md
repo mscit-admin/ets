@@ -30,6 +30,21 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ---
 
+## [1.12.76] — 2026-11-19 — Help assistant wears a branded robe / المساعد يرتدي رداءً يحمل الشعار
+
+### Changed
+
+- **Frontend**: reverted the help robot's blue circle background and blue body/cap (as originally), and instead gave
+  the robot an **orange academic robe bearing a simplified version of the company's swirl-globe logo** on its chest.
+  The brand identity now shows through what the robot wears rather than by recolouring the whole assistant; the
+  bubble/highlight chrome is blue again (`--hb-*` vars repointed to the app blue).
+
+### Upgrade notes
+
+- None. Frontend only; no API, database or deployment change.
+
+---
+
 ## [1.12.75] — 2026-11-19 — Help assistant: company-brand colour + every element explainable / لون الشركة على المساعد وجعل كل جزء قابلاً للشرح
 
 ### Changed
@@ -3802,7 +3817,8 @@ was built in one commit (`8119253`).
 
 <!-- No git tags exist yet, so the links compare the commit that completed each release. Once tags are created
      (v1.7.0 …), replace the hashes with the tags. -->
-[Unreleased]: https://github.com/mscit-admin/ets/compare/2907a4a...HEAD
+[Unreleased]: https://github.com/mscit-admin/ets/compare/1f6a7b8...HEAD
+[1.12.76]: https://github.com/mscit-admin/ets/compare/2907a4a...1f6a7b8
 [1.12.75]: https://github.com/mscit-admin/ets/compare/728c71d...2907a4a
 [1.12.74]: https://github.com/mscit-admin/ets/compare/221d587...728c71d
 [1.12.73]: https://github.com/mscit-admin/ets/compare/02d26d4...221d587
