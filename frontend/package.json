@@ -18,13 +18,13 @@
     "qrcode-generator": "2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5",
-    "read-excel-file": "^9.3.14",
+    "react-router-dom": "^7.18.6",
+    "read-excel-file": "^9.3.17",
     "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.2.1",
-    "vite": "^8.3.5"
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8"
   },
   "overrides": {
     "uuid": "^11.1.1"
